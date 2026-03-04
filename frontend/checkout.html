@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecionando... - AutoAnalytics</title>
+    
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card text-center p-5">
+                    <i class="fas fa-credit-card fa-4x text-primary mb-4"></i>
+                    <h3>Redirecionando para o Mercado Pago</h3>
+                    <p class="text-muted">Aguarde um momento...</p>
+                    
+                    <div class="loader"></div>
+                    
+                    <div class="mt-4">
+                        <a href="/dashboard" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>
+                            Voltar ao Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Obter URL do checkout da URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const checkoutUrl = urlParams.get('url');
+        
+        if (checkoutUrl) {
+            // Redirecionar após 2 segundos
+            setTimeout(() => {
+                window.location.href = checkoutUrl;
+            }, 2000);
+        } else {
+            // Se não tiver URL, voltar para planos
+            setTimeout(() => {
+                window.location.href = '/planos.html';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

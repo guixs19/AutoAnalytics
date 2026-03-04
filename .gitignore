@@ -1,0 +1,12 @@
+.env
+.env.local
+temp/
+outputs/
+data/
+models/
+*.db
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/

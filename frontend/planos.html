@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planos - AutoAnalytics</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    
+    <style>
+        .plan-card {
+            transition: transform 0.3s;
+            border: none;
+            border-radius: 15px;
+            overflow: hidden;
+            height: 100%;
+        }
+        .plan-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .plan-card.popular { border: 2px solid #ffc107; transform: scale(1.02); }
+        .popular-badge {
+            position: absolute; top: 10px; right: 10px;
+            background: #ffc107; color: #000;
+            padding: 5px 15px; border-radius: 20px;
+            font-size: 0.8rem; font-weight: bold;
+            z-index: 10;
+        }
+        .plan-header {
+            padding: 30px 20px; text-align: center;
+            color: white;
+        }
+        .plan-header.basico { background: linear-gradient(135deg, #3498db, #2980b9); }
+        .plan-header.profissional { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+        .plan-header.empresarial { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .plan-price { font-size: 2.5rem; font-weight: bold; }
+        .plan-features { padding: 30px; }
+        .plan-feature { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .plan-feature i { color: #28a745; width: 25px; }
+        .qr-code-img { max-width: 200px; margin: 0 auto 15px; }
+        .pix-code {
+            background: #f8f9fa; padding: 15px;
+            border-radius: 8px; font-family: monospace;
+            word-break: break-all; margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-car me-2"></i>
+                <span class="fw-bold">Auto</span><span class="text-warning">Analytics</span>
+            </a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/planos.html">
+                            <i class="fas fa-credit-card me-1"></i> Planos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <span class="nav-link text-warning">
+                            <i class="fas fa-coins me-1"></i>
+                            <span id="navbarCredits">0</span> créditos
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-5">
+        <div class="text-center mb-5">
+            <h1 class="display-4 fw-bold">Escolha seu Plano</h1>
+            <p class="lead text-muted">Créditos para análises. Cada análise consome 1 crédito.</p>
+            <div class="d-inline-block bg-primary text-white rounded-pill px-4 py-2 mt-3">
+                <i class="fas fa-coins me-2"></i>
+                Seu saldo: <span id="currentCredits">0</span> créditos
+            </div>
+        </div>
+
+        <div class="row g-4" id="plansContainer">
+            <div class="col-12 text-center py-5">
+                <div class="spinner-border text-primary"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal PIX -->
+    <div class="modal fade" id="pixModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-qrcode me-2"></i>
+                        Pagamento via PIX
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center" id="pixContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        
+        // Funções de autenticação
+        async function fetchWithAuth(url, options = {}) {
+            const token = localStorage.getItem('access_token');
+            const headers = { 'Content-Type': 'application/json', ...options.headers };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            return fetch(url, { ...options, headers });
+        }
+        
+        // Carregar saldo
+        async function loadBalance() {
+            const response = await fetchWithAuth(`${API_URL}/payments/balance`);
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('currentCredits').textContent = data.credits;
+                document.getElementById('navbarCredits').textContent = data.credits;
+            }
+        }
+        
+        // Carregar planos
+        async function loadPlans() {
+            const response = await fetch(`${API_URL}/payments/plans`);
+            const data = await response.json();
+            renderPlans(data.plans);
+        }
+        
+        function renderPlans(plans) {
+            let html = '';
+            for (const [key, plan] of Object.entries(plans)) {
+                html += `
+                    <div class="col-lg-4">
+                        <div class="card plan-card ${plan.popular ? 'popular' : ''}">
+                            ${plan.popular ? '<div class="popular-badge">MAIS POPULAR</div>' : ''}
+                            <div class="plan-header ${key}">
+                                <h3 class="h4">${plan.name}</h3>
+                                <div class="plan-price">R$ ${plan.price.toFixed(2)}</div>
+                                <p>${plan.credits} créditos</p>
+                            </div>
+                            <div class="plan-features">
+                                <div class="plan-feature"><i class="fas fa-check-circle"></i> ${plan.credits} análises</div>
+                                <div class="plan-feature"><i class="fas fa-check-circle"></i> Relatórios com IA</div>
+                                <div class="plan-feature"><i class="fas fa-check-circle"></i> Previsões TensorFlow</div>
+                                <div class="d-grid gap-2 mt-4">
+                                    <button class="btn btn-primary" onclick="selectPlan('${key}', 'pix')">
+                                        <i class="fas fa-qrcode me-2"></i> PIX
+                                    </button>
+                                    <button class="btn btn-outline-primary" onclick="selectPlan('${key}', 'checkout')">
+                                        <i class="fas fa-credit-card me-2"></i> Outros
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('plansContainer').innerHTML = html;
+        }
+        
+        // Selecionar plano
+        async function selectPlan(planId, method) {
+            const response = await fetchWithAuth(`${API_URL}/payments/create-${method}`, {
+                method: 'POST',
+                body: JSON.stringify({ plan_id: planId })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (method === 'pix') showPixModal(data);
+                else window.location.href = `/checkout.html?url=${encodeURIComponent(data.checkout_url)}`;
+            }
+        }
+        
+        // Modal PIX
+        function showPixModal(data) {
+            document.getElementById('pixContent').innerHTML = `
+                <img src="data:image/png;base64,${data.qr_code_base64}" class="qr-code-img">
+                <div class="pix-code">${data.qr_code}</div>
+                <button class="btn btn-outline-primary w-100" onclick="copyPixCode()">
+                    <i class="fas fa-copy me-2"></i> Copiar código
+                </button>
+                <div class="alert alert-info mt-3 small">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Após o pagamento, aguarde até 1 minuto.
+                </div>
+                <div id="paymentStatus"></div>
+            `;
+            new bootstrap.Modal(document.getElementById('pixModal')).show();
+            startPaymentPolling(data.payment_id);
+        }
+        
+        function copyPixCode() {
+            const code = document.querySelector('.pix-code').textContent;
+            navigator.clipboard.writeText(code);
+            alert('Código copiado!');
+        }
+        
+        // Polling de status
+        let paymentPolling = null;
+        function startPaymentPolling(paymentId) {
+            if (paymentPolling) clearInterval(paymentPolling);
+            paymentPolling = setInterval(async () => {
+                const response = await fetchWithAuth(`${API_URL}/payments/status/${paymentId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.payment.status === 'approved') {
+                        clearInterval(paymentPolling);
+                        document.getElementById('paymentStatus').innerHTML = 
+                            '<div class="alert alert-success">Pagamento aprovado!</div>';
+                        setTimeout(() => window.location.href = '/?success=1', 2000);
+                    }
+                }
+            }, 3000);
+        }
+        
+        // Inicializar
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!localStorage.getItem('access_token')) {
+                window.location.href = '/login.html';
+                return;
+            }
+            await loadBalance();
+            await loadPlans();
+        });
+    </script>
+</body>
+</html>

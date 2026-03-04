@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoAnalytics - Sistema Inteligente para Oficinas</title>
+    
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS Customizado -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    
+    <style>
+        /* Estilo para o indicador de créditos */
+        .credits-badge {
+            background: rgba(255, 193, 7, 0.2);
+            border-radius: 20px;
+            padding: 5px 15px;
+            margin-left: 10px;
+            border: 1px solid #ffc107;
+        }
+        .credits-badge i {
+            color: #ffc107;
+        }
+        .credits-badge span {
+            color: #ffc107;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar ATUALIZADA -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-car me-2"></i>
+                <span class="fw-bold">Auto</span><span class="text-warning">Analytics</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#upload">
+                            <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#historico">
+                            <i class="fas fa-history me-1"></i> Histórico
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#relatorios">
+                            <i class="fas fa-file-alt me-1"></i> Relatórios
+                        </a>
+                    </li>
+                    
+                    <!-- NOVO: Link para Planos -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="/planos.html">
+                            <i class="fas fa-credit-card me-1"></i> Planos
+                        </a>
+                    </li>
+                    
+                    <!-- NOVO: Indicador de Créditos -->
+                    <li class="nav-item">
+                        <div class="credits-badge">
+                            <i class="fas fa-coins"></i>
+                            <span id="navbarCredits">0</span>
+                        </div>
+                    </li>
+                    
+                    <!-- Dropdown do Usuário (já existente, apenas adicionei o workshopName) -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user me-1"></i>
+                            <span id="userName">Usuário</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <span class="dropdown-item-text small">
+                                    <i class="fas fa-wrench me-1"></i>
+                                    <span id="workshopName">Oficina</span>
+                                </span>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="logoutBtn">
+                                <i class="fas fa-sign-out-alt me-1"></i> Sair
+                            </a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Container Principal -->
+    <div class="container mt-4" id="upload">
+        <!-- Upload Section -->
+        <div class="row">
+            <div class="col-lg-8">
+                <!-- Card de Upload (com indicador de custo) -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-dark text-white py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-file-upload me-2"></i>
+                            Upload de Dados da Oficina
+                        </h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <!-- NOVO: Aviso de custo -->
+                        <div class="alert alert-info mb-3">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Cada análise consome <strong>1 crédito</strong>. 
+                            Seu saldo atual: <strong id="uploadCredits">0</strong> créditos
+                            <a href="/planos.html" class="float-end text-decoration-none">
+                                <i class="fas fa-credit-card me-1"></i> Comprar créditos
+                            </a>
+                        </div>
+                        
+                        <!-- Upload Area (seu código existente) -->
+                        <form id="uploadForm">
+                            <div class="upload-area mb-4" id="dropArea">
+                                <div class="text-center py-4">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                                    <h4>Arraste sua planilha aqui</h4>
+                                    <p class="text-muted mb-3">CSV ou Excel com dados da oficina</p>
+                                    <div class="d-flex justify-content-center gap-2">
+                                        <label for="fileInput" class="btn btn-primary">
+                                            <i class="fas fa-folder-open me-2"></i>
+                                            Escolher Arquivo
+                                        </label>
+                                        <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls">
+                                    </div>
+                                </div>
+                                <div class="selected-file mt-3 d-none" id="selectedFile">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <div>
+                                            <i class="fas fa-file-excel text-success me-2"></i>
+                                            <span id="fileName" class="fw-bold"></span>
+                                            <span class="badge bg-secondary ms-2" id="fileSize"></span>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Configurações (seu código existente) -->
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <label class="form-label">Tipo de Análise</label>
+                                    <select class="form-select" id="tipoAnalise">
+                                        <option value="clientes">Análise de Clientes</option>
+                                        <option value="servicos">Serviços Realizados</option>
+                                        <option value="estoque">Controle de Estoque</option>
+                                        <option value="financeiro">Análise Financeira</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Modelo IA</label>
+                                    <select class="form-select" id="modeloIA">
+                                        <option value="flowise">Flowise AI (Recomendado)</option>
+                                        <option value="basico">Análise Básica</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <!-- Botão de Envio (modificado para verificar créditos) -->
+                            <div class="d-grid">
+                                <button type="submit" id="uploadButton" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-play-circle me-2"></i>
+                                    Iniciar Análise Inteligente (1 crédito)
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Status do Processamento (seu código existente) -->
+                <div class="card border-0 shadow-sm mb-4 d-none" id="statusContainer">
+                    <!-- ... seu código existente ... -->
+                </div>
+
+                <!-- Resultados (seu código existente) -->
+                <div class="card border-0 shadow-sm d-none" id="resultContainer">
+                    <!-- ... seu código existente ... -->
+                </div>
+            </div>
+
+            <!-- Sidebar ATUALIZADA -->
+            <div class="col-lg-4">
+                <!-- Card de Créditos (NOVO) -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-warning text-dark py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-coins me-2"></i>
+                            Seus Créditos
+                        </h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <div class="display-1 fw-bold text-warning mb-2" id="sidebarCredits">0</div>
+                        <p class="text-muted">créditos disponíveis</p>
+                        <p class="small text-muted mb-3">Cada análise consome 1 crédito</p>
+                        <a href="/planos.html" class="btn btn-primary w-100">
+                            <i class="fas fa-credit-card me-2"></i>
+                            Comprar Créditos
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Status da Oficina (seu código existente) -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-dark text-white py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-car-side me-2"></i>
+                            Status da Oficina
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-check-circle text-success me-2"></i>
+                                    <span>Análises Hoje</span>
+                                </div>
+                                <span class="badge bg-success rounded-pill" id="analisesHoje">0</span>
+                            </div>
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-history text-primary me-2"></i>
+                                    <span>Total de Análises</span>
+                                </div>
+                                <span class="badge bg-primary rounded-pill" id="totalAnalises">0</span>
+                            </div>
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-robot text-info me-2"></i>
+                                    <span>IA Utilizada</span>
+                                </div>
+                                <span class="badge bg-info rounded-pill" id="iaUtilizada">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dicas Rápidas (seu código existente) -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-dark text-white py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            Dicas da IA
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="aiTips">
+                            <div class="tip-card">
+                                <div class="tip-icon">
+                                    <i class="fas fa-chart-line"></i>
+                                </div>
+                                <div class="tip-content">
+                                    <p class="mb-0">Envie dados de clientes para análise de fidelização</p>
+                                </div>
+                            </div>
+                            <div class="tip-card">
+                                <div class="tip-icon">
+                                    <i class="fas fa-tools"></i>
+                                </div>
+                                <div class="tip-content">
+                                    <p class="mb-0">Análise de serviços ajuda a otimizar tempo</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Histórico Rápido (seu código existente) -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-history me-2"></i>
+                            Últimas Análises
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="timeline" id="recentAnalyses">
+                            <div class="timeline-item">
+                                <div class="timeline-marker"></div>
+                                <div class="timeline-content">
+                                    <p class="mb-1 small">Nenhuma análise ainda</p>
+                                    <small class="text-muted">Envie seu primeiro arquivo</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer (seu código existente) -->
+    <footer class="bg-dark text-white mt-5 py-4">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h5 class="mb-3">
+                        <i class="fas fa-car me-2"></i>
+                        AutoAnalytics
+                    </h5>
+                    <p class="text-light small mb-0">
+                        Sistema inteligente para análise de dados de oficinas mecânicas
+                    </p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <small class="text-muted">
+                        <i class="fas fa-code me-1"></i>
+                        Desenvolvido com TensorFlow & Flowise AI
+                    </small>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- JavaScript Customizado ATUALIZADO -->
+    <script src="js/app.js"></script>
+</body>
+</html>
