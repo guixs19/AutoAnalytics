@@ -1,4 +1,4 @@
-# backend/services/payment_service.py
+# backend/services/payment_service.py (trecho corrigido)
 import mercadopago
 import os
 import qrcode
@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional, Tuple
 import json
 import uuid
 
-# Importar sentinel
-from backend.observability.sentinel import get_sentinel
+# 🔧 CORREÇÃO: importar get_webhook em vez de get_sentinel
+from backend.observability.sentinel import get_webhook
 
 class MercadoPagoService:
     """Serviço para integração com Mercado Pago"""
@@ -25,10 +25,10 @@ class MercadoPagoService:
         # Inicializar SDK
         self.sdk = mercadopago.SDK(self.access_token)
         
-        # Inicializar sentinel
-        self.sentinel = get_sentinel()
+        # 🔧 CORREÇÃO: usar get_webhook()
+        self.webhook = get_webhook()
         
-        # Planos disponíveis (ATUALIZADO COM PLANO PREMIUM MENSAL)
+        # Planos disponíveis
         self.plans = {
             "basico": {
                 "id": "basico",
@@ -38,9 +38,7 @@ class MercadoPagoService:
                 "description": "10 análises - Ideal para começar",
                 "popular": False,
                 "savings": "0%",
-                "type": "one_time",
-                "credits_per_day": 0,
-                "duration_days": 0  # uso imediato
+                "type": "one_time"
             },
             "profissional": {
                 "id": "profissional",
@@ -50,9 +48,7 @@ class MercadoPagoService:
                 "description": "30 análises - Para uso regular",
                 "popular": True,
                 "savings": "11%",
-                "type": "one_time",
-                "credits_per_day": 0,
-                "duration_days": 0
+                "type": "one_time"
             },
             "empresarial": {
                 "id": "empresarial",
@@ -62,31 +58,23 @@ class MercadoPagoService:
                 "description": "100 análises - Uso intensivo",
                 "popular": False,
                 "savings": "33%",
-                "type": "one_time",
-                "credits_per_day": 0,
-                "duration_days": 0
+                "type": "one_time"
             },
-            "premium_mensal": {  # NOVO PLANO - CORRIGIDO
+            "premium_mensal": {
                 "id": "premium_mensal",
                 "name": "Premium Mensal",
-                "credits": 30,  # 30 créditos no total
+                "credits": 30,
                 "price": 58.90,
                 "description": "1 crédito por dia durante 30 dias",
                 "popular": True,
-                "savings": "26%",  # Economia comparado ao profissional (79.90 -> 58.90)
-                "type": "daily_credits",  # Créditos liberados diariamente
-                "credits_per_day": 1,  # 1 crédito por dia
-                "duration_days": 30,  # Durante 30 dias
-                "features": [
-                    "📅 1 crédito NOVO todo dia",
-                    "⏳ Válido por 30 dias",
-                    "💰 Menos de R$ 2,00 por dia",
-                    "🔄 Ideal para uso diário",
-                    "🎯 30 análises no mês"
-                ]
+                "savings": "26%",
+                "type": "daily_credits",
+                "credits_per_day": 1,
+                "duration_days": 30
             }
         }
     
+    # ... resto do código continua igual ...
     def calculate_premium_benefits(self):
         """Calcula benefícios do plano premium"""
         plan = self.plans["premium_mensal"]

@@ -1,10 +1,11 @@
-# main.py (na raiz) - VERSÃO ATUALIZADA COM CRÉDITOS DIÁRIOS
+# main.py (na raiz) - VERSÃO CORRIGIDA
 import sys
 import os
 from pathlib import Path
 from datetime import datetime
 import secrets
 import string
+from sqlalchemy.orm import Session
 
 print("=" * 60)
 print("🚀 AUTOANALYTICS v2.0 - SERVIDOR COMPLETO COM JWT E PAGAMENTOS")
@@ -71,8 +72,8 @@ class Settings:
     
     # CAPTCHA
     CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "recaptcha_v2")
-    CAPTCHA_SITE_KEY = os.getenv("CAPTCHA_SITE_KEY", "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI")  # Chave de teste
-    CAPTCHA_SECRET_KEY = os.getenv("CAPTCHA_SECRET_KEY", "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe")  # Chave de teste
+    CAPTCHA_SITE_KEY = os.getenv("CAPTCHA_SITE_KEY", "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI")
+    CAPTCHA_SECRET_KEY = os.getenv("CAPTCHA_SECRET_KEY", "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe")
     
     # Rate Limiting
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -95,6 +96,9 @@ class Settings:
     MP_PUBLIC_KEY = os.getenv("MP_PUBLIC_KEY", "")
     MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
     WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+    
+    # ========== 💎 DISCORD WEBHOOK ==========
+    DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
 
 settings = Settings()
 
@@ -300,7 +304,8 @@ if not frontend_available:
                 "api_docs": "/api/docs",
                 "auth_login": "/api/auth/login",
                 "auth_register": "/api/auth/register",
-                "payments_plans": "/api/payments/plans"
+                "payments_plans": "/api/payments/plans",
+                "credits_status": "/api/payments/credits-status"
             }
         }
 
@@ -324,8 +329,8 @@ try:
     
     print("✅ Configurações sincronizadas")
     
-    # Verificar/criar banco de dados
-    from backend.database import engine, Base, create_tables, SessionLocal
+    # 🔧 IMPORTAR get_db do database
+    from backend.database import engine, Base, create_tables, SessionLocal, get_db
     
     # Criar tabelas
     create_tables()
@@ -343,10 +348,32 @@ try:
     )
     print("✅ Módulos de segurança carregados")
     
-    # ========== 🆕 NOVAS IMPORTAÇÕES PARA CRÉDITOS DIÁRIOS ==========
+    # Importar serviços
+    # Depois de importar FastAPI, adicione:
     from backend.services.daily_credits_service import DailyCreditsService
-    from backend.scheduler.daily_credits_job import init_scheduler
-    print("✅ Módulos de créditos diários carregados")
+    print("✅ Módulo de créditos diários carregado")
+    
+    # Importar observability (opcional)
+    try:
+        from backend.observability.sentinel import (
+            alert_system_startup,
+            alert_system_error,
+            alert_new_user,
+            alert_payment_approved,
+            alert_daily_credits_distributed
+        )
+        print("✅ Módulo de observability (Discord) carregado")
+        DISCORD_ENABLED = bool(settings.DISCORD_WEBHOOK)
+    except ImportError as e:
+        print(f"⚠️  Módulo observability não encontrado: {e}")
+        DISCORD_ENABLED = False
+        
+        # Funções dummy para não quebrar o código
+        def alert_system_startup(**kwargs): pass
+        def alert_system_error(**kwargs): pass
+        def alert_new_user(**kwargs): pass
+        def alert_payment_approved(**kwargs): pass
+        def alert_daily_credits_distributed(**kwargs): pass
     
     # Importar rotas
     from backend.api import auth_routes
@@ -368,7 +395,6 @@ try:
 except Exception as e:
     print(f"❌ Erro CRÍTICO carregando módulos de segurança: {e}")
     print("🚨 Sistema não pode iniciar sem segurança!")
-    print("💡 Verifique se o arquivo backend/security.py existe e está correto")
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -390,31 +416,77 @@ async def log_requests(request: Request, call_next):
     if response.status_code >= 400 and not request.url.path.startswith('/static'):
         process_time = (datetime.now() - start_time).total_seconds() * 1000
         print(f"   ⚠️  Status: {response.status_code} | Tempo: {process_time:.2f}ms")
+        
+        # Alertar erros no Discord
+        if response.status_code >= 500 and DISCORD_ENABLED:
+            alert_system_error(
+                error=Exception(f"HTTP {response.status_code}"),
+                endpoint=request.url.path,
+                user="sistema"
+            )
     
     return response
 
 # ==============================================
-# 🆕 ROTA ADMIN PARA TESTAR DISTRIBUIÇÃO DE CRÉDITOS
+# FUNÇÃO PARA VERIFICAR CRÉDITOS ANTES DO UPLOAD
 # ==============================================
-@app.post("/api/admin/distribute-credits", tags=["admin"])
-async def distribute_credits_manual(
-    current_user = Depends(get_current_admin_user),  # Apenas admin
-    db: SessionLocal = Depends(get_db)
+def check_credits_before_upload(user, db) -> bool:
+    """
+    Verifica se usuário pode fazer upload
+    - Se tiver créditos > 0, pode
+    - Se tiver 0 créditos, verifica se já ganhou hoje
+    """
+    if user.credits and user.credits > 0:
+        return True
+    
+    # Se não tem créditos, verificar se pode ganhar hoje
+    service = DailyCreditsService()
+    status = service.get_user_credit_status(db, user.id)
+    
+    # Se não recebeu hoje, pode fazer upload para ganhar
+    return not status["received_today"]
+
+# ==============================================
+# ROTA ADMIN PARA AUDITORIA DE CRÉDITOS
+# ==============================================
+@app.get("/api/admin/check-credits", tags=["admin"])
+async def check_all_users_credits(
+    current_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)  # 🔧 CORRIGIDO: Session, não SessionLocal
 ):
     """
-    🔧 APENAS ADMIN: Força distribuição de créditos manualmente
-    Útil para testes do plano premium
+    🔧 ADMIN: Verifica se todos os usuários estão com créditos em dia
     """
     try:
+        from backend.models import User
+        
         service = DailyCreditsService()
-        stats = service.distribute_daily_credits(db)
+        users = db.query(User).filter(User.is_active == True).all()
+        
+        results = []
+        for user in users:
+            status = service.get_user_credit_status(db, user.id)
+            results.append({
+                "user_id": user.id,
+                "email": user.email,
+                "credits": status["current_credits"],
+                "streak": status["streak_days"],
+                "received_today": status["received_today"],
+                "total_earned": status["total_earned_all_time"]
+            })
+        
+        # Estatísticas gerais
+        total_credits = sum(r["credits"] for r in results)
+        total_earned_all = sum(r["total_earned"] for r in results)
         
         return {
             "success": True,
-            "message": f"Distribuídos {stats['distributed']} créditos para {stats['total']} usuários",
-            "stats": stats,
-            "timestamp": datetime.now().isoformat()
+            "total_users": len(results),
+            "total_credits_in_system": total_credits,
+            "total_credits_earned_all_time": total_earned_all,
+            "users": results[:50]
         }
+        
     except Exception as e:
         return {
             "success": False,
@@ -422,19 +494,56 @@ async def distribute_credits_manual(
         }
 
 # ==============================================
-# ROTA PARA VERIFICAR STATUS DO SCHEDULER
+# ROTA ADMIN PARA RECUPERAR CRÉDITOS PERDIDOS
 # ==============================================
-@app.get("/api/admin/scheduler-status", tags=["admin"])
-async def scheduler_status(
-    current_user = Depends(get_current_admin_user)
+@app.post("/api/admin/recover-credits/{user_id}", tags=["admin"])
+async def recover_missed_credits(
+    user_id: int,
+    days_back: int = 30,
+    current_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)  # 🔧 CORRIGIDO
 ):
-    """Verifica status do scheduler de créditos diários"""
+    """
+    🔧 ADMIN: Recupera créditos perdidos de um usuário específico
+    """
+    try:
+        service = DailyCreditsService()
+        result = service.bulk_distribute_missed_credits(db, user_id, days_back)
+        
+        return {
+            "success": True,
+            "result": result
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ==============================================
+# ROTA PROTEGIDA DE TESTE
+# ==============================================
+@app.get("/api/protected-test", tags=["test"])
+async def protected_test_endpoint(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)  # 🔧 CORRIGIDO
+):
+    """Rota protegida por autenticação com informações de créditos"""
+    
+    # Buscar status de créditos
+    service = DailyCreditsService()
+    credit_status = service.get_user_credit_status(db, current_user.id)
+    
     return {
-        "scheduler": "Ativo",
-        "job": "Distribuição de créditos diários",
-        "schedule": "Todo dia às 00:05",
-        "plan": "Premium Mensal - R$ 58,90 (1 crédito/dia por 30 dias)",
-        "status": "online"
+        "message": "Acesso autorizado",
+        "user": {
+            "email": current_user.email,
+            "name": current_user.name,
+            "role": current_user.role
+        },
+        "credits": credit_status,
+        "timestamp": datetime.now().isoformat()
     }
 
 # ==============================================
@@ -459,13 +568,17 @@ async def health_check():
         "database": db_status,
         "payments": {
             "enabled": bool(settings.MP_ACCESS_TOKEN),
-            "mercadopago": bool(settings.MP_ACCESS_TOKEN),
-            "premium_plan": {
-                "enabled": True,
-                "price": 58.90,
-                "credits_per_day": 1,
-                "duration_days": 30
-            }
+            "mercadopago": bool(settings.MP_ACCESS_TOKEN)
+        },
+        "credits_system": {
+            "enabled": True,
+            "credits_per_day": 1,
+            "start_from_zero": True,
+            "earn_on_upload": True
+        },
+        "discord": {
+            "enabled": DISCORD_ENABLED,
+            "configured": bool(settings.DISCORD_WEBHOOK)
         },
         "frontend": {
             "available": frontend_available,
@@ -476,7 +589,7 @@ async def health_check():
 
 @app.get("/api/security/info", tags=["security"])
 async def security_info():
-    """Retorna informações sobre as camadas de segurança (sem dados sensíveis)"""
+    """Retorna informações sobre as camadas de segurança"""
     return {
         "security_layers": {
             "password_hashing": {
@@ -503,25 +616,11 @@ async def security_info():
         "payments": {
             "enabled": bool(settings.MP_ACCESS_TOKEN)
         },
+        "credits_system": {
+            "type": "daily_upload",
+            "credits_per_day": 1
+        },
         "status": "active"
-    }
-
-# ==============================================
-# ROTA PROTEGIDA DE TESTE
-# ==============================================
-@app.get("/api/protected-test", tags=["test"])
-async def protected_test_endpoint(
-    current_user = Depends(get_current_user)
-):
-    """Rota protegida por autenticação"""
-    return {
-        "message": "Acesso autorizado",
-        "user": current_user.email,
-        "role": current_user.role,
-        "credits": current_user.credits,
-        "plan": current_user.plan if hasattr(current_user, 'plan') else "basico",
-        "is_premium": current_user.is_premium() if hasattr(current_user, 'is_premium') else False,
-        "timestamp": datetime.now().isoformat()
     }
 
 # ==============================================
@@ -545,19 +644,19 @@ async def debug_routes():
     }
 
 # ==============================================
-# 🆕 EVENTO DE INICIALIZAÇÃO (MODIFICADO)
+# EVENTO DE INICIALIZAÇÃO
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
-    """Inicializa o sistema e o scheduler de créditos diários"""
+    """Inicializa o sistema"""
     
-    # Iniciar scheduler de créditos diários
-    try:
-        scheduler = init_scheduler()
-        print("✅ Scheduler de créditos diários iniciado - Rodará todo dia às 00:05")
-    except Exception as e:
-        print(f"⚠️  Erro ao iniciar scheduler: {e}")
-        print("   O sistema continuará funcionando, mas créditos diários não serão automáticos")
+    # Alertar que sistema iniciou (se Discord configurado)
+    if DISCORD_ENABLED:
+        try:
+            alert_system_startup()
+            print("✅ Alerta de startup enviado para o Discord")
+        except Exception as e:
+            print(f"⚠️  Erro ao enviar alerta de startup: {e}")
     
     print(f"""
     🎉 {settings.APP_NAME} v2.0 INICIADO!
@@ -574,41 +673,22 @@ async def startup_event():
     
     💰 PAGAMENTOS:
        {'✅ Mercado Pago configurado' if settings.MP_ACCESS_TOKEN else '❌ Mercado Pago não configurado'}
-       {'✅ PIX disponível' if settings.MP_ACCESS_TOKEN else '❌ PIX indisponível'}
-       
-    💎 PLANO PREMIUM (NOVO):
-       ✅ R$ 58,90 - 1 crédito por dia durante 30 dias
-       ✅ Distribuição automática todo dia às 00:05
-       ✅ Total: 30 créditos em 30 dias
+    
+    💎 SISTEMA DE CRÉDITOS:
+       ✅ ATIVO - 1 crédito por dia
+       ✅ Usuário começa com 0 créditos
+       ✅ Ganha 1 crédito ao fazer upload
+    
+    💬 DISCORD:
+       {'✅ Alertas ativos' if DISCORD_ENABLED else '❌ Alertas desativados'}
     
     🗄️  Banco de dados: {db_path.name}
     
     🔗 URLs:
        {'🌐 Login: http://localhost:' + str(settings.PORT) if login_available else ''}
        {'📊 Dashboard: http://localhost:' + str(settings.PORT) + '/dashboard' if dashboard_available else ''}
-       {'💰 Planos: http://localhost:' + str(settings.PORT) + '/planos.html' if frontend_available else ''}
        📚 API Docs: http://localhost:{settings.PORT}/api/docs
-       🩺 Health: http://localhost:{settings.PORT}/api/health
-       🔐 Security Info: http://localhost:{settings.PORT}/api/security/info
-    
-    🔐 ENDPOINTS DE AUTENTICAÇÃO:
-       👤 Login: POST http://localhost:{settings.PORT}/api/auth/login
-       📝 Registro: POST http://localhost:{settings.PORT}/api/auth/register
-       🔄 Refresh: POST http://localhost:{settings.PORT}/api/auth/refresh
-       🚪 Logout: POST http://localhost:{settings.PORT}/api/auth/logout
-    
-    💰 ENDPOINTS DE PAGAMENTO:
-       📋 Planos: GET http://localhost:{settings.PORT}/api/payments/plans
-       💳 Saldo: GET http://localhost:{settings.PORT}/api/payments/balance
-       📱 Criar PIX: POST http://localhost:{settings.PORT}/api/payments/create-pix
-       🔗 Criar Checkout: POST http://localhost:{settings.PORT}/api/payments/create-checkout
-       🔔 Webhook: POST http://localhost:{settings.PORT}/api/payments/webhook
-       📜 Histórico: GET http://localhost:{settings.PORT}/api/payments/history
-       
-    💎 ENDPOINTS DO PLANO PREMIUM:
-       📊 Status Premium: GET http://localhost:{settings.PORT}/api/payments/premium-status
-       🔧 Forçar Distribuição: POST http://localhost:{settings.PORT}/api/admin/distribute-credits (admin)
-       🤖 Status Scheduler: GET http://localhost:{settings.PORT}/api/admin/scheduler-status (admin)
+       💎 Status Créditos: http://localhost:{settings.PORT}/api/payments/credits-status
        
     📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     """)
@@ -629,7 +709,8 @@ async def not_found_exception_handler(request: Request, exc):
                     "/api/docs",
                     "/api/health",
                     "/api/auth/login",
-                    "/api/payments/plans"
+                    "/api/payments/plans",
+                    "/api/payments/credits-status"
                 ]
             }
         )
@@ -648,6 +729,18 @@ async def server_error_exception_handler(request: Request, exc):
     print(f"❌ Erro 500 em {request.url.path}: {exc}")
     import traceback
     traceback.print_exc()
+    
+    # Alertar no Discord se configurado
+    if DISCORD_ENABLED:
+        try:
+            alert_system_error(
+                error=exc,
+                endpoint=request.url.path,
+                user="sistema"
+            )
+        except:
+            pass
+    
     return JSONResponse(
         status_code=500,
         content={
@@ -668,9 +761,14 @@ if __name__ == "__main__":
     if settings.MP_ACCESS_TOKEN:
         print("💰 MODO PAGAMENTO: Mercado Pago configurado")
     else:
-        print("⚠️  MODO PAGAMENTO: Mercado Pago NÃO configurado (adicione MP_ACCESS_TOKEN no .env)")
+        print("⚠️  MODO PAGAMENTO: Mercado Pago NÃO configurado")
     
-    print("💎 PLANO PREMIUM: Ativo - R$ 58,90 (1 crédito/dia por 30 dias)")
+    print("💎 SISTEMA DE CRÉDITOS: 1 crédito por dia via upload")
+    
+    if DISCORD_ENABLED:
+        print("💬 DISCORD: Alertas ativos")
+    else:
+        print("💬 DISCORD: Desativado (adicione DISCORD_WEBHOOK no .env)")
     
     uvicorn.run(
         "main:app",

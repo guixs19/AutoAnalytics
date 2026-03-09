@@ -279,3 +279,37 @@ def alert_training_completed(model: str, accuracy: float, time: float):
         tempo=f"{time:.2f}s",
         status="Modelo pronto para uso"
     )
+# ==============================================
+# FUNÇÕES DE EXPORTAÇÃO
+# ==============================================
+
+# Instância global (singleton)
+_webhook_instance = None
+
+def get_webhook():
+    """Retorna instância única do webhook"""
+    global _webhook_instance
+    if _webhook_instance is None:
+        _webhook_instance = DiscordWebhook()
+    return _webhook_instance
+
+# ✅ Compatibilidade com código antigo
+get_sentinel = get_webhook
+
+# Exportar todas as funções de alerta
+__all__ = [
+    'get_webhook',
+    'get_sentinel',  # Para compatibilidade
+    'alert_payment_approved',
+    'alert_payment_pending',
+    'alert_payment_failed',
+    'alert_suspicious_payment',
+    'alert_premium_activated',
+    'alert_daily_credits_distributed',
+    'alert_premium_expiring_soon',
+    'alert_system_error',
+    'alert_system_startup',
+    'alert_new_user',
+    'alert_training_started',
+    'alert_training_completed'
+]
