@@ -1,11 +1,11 @@
+# backend/observability/sentinel.py
+import requests
 import os
 import json
-import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from enum import Enum
-import requests
-from functools import wraps
+import traceback
 
 class AlertLevel(Enum):
     INFO = "ℹ️"
@@ -15,18 +15,27 @@ class AlertLevel(Enum):
     CRITICAL = "🚨"
     SUSPICIOUS = "👮‍♂️"
     PAYMENT = "💰"
+    PREMIUM = "💎"
 
-class Sentinel:
-    def __init__(self, webhook_url: str = None, app_name: str = "AutoAnalytics"):
-        self.webhook = webhook_url or os.getenv("DISCORD_WEBHOOK")
-        self.app_name = app_name
-        self.session = requests.Session()
-        self.alert_count = 0
-        self.last_alerts = []
+class DiscordWebhook:
+    """
+    Envia alertas para o Discord via Webhook
+    """
+    
+    def __init__(self, webhook_url: str = None):
+        # Pega a URL do webhook do ambiente ou usa a que você passar
+        self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK", "")
+        self.app_name = "AutoAnalytics"
         
-    def _format_message(self, level: AlertLevel, title: str, details: Dict = None) -> dict:
-        """Formata mensagem para Discord com embed"""
-        
+        if not self.webhook_url:
+            print("⚠️  AVISO: DISCORD_WEBHOOK não configurado no .env")
+            print("   Os alertas serão mostrados apenas no console")
+    
+    def send_alert(self, level: AlertLevel, title: str, **details):
+        """
+        Envia alerta para o Discord
+        """
+        # Cores do Discord (em decimal)
         colors = {
             AlertLevel.INFO: 5814783,        # Azul
             AlertLevel.SUCCESS: 3066993,      # Verde
@@ -34,164 +43,239 @@ class Sentinel:
             AlertLevel.ERROR: 15158332,       # Vermelho
             AlertLevel.CRITICAL: 10038562,    # Vermelho escuro
             AlertLevel.SUSPICIOUS: 10181046,  # Laranja
-            AlertLevel.PAYMENT: 15844367       # Roxo
+            AlertLevel.PAYMENT: 15844367,      # Roxo
+            AlertLevel.PREMIUM: 15277667       # Rosa/roxo claro
         }
         
+        # Criar o embed bonito
         embed = {
             "title": f"{level.value} {title}",
             "color": colors.get(level, 5814783),
             "timestamp": datetime.utcnow().isoformat(),
-            "footer": {"text": f"{self.app_name} • Alert #{self.alert_count + 1}"}
+            "footer": {
+                "text": f"{self.app_name} • {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            },
+            "fields": []
         }
         
-        if details:
-            fields = []
-            for key, value in details.items():
-                if value is not None:
-                    fields.append({
-                        "name": key.replace("_", " ").title(),
-                        "value": str(value)[:1024],
-                        "inline": True
-                    })
-            
-            if fields:
-                embed["fields"] = fields
+        # Adicionar detalhes como campos
+        for key, value in details.items():
+            if value is not None:
+                # Formatar nome do campo
+                field_name = key.replace("_", " ").title()
+                
+                # Formatar valor
+                if isinstance(value, float):
+                    if "preço" in key.lower() or "valor" in key.lower() or "amount" in key.lower():
+                        field_value = f"R$ {value:.2f}"
+                    else:
+                        field_value = str(value)
+                elif isinstance(value, datetime):
+                    field_value = value.strftime("%d/%m/%Y %H:%M")
+                else:
+                    field_value = str(value)
+                
+                embed["fields"].append({
+                    "name": field_name,
+                    "value": field_value[:1024],  # Limite do Discord
+                    "inline": True
+                })
         
-        return {"embeds": [embed]}
-    
-    def alert(self, level: AlertLevel, title: str, **details):
-        """Envia alerta para Discord"""
+        # Payload completo
+        payload = {
+            "embeds": [embed],
+            "username": "AutoAnalytics Bot",
+            "avatar_url": "https://i.imgur.com/4M34hi2.png"  # Opcional
+        }
         
-        if not self.webhook:
-            print(f"⚠️ Webhook não configurado: {title}")
-            # Mesmo sem webhook, mostra no console
-            print(f"[{level.value}] {title} - {details}")
-            return
-            
-        self.alert_count += 1
-        payload = self._format_message(level, title, details)
+        # Mostrar no console sempre
+        print(f"\n📢 [{level.value}] {title}")
+        for key, value in details.items():
+            print(f"   📌 {key}: {value}")
         
-        # Guarda último alerta
-        self.last_alerts.append({
-            "timestamp": datetime.now(),
-            "level": level.value,
-            "title": title,
-            "details": details
-        })
+        # Enviar para o Discord se tiver webhook configurado
+        if self.webhook_url:
+            try:
+                response = requests.post(
+                    self.webhook_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=5
+                )
+                
+                if response.status_code == 204:
+                    print(f"   ✅ Alerta enviado para o Discord")
+                else:
+                    print(f"   ⚠️  Erro no Discord: {response.status_code}")
+                    
+            except Exception as e:
+                print(f"   ❌ Erro ao enviar para Discord: {e}")
+        else:
+            print(f"   ⚠️  Discord não configurado (só mostrado no console)")
         
-        if len(self.last_alerts) > 10:
-            self.last_alerts.pop(0)
-        
-        try:
-            response = self.session.post(
-                self.webhook,
-                json=payload,
-                timeout=3
-            )
-            response.raise_for_status()
-        except Exception as e:
-            print(f"❌ Erro ao enviar alerta: {e}")
-    
-    # ========== ALERTAS ESPECIALIZADOS PARA PAGAMENTOS ==========
-    
-    def payment_received(self, user_id: int, user_email: str, amount: float, credits: int, plan: str, payment_method: str):
-        """💰 Novo pagamento recebido"""
-        self.alert(
-            AlertLevel.PAYMENT,
-            "💰 Novo Pagamento Recebido",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            creditos=credits,
-            plano=plan,
-            metodo=payment_method.upper(),
-            status="✅ APROVADO"
-        )
-    
-    def payment_pending(self, user_id: int, user_email: str, amount: float, payment_method: str):
-        """⏳ Pagamento pendente"""
-        self.alert(
-            AlertLevel.INFO,
-            "⏳ Pagamento Pendente",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            metodo=payment_method.upper(),
-            status="AGUARDANDO"
-        )
-    
-    def payment_failed(self, user_id: int, user_email: str, amount: float, error: str, payment_method: str):
-        """❌ Falha no pagamento"""
-        self.alert(
-            AlertLevel.ERROR,
-            "❌ Falha no Pagamento",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            erro=error,
-            metodo=payment_method.upper(),
-            acao="✅ Sistema continuou normalmente"
-        )
-    
-    def suspicious_payment(self, user_id: int, user_email: str, amount: float, reason: str, payment_method: str):
-        """🚨 Pagamento suspeito - requer atenção"""
-        self.alert(
-            AlertLevel.CRITICAL,
-            "🚨 PAGAMENTO SUSPEITO",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            motivo=reason,
-            metodo=payment_method.upper(),
-            acao="🔍 REVISÃO MANUAL NECESSÁRIA"
-        )
-    
-    def credits_added(self, user_id: int, user_email: str, credits: int, total_credits: int, payment_id: int):
-        """💎 Créditos adicionados à conta"""
-        self.alert(
-            AlertLevel.SUCCESS,
-            "💎 Créditos Adicionados",
-            usuario=f"ID: {user_id} | {user_email}",
-            creditos_adicionados=credits,
-            saldo_total=total_credits,
-            pagamento=f"#{payment_id}",
-            mensagem="✅ Pronto para usar!"
-        )
-    
-    def low_credits(self, user_id: int, user_email: str, credits: int):
-        """⚠️ Usuário com créditos baixos"""
-        self.alert(
-            AlertLevel.WARNING,
-            "⚠️ Créditos Baixos",
-            usuario=f"ID: {user_id} | {user_email}",
-            creditos_restantes=credits,
-            mensagem="Considere comprar mais créditos"
-        )
-    
-    def first_payment(self, user_id: int, user_email: str, amount: float, plan: str):
-        """🎉 Primeiro pagamento do usuário"""
-        self.alert(
-            AlertLevel.SUCCESS,
-            "🎉 PRIMEIRO PAGAMENTO!",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            plano=plan,
-            mensagem="Novo cliente convertido! 🥳"
-        )
-    
-    def payment_refunded(self, user_id: int, user_email: str, amount: float, reason: str, payment_id: int):
-        """↩️ Pagamento reembolsado"""
-        self.alert(
-            AlertLevel.WARNING,
-            "↩️ Reembolso Processado",
-            usuario=f"ID: {user_id} | {user_email}",
-            valor=f"R$ {amount:.2f}",
-            motivo=reason,
-            pagamento=f"#{payment_id}",
-            status="⚠️ Créditos removidos"
-        )
+        return True
 
-# Singleton instance
-_sentinel_instance = None
+# ==============================================
+# FUNÇÕES ESPECÍFICAS DE ALERTA
+# ==============================================
 
-def get_sentinel():
-    global _sentinel_instance
-    if _sentinel_instance is None:
-        _sentinel_instance = Sentinel()
-    return _sentinel_instance
+# Instância global (singleton)
+_webhook_instance = None
+
+def get_webhook():
+    """Retorna instância única do webhook"""
+    global _webhook_instance
+    if _webhook_instance is None:
+        _webhook_instance = DiscordWebhook()
+    return _webhook_instance
+
+# Alertas de Pagamento
+def alert_payment_approved(user_email: str, amount: float, credits: int, plan: str):
+    """💰 Pagamento aprovado"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.PAYMENT,
+        "💰 NOVO PAGAMENTO APROVADO",
+        usuario=user_email,
+        valor=f"R$ {amount:.2f}",
+        creditos=credits,
+        plano=plan,
+        status="✅ Aprovado"
+    )
+
+def alert_payment_pending(user_email: str, amount: float, method: str):
+    """⏳ Pagamento pendente"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.INFO,
+        "⏳ PAGAMENTO PENDENTE",
+        usuario=user_email,
+        valor=f"R$ {amount:.2f}",
+        metodo=method,
+        status="Aguardando pagamento"
+    )
+
+def alert_payment_failed(user_email: str, amount: float, error: str):
+    """❌ Falha no pagamento"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.ERROR,
+        "❌ FALHA NO PAGAMENTO",
+        usuario=user_email,
+        valor=f"R$ {amount:.2f}",
+        erro=error,
+        status="Rejeitado"
+    )
+
+def alert_suspicious_payment(user_email: str, amount: float, reason: str):
+    """🚨 Pagamento suspeito"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.CRITICAL,
+        "🚨 PAGAMENTO SUSPEITO",
+        usuario=user_email,
+        valor=f"R$ {amount:.2f}",
+        motivo=reason,
+        acao="🔍 Revisão manual necessária"
+    )
+
+# Alertas do Plano Premium
+def alert_premium_activated(user_email: str, credits: int, expires_at: str):
+    """💎 Novo assinante premium"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.PREMIUM,
+        "💎 NOVO ASSINANTE PREMIUM",
+        usuario=user_email,
+        creditos_iniciais=credits,
+        expira_em=expires_at,
+        plano="Premium Mensal - R$ 58,90",
+        mensagem="🎉 1 crédito por dia durante 30 dias!"
+    )
+
+def alert_daily_credits_distributed(user_email: str, day: int, credits: int, total: int):
+    """📅 Crédito diário distribuído"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.SUCCESS,
+        "📅 CRÉDITO DIÁRIO ADICIONADO",
+        usuario=user_email,
+        dia=f"{day}/30",
+        creditos_hoje=credits,
+        saldo_atual=total,
+        mensagem="+1 crédito disponível! 🎯"
+    )
+
+def alert_premium_expiring_soon(user_email: str, days_left: int):
+    """⏰ Plano premium perto de expirar"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.WARNING,
+        "⏰ PLANO PREMIUM PERTO DE EXPIRAR",
+        usuario=user_email,
+        dias_restantes=days_left,
+        acao="Renovar para continuar recebendo créditos diários"
+    )
+
+# Alertas de Sistema
+def alert_system_error(error: Exception, endpoint: str = None, user: str = None):
+    """🔥 Erro no sistema"""
+    webhook = get_webhook()
+    error_trace = traceback.format_exc()
+    
+    webhook.send_alert(
+        AlertLevel.ERROR,
+        "🔥 ERRO NO SISTEMA",
+        endpoint=endpoint or "Desconhecido",
+        usuario=user or "Sistema",
+        erro=type(error).__name__,
+        mensagem=str(error)[:200],
+        trace=error_trace[:500] if error_trace else None
+    )
+
+def alert_system_startup():
+    """🚀 Sistema iniciado"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.SUCCESS,
+        "🚀 SISTEMA INICIADO",
+        versao="2.0.0",
+        ambiente=os.getenv("ENVIRONMENT", "development"),
+        timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        status="✅ Online"
+    )
+
+def alert_new_user(user_email: str, name: str):
+    """👤 Novo usuário registrado"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.INFO,
+        "👤 NOVO USUÁRIO REGISTRADO",
+        email=user_email,
+        nome=name,
+        data=datetime.now().strftime("%d/%m/%Y %H:%M")
+    )
+
+# Alertas de ML
+def alert_training_started(model: str, data_size: int):
+    """🧠 Treinamento iniciado"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.INFO,
+        "🧠 TREINAMENTO INICIADO",
+        modelo=model,
+        dados=f"{data_size} registros",
+        status="Processando..."
+    )
+
+def alert_training_completed(model: str, accuracy: float, time: float):
+    """✅ Treinamento concluído"""
+    webhook = get_webhook()
+    webhook.send_alert(
+        AlertLevel.SUCCESS,
+        "✅ TREINAMENTO CONCLUÍDO",
+        modelo=model,
+        acuracia=f"{accuracy:.2%}",
+        tempo=f"{time:.2f}s",
+        status="Modelo pronto para uso"
+    )

@@ -118,3 +118,4 @@ class MercadoPagoService:
                 "message": "Perfeito para quem usa todo dia! 🎯"
             }
         }
+        
