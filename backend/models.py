@@ -1,5 +1,5 @@
-# backend/models.py - COM ARGON2 E PAGAMENTOS
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON
+# backend/models.py - COM ARGON2, PAGAMENTOS E PLANO PREMIUM
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -12,6 +12,20 @@ class UserRole(str, enum.Enum):
     MANAGER = "manager"
     USER = "user"
     CLIENT = "client"
+
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
+
+# NOVO ENUM PARA PLANOS
+class UserPlan(str, enum.Enum):
+    BASICO = "basico"
+    PROFISSIONAL = "profissional"
+    EMPRESARIAL = "empresarial"
+    PREMIUM_MENSAL = "premium_mensal"  # 1 crédito por dia durante 30 dias
 
 class User(Base):
     __tablename__ = "users"
@@ -33,9 +47,15 @@ class User(Base):
     total_purchased = Column(Integer, default=0)
     last_payment_date = Column(DateTime)
     
+    # ===== NOVOS CAMPOS PARA PLANO PREMIUM =====
+    plan = Column(Enum(UserPlan), default=UserPlan.BASICO)
+    premium_activated_at = Column(DateTime, nullable=True)  # Quando ativou o premium
+    premium_expires_at = Column(Date, nullable=True)        # Quando expira (30 dias depois)
+    
     # Relacionamentos
     analyses = relationship("Analysis", back_populates="user")
     payments = relationship("Payment", back_populates="user")
+    daily_credits = relationship("DailyCreditLog", back_populates="user", cascade="all, delete-orphan")  # NOVO
     
     def verify_password(self, password: str) -> bool:
         """Verifica senha usando Argon2"""
@@ -61,14 +81,39 @@ class User(Base):
         self.credits += amount
         self.total_purchased += amount
         self.last_payment_date = datetime.now()
+    
+    # ===== NOVOS MÉTODOS PARA PLANO PREMIUM =====
+    def is_premium(self) -> bool:
+        """Verifica se usuário tem plano premium ativo"""
+        from datetime import date
+        if self.plan != UserPlan.PREMIUM_MENSAL:
+            return False
+        if not self.premium_expires_at:
+            return False
+        return self.premium_expires_at >= date.today()
+    
+    def get_premium_days_left(self) -> int:
+        """Retorna dias restantes do plano premium"""
+        from datetime import date
+        if not self.is_premium():
+            return 0
+        return (self.premium_expires_at - date.today()).days
+    
+    def get_premium_progress(self) -> float:
+        """Retorna progresso do plano premium em porcentagem"""
+        from datetime import date
+        if not self.premium_activated_at or not self.premium_expires_at:
+            return 0
+        
+        total_days = 30
+        days_passed = (date.today() - self.premium_activated_at.date()).days
+        if days_passed < 0:
+            days_passed = 0
+        elif days_passed > total_days:
+            days_passed = total_days
+        
+        return round((days_passed / total_days) * 100, 1)
 
-
-class PaymentStatus(str, enum.Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -95,7 +140,6 @@ class Payment(Base):
     
     # Dados adicionais
     description = Column(String)
-    # ⚠️ CORREÇÃO: 'metadata' é palavra reservada, mudei para 'payment_metadata'
     payment_metadata = Column(JSON, default={})  
     
     # Datas
@@ -105,6 +149,7 @@ class Payment(Base):
     
     # Relacionamentos
     user = relationship("User", back_populates="payments")
+    daily_credit_logs = relationship("DailyCreditLog", back_populates="payment", cascade="all, delete-orphan")  # NOVO
     
     def to_dict(self):
         return {
@@ -118,9 +163,43 @@ class Payment(Base):
             "qr_code_url": self.qr_code_url,
             "checkout_url": self.checkout_url,
             "description": self.description,
-            "payment_metadata": self.payment_metadata,  # Nome atualizado
+            "payment_metadata": self.payment_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None
+        }
+
+
+# ===== NOVO MODELO: DailyCreditLog =====
+class DailyCreditLog(Base):
+    """Registro de créditos diários do plano premium"""
+    __tablename__ = "daily_credit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    
+    # Dados do crédito
+    credits_added = Column(Integer, default=1)  # Sempre 1
+    date = Column(Date, default=datetime.now().date)  # Data da distribuição
+    day_number = Column(Integer)  # Dia 1 a 30
+    total_after = Column(Integer)  # Saldo após adicionar
+    
+    # Metadados
+    created_at = Column(DateTime, default=datetime.now)
+    
+    # Relacionamentos
+    user = relationship("User", back_populates="daily_credits")
+    payment = relationship("Payment", back_populates="daily_credit_logs")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "credits_added": self.credits_added,
+            "date": self.date.isoformat() if self.date else None,
+            "day_number": self.day_number,
+            "total_after": self.total_after,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
 

@@ -1,6 +1,6 @@
-# backend/schemas.py - VERSÃO COMPLETA E FUNCIONAL
+# backend/schemas.py - VERSÃO COMPLETA COM PLANO PREMIUM
 from pydantic import BaseModel, EmailStr
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -24,8 +24,15 @@ class AIModel(str, Enum):
     FLOWISE = "flowise"
     BASICO = "basico"
 
+# NOVO ENUM PARA PLANOS
+class UserPlan(str, Enum):
+    BASICO = "basico"
+    PROFISSIONAL = "profissional"
+    EMPRESARIAL = "empresarial"
+    PREMIUM_MENSAL = "premium_mensal"  # 1 crédito por dia durante 30 dias
+
 # ==============================================
-# USER SCHEMAS
+# USER SCHEMAS (ATUALIZADOS)
 # ==============================================
 
 class UserBase(BaseModel):
@@ -49,8 +56,78 @@ class UserResponse(UserBase):
     created_at: datetime
     last_login: Optional[datetime]
     
+    # ===== NOVOS CAMPOS =====
+    credits: int = 0
+    total_purchased: int = 0
+    plan: UserPlan = UserPlan.BASICO
+    premium_activated_at: Optional[datetime] = None
+    premium_expires_at: Optional[date] = None
+    
     class Config:
         from_attributes = True
+
+# ==============================================
+# PREMIUM SCHEMAS (NOVOS)
+# ==============================================
+
+class PremiumStatus(BaseModel):
+    """Status detalhado do plano premium"""
+    is_premium: bool
+    plan: UserPlan
+    activated_at: Optional[datetime] = None
+    expires_at: Optional[date] = None
+    days_remaining: int = 0
+    days_passed: int = 0
+    total_days: int = 30
+    progress_percentage: float = 0
+    
+    # Créditos
+    credits_received: int = 0  # Total de créditos recebidos até hoje
+    credits_remaining_to_receive: int = 0  # Créditos que ainda vai receber
+    current_balance: int = 0  # Saldo atual
+    
+    # Status de hoje
+    received_today: bool = False
+    next_credit_date: Optional[date] = None
+    
+    class Config:
+        from_attributes = True
+
+class DailyCreditLogBase(BaseModel):
+    """Base para log de crédito diário"""
+    credits_added: int
+    date: date
+    day_number: int
+    total_after: int
+
+class DailyCreditLogCreate(DailyCreditLogBase):
+    user_id: int
+    payment_id: Optional[int] = None
+
+class DailyCreditLogResponse(DailyCreditLogBase):
+    """Resposta com log de crédito diário"""
+    id: int
+    user_id: int
+    payment_id: Optional[int]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PremiumSummary(BaseModel):
+    """Resumo do plano premium para dashboard"""
+    plan_name: str = "Premium Mensal"
+    price: float = 58.90
+    credits_per_day: int = 1
+    total_days: int = 30
+    total_credits: int = 30
+    daily_cost: float = 1.96
+    features: List[str] = [
+        "1 crédito novo todo dia",
+        "30 créditos no total",
+        "Válido por 30 dias",
+        "Menos de R$ 2,00 por dia"
+    ]
 
 # ==============================================
 # TOKEN SCHEMAS
@@ -64,6 +141,9 @@ class Token(BaseModel):
     user_email: str
     workshop_name: Optional[str]
     role: UserRole
+    # NOVO: incluir plano no token
+    plan: UserPlan = UserPlan.BASICO
+    credits: int = 0
 
 class TokenData(BaseModel):
     email: Optional[str] = None
@@ -77,7 +157,7 @@ class PasswordChange(BaseModel):
     new_password: str
 
 # ==============================================
-# ADMIN SCHEMAS
+# ADMIN SCHEMAS (ATUALIZADOS)
 # ==============================================
 
 class UserUpdate(BaseModel):
@@ -86,6 +166,9 @@ class UserUpdate(BaseModel):
     workshop_name: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+    # NOVOS CAMPOS
+    plan: Optional[UserPlan] = None
+    credits: Optional[int] = None
 
 class UserStats(BaseModel):
     total_users: int
@@ -93,6 +176,57 @@ class UserStats(BaseModel):
     admins: int
     managers: int
     users: int
+    # NOVOS CAMPOS
+    premium_users: int = 0
+    total_credits_distributed: int = 0
+    premium_revenue: float = 0
+
+# ==============================================
+# PAYMENT SCHEMAS (ATUALIZADOS)
+# ==============================================
+
+class PaymentBase(BaseModel):
+    amount: float
+    credits: int
+    payment_method: str
+    description: Optional[str] = None
+
+class PaymentCreate(PaymentBase):
+    user_id: int
+    mp_id: str
+    payment_metadata: Optional[Dict[str, Any]] = None
+
+class PaymentResponse(PaymentBase):
+    id: int
+    user_id: int
+    mp_id: str
+    status: str
+    qr_code: Optional[str] = None
+    qr_code_base64: Optional[str] = None
+    checkout_url: Optional[str] = None
+    preference_id: Optional[str] = None
+    payment_metadata: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    approved_at: Optional[datetime] = None
+    
+    # NOVO
+    daily_credit_logs: List[DailyCreditLogResponse] = []
+    
+    class Config:
+        from_attributes = True
+
+class PixPaymentResponse(BaseModel):
+    """Resposta específica para pagamento PIX"""
+    success: bool
+    payment_id: int
+    mp_payment_id: str
+    qr_code_base64: Optional[str]
+    qr_code: Optional[str]
+    expiration_date: Optional[str]
+    credits: int
+    amount: float
+    status: str
+    test_mode: bool = False
 
 # ==============================================
 # ANALYSIS SCHEMAS
@@ -136,6 +270,7 @@ class UploadResponse(BaseModel):
     filename: str
     status: str
     process_id: Optional[str] = None
+    credits_remaining: Optional[int] = None  # NOVO
 
 # ==============================================
 # UPLOAD & PROCESSING SCHEMAS
@@ -166,7 +301,7 @@ class AnalysisResult(BaseModel):
     created_at: datetime = datetime.now()
 
 # ==============================================
-# STATISTICS & DASHBOARD SCHEMAS
+# STATISTICS & DASHBOARD SCHEMAS (ATUALIZADOS)
 # ==============================================
 
 class DashboardStats(BaseModel):
@@ -175,6 +310,10 @@ class DashboardStats(BaseModel):
     ai_used_count: int
     total_users: int
     recent_analyses: List[Dict[str, Any]] = []
+    
+    # NOVOS CAMPOS
+    credits_balance: int = 0
+    premium_status: Optional[PremiumStatus] = None
 
 class MLPrediction(BaseModel):
     id_registro: int

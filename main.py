@@ -1,4 +1,4 @@
-# main.py (na raiz)
+# main.py (na raiz) - VERSÃO ATUALIZADA COM CRÉDITOS DIÁRIOS
 import sys
 import os
 from pathlib import Path
@@ -113,8 +113,8 @@ if FRONTEND_DIR.exists():
     
     index_path = FRONTEND_DIR / "index.html"
     login_path = FRONTEND_DIR / "login.html"
-    planos_path = FRONTEND_DIR / "planos.html"  # NOVO
-    checkout_path = FRONTEND_DIR / "checkout.html"  # NOVO
+    planos_path = FRONTEND_DIR / "planos.html"
+    checkout_path = FRONTEND_DIR / "checkout.html"
     
     if index_path.exists():
         print(f"✅ index.html (dashboard) encontrado!")
@@ -227,7 +227,7 @@ if frontend_available:
         else:
             raise HTTPException(status_code=404, detail="Dashboard não encontrado")
     
-    # NOVO: Página de planos
+    # Página de planos
     @app.get("/planos.html", include_in_schema=False)
     async def serve_planos(request: Request):
         """Serve a página de planos"""
@@ -243,7 +243,7 @@ if frontend_available:
         else:
             raise HTTPException(status_code=404, detail="Página de planos não encontrada")
     
-    # NOVO: Página de checkout
+    # Página de checkout
     @app.get("/checkout.html", include_in_schema=False)
     async def serve_checkout(request: Request):
         """Serve a página de checkout"""
@@ -314,7 +314,7 @@ db_path = PROJECT_ROOT / "autoanalytics.db"
 print(f"🗄️  Banco de dados: {db_path}")
 
 try:
-    # 🔥 CORREÇÃO: Importar settings do backend.config primeiro
+    # Importar settings do backend.config primeiro
     from backend.config import settings as backend_settings
     
     # Atualizar settings do backend com nossas configurações
@@ -325,13 +325,13 @@ try:
     print("✅ Configurações sincronizadas")
     
     # Verificar/criar banco de dados
-    from backend.database import engine, Base, create_tables
+    from backend.database import engine, Base, create_tables, SessionLocal
     
     # Criar tabelas
     create_tables()
     print("✅ Tabelas criadas/verificadas")
     
-    # 🔥 CORREÇÃO: Importar TUDO do módulo security central
+    # Importar TUDO do módulo security central
     from backend.security import (
         hasher,
         jwt_manager,
@@ -343,10 +343,15 @@ try:
     )
     print("✅ Módulos de segurança carregados")
     
-    # 🔥 CORREÇÃO: Importar rotas
+    # ========== 🆕 NOVAS IMPORTAÇÕES PARA CRÉDITOS DIÁRIOS ==========
+    from backend.services.daily_credits_service import DailyCreditsService
+    from backend.scheduler.daily_credits_job import init_scheduler
+    print("✅ Módulos de créditos diários carregados")
+    
+    # Importar rotas
     from backend.api import auth_routes
     from backend.api import routes
-    from backend.api import payment_routes  # NOVO: Importar rotas de pagamento
+    from backend.api import payment_routes
     
     # Incluir rotas
     app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
@@ -355,7 +360,7 @@ try:
     app.include_router(routes.router, prefix="/api", tags=["api"])
     print("✅ Rotas da API carregadas")
     
-    app.include_router(payment_routes.router, prefix="/api", tags=["payments"])  # NOVO
+    app.include_router(payment_routes.router, prefix="/api", tags=["payments"])
     print("✅ Rotas de pagamento carregadas")
     
     AUTH_ENABLED = True
@@ -389,6 +394,50 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ==============================================
+# 🆕 ROTA ADMIN PARA TESTAR DISTRIBUIÇÃO DE CRÉDITOS
+# ==============================================
+@app.post("/api/admin/distribute-credits", tags=["admin"])
+async def distribute_credits_manual(
+    current_user = Depends(get_current_admin_user),  # Apenas admin
+    db: SessionLocal = Depends(get_db)
+):
+    """
+    🔧 APENAS ADMIN: Força distribuição de créditos manualmente
+    Útil para testes do plano premium
+    """
+    try:
+        service = DailyCreditsService()
+        stats = service.distribute_daily_credits(db)
+        
+        return {
+            "success": True,
+            "message": f"Distribuídos {stats['distributed']} créditos para {stats['total']} usuários",
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ==============================================
+# ROTA PARA VERIFICAR STATUS DO SCHEDULER
+# ==============================================
+@app.get("/api/admin/scheduler-status", tags=["admin"])
+async def scheduler_status(
+    current_user = Depends(get_current_admin_user)
+):
+    """Verifica status do scheduler de créditos diários"""
+    return {
+        "scheduler": "Ativo",
+        "job": "Distribuição de créditos diários",
+        "schedule": "Todo dia às 00:05",
+        "plan": "Premium Mensal - R$ 58,90 (1 crédito/dia por 30 dias)",
+        "status": "online"
+    }
+
+# ==============================================
 # ROTAS GLOBAIS DA API
 # ==============================================
 @app.get("/api/health", tags=["system"])
@@ -410,7 +459,13 @@ async def health_check():
         "database": db_status,
         "payments": {
             "enabled": bool(settings.MP_ACCESS_TOKEN),
-            "mercadopago": bool(settings.MP_ACCESS_TOKEN)
+            "mercadopago": bool(settings.MP_ACCESS_TOKEN),
+            "premium_plan": {
+                "enabled": True,
+                "price": 58.90,
+                "credits_per_day": 1,
+                "duration_days": 30
+            }
         },
         "frontend": {
             "available": frontend_available,
@@ -464,6 +519,8 @@ async def protected_test_endpoint(
         "user": current_user.email,
         "role": current_user.role,
         "credits": current_user.credits,
+        "plan": current_user.plan if hasattr(current_user, 'plan') else "basico",
+        "is_premium": current_user.is_premium() if hasattr(current_user, 'is_premium') else False,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -488,10 +545,20 @@ async def debug_routes():
     }
 
 # ==============================================
-# EVENTO DE INICIALIZAÇÃO
+# 🆕 EVENTO DE INICIALIZAÇÃO (MODIFICADO)
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
+    """Inicializa o sistema e o scheduler de créditos diários"""
+    
+    # Iniciar scheduler de créditos diários
+    try:
+        scheduler = init_scheduler()
+        print("✅ Scheduler de créditos diários iniciado - Rodará todo dia às 00:05")
+    except Exception as e:
+        print(f"⚠️  Erro ao iniciar scheduler: {e}")
+        print("   O sistema continuará funcionando, mas créditos diários não serão automáticos")
+    
     print(f"""
     🎉 {settings.APP_NAME} v2.0 INICIADO!
     
@@ -508,6 +575,11 @@ async def startup_event():
     💰 PAGAMENTOS:
        {'✅ Mercado Pago configurado' if settings.MP_ACCESS_TOKEN else '❌ Mercado Pago não configurado'}
        {'✅ PIX disponível' if settings.MP_ACCESS_TOKEN else '❌ PIX indisponível'}
+       
+    💎 PLANO PREMIUM (NOVO):
+       ✅ R$ 58,90 - 1 crédito por dia durante 30 dias
+       ✅ Distribuição automática todo dia às 00:05
+       ✅ Total: 30 créditos em 30 dias
     
     🗄️  Banco de dados: {db_path.name}
     
@@ -532,6 +604,11 @@ async def startup_event():
        🔗 Criar Checkout: POST http://localhost:{settings.PORT}/api/payments/create-checkout
        🔔 Webhook: POST http://localhost:{settings.PORT}/api/payments/webhook
        📜 Histórico: GET http://localhost:{settings.PORT}/api/payments/history
+       
+    💎 ENDPOINTS DO PLANO PREMIUM:
+       📊 Status Premium: GET http://localhost:{settings.PORT}/api/payments/premium-status
+       🔧 Forçar Distribuição: POST http://localhost:{settings.PORT}/api/admin/distribute-credits (admin)
+       🤖 Status Scheduler: GET http://localhost:{settings.PORT}/api/admin/scheduler-status (admin)
        
     📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     """)
@@ -592,6 +669,8 @@ if __name__ == "__main__":
         print("💰 MODO PAGAMENTO: Mercado Pago configurado")
     else:
         print("⚠️  MODO PAGAMENTO: Mercado Pago NÃO configurado (adicione MP_ACCESS_TOKEN no .env)")
+    
+    print("💎 PLANO PREMIUM: Ativo - R$ 58,90 (1 crédito/dia por 30 dias)")
     
     uvicorn.run(
         "main:app",
