@@ -3,91 +3,232 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planos - AutoAnalytics</title>
+    <title>Plano Único - AutoAnalytics Pro</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        
+        .navbar-modern {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            padding: 1rem 0;
+        }
+        
+        .brand-text {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
         .plan-card {
-            transition: transform 0.3s;
-            border: none;
-            border-radius: 15px;
+            background: white;
+            border-radius: 30px;
+            padding: 3rem;
+            box-shadow: 0 30px 60px rgba(102, 126, 234, 0.25);
+            position: relative;
             overflow: hidden;
-            height: 100%;
+            max-width: 500px;
+            margin: 0 auto;
         }
-        .plan-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-        .plan-card.popular { border: 2px solid #ffc107; transform: scale(1.02); }
-        .popular-badge {
-            position: absolute; top: 10px; right: 10px;
-            background: #ffc107; color: #000;
-            padding: 5px 15px; border-radius: 20px;
-            font-size: 0.8rem; font-weight: bold;
-            z-index: 10;
+        
+        .plan-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 70%);
+            animation: rotate 20s linear infinite;
         }
-        .plan-header {
-            padding: 30px 20px; text-align: center;
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .price-tag {
+            font-size: 4rem;
+            font-weight: 800;
+            color: #1e3c72;
+            line-height: 1;
+            margin: 1.5rem 0;
+        }
+        
+        .price-tag small {
+            font-size: 1rem;
+            font-weight: 400;
+            color: #718096;
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .feature-item:last-child {
+            border-bottom: none;
+        }
+        
+        .feature-item i {
+            color: #48bb78;
+            width: 30px;
+            font-size: 1.2rem;
+        }
+        
+        .btn-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            width: 100%;
+            font-size: 1.1rem;
+        }
+        
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
             color: white;
         }
-        .plan-header.basico { background: linear-gradient(135deg, #3498db, #2980b9); }
-        .plan-header.profissional { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
-        .plan-header.empresarial { background: linear-gradient(135deg, #e74c3c, #c0392b); }
-        .plan-price { font-size: 2.5rem; font-weight: bold; }
-        .plan-features { padding: 30px; }
-        .plan-feature { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-        .plan-feature i { color: #28a745; width: 25px; }
-        .qr-code-img { max-width: 200px; margin: 0 auto 15px; }
-        .pix-code {
-            background: #f8f9fa; padding: 15px;
-            border-radius: 8px; font-family: monospace;
-            word-break: break-all; margin: 15px 0;
+        
+        .btn-outline-gradient {
+            background: transparent;
+            border: 2px solid #667eea;
+            color: #667eea;
+            padding: 0.75rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-outline-gradient:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+        
+        .guarantee-badge {
+            background: #f0fff4;
+            border-radius: 50px;
+            padding: 0.5rem 1rem;
+            display: inline-block;
+            color: #38a169;
+            font-weight: 500;
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar-modern">
         <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-car me-2"></i>
-                <span class="fw-bold">Auto</span><span class="text-warning">Analytics</span>
+            <a class="brand-text text-decoration-none" href="/">
+                <i class="fas fa-robot me-2"></i>
+                AutoAnalytics<span class="text-primary">Pro</span>
             </a>
-            <div class="collapse navbar-collapse">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/">
-                            <i class="fas fa-tachometer-alt me-1"></i> Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/planos.html">
-                            <i class="fas fa-credit-card me-1"></i> Planos
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <span class="nav-link text-warning">
-                            <i class="fas fa-coins me-1"></i>
-                            <span id="navbarCredits">0</span> créditos
-                        </span>
-                    </li>
-                </ul>
+            <div class="d-flex align-items-center gap-3">
+                <span class="credits-badge" id="navbarCredits">
+                    <i class="fas fa-coins me-2"></i>
+                    <span>0</span> créditos
+                </span>
+                <a href="/" class="btn btn-outline-gradient">
+                    <i class="fas fa-arrow-left me-2"></i>
+                    Voltar
+                </a>
             </div>
         </div>
     </nav>
 
     <div class="container py-5">
-        <div class="text-center mb-5">
-            <h1 class="display-4 fw-bold">Escolha seu Plano</h1>
-            <p class="lead text-muted">Créditos para análises. Cada análise consome 1 crédito.</p>
-            <div class="d-inline-block bg-primary text-white rounded-pill px-4 py-2 mt-3">
-                <i class="fas fa-coins me-2"></i>
-                Seu saldo: <span id="currentCredits">0</span> créditos
+        <div class="row justify-content-center">
+            <div class="col-lg-8 text-center mb-5">
+                <h1 class="display-4 fw-bold mb-3">
+                    <span class="gradient-text">Simples e Poderoso</span>
+                </h1>
+                <p class="lead text-muted">Tudo que você precisa em um único plano</p>
             </div>
         </div>
-
-        <div class="row g-4" id="plansContainer">
-            <div class="col-12 text-center py-5">
-                <div class="spinner-border text-primary"></div>
+        
+        <div class="row justify-content-center">
+            <div class="col-lg-6">
+                <div class="plan-card" data-aos="fade-up">
+                    <div class="text-center">
+                        <span class="guarantee-badge mb-3">
+                            <i class="fas fa-shield-alt me-2"></i>
+                            Garantia de 7 dias
+                        </span>
+                        <h2 class="h3 fw-bold">AutoAnalytics Pro</h2>
+                        <div class="price-tag">
+                            R$ 97<span class="small">/mês</span>
+                        </div>
+                    </div>
+                    
+                    <div class="my-4">
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span><strong>30 análises</strong> por mês</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Comparação com modelo <strong>TensorFlow</strong></span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Relatórios com <strong>IA generativa</strong></span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Dashboard <strong>interativo</strong> em tempo real</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Exportação <strong>CSV/JSON</strong></span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span><strong>Suporte prioritário</strong> por email</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Atualizações <strong>gratuitas</strong></span>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-3">
+                        <button class="btn btn-gradient" onclick="selectPlan('profissional', 'pix')">
+                            <i class="fas fa-qrcode me-2"></i>
+                            Comprar com PIX
+                        </button>
+                        <button class="btn btn-outline-gradient" onclick="selectPlan('profissional', 'checkout')">
+                            <i class="fas fa-credit-card me-2"></i>
+                            Cartão de Crédito
+                        </button>
+                    </div>
+                    
+                    <p class="text-center text-muted small mt-4">
+                        <i class="fas fa-lock me-1"></i>
+                        Pagamento 100% seguro via Mercado Pago
+                    </p>
+                </div>
             </div>
         </div>
     </div>
@@ -95,24 +236,27 @@
     <!-- Modal PIX -->
     <div class="modal fade" id="pixModal" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
+            <div class="modal-content rounded-4">
+                <div class="modal-header bg-dark text-white border-0">
                     <h5 class="modal-title">
                         <i class="fas fa-qrcode me-2"></i>
                         Pagamento via PIX
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body text-center" id="pixContent"></div>
+                <div class="modal-body text-center py-4" id="pixContent"></div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    
     <script>
+        AOS.init();
+        
         const API_URL = 'http://localhost:8000/api';
         
-        // Funções de autenticação
         async function fetchWithAuth(url, options = {}) {
             const token = localStorage.getItem('access_token');
             const headers = { 'Content-Type': 'application/json', ...options.headers };
@@ -120,119 +264,98 @@
             return fetch(url, { ...options, headers });
         }
         
-        // Carregar saldo
         async function loadBalance() {
             const response = await fetchWithAuth(`${API_URL}/payments/balance`);
             if (response.ok) {
                 const data = await response.json();
-                document.getElementById('currentCredits').textContent = data.credits;
-                document.getElementById('navbarCredits').textContent = data.credits;
+                const creditsSpan = document.querySelector('#navbarCredits span');
+                if (creditsSpan) creditsSpan.textContent = data.credits;
             }
         }
         
-        // Carregar planos
-        async function loadPlans() {
-            const response = await fetch(`${API_URL}/payments/plans`);
-            const data = await response.json();
-            renderPlans(data.plans);
-        }
-        
-        function renderPlans(plans) {
-            let html = '';
-            for (const [key, plan] of Object.entries(plans)) {
-                html += `
-                    <div class="col-lg-4">
-                        <div class="card plan-card ${plan.popular ? 'popular' : ''}">
-                            ${plan.popular ? '<div class="popular-badge">MAIS POPULAR</div>' : ''}
-                            <div class="plan-header ${key}">
-                                <h3 class="h4">${plan.name}</h3>
-                                <div class="plan-price">R$ ${plan.price.toFixed(2)}</div>
-                                <p>${plan.credits} créditos</p>
-                            </div>
-                            <div class="plan-features">
-                                <div class="plan-feature"><i class="fas fa-check-circle"></i> ${plan.credits} análises</div>
-                                <div class="plan-feature"><i class="fas fa-check-circle"></i> Relatórios com IA</div>
-                                <div class="plan-feature"><i class="fas fa-check-circle"></i> Previsões TensorFlow</div>
-                                <div class="d-grid gap-2 mt-4">
-                                    <button class="btn btn-primary" onclick="selectPlan('${key}', 'pix')">
-                                        <i class="fas fa-qrcode me-2"></i> PIX
-                                    </button>
-                                    <button class="btn btn-outline-primary" onclick="selectPlan('${key}', 'checkout')">
-                                        <i class="fas fa-credit-card me-2"></i> Outros
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            document.getElementById('plansContainer').innerHTML = html;
-        }
-        
-        // Selecionar plano
         async function selectPlan(planId, method) {
-            const response = await fetchWithAuth(`${API_URL}/payments/create-${method}`, {
-                method: 'POST',
-                body: JSON.stringify({ plan_id: planId })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (method === 'pix') showPixModal(data);
-                else window.location.href = `/checkout.html?url=${encodeURIComponent(data.checkout_url)}`;
+            try {
+                const response = await fetchWithAuth(`${API_URL}/payments/create-${method}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ plan_id: planId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (method === 'pix') {
+                        showPixModal(data);
+                    } else {
+                        window.location.href = `/checkout.html?url=${encodeURIComponent(data.checkout_url)}`;
+                    }
+                } else {
+                    alert('Erro ao criar pagamento');
+                }
+            } catch (error) {
+                alert('Erro de conexão');
             }
         }
         
-        // Modal PIX
         function showPixModal(data) {
-            document.getElementById('pixContent').innerHTML = `
-                <img src="data:image/png;base64,${data.qr_code_base64}" class="qr-code-img">
-                <div class="pix-code">${data.qr_code}</div>
-                <button class="btn btn-outline-primary w-100" onclick="copyPixCode()">
-                    <i class="fas fa-copy me-2"></i> Copiar código
+            const modalContent = document.getElementById('pixContent');
+            modalContent.innerHTML = `
+                <img src="data:image/png;base64,${data.qr_code_base64}" class="img-fluid mb-3" style="max-width: 200px;">
+                <div class="bg-light p-3 rounded-3 mb-3" style="word-break: break-all;">
+                    <code>${data.qr_code}</code>
+                </div>
+                <button class="btn btn-outline-primary w-100 mb-3" onclick="copyPixCode()">
+                    <i class="fas fa-copy me-2"></i>
+                    Copiar código
                 </button>
-                <div class="alert alert-info mt-3 small">
+                <div class="alert alert-info small">
                     <i class="fas fa-info-circle me-2"></i>
                     Após o pagamento, aguarde até 1 minuto.
                 </div>
                 <div id="paymentStatus"></div>
             `;
+            
             new bootstrap.Modal(document.getElementById('pixModal')).show();
             startPaymentPolling(data.payment_id);
         }
         
         function copyPixCode() {
-            const code = document.querySelector('.pix-code').textContent;
-            navigator.clipboard.writeText(code);
-            alert('Código copiado!');
+            const code = document.querySelector('.bg-light code')?.textContent;
+            if (code) {
+                navigator.clipboard.writeText(code);
+                alert('Código PIX copiado!');
+            }
         }
         
-        // Polling de status
         let paymentPolling = null;
+        
         function startPaymentPolling(paymentId) {
             if (paymentPolling) clearInterval(paymentPolling);
+            
             paymentPolling = setInterval(async () => {
                 const response = await fetchWithAuth(`${API_URL}/payments/status/${paymentId}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.payment.status === 'approved') {
                         clearInterval(paymentPolling);
-                        document.getElementById('paymentStatus').innerHTML = 
-                            '<div class="alert alert-success">Pagamento aprovado!</div>';
-                        setTimeout(() => window.location.href = '/?success=1', 2000);
+                        document.getElementById('paymentStatus').innerHTML = `
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Pagamento aprovado! Redirecionando...
+                            </div>
+                        `;
+                        setTimeout(() => {
+                            window.location.href = '/?success=1';
+                        }, 2000);
                     }
                 }
             }, 3000);
         }
         
-        // Inicializar
         document.addEventListener('DOMContentLoaded', async () => {
             if (!localStorage.getItem('access_token')) {
                 window.location.href = '/login.html';
                 return;
             }
             await loadBalance();
-            await loadPlans();
         });
     </script>
 </body>
