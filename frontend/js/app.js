@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO COM SCIKIT-LEARN
+// frontend/js/app.js - VERSÃO COMPLETA COM TODAS AS VALIDAÇÕES
 
 class AutoAnalytics {
     constructor() {
@@ -22,6 +22,7 @@ class AutoAnalytics {
         this.bindEvents();
         await this.loadUserCredits();
         await this.loadDashboardStats();
+        await this.loadAnalysisHistory();
         this.setupLogout();
         this.initGSAPAnimations();
     }
@@ -36,6 +37,9 @@ class AutoAnalytics {
         this.fileName = document.getElementById('fileName');
         this.fileSize = document.getElementById('fileSize');
         this.removeFile = document.getElementById('removeFile');
+        
+        // Container do histórico
+        this.historyContainer = document.getElementById('recentAnalyses');
         
         // Seletores de colunas
         this.columnSelector = document.getElementById('columnSelector');
@@ -125,6 +129,60 @@ class AutoAnalytics {
         }
     }
     
+    // Carregar histórico de análises
+    async loadAnalysisHistory() {
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
+            if (response.ok) {
+                const analyses = await response.json();
+                this.displayAnalysisHistory(analyses);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar histórico:', error);
+        }
+    }
+    
+    // Exibir histórico de análises
+    displayAnalysisHistory(analyses) {
+        if (!this.historyContainer) return;
+        
+        if (!analyses || analyses.length === 0) {
+            this.historyContainer.innerHTML = `
+                <div class="timeline-item">
+                    <div class="timeline-marker"></div>
+                    <div class="timeline-content">
+                        <p class="mb-1 small">Nenhuma análise realizada</p>
+                        <small class="text-muted">Envie seu primeiro arquivo</small>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        const html = analyses.slice(0, 5).map(analysis => {
+            const date = new Date(analysis.created_at);
+            const formattedDate = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
+            
+            return `
+                <div class="timeline-item">
+                    <div class="timeline-marker ${analysis.status === 'completed' ? 'bg-success' : 'bg-warning'}"></div>
+                    <div class="timeline-content">
+                        <p class="mb-1 small">
+                            <strong>${analysis.filename || 'Arquivo'}</strong>
+                            ${analysis.target_column ? `<br><small>Alvo: ${analysis.target_column}</small>` : ''}
+                        </p>
+                        <small class="text-muted">
+                            ${formattedDate}
+                            ${analysis.algorithm ? `• ${this.getAlgorithmName(analysis.algorithm)}` : ''}
+                        </small>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        this.historyContainer.innerHTML = html;
+    }
+    
     resetFileSelection() {
         if (this.fileInput) this.fileInput.value = '';
         if (this.selectedFile) this.selectedFile.classList.add('d-none');
@@ -141,6 +199,25 @@ class AutoAnalytics {
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (file) {
+            // VALIDAÇÃO DE TAMANHO - 10MB (10 * 1024 * 1024 bytes)
+            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB em bytes
+            
+            if (file.size > MAX_FILE_SIZE) {
+                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                this.showAlert(`❌ Arquivo muito grande (${fileSizeMB}MB). O tamanho máximo permitido é 10MB.`, 'error');
+                this.resetFileSelection();
+                return;
+            }
+            
+            // VALIDAÇÃO DE EXTENSÃO
+            const validExtensions = ['.csv', '.xlsx', '.xls'];
+            
+            if (!validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+                this.showAlert('❌ Formato não suportado. Use apenas arquivos CSV ou Excel (.csv, .xlsx, .xls)', 'error');
+                this.resetFileSelection();
+                return;
+            }
+            
             if (this.fileName) this.fileName.textContent = file.name;
             if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
             if (this.selectedFile) this.selectedFile.classList.remove('d-none');
@@ -168,41 +245,82 @@ class AutoAnalytics {
                 Papa.parse(file, {
                     header: true,
                     preview: 10,
+                    delimiter: '', // Auto-detectar delimitador
                     complete: (result) => {
+                        // VALIDAÇÃO: Verificar separador decimal
+                        if (result.data && result.data.length > 0) {
+                            const firstRow = result.data[0];
+                            for (let key in firstRow) {
+                                const value = firstRow[key];
+                                if (typeof value === 'string' && value.includes(',') && !value.includes('.')) {
+                                    // Se encontrar vírgula como decimal, mas não ponto
+                                    const numericValue = parseFloat(value.replace(',', '.'));
+                                    if (!isNaN(numericValue)) {
+                                        this.showAlert('⚠️ Detectado uso de vírgula como separador decimal. O sistema aceita ambos os formatos.', 'warning');
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         this.processParsedData(result.data, result.meta.fields);
                     },
                     error: (error) => {
-                        this.showAlert('Erro ao ler CSV: ' + error, 'error');
+                        this.showAlert('❌ Erro ao ler CSV: ' + error, 'error');
+                        this.resetFileSelection();
                     }
                 });
             } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                    
-                    if (jsonData.length > 0) {
-                        const headers = jsonData[0];
-                        const rows = jsonData.slice(1, 11).map(row => {
-                            const obj = {};
-                            headers.forEach((header, index) => {
-                                obj[header] = row[index];
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                        
+                        if (jsonData.length > 0) {
+                            const headers = jsonData[0];
+                            const rows = jsonData.slice(1, 11).map(row => {
+                                const obj = {};
+                                headers.forEach((header, index) => {
+                                    let value = row[index];
+                                    // Converter números com vírgula
+                                    if (typeof value === 'string' && value.includes(',')) {
+                                        const numValue = parseFloat(value.replace(',', '.'));
+                                        if (!isNaN(numValue)) {
+                                            value = numValue;
+                                        }
+                                    }
+                                    obj[header] = value;
+                                });
+                                return obj;
                             });
-                            return obj;
-                        });
-                        this.processParsedData(rows, headers);
+                            this.processParsedData(rows, headers);
+                        }
+                    } catch (error) {
+                        this.showAlert('❌ Erro ao ler arquivo Excel. Verifique se o arquivo não está corrompido.', 'error');
+                        this.resetFileSelection();
                     }
+                };
+                reader.onerror = () => {
+                    this.showAlert('❌ Erro ao ler arquivo', 'error');
+                    this.resetFileSelection();
                 };
                 reader.readAsArrayBuffer(file);
             }
         } catch (error) {
-            this.showAlert('Erro ao processar arquivo', 'error');
+            this.showAlert('❌ Erro ao processar arquivo', 'error');
+            this.resetFileSelection();
         }
     }
     
     processParsedData(data, columns) {
+        if (!data || data.length === 0) {
+            this.showAlert('❌ Arquivo vazio ou sem dados válidos', 'error');
+            this.resetFileSelection();
+            return;
+        }
+        
         this.fileData = data;
         this.columns = columns;
         
@@ -217,7 +335,7 @@ class AutoAnalytics {
             this.uploadButton.disabled = false;
         }
         
-        this.showAlert('Arquivo analisado! Selecione as colunas para análise.', 'success');
+        this.showAlert('✅ Arquivo analisado! Selecione as colunas para análise.', 'success');
     }
     
     showDataPreview(data, columns) {
@@ -237,7 +355,12 @@ class AutoAnalytics {
             const tr = document.createElement('tr');
             columns.forEach(col => {
                 const td = document.createElement('td');
-                td.textContent = row[col] !== undefined ? row[col] : '-';
+                let value = row[col] !== undefined ? row[col] : '-';
+                // Formatar números
+                if (typeof value === 'number') {
+                    value = value.toFixed(2).replace('.', ',');
+                }
+                td.textContent = value;
                 tr.appendChild(td);
             });
             this.previewBody.appendChild(tr);
@@ -315,7 +438,7 @@ class AutoAnalytics {
         element.classList.add('target');
         this.selectedTarget = column;
         
-        this.showAlert(`Coluna alvo selecionada: ${column}`, 'success');
+        this.showAlert(`✅ Coluna alvo selecionada: ${column}`, 'success');
         this.updateSelectedCount();
     }
     
@@ -324,8 +447,10 @@ class AutoAnalytics {
         
         if (element.classList.contains('selected')) {
             this.selectedFeatures.push(column);
+            this.showAlert(`➕ Feature adicionada: ${column}`, 'info');
         } else {
             this.selectedFeatures = this.selectedFeatures.filter(c => c !== column);
+            this.showAlert(`➖ Feature removida: ${column}`, 'info');
         }
         
         this.updateSelectedCount();
@@ -399,24 +524,18 @@ class AutoAnalytics {
         
         const file = this.fileInput?.files[0];
         if (!file) {
-            this.showAlert('Selecione um arquivo primeiro', 'warning');
+            this.showAlert('❌ Selecione um arquivo primeiro', 'warning');
             return;
         }
         
         // Validar seleção de colunas
         if (!this.selectedTarget) {
-            this.showAlert('Selecione uma coluna alvo (o que deseja prever)', 'warning');
+            this.showAlert('❌ Selecione uma coluna alvo (o que deseja prever)', 'warning');
             return;
         }
         
         if (this.selectedFeatures.length === 0) {
-            this.showAlert('Selecione pelo menos uma coluna de entrada', 'warning');
-            return;
-        }
-        
-        const ext = file.name.toLowerCase().slice(-4);
-        if (!['.csv', '.xlsx', 'xls'].some(e => ext.endsWith(e))) {
-            this.showAlert('Formato não suportado. Use CSV ou Excel.', 'error');
+            this.showAlert('❌ Selecione pelo menos uma coluna de entrada', 'warning');
             return;
         }
         
@@ -449,7 +568,7 @@ class AutoAnalytics {
             
             if (response.ok) {
                 this.currentProcessId = data.process_id;
-                this.showAlert('Modelo em treinamento!', 'success');
+                this.showAlert('✅ Modelo em treinamento!', 'success');
                 await this.loadUserCredits();
                 this.showProgress();
                 this.startProgressPolling();
@@ -457,13 +576,13 @@ class AutoAnalytics {
                 if (data.detail && data.detail.error === 'Créditos insuficientes') {
                     this.showCreditsModal();
                 } else {
-                    this.showAlert(data.detail || 'Erro no upload', 'error');
+                    this.showAlert('❌ ' + (data.detail || 'Erro no upload'), 'error');
                 }
                 this.resetUploadButton();
             }
             
         } catch (error) {
-            this.showAlert('Erro de conexão com o servidor', 'error');
+            this.showAlert('❌ Erro de conexão com o servidor', 'error');
             this.resetUploadButton();
         }
     }
@@ -517,10 +636,11 @@ class AutoAnalytics {
                         this.showResult(status);
                         await this.loadDashboardStats();
                         await this.loadUserCredits();
+                        await this.loadAnalysisHistory(); // Recarregar histórico
                         
                         document.getElementById('progressContainer')?.remove();
                     } else {
-                        this.showAlert('Erro no treinamento: ' + (status.error || 'Desconhecido'), 'error');
+                        this.showAlert('❌ Erro no treinamento: ' + (status.error || 'Desconhecido'), 'error');
                     }
                     
                     this.resetUploadButton();
@@ -748,15 +868,15 @@ class AutoAnalytics {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${i + 1}</td>
-                <td><strong>${actual.toFixed(2)}</strong></td>
-                <td class="text-primary">${predicted.toFixed(2)}</td>
+                <td><strong>${actual.toFixed(2).replace('.', ',')}</strong></td>
+                <td class="text-primary">${predicted.toFixed(2).replace('.', ',')}</td>
                 <td>
                     <span class="${error < 10 ? 'text-success' : error < 20 ? 'text-warning' : 'text-danger'}">
-                        ${error.toFixed(2)} (${errorPercent.toFixed(1)}%)
+                        ${error.toFixed(2).replace('.', ',')} (${errorPercent.toFixed(1).replace('.', ',')}%)
                     </span>
                 </td>
                 <td>
-                    ± ${(error * 0.2).toFixed(2)}
+                    ± ${(error * 0.2).toFixed(2).replace('.', ',')}
                     <div class="progress-modern mt-1">
                         <div class="progress-modern-bar" style="width: ${confidence}%"></div>
                     </div>
@@ -879,13 +999,13 @@ class AutoAnalytics {
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 
-                this.showAlert('Download iniciado!', 'success');
+                this.showAlert('✅ Download iniciado!', 'success');
             } else {
-                this.showAlert('Erro ao baixar resultado', 'error');
+                this.showAlert('❌ Erro ao baixar resultado', 'error');
             }
             
         } catch (error) {
-            this.showAlert('Erro de conexão', 'error');
+            this.showAlert('❌ Erro de conexão', 'error');
         }
     }
     
@@ -910,10 +1030,10 @@ class AutoAnalytics {
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 
-                this.showAlert('CSV exportado com sucesso!', 'success');
+                this.showAlert('✅ CSV exportado com sucesso!', 'success');
             }
         } catch (error) {
-            this.showAlert('Erro ao exportar CSV', 'error');
+            this.showAlert('❌ Erro ao exportar CSV', 'error');
         }
     }
     
@@ -1101,27 +1221,53 @@ class AutoAnalytics {
     }
     
     showAlert(message, type = 'info') {
+        // Remover alertas anteriores do mesmo tipo se houver muitos
+        const existingAlerts = document.querySelectorAll('.custom-alert');
+        if (existingAlerts.length > 3) {
+            existingAlerts[0].remove();
+        }
+        
         const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed custom-alert`;
         alertDiv.style.cssText = `
             top: 20px;
             right: 20px;
             z-index: 9999;
-            min-width: 300px;
-            border-radius: 50px;
+            min-width: 350px;
+            max-width: 450px;
+            border-radius: 12px;
             border: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            font-size: 0.95rem;
+            padding: 1rem 1.25rem;
         `;
+        
+        // Ícones baseados no tipo
+        let icon = '📌';
+        if (type === 'success') icon = '✅';
+        if (type === 'error') icon = '❌';
+        if (type === 'warning') icon = '⚠️';
+        if (type === 'info') icon = 'ℹ️';
+        
         alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div style="display: flex; align-items: center;">
+                <span style="font-size: 1.4rem; margin-right: 12px;">${icon}</span>
+                <div style="flex: 1;">${message}</div>
+                <button type="button" class="btn-close ms-3" data-bs-dismiss="alert" style="font-size: 0.8rem;"></button>
+            </div>
         `;
         
         document.body.appendChild(alertDiv);
         
+        // Auto-fechar após 5 segundos
         setTimeout(() => {
             if (alertDiv.parentNode) {
-                alertDiv.remove();
+                // Animação de fade out
+                alertDiv.style.transition = 'opacity 0.3s';
+                alertDiv.style.opacity = '0';
+                setTimeout(() => {
+                    if (alertDiv.parentNode) alertDiv.remove();
+                }, 300);
             }
         }, 5000);
     }
@@ -1131,8 +1277,83 @@ class AutoAnalytics {
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
+        
+        // Se for maior que 1MB, mostrar com 2 casas decimais
+        if (i >= 2) {
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
+}
+
+// Função global para carregar histórico completo
+window.loadFullHistory = async function() {
+    if (!window.app) return;
+    
+    try {
+        const response = await window.app.fetchWithAuth(`${window.app.apiBase}/analyses/history?limit=100`);
+        if (response.ok) {
+            const analyses = await response.json();
+            showHistoryModal(analyses);
+        }
+    } catch (error) {
+        window.app.showAlert('Erro ao carregar histórico completo', 'error');
+    }
+};
+
+function showHistoryModal(analyses) {
+    const modalHtml = `
+        <div class="modal fade" id="historyModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content rounded-4">
+                    <div class="modal-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <h5 class="modal-title">
+                            <i class="fas fa-history me-2"></i>
+                            Histórico Completo de Análises
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Arquivo</th>
+                                    <th>Algoritmo</th>
+                                    <th>Coluna Alvo</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${analyses.map(a => `
+                                    <tr>
+                                        <td>${new Date(a.created_at).toLocaleDateString('pt-BR')}</td>
+                                        <td>${a.filename || '-'}</td>
+                                        <td>${window.app.getAlgorithmName(a.algorithm) || '-'}</td>
+                                        <td>${a.target_column || '-'}</td>
+                                        <td>
+                                            <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-warning'}">
+                                                ${a.status || 'Concluído'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const existingModal = document.getElementById('historyModal');
+    if (existingModal) existingModal.remove();
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    const modal = new bootstrap.Modal(document.getElementById('historyModal'));
+    modal.show();
 }
 
 // Inicializar

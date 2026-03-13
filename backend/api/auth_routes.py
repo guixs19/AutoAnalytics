@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA E OTIMIZADA
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -23,9 +23,12 @@ router = APIRouter(tags=["authentication"])
 # ROTAS PÚBLICAS COM CAPTCHA
 # ==============================================
 
-@router.post("/captcha/generate")
+# CORRIGIDO: POST -> GET para funcionar com frontend
+@router.get("/captcha/generate")
 async def generate_captcha():
     """Gera CAPTCHA próprio (para versão custom)"""
+    print("🔄 Gerando CAPTCHA...")
+    
     if captcha_manager.captcha_type == "custom":
         return captcha_manager.generate_custom_captcha()
     else:
@@ -71,12 +74,13 @@ async def register(
     
     return user
 
+# 🔥 TEMPORÁRIO: CAPTCHA removido para testes
 @router.post("/login", response_model=schemas.Token)
 async def login(
     request: Request,
     login_data: schemas.UserLogin,
-    db: Session = Depends(get_db),
-    captcha_valid: bool = Depends(check_captcha)
+    db: Session = Depends(get_db)
+    # captcha_valid: bool = Depends(check_captcha)  # <-- Comentado para testes
 ):
     """Login com CAPTCHA obrigatório"""
     
@@ -133,24 +137,43 @@ async def login(
         "sub": user.email,
         "email": user.email,
         "name": user.name,
-        "role": user.role.value if hasattr(user.role, 'value') else user.role
+        "role": user.role.value if hasattr(user.role, 'value') else user.role,
+        "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
+        "credits": user.credits
     })
     
+    # Salvar refresh token no banco
+    user.set_refresh_token(
+        tokens["refresh_token"], 
+        tokens["refresh_jti"],
+        7  # 7 dias
+    )
+    db.commit()
+    
     return {
-        **tokens,
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+        "token_type": "bearer",
         "user_name": user.name,
         "user_email": user.email,
         "workshop_name": user.workshop_name,
-        "role": user.role
+        "role": user.role,
+        "plan": user.plan,
+        "credits": user.credits,
+        "expires_in": tokens["expires_in"]
     }
 
 @router.post("/refresh")
 async def refresh_token(
-    refresh_data: schemas.TokenRefresh
+    refresh_data: schemas.TokenRefresh,
+    db: Session = Depends(get_db)
 ):
     """Renova access token usando refresh token"""
     
-    new_tokens = await jwt_manager.refresh_access_token(refresh_data.refresh_token)
+    new_tokens = await jwt_manager.refresh_access_token(
+        refresh_data.refresh_token, 
+        db
+    )
     
     if not new_tokens:
         raise HTTPException(
@@ -162,13 +185,43 @@ async def refresh_token(
 
 @router.post("/logout")
 async def logout(
-    token: str = Depends(oauth2_scheme)
+    refresh_data: schemas.TokenRefresh,
+    db: Session = Depends(get_db)
 ):
-    """Faz logout invalidando o token atual"""
+    """Faz logout invalidando o refresh token no banco"""
     
-    await jwt_manager.logout(token)
+    success = await jwt_manager.logout(refresh_data.refresh_token, db)
+    
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Erro ao fazer logout"
+        )
     
     return {"message": "Logout realizado com sucesso"}
+
+# ==============================================
+# ROTA DE VALIDAÇÃO DE TOKEN (NOVA)
+# ==============================================
+
+@router.get("/check-token")
+async def check_token(
+    current_user: schemas.UserResponse = Depends(get_current_active_user)
+):
+    """
+    Verifica se o token atual é válido.
+    Se o token for inválido, o 'get_current_active_user' vai lançar 401 automaticamente.
+    Se for válido, entra aqui e confirmamos ao frontend.
+    """
+    print(f"✅ Token válido para usuário: {current_user.email}")
+    
+    return {
+        "status": "ok",
+        "message": "Token válido",
+        "user": current_user.email,
+        "name": current_user.name,
+        "expires_in": jwt_manager.access_expire_minutes * 60
+    }
 
 # ==============================================
 # ROTAS PROTEGIDAS

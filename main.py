@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA
+# main.py (na raiz) - VERSÃO CORRIGIDA COM ARQUITETURA SAAS
 import sys
 import os
 from pathlib import Path
@@ -14,7 +14,7 @@ print("=" * 60)
 # Configurar paths
 PROJECT_ROOT = Path(__file__).parent.absolute()
 BACKEND_DIR = PROJECT_ROOT / "backend"
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"  # ou "front" se preferir
 
 print(f"📂 Raiz do projeto: {PROJECT_ROOT}")
 print(f"📂 Pasta backend: {BACKEND_DIR}")
@@ -194,100 +194,83 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # ==============================================
-# CONFIGURAÇÃO DO FRONTEND
+# ARQUITETURA CORRETA DE ARQUIVOS ESTÁTICOS
 # ==============================================
 if frontend_available:
-    print("\n🌐 CONFIGURANDO FRONTEND...")
+    print("\n🌐 CONFIGURANDO ARQUIVOS ESTÁTICOS...")
     
-    # Servir arquivos estáticos
+    # 1️⃣ CORRETO: Montar arquivos estáticos com StaticFiles
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-    print("✅ Static files montados em /static")
+    print("✅ Arquivos estáticos montados em /static")
+    print("   📁 Servindo: JS, CSS, imagens e HTMLs")
     
-    # Servir CSS e JS
-    app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
-    app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
-    print("✅ CSS e JS montados")
+    # 2️⃣ Rotas específicas para páginas HTML (SEM conflito com API)
     
-    # Login como página inicial
-    if login_available:
-        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-        async def serve_login():
+    @app.get("/", include_in_schema=False)
+    async def home(request: Request):
+        """Página inicial - redireciona baseado em autenticação"""
+        token = request.cookies.get("access_token") or \
+                request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        if token and dashboard_available:
+            return FileResponse(str(FRONTEND_DIR / "index.html"))
+        elif login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
-        print("✅ Login configurado como página inicial")
+        else:
+            return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
     
-    # Dashboard protegido
+    @app.get("/login", include_in_schema=False)
+    async def login_page():
+        """Página de login"""
+        if login_available:
+            return FileResponse(str(FRONTEND_DIR / "login.html"))
+        return RedirectResponse(url="/")
+    
     @app.get("/dashboard", include_in_schema=False)
-    async def serve_dashboard(request: Request):
-        """Serve o dashboard (protegido por autenticação)"""
-        # Verificar token via cookie ou header
+    async def dashboard_page(request: Request):
+        """Dashboard protegido"""
         token = request.cookies.get("access_token") or \
                 request.headers.get("Authorization", "").replace("Bearer ", "")
         
         if not token:
-            return RedirectResponse(url="/")
+            return RedirectResponse(url="/login")
         
         if dashboard_available:
             return FileResponse(str(FRONTEND_DIR / "index.html"))
-        else:
-            raise HTTPException(status_code=404, detail="Dashboard não encontrado")
+        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
     
-    # Página de planos
-    @app.get("/planos.html", include_in_schema=False)
-    async def serve_planos(request: Request):
-        """Serve a página de planos"""
+    @app.get("/planos", include_in_schema=False)
+    async def planos_page(request: Request):
+        """Página de planos protegida"""
         token = request.cookies.get("access_token") or \
                 request.headers.get("Authorization", "").replace("Bearer ", "")
         
         if not token:
-            return RedirectResponse(url="/")
+            return RedirectResponse(url="/login")
         
         planos_path = FRONTEND_DIR / "planos.html"
         if planos_path.exists():
             return FileResponse(planos_path)
-        else:
-            raise HTTPException(status_code=404, detail="Página de planos não encontrada")
+        raise HTTPException(status_code=404, detail="Planos não encontrado")
     
-    # Página de checkout
-    @app.get("/checkout.html", include_in_schema=False)
-    async def serve_checkout(request: Request):
-        """Serve a página de checkout"""
+    @app.get("/checkout", include_in_schema=False)
+    async def checkout_page(request: Request):
+        """Página de checkout protegida"""
         token = request.cookies.get("access_token") or \
                 request.headers.get("Authorization", "").replace("Bearer ", "")
         
         if not token:
-            return RedirectResponse(url="/")
+            return RedirectResponse(url="/login")
         
         checkout_path = FRONTEND_DIR / "checkout.html"
         if checkout_path.exists():
             return FileResponse(checkout_path)
-        else:
-            raise HTTPException(status_code=404, detail="Página de checkout não encontrada")
+        raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
-    # Rotas para arquivos específicos
-    @app.get("/{filename:path}", include_in_schema=False)
-    async def serve_frontend_files(filename: str):
-        """Serve arquivos específicos do frontend"""
-        file_path = FRONTEND_DIR / filename
-        
-        # Proteger acesso a arquivos sensíveis
-        if ".." in filename or filename.startswith("/"):
-            raise HTTPException(status_code=403, detail="Acesso negado")
-        
-        # Verificar se é um arquivo permitido
-        if file_path.exists() and file_path.is_file():
-            allowed_extensions = ['.html', '.css', '.js', '.png', '.jpg', 
-                                 '.jpeg', '.gif', '.ico', '.svg', '.json']
-            
-            if file_path.suffix.lower() in allowed_extensions:
-                return FileResponse(file_path)
-        
-        # Se não encontrado, redirecionar para login
-        if login_available:
-            return RedirectResponse(url="/")
-        else:
-            raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    # 3️⃣ IMPORTANTE: NÃO temos mais a rota genérica /{file_path:path}
+    # Isso evita conflitos com as rotas da API!
     
-    print("✅ Frontend configurado com rotas específicas")
+    print("✅ Rotas HTML configuradas sem conflito com API")
 
 # ==============================================
 # API FALLBACK (se frontend não disponível)
@@ -305,7 +288,7 @@ if not frontend_available:
                 "auth_login": "/api/auth/login",
                 "auth_register": "/api/auth/register",
                 "payments_plans": "/api/payments/plans",
-                "credits_status": "/api/payments/credits-status"
+                "credits_status": "/api/user/credits"
             }
         }
 
@@ -329,14 +312,14 @@ try:
     
     print("✅ Configurações sincronizadas")
     
-    # 🔧 IMPORTAR get_db do database
+    # Importar database
     from backend.database import engine, Base, create_tables, SessionLocal, get_db
     
     # Criar tabelas
     create_tables()
     print("✅ Tabelas criadas/verificadas")
     
-    # Importar TUDO do módulo security central
+    # Importar security
     from backend.security import (
         hasher,
         jwt_manager,
@@ -349,7 +332,6 @@ try:
     print("✅ Módulos de segurança carregados")
     
     # Importar serviços
-    # Depois de importar FastAPI, adicione:
     from backend.services.daily_credits_service import DailyCreditsService
     print("✅ Módulo de créditos diários carregado")
     
@@ -368,27 +350,12 @@ try:
         print(f"⚠️  Módulo observability não encontrado: {e}")
         DISCORD_ENABLED = False
         
-        # Funções dummy para não quebrar o código
+        # Funções dummy
         def alert_system_startup(**kwargs): pass
         def alert_system_error(**kwargs): pass
         def alert_new_user(**kwargs): pass
         def alert_payment_approved(**kwargs): pass
         def alert_daily_credits_distributed(**kwargs): pass
-    
-    # Importar rotas
-    from backend.api import auth_routes
-    from backend.api import routes
-    from backend.api import payment_routes
-    
-    # Incluir rotas
-    app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
-    print("✅ Rotas de autenticação carregadas")
-    
-    app.include_router(routes.router, prefix="/api", tags=["api"])
-    print("✅ Rotas da API carregadas")
-    
-    app.include_router(payment_routes.router, prefix="/api", tags=["payments"])
-    print("✅ Rotas de pagamento carregadas")
     
     AUTH_ENABLED = True
     
@@ -400,14 +367,40 @@ except Exception as e:
     sys.exit(1)
 
 # ==============================================
+# REGISTRO DE ROTAS DA API COM PREFIXO
+# ==============================================
+print("\n📦 Registrando rotas da API...")
+
+try:
+    # Importar rotas
+    from backend.api import auth_routes
+    from backend.api import routes
+    from backend.api import payment_routes
+    
+    # Incluir rotas com prefixo /api
+    app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
+    print("✅ Rotas de autenticação: /api/auth/*")
+    
+    app.include_router(routes.router, prefix="/api", tags=["api"])
+    print("✅ Rotas da API: /api/*")
+    
+    app.include_router(payment_routes.router, prefix="/api", tags=["payments"])
+    print("✅ Rotas de pagamento: /api/payments/*")
+    
+    print("✅ Sistema de rotas configurado")
+    
+except Exception as e:
+    print(f"❌ Erro carregando rotas: {e}")
+
+# ==============================================
 # MIDDLEWARE PARA LOG DE REQUESTS
 # ==============================================
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = datetime.now()
     
-    # Log de requests (ignorar estáticos)
-    if not request.url.path.startswith('/static') and not request.url.path.startswith('/css') and not request.url.path.startswith('/js'):
+    # Log apenas de rotas não-estáticas
+    if not request.url.path.startswith('/static'):
         print(f"🌐 [{datetime.now().strftime('%H:%M:%S')}] {request.method} {request.url.path}")
     
     response = await call_next(request)
@@ -428,127 +421,33 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ==============================================
-# FUNÇÃO PARA VERIFICAR CRÉDITOS ANTES DO UPLOAD
+# ROTAS DA API
 # ==============================================
-def check_credits_before_upload(user, db) -> bool:
-    """
-    Verifica se usuário pode fazer upload
-    - Se tiver créditos > 0, pode
-    - Se tiver 0 créditos, verifica se já ganhou hoje
-    """
-    if user.credits and user.credits > 0:
-        return True
-    
-    # Se não tem créditos, verificar se pode ganhar hoje
-    service = DailyCreditsService()
-    status = service.get_user_credit_status(db, user.id)
-    
-    # Se não recebeu hoje, pode fazer upload para ganhar
-    return not status["received_today"]
 
-# ==============================================
-# ROTA ADMIN PARA AUDITORIA DE CRÉDITOS
-# ==============================================
-@app.get("/api/admin/check-credits", tags=["admin"])
-async def check_all_users_credits(
-    current_user = Depends(get_current_admin_user),
-    db: Session = Depends(get_db)  # 🔧 CORRIGIDO: Session, não SessionLocal
-):
-    """
-    🔧 ADMIN: Verifica se todos os usuários estão com créditos em dia
-    """
-    try:
-        from backend.models import User
-        
-        service = DailyCreditsService()
-        users = db.query(User).filter(User.is_active == True).all()
-        
-        results = []
-        for user in users:
-            status = service.get_user_credit_status(db, user.id)
-            results.append({
-                "user_id": user.id,
-                "email": user.email,
-                "credits": status["current_credits"],
-                "streak": status["streak_days"],
-                "received_today": status["received_today"],
-                "total_earned": status["total_earned_all_time"]
-            })
-        
-        # Estatísticas gerais
-        total_credits = sum(r["credits"] for r in results)
-        total_earned_all = sum(r["total_earned"] for r in results)
-        
-        return {
-            "success": True,
-            "total_users": len(results),
-            "total_credits_in_system": total_credits,
-            "total_credits_earned_all_time": total_earned_all,
-            "users": results[:50]
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-# ==============================================
-# ROTA ADMIN PARA RECUPERAR CRÉDITOS PERDIDOS
-# ==============================================
-@app.post("/api/admin/recover-credits/{user_id}", tags=["admin"])
-async def recover_missed_credits(
-    user_id: int,
-    days_back: int = 30,
-    current_user = Depends(get_current_admin_user),
-    db: Session = Depends(get_db)  # 🔧 CORRIGIDO
-):
-    """
-    🔧 ADMIN: Recupera créditos perdidos de um usuário específico
-    """
-    try:
-        service = DailyCreditsService()
-        result = service.bulk_distribute_missed_credits(db, user_id, days_back)
-        
-        return {
-            "success": True,
-            "result": result
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-# ==============================================
-# ROTA PROTEGIDA DE TESTE
-# ==============================================
-@app.get("/api/protected-test", tags=["test"])
-async def protected_test_endpoint(
+@app.get("/api/user/credits", tags=["user"])
+async def get_user_credits(
     current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)  # 🔧 CORRIGIDO
+    db: Session = Depends(get_db)
 ):
-    """Rota protegida por autenticação com informações de créditos"""
-    
-    # Buscar status de créditos
-    service = DailyCreditsService()
-    credit_status = service.get_user_credit_status(db, current_user.id)
-    
-    return {
-        "message": "Acesso autorizado",
-        "user": {
-            "email": current_user.email,
-            "name": current_user.name,
-            "role": current_user.role
-        },
-        "credits": credit_status,
-        "timestamp": datetime.now().isoformat()
-    }
+    """Retorna os créditos do usuário atual"""
+    try:
+        service = DailyCreditsService()
+        credit_status = service.get_user_credit_status(db, current_user.id)
+        
+        return {
+            "success": True,
+            "credits": credit_status["current_credits"],
+            "streak_days": credit_status["streak_days"],
+            "received_today": credit_status["received_today"],
+            "next_credit_in": credit_status.get("next_credit_in", "Amanhã"),
+            "total_earned": credit_status["total_earned_all_time"]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
-# ==============================================
-# ROTAS GLOBAIS DA API
-# ==============================================
 @app.get("/api/health", tags=["system"])
 async def health_check():
     """Verifica saúde do sistema"""
@@ -567,23 +466,17 @@ async def health_check():
         },
         "database": db_status,
         "payments": {
-            "enabled": bool(settings.MP_ACCESS_TOKEN),
-            "mercadopago": bool(settings.MP_ACCESS_TOKEN)
+            "enabled": bool(settings.MP_ACCESS_TOKEN)
         },
         "credits_system": {
             "enabled": True,
-            "credits_per_day": 1,
-            "start_from_zero": True,
-            "earn_on_upload": True
+            "credits_per_day": 1
         },
         "discord": {
-            "enabled": DISCORD_ENABLED,
-            "configured": bool(settings.DISCORD_WEBHOOK)
+            "enabled": DISCORD_ENABLED
         },
         "frontend": {
-            "available": frontend_available,
-            "login": login_available,
-            "dashboard": dashboard_available
+            "available": frontend_available
         }
     }
 
@@ -593,55 +486,53 @@ async def security_info():
     return {
         "security_layers": {
             "password_hashing": {
-                "algorithm": "Argon2",
-                "time_cost": settings.ARGON2_TIME_COST,
-                "memory_cost": f"{settings.ARGON2_MEMORY_COST / 1024:.0f} KB"
+                "algorithm": "Argon2"
             },
             "jwt": {
                 "algorithm": settings.ALGORITHM,
-                "access_token_expire": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes",
-                "refresh_token_expire": f"{settings.REFRESH_TOKEN_EXPIRE_DAYS} days"
+                "access_token_expire": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes"
             },
             "captcha": {
                 "type": settings.CAPTCHA_TYPE,
                 "enabled": bool(settings.CAPTCHA_SITE_KEY)
-            },
-            "rate_limiting": {
-                "login_attempts": "5 per 15 minutes",
-                "register_attempts": "3 per hour",
-                "redis_available": bool(settings.REDIS_HOST)
-            },
-            "headers": list(settings.SECURITY_HEADERS.keys())
-        },
-        "payments": {
-            "enabled": bool(settings.MP_ACCESS_TOKEN)
-        },
-        "credits_system": {
-            "type": "daily_upload",
-            "credits_per_day": 1
+            }
         },
         "status": "active"
     }
 
 # ==============================================
-# DEBUG ROUTES
+# ROTAS ADMIN (protegidas)
 # ==============================================
-@app.get("/api/debug/routes", include_in_schema=False)
-async def debug_routes():
-    """Lista todas as rotas disponíveis"""
-    routes_list = []
-    for route in app.routes:
-        methods = route.methods if hasattr(route, 'methods') else []
-        routes_list.append({
-            "path": route.path,
-            "methods": list(methods) if methods else [],
-            "name": route.name if hasattr(route, 'name') else ""
-        })
-    
-    return {
-        "total_routes": len(routes_list),
-        "routes": routes_list[:30]
-    }
+
+@app.get("/api/admin/check-credits", tags=["admin"])
+async def check_all_users_credits(
+    current_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """ADMIN: Verifica créditos de todos os usuários"""
+    try:
+        from backend.models import User
+        
+        service = DailyCreditsService()
+        users = db.query(User).filter(User.is_active == True).all()
+        
+        results = []
+        for user in users:
+            status = service.get_user_credit_status(db, user.id)
+            results.append({
+                "user_id": user.id,
+                "email": user.email,
+                "credits": status["current_credits"],
+                "streak": status["streak_days"]
+            })
+        
+        return {
+            "success": True,
+            "total_users": len(results),
+            "users": results[:50]
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # ==============================================
 # EVENTO DE INICIALIZAÇÃO
@@ -650,45 +541,29 @@ async def debug_routes():
 async def startup_event():
     """Inicializa o sistema"""
     
-    # Alertar que sistema iniciou (se Discord configurado)
     if DISCORD_ENABLED:
         try:
             alert_system_startup()
             print("✅ Alerta de startup enviado para o Discord")
         except Exception as e:
-            print(f"⚠️  Erro ao enviar alerta de startup: {e}")
+            print(f"⚠️  Erro ao enviar alerta: {e}")
     
     print(f"""
     🎉 {settings.APP_NAME} v2.0 INICIADO!
     
     📍 Diretório: {PROJECT_ROOT}
-    🔧 Backend: {settings.BASE_DIR}
     🌐 Frontend: {'✅ Disponível' if frontend_available else '❌ Não disponível'}
     
-    🔐 SEGURANÇA:
-       ✅ Argon2 (hash de senha)
-       ✅ JWT (tokens de acesso)
-       ✅ CAPTCHA ({settings.CAPTCHA_TYPE})
-       ✅ Rate Limiting
-    
-    💰 PAGAMENTOS:
-       {'✅ Mercado Pago configurado' if settings.MP_ACCESS_TOKEN else '❌ Mercado Pago não configurado'}
-    
-    💎 SISTEMA DE CRÉDITOS:
-       ✅ ATIVO - 1 crédito por dia
-       ✅ Usuário começa com 0 créditos
-       ✅ Ganha 1 crédito ao fazer upload
-    
-    💬 DISCORD:
-       {'✅ Alertas ativos' if DISCORD_ENABLED else '❌ Alertas desativados'}
-    
-    🗄️  Banco de dados: {db_path.name}
+    🔐 SEGURANÇA: Argon2 + JWT + CAPTCHA + Rate Limiting
+    💰 PAGAMENTOS: {'✅ Configurado' if settings.MP_ACCESS_TOKEN else '❌ Não configurado'}
+    💎 CRÉDITOS: 1 crédito por dia via upload
+    💬 DISCORD: {'✅ Ativos' if DISCORD_ENABLED else '❌ Desativados'}
     
     🔗 URLs:
-       {'🌐 Login: http://localhost:' + str(settings.PORT) if login_available else ''}
+       {'🌐 Login: http://localhost:' + str(settings.PORT) + '/login' if login_available else ''}
        {'📊 Dashboard: http://localhost:' + str(settings.PORT) + '/dashboard' if dashboard_available else ''}
        📚 API Docs: http://localhost:{settings.PORT}/api/docs
-       💎 Status Créditos: http://localhost:{settings.PORT}/api/payments/credits-status
+       💎 Créditos API: http://localhost:{settings.PORT}/api/user/credits
        
     📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     """)
@@ -709,19 +584,16 @@ async def not_found_exception_handler(request: Request, exc):
                     "/api/docs",
                     "/api/health",
                     "/api/auth/login",
-                    "/api/payments/plans",
-                    "/api/payments/credits-status"
+                    "/api/user/credits"
                 ]
             }
         )
     
-    if login_available:
-        return RedirectResponse(url="/")
-    else:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "Página não encontrada"}
-        )
+    # Se for página não encontrada, redirecionar para login
+    if login_available and not request.url.path.startswith('/static'):
+        return RedirectResponse(url="/login")
+    
+    return JSONResponse(status_code=404, content={"error": "Página não encontrada"})
 
 @app.exception_handler(500)
 async def server_error_exception_handler(request: Request, exc):
@@ -730,14 +602,9 @@ async def server_error_exception_handler(request: Request, exc):
     import traceback
     traceback.print_exc()
     
-    # Alertar no Discord se configurado
     if DISCORD_ENABLED:
         try:
-            alert_system_error(
-                error=exc,
-                endpoint=request.url.path,
-                user="sistema"
-            )
+            alert_system_error(error=exc, endpoint=request.url.path, user="sistema")
         except:
             pass
     
@@ -758,17 +625,9 @@ if __name__ == "__main__":
     print("🛑 Pressione CTRL+C para parar\n")
     
     print("🔒 MODO SEGURO: Todas as camadas de segurança ativas")
-    if settings.MP_ACCESS_TOKEN:
-        print("💰 MODO PAGAMENTO: Mercado Pago configurado")
-    else:
-        print("⚠️  MODO PAGAMENTO: Mercado Pago NÃO configurado")
-    
-    print("💎 SISTEMA DE CRÉDITOS: 1 crédito por dia via upload")
-    
-    if DISCORD_ENABLED:
-        print("💬 DISCORD: Alertas ativos")
-    else:
-        print("💬 DISCORD: Desativado (adicione DISCORD_WEBHOOK no .env)")
+    print("📁 ARQUIVOS ESTÁTICOS: /static/*")
+    print("🌐 ROTAS HTML: /, /login, /dashboard, /planos, /checkout")
+    print("🔌 API ROTAS: /api/*\n")
     
     uvicorn.run(
         "main:app",

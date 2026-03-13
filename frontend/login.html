@@ -11,8 +11,54 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- CSS Personalizado -->
-    <link rel="stylesheet" href="css/login.css">
+    <!-- CSS Personalizado - CORRIGIDO: caminho com /static -->
+    <link rel="stylesheet" href="/static/css/login.css">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .card {
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .nav-tabs .nav-link {
+            color: #6c757d;
+            font-weight: 500;
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            border: none;
+        }
+        
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+    </style>
 </head>
 <body>
     <div class="container-fluid vh-100 d-flex align-items-center justify-content-center">
@@ -69,6 +115,9 @@
                                         </div>
                                     </div>
                                     
+                                    <!-- Container para CAPTCHA -->
+                                    <div id="captcha-container" class="mb-3"></div>
+                                    
                                     <div class="mb-3 form-check">
                                         <input type="checkbox" class="form-check-input" id="rememberMe">
                                         <label class="form-check-label small" for="rememberMe">
@@ -124,6 +173,9 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
+                                    <!-- Container para CAPTCHA no registro -->
+                                    <div id="captcha-container-register" class="mb-3"></div>
+                                    
                                     <div class="mb-3 form-check">
                                         <input type="checkbox" class="form-check-input" id="terms" required>
                                         <label class="form-check-label small" for="terms">
@@ -157,7 +209,7 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- JavaScript de Autenticação -->
-    <script src="js/auth.js"></script>
+    <!-- JavaScript de Autenticação - CORRIGIDO: caminho com /static -->
+    <script src="/static/js/auth.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoAnalytics Pro - IA para Oficinas</title>
+    <title>AutoAnalytics - Dashboard de IA para Oficinas</title>
     
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -19,6 +19,9 @@
     
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Toastr para notificações -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
     <style>
         * {
@@ -69,6 +72,7 @@
             font-weight: 600;
             box-shadow: 0 4px 15px rgba(253, 160, 133, 0.3);
             transition: transform 0.3s;
+            cursor: pointer;
         }
 
         .credits-badge:hover {
@@ -366,6 +370,59 @@
             opacity: 0.8;
         }
 
+        /* Timeline para histórico */
+        .timeline {
+            position: relative;
+            padding-left: 1.5rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            left: -1.5rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #667eea;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #667eea20;
+        }
+
+        .timeline-marker.bg-success {
+            background: #48bb78;
+            box-shadow: 0 0 0 2px #48bb7820;
+        }
+
+        .timeline-marker.bg-warning {
+            background: #f6ad55;
+            box-shadow: 0 0 0 2px #f6ad5520;
+        }
+
+        .timeline-content {
+            padding-left: 0.5rem;
+        }
+
         /* Dashboard Comparativo */
         .comparison-dashboard {
             background: white;
@@ -452,6 +509,12 @@
             color: white;
         }
 
+        .btn-gradient:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-outline-gradient {
             background: transparent;
             border: 2px solid #667eea;
@@ -466,6 +529,83 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border-color: transparent;
+        }
+
+        /* Modal de Créditos */
+        .credits-modal-content {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .credits-icon {
+            font-size: 4rem;
+            color: #f6d365;
+            margin-bottom: 1rem;
+        }
+
+        .credits-count {
+            font-size: 3rem;
+            font-weight: 800;
+            color: #2d3748;
+        }
+
+        .streak-badge {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            margin: 1rem 0;
+        }
+
+        /* Loading Spinner */
+        .spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+
+        .spinner-container {
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Toastr customização */
+        .toast-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
+        }
+
+        .toast-info {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
+        }
+
+        .toast-warning {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
         }
 
         /* Responsividade */
@@ -485,19 +625,27 @@
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div class="spinner-overlay" id="loadingOverlay">
+        <div class="spinner-container">
+            <div class="loading-spinner"></div>
+            <p class="mt-3 text-muted" id="loadingMessage">Processando...</p>
+        </div>
+    </div>
+
     <!-- Navbar Moderna -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
             <div class="d-flex justify-content-between align-items-center w-100">
-                <a class="brand-text text-decoration-none" href="#">
+                <a class="brand-text text-decoration-none" href="/dashboard">
                     <i class="fas fa-robot me-2"></i>
-                    AutoAnalytics<span class="text-primary">Pro</span>
+                    AutoAnalytics
                 </a>
                 
                 <div class="d-flex align-items-center gap-3">
-                    <div class="credits-badge" id="navbarCredits">
+                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
                         <i class="fas fa-coins me-2"></i>
-                        <span>0</span> créditos
+                        <span id="creditsCount">0</span> créditos
                     </div>
                     
                     <div class="dropdown">
@@ -513,7 +661,7 @@
                             </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
-                                <a class="dropdown-item" href="#" onclick="window.app.logout()">
+                                <a class="dropdown-item" href="#" onclick="app.logout()">
                                     <i class="fas fa-sign-out-alt me-2"></i>Sair
                                 </a>
                             </li>
@@ -539,6 +687,7 @@
                     </h1>
                     <p class="hero-subtitle">
                         Selecione as colunas, escolha o algoritmo e deixe nossa IA fazer previsões precisas.
+                        <br><span class="text-primary"><i class="fas fa-info-circle"></i> 1 crédito por análise</span>
                     </p>
                     
                     <!-- Métricas Rápidas -->
@@ -565,145 +714,180 @@
                 </div>
                 
                 <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
-                    <!-- Card de Upload com Seletor de Colunas -->
-                    <div class="upload-card">
-                        <div class="d-flex align-items-center justify-content-between mb-4">
-                            <h3 class="h5 mb-0 fw-bold">
-                                <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>
-                                Upload de Dados
-                            </h3>
-                            <span class="badge bg-warning text-dark py-2 px-3">
-                                <i class="fas fa-coins me-1"></i>
-                                <span id="uploadCredits">0</span> créditos
-                            </span>
+                    <div class="row">
+                        <div class="col-12">
+                            <!-- Card de Upload com Seletor de Colunas -->
+                            <div class="upload-card mb-4">
+                                <div class="d-flex align-items-center justify-content-between mb-4">
+                                    <h3 class="h5 mb-0 fw-bold">
+                                        <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>
+                                        Upload de Dados
+                                    </h3>
+                                    <span class="badge bg-warning text-dark py-2 px-3" id="uploadCreditsBadge">
+                                        <i class="fas fa-coins me-1"></i>
+                                        <span id="uploadCredits">0</span> créditos disponíveis
+                                    </span>
+                                </div>
+                                
+                                <form id="uploadForm">
+                                    <!-- Área de Upload -->
+                                    <div class="upload-area mb-4" id="dropArea">
+                                        <div class="upload-icon">
+                                            <i class="fas fa-file-excel"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2">Arraste seu arquivo aqui</h4>
+                                        <p class="text-muted small mb-3">CSV ou Excel com dados da oficina</p>
+                                        <div class="text-muted small mb-2">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            Limite de <strong>10MB</strong> por arquivo
+                                        </div>
+                                        <div>
+                                            <label for="fileInput" class="btn btn-gradient btn-sm">
+                                                <i class="fas fa-folder-open me-2"></i>
+                                                Selecionar Arquivo
+                                            </label>
+                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Arquivo Selecionado -->
+                                    <div class="selected-file mb-3 d-none" id="selectedFile">
+                                        <div class="bg-light p-3 rounded-3 d-flex align-items-center justify-content-between">
+                                            <div>
+                                                <i class="fas fa-file-excel text-success me-2"></i>
+                                                <span id="fileName" class="fw-bold small"></span>
+                                                <span class="badge bg-secondary ms-2" id="fileSize"></span>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Preview dos Dados (aparece após upload) -->
+                                    <div class="data-preview mb-3 d-none" id="dataPreview">
+                                        <table class="table-sm">
+                                            <thead id="previewHeader">
+                                                <tr></tr>
+                                            </thead>
+                                            <tbody id="previewBody"></tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <!-- Seletor Inteligente de Colunas (aparece após upload) -->
+                                    <div class="column-selector d-none" id="columnSelector">
+                                        <div class="d-flex align-items-center justify-content-between mb-3">
+                                            <h6 class="mb-0 fw-bold">
+                                                <i class="fas fa-table me-2 text-primary"></i>
+                                                Selecione as Colunas
+                                            </h6>
+                                            <span class="badge bg-info" id="selectedColumnsCount">0/0</span>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-bold text-muted">
+                                                <i class="fas fa-bullseye me-1"></i>
+                                                Coluna Alvo (o que quer prever)
+                                            </label>
+                                            <div class="column-chips" id="targetColumnContainer">
+                                                <!-- Colunas serão inseridas aqui via JS -->
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-bold text-muted">
+                                                <i class="fas fa-chart-bar me-1"></i>
+                                                Colunas de Entrada (features)
+                                            </label>
+                                            <div class="text-muted small mb-2">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                Clique para selecionar múltiplas colunas
+                                            </div>
+                                            <div class="column-chips" id="featureColumnsContainer">
+                                                <!-- Colunas serão inseridas aqui via JS -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Seletor de Algoritmo Scikit-learn -->
+                                    <div class="algorithm-selector mb-3">
+                                        <label class="form-label small fw-bold mb-2">
+                                            <i class="fas fa-brain me-1"></i>
+                                            Algoritmo de Machine Learning
+                                        </label>
+                                        
+                                        <div class="algorithm-option" onclick="app.selectAlgorithm('random_forest', this)">
+                                            <input type="radio" name="algorithm" id="algRandomForest" value="random_forest" checked>
+                                            <div>
+                                                <strong>Random Forest</strong>
+                                                <span class="algorithm-badge">Recomendado</span>
+                                                <p class="text-muted small mb-0">Conjunto de árvores de decisão, alta precisão</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="algorithm-option" onclick="app.selectAlgorithm('xgboost', this)">
+                                            <input type="radio" name="algorithm" id="algXGBoost" value="xgboost">
+                                            <div>
+                                                <strong>XGBoost</strong>
+                                                <p class="text-muted small mb-0">Gradient boosting, ótimo para dados tabulares</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="algorithm-option" onclick="app.selectAlgorithm('linear', this)">
+                                            <input type="radio" name="algorithm" id="algLinear" value="linear">
+                                            <div>
+                                                <strong>Regressão Linear</strong>
+                                                <p class="text-muted small mb-0">Simples e interpretável, para relações lineares</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="algorithm-option" onclick="app.selectAlgorithm('svr', this)">
+                                            <input type="radio" name="algorithm" id="algSVR" value="svr">
+                                            <div>
+                                                <strong>SVR</strong>
+                                                <p class="text-muted small mb-0">Support Vector Regression, bom para não-lineares</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Botão de Upload -->
+                                    <div class="d-grid">
+                                        <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
+                                            <i class="fas fa-play-circle me-2"></i>
+                                            Treinar Modelo e Analisar
+                                            <span class="badge bg-light text-dark ms-2">1 crédito</span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                         
-                        <form id="uploadForm">
-                            <!-- Área de Upload -->
-                            <div class="upload-area mb-4" id="dropArea">
-                                <div class="upload-icon">
-                                    <i class="fas fa-file-excel"></i>
+                        <!-- Histórico de Análises -->
+                        <div class="col-12">
+                            <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
+                                <div class="d-flex align-items-center mb-4">
+                                    <i class="fas fa-history text-primary me-2"></i>
+                                    <h3 class="h5 mb-0 fw-bold">Histórico de Análises</h3>
                                 </div>
-                                <h4 class="h6 mb-2">Arraste seu arquivo aqui</h4>
-                                <p class="text-muted small mb-3">CSV ou Excel com dados da oficina</p>
-                                <div>
-                                    <label for="fileInput" class="btn btn-gradient btn-sm">
-                                        <i class="fas fa-folder-open me-2"></i>
-                                        Selecionar Arquivo
-                                    </label>
-                                    <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls">
-                                </div>
-                            </div>
-                            
-                            <!-- Arquivo Selecionado -->
-                            <div class="selected-file mb-3 d-none" id="selectedFile">
-                                <div class="bg-light p-3 rounded-3 d-flex align-items-center justify-content-between">
-                                    <div>
-                                        <i class="fas fa-file-excel text-success me-2"></i>
-                                        <span id="fileName" class="fw-bold small"></span>
-                                        <span class="badge bg-secondary ms-2" id="fileSize"></span>
+                                
+                                <div class="timeline" id="recentAnalyses" style="max-height: 400px; overflow-y: auto;">
+                                    <!-- Histórico será carregado via JavaScript -->
+                                    <div class="timeline-item">
+                                        <div class="timeline-marker"></div>
+                                        <div class="timeline-content">
+                                            <p class="mb-1 small">Carregando histórico...</p>
+                                            <small class="text-muted">Aguarde</small>
+                                        </div>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
-                                        <i class="fas fa-times"></i>
+                                </div>
+                                
+                                <div class="mt-3 text-center">
+                                    <button class="btn btn-link small text-decoration-none" onclick="app.loadFullHistory()">
+                                        Ver todas as análises
                                     </button>
                                 </div>
                             </div>
-                            
-                            <!-- Preview dos Dados (aparece após upload) -->
-                            <div class="data-preview mb-3 d-none" id="dataPreview">
-                                <table class="table-sm">
-                                    <thead id="previewHeader">
-                                        <tr></tr>
-                                    </thead>
-                                    <tbody id="previewBody"></tbody>
-                                </table>
-                            </div>
-                            
-                            <!-- Seletor Inteligente de Colunas (aparece após upload) -->
-                            <div class="column-selector d-none" id="columnSelector">
-                                <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <h6 class="mb-0 fw-bold">
-                                        <i class="fas fa-table me-2 text-primary"></i>
-                                        Selecione as Colunas
-                                    </h6>
-                                    <span class="badge bg-info" id="selectedColumnsCount">0/0</span>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label small fw-bold text-muted">
-                                        <i class="fas fa-bullseye me-1"></i>
-                                        Coluna Alvo (o que quer prever)
-                                    </label>
-                                    <div class="column-chips" id="targetColumnContainer">
-                                        <!-- Colunas serão inseridas aqui via JS -->
-                                    </div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label small fw-bold text-muted">
-                                        <i class="fas fa-chart-bar me-1"></i>
-                                        Colunas de Entrada (features)
-                                    </label>
-                                    <div class="text-muted small mb-2">
-                                        <i class="fas fa-info-circle me-1"></i>
-                                        Clique para selecionar múltiplas colunas
-                                    </div>
-                                    <div class="column-chips" id="featureColumnsContainer">
-                                        <!-- Colunas serão inseridas aqui via JS -->
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Seletor de Algoritmo Scikit-learn -->
-                            <div class="algorithm-selector mb-3">
-                                <label class="form-label small fw-bold mb-2">
-                                    <i class="fas fa-brain me-1"></i>
-                                    Algoritmo de Machine Learning
-                                </label>
-                                
-                                <div class="algorithm-option" onclick="document.getElementById('algRandomForest').checked = true; this.classList.add('selected');">
-                                    <input type="radio" name="algorithm" id="algRandomForest" value="random_forest" checked>
-                                    <div>
-                                        <strong>Random Forest</strong>
-                                        <span class="algorithm-badge">Recomendado</span>
-                                        <p class="text-muted small mb-0">Conjunto de árvores de decisão, alta precisão</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="algorithm-option" onclick="document.getElementById('algXGBoost').checked = true; this.classList.add('selected');">
-                                    <input type="radio" name="algorithm" id="algXGBoost" value="xgboost">
-                                    <div>
-                                        <strong>XGBoost</strong>
-                                        <p class="text-muted small mb-0">Gradient boosting, ótimo para dados tabulares</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="algorithm-option" onclick="document.getElementById('algLinear').checked = true; this.classList.add('selected');">
-                                    <input type="radio" name="algorithm" id="algLinear" value="linear">
-                                    <div>
-                                        <strong>Regressão Linear</strong>
-                                        <p class="text-muted small mb-0">Simples e interpretável, para relações lineares</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="algorithm-option" onclick="document.getElementById('algSVR').checked = true; this.classList.add('selected');">
-                                    <input type="radio" name="algorithm" id="algSVR" value="svr">
-                                    <div>
-                                        <strong>SVR</strong>
-                                        <p class="text-muted small mb-0">Support Vector Regression, bom para não-lineares</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Botão de Upload -->
-                            <div class="d-grid">
-                                <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
-                                    <i class="fas fa-play-circle me-2"></i>
-                                    Treinar Modelo e Analisar
-                                    <span class="badge bg-light text-dark ms-2">1 crédito</span>
-                                </button>
-                            </div>
-                        </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -805,57 +989,57 @@
         </div>
     </section>
 
-    <!-- Plano Único -->
-    <section class="py-5">
-        <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-lg-6">
-                    <div class="plan-card text-center" data-aos="zoom-in" data-aos-duration="1000">
-                        <span class="badge bg-warning text-dark mb-3 py-2 px-3">
-                            <i class="fas fa-star me-1"></i>PLANO ÚNICO
-                        </span>
-                        <h2 class="h3 mb-2">AutoAnalytics Pro</h2>
-                        <div class="plan-price">
-                            R$ 97<span class="small">/mês</span>
-                        </div>
-                        <p class="opacity-75 mb-4">Tudo o que sua oficina precisa</p>
-                        
-                        <div class="text-start mb-4">
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                <strong>30 análises</strong> por mês
-                            </div>
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Múltiplos algoritmos Scikit-learn
-                            </div>
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Seleção inteligente de colunas
-                            </div>
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Métricas de performance (R², MAE, RMSE)
-                            </div>
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Importância das features
-                            </div>
-                            <div class="mb-2">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Exportação CSV/JSON
-                            </div>
-                        </div>
-                        
-                        <a href="/planos.html" class="btn btn-light w-100 py-3 fw-bold">
-                            <i class="fas fa-credit-card me-2"></i>
-                            Assinar Agora
-                        </a>
+    <!-- Modal de Créditos -->
+    <div class="modal fade" id="creditsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">
+                        <i class="fas fa-coins text-warning me-2"></i>
+                        Meus Créditos
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body credits-modal-content">
+                    <div class="credits-icon">
+                        <i class="fas fa-coins"></i>
                     </div>
+                    <div class="credits-count" id="modalCreditsCount">0</div>
+                    <p class="text-muted mb-3">créditos disponíveis</p>
+                    
+                    <div class="streak-badge" id="streakBadge">
+                        <i class="fas fa-fire me-1"></i>
+                        <span id="streakDays">0</span> dias consecutivos
+                    </div>
+                    
+                    <div class="progress-modern mt-3 mb-2">
+                        <div class="progress-modern-bar" id="streakProgress" style="width: 0%"></div>
+                    </div>
+                    <p class="small text-muted" id="nextCreditInfo">
+                        Próximo crédito: Amanhã
+                    </p>
+                    
+                    <hr>
+                    
+                    <div class="text-start small">
+                        <p class="mb-2"><i class="fas fa-info-circle text-primary me-2"></i>Como funcionam os créditos:</p>
+                        <ul class="text-muted">
+                            <li>Você ganha 1 crédito por dia ao fazer upload</li>
+                            <li>Créditos não utilizados são acumulados</li>
+                            <li>Cada análise consome 1 crédito</li>
+                            <li>Mantenha uma sequência de dias para ganhar bônus</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <a href="/planos" class="btn btn-gradient w-100">
+                        <i class="fas fa-credit-card me-2"></i>
+                        Comprar mais créditos
+                    </a>
                 </div>
             </div>
         </div>
-    </section>
+    </div>
 
     <!-- Footer -->
     <footer class="bg-white py-4 mt-5">
@@ -864,7 +1048,7 @@
                 <div class="col-md-6">
                     <p class="text-muted small mb-0">
                         <i class="fas fa-robot me-2"></i>
-                        AutoAnalytics Pro © 2024 - Machine Learning para oficinas
+                        AutoAnalytics © 2024 - Machine Learning para oficinas
                     </p>
                 </div>
                 <div class="col-md-6 text-md-end">
@@ -888,60 +1072,83 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
+    <!-- Configuração do Toastr -->
     <script>
-        // Inicializar AOS
-        AOS.init({
-            once: true,
-            duration: 1000
-        });
+        toastr.options = {
+            closeButton: true,
+            progressBar: true,
+            positionClass: "toast-top-right",
+            timeOut: 3000,
+            extendedTimeOut: 1000,
+            showEasing: "swing",
+            hideEasing: "linear",
+            showMethod: "fadeIn",
+            hideMethod: "fadeOut"
+        };
+    </script>
+    
+    <!-- Script principal do Dashboard -->
+    <script src="/static/js/app.js"></script>
+    
+    <!-- Inicialização e verificação de autenticação -->
+    <script>
+        // Verificar se usuário está autenticado ao carregar o dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Inicializar AOS
+            AOS.init({
+                once: true,
+                duration: 1000
+            });
 
-        // GSAP Animations
-        gsap.registerPlugin(ScrollTrigger);
+            // GSAP Animations
+            gsap.registerPlugin(ScrollTrigger);
 
-        // Animação da Navbar
-        window.addEventListener('scroll', function() {
-            const navbar = document.getElementById('mainNavbar');
-            if (window.scrollY > 50) {
-                navbar.classList.add('scrolled');
+            // Animação da Navbar
+            window.addEventListener('scroll', function() {
+                const navbar = document.getElementById('mainNavbar');
+                if (window.scrollY > 50) {
+                    navbar.classList.add('scrolled');
+                } else {
+                    navbar.classList.remove('scrolled');
+                }
+            });
+
+            // Animação dos elementos
+            gsap.from('.hero-title', {
+                duration: 1,
+                y: 100,
+                opacity: 0,
+                ease: 'power3.out'
+            });
+
+            gsap.from('.upload-card', {
+                scrollTrigger: {
+                    trigger: '.upload-card',
+                    start: 'top 80%',
+                    toggleActions: 'play none none reverse'
+                },
+                duration: 1,
+                x: 100,
+                opacity: 0,
+                ease: 'power3.out'
+            });
+            
+            // Inicializar o app
+            if (window.app) {
+                window.app.init();
             } else {
-                navbar.classList.remove('scrolled');
+                console.error('App não carregado. Verifique o caminho do script.');
+                toastr.error('Erro ao carregar a aplicação');
             }
         });
-
-        // Animação dos elementos
-        gsap.from('.hero-title', {
-            duration: 1,
-            y: 100,
-            opacity: 0,
-            ease: 'power3.out'
-        });
-
-        gsap.from('.upload-card', {
-            scrollTrigger: {
-                trigger: '.upload-card',
-                start: 'top 80%',
-                toggleActions: 'play none none reverse'
-            },
-            duration: 1,
-            x: 100,
-            opacity: 0,
-            ease: 'power3.out'
-        });
-        
-        // Destacar algoritmo selecionado
-        document.querySelectorAll('.algorithm-option').forEach(option => {
-            option.addEventListener('click', function() {
-                document.querySelectorAll('.algorithm-option').forEach(opt => {
-                    opt.classList.remove('selected');
-                });
-                this.classList.add('selected');
-                this.querySelector('input[type="radio"]').checked = true;
-            });
-        });
     </script>
-
-    <!-- app.js atualizado -->
-    <script src="js/app.js"></script>
 </body>
 </html>

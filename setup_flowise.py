@@ -20,7 +20,7 @@ DEBUG=True
 PORT=8000
 
 # SUA URL DO FLOWISE
-FLOWISE_URL=https://cloud.flowiseai.com/api/v1/prediction/07284d0d-4185-425a-b1e3-3ee3f187ab32
+
 
 # Se seu flow precisar de API Key, coloque aqui
 FLOWISE_API_KEY=
