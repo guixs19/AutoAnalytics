@@ -1,45 +1,50 @@
-// frontend/js/auth.js - VERSÃO COMPLETA COM TODAS AS FUNCIONALIDADES
-// Sistema de autenticação com JWT, refresh token, validação automática e CAPTCHA
+// frontend/js/auth.js - VERSÃO SIMPLIFICADA
+// Sistema de autenticação com JWT e reCAPTCHA
+
+const API_BASE = (function() {
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1';
+    
+    if (isLocalhost) {
+        return 'http://localhost:8000/api';
+    }
+    return '/api';
+})();
+
+console.log('🌐 API Base URL:', API_BASE);
+
+const CHECK_INTERVAL = 5 * 60 * 1000;
+
+let siteKey = null;
+let recaptchaReady = false;
+
+function buildUrl(endpoint) {
+    if (!endpoint) return null;
+    if (endpoint.startsWith('http')) return endpoint;
+    
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+    
+    return `${base}${cleanEndpoint}`;
+}
 
 // ==============================================
-// CONFIGURAÇÕES
+// VALIDAÇÃO DE SESSÃO
 // ==============================================
 
-const API_BASE = '/api';
-const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos em millisegundos
-
-// ==============================================
-// VARIÁVEIS GLOBAIS
-// ==============================================
-
-let captchaId = null;
-let captchaType = 'disabled';
-let captchaSiteKey = null;
-
-// ==============================================
-// VALIDAÇÃO E LIMPEZA INTELIGENTE DE SESSÃO
-// ==============================================
-
-/**
- * Valida se o token atual ainda é válido e limpa se necessário
- */
 async function validarELimparSessao() {
     const token = localStorage.getItem('access_token');
     
     if (!token) {
-        console.log('ℹ️ Sem token para validar');
-        
-        if (isProtectedPage()) {
-            console.log('🔒 Página protegida sem token, redirecionando...');
-            window.location.href = '/login';
-        }
+        if (isProtectedPage()) window.location.href = '/login';
         return;
     }
 
     try {
-        console.log('🔍 Validando token existente...');
+        const url = buildUrl('/auth/check-token');
+        if (!url) return;
         
-        const response = await fetch(`${API_BASE}/auth/check-token`, {
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -48,83 +53,56 @@ async function validarELimparSessao() {
         });
 
         if (response.status === 401) {
-            console.warn('⚠️ Sessão expirada. A limpar lixo...');
             await clearSession();
             showMessage('Sessão expirada. Faça login novamente.', 'warning');
-            
             if (window.location.pathname !== '/login') {
-                setTimeout(() => {
-                    window.location.href = '/login';
-                }, 1500);
+                setTimeout(() => window.location.href = '/login', 1500);
             }
-            
         } else if (response.ok) {
             const data = await response.json();
-            console.log('✅ Token válido para:', data.user);
             updateUserData(data);
         }
     } catch (error) {
-        console.error('❌ Erro ao conectar ao servidor:', error);
+        console.error('❌ Erro ao validar sessão:', error);
     }
 }
 
-/**
- * Atualiza dados do usuário no localStorage
- */
 function updateUserData(data) {
     try {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        
         if (data.name) user.name = data.name;
         if (data.email) user.email = data.email;
         if (data.credits !== undefined) user.credits = data.credits;
-        if (data.plan) user.plan = data.plan;
-        if (data.role) user.role = data.role;
-        
         localStorage.setItem('user', JSON.stringify(user));
     } catch (error) {
-        console.error('Erro ao atualizar dados do usuário:', error);
+        console.error('Erro ao atualizar dados:', error);
     }
 }
 
-// ==============================================
-// VERIFICAÇÃO DE PÁGINAS
-// ==============================================
-
 function isProtectedPage() {
-    const protectedPaths = ['/dashboard', '/planos', '/checkout', '/admin', '/profile', '/configuracoes'];
-    const currentPath = window.location.pathname;
-    return protectedPaths.some(path => currentPath.startsWith(path));
-}
-
-function isPublicPage() {
-    const publicPaths = ['/login', '/register', '/recuperar-senha', '/', '/sobre', '/termos', '/privacidade'];
-    const currentPath = window.location.pathname;
-    return publicPaths.some(path => currentPath === path);
+    const protectedPaths = ['/dashboard', '/planos', '/checkout', '/admin'];
+    return protectedPaths.some(path => window.location.pathname.startsWith(path));
 }
 
 function isAuthenticated() {
     return !!localStorage.getItem('access_token');
 }
 
-// ==============================================
-// GERENCIAMENTO DE SESSÃO
-// ==============================================
-
 async function clearSession(showMessage_ = false) {
-    console.log('🧹 Limpando sessão...');
-    
     const refreshToken = localStorage.getItem('refresh_token');
     
     if (refreshToken) {
         try {
-            await fetch(`${API_BASE}/auth/logout`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
+            const url = buildUrl('/auth/logout');
+            if (url) {
+                await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+            }
         } catch (error) {
-            console.error('Erro ao fazer logout no backend:', error);
+            console.error('Erro ao fazer logout:', error);
         }
     }
     
@@ -132,43 +110,18 @@ async function clearSession(showMessage_ = false) {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     
-    if (showMessage_) {
-        showMessage('Sessão encerrada.', 'info');
-    }
+    if (showMessage_) showMessage('Sessão encerrada.', 'info');
 }
-
-function requireAuth() {
-    if (!isAuthenticated()) {
-        window.location.href = '/login';
-        return false;
-    }
-    return true;
-}
-
-function redirectIfAuthenticated() {
-    if (isAuthenticated()) {
-        window.location.href = '/dashboard';
-        return true;
-    }
-    return false;
-}
-
-// ==============================================
-// REFRESH TOKEN AUTOMÁTICO
-// ==============================================
 
 async function refreshAccessToken() {
     const refreshToken = localStorage.getItem('refresh_token');
-    
-    if (!refreshToken) {
-        console.log('ℹ️ Sem refresh token disponível');
-        return false;
-    }
+    if (!refreshToken) return false;
     
     try {
-        console.log('🔄 Tentando renovar token...');
+        const url = buildUrl('/auth/refresh');
+        if (!url) return false;
         
-        const response = await fetch(`${API_BASE}/auth/refresh`, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refresh_token: refreshToken })
@@ -178,10 +131,8 @@ async function refreshAccessToken() {
             const data = await response.json();
             localStorage.setItem('access_token', data.access_token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            console.log('✅ Token renovado com sucesso');
             return true;
         } else {
-            console.warn('⚠️ Refresh token inválido, limpando sessão');
             await clearSession(true);
             return false;
         }
@@ -192,257 +143,120 @@ async function refreshAccessToken() {
 }
 
 // ==============================================
-// API REQUEST COM RETRY AUTOMÁTICO
+// reCAPTCHA
 // ==============================================
 
-async function apiRequest(endpoint, options = {}) {
-    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
-    
-    for (let attempt = 0; attempt < 2; attempt++) {
-        const token = localStorage.getItem('access_token');
-        
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers
-        };
-        
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        try {
-            const response = await fetch(url, { ...options, headers });
-            
-            if (response.status === 401) {
-                console.log('🔄 Token expirado, tentando refresh...');
-                const refreshed = await refreshAccessToken();
-                
-                if (refreshed) {
-                    console.log('🔄 Tentando requisição novamente...');
-                    continue;
-                } else {
-                    console.warn('⚠️ Refresh falhou, redirecionando para login');
-                    await clearSession();
-                    
-                    if (!isPublicPage()) {
-                        window.location.href = '/login';
-                    }
-                    
-                    throw new Error('Sessão expirada');
-                }
-            }
-            
-            return response;
-            
-        } catch (error) {
-            if (attempt === 1) throw error;
-            console.warn(`⚠️ Tentativa ${attempt + 1} falhou, tentando novamente...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-    }
-}
-
-// ==============================================
-// CAPTCHA - FUNÇÕES CORRIGIDAS
-// ==============================================
-
-async function loadCaptcha() {
+async function loadCaptchaConfig() {
     try {
-        console.log('🔄 Carregando CAPTCHA...');
+        console.log('🔄 Carregando configuração do reCAPTCHA...');
         
-        const response = await fetch(`${API_BASE}/auth/captcha/generate`);
+        const url = buildUrl('/auth/captcha/generate');
+        if (!url) return null;
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        const response = await fetch(url + `?t=${Date.now()}`);
+        if (!response.ok) return null;
         
         const data = await response.json();
-        console.log('✅ CAPTCHA carregado:', data);
+        console.log('✅ Configuração reCAPTCHA:', data);
         
-        captchaType = data.type || 'custom';
-        
-        if (data.type === 'recaptcha_v2') {
-            captchaSiteKey = data.site_key;
-            loadRecaptchaV2(data.site_key);
-            
-        } else if (data.type === 'recaptcha_v3') {
-            captchaSiteKey = data.site_key;
-            console.log('ℹ️ reCAPTCHA v3 configurado');
-            
-        } else {
-            captchaId = data.captcha_id;
-            displayCustomCaptcha(data);
+        if (data.site_key) {
+            siteKey = data.site_key;
+            loadRecaptchaScript();
         }
         
         return data;
-        
     } catch (error) {
-        console.error('❌ Erro ao carregar CAPTCHA:', error);
-        captchaType = 'disabled';
+        console.error('❌ Erro:', error);
         return null;
     }
 }
 
-function displayCustomCaptcha(data) {
-    const container = document.getElementById('captcha-container');
-    if (!container) {
-        console.warn('⚠️ Container do CAPTCHA não encontrado');
-        return;
-    }
+function loadRecaptchaScript() {
+    if (document.getElementById('recaptcha-script')) return;
+    if (!siteKey) return;
     
-    captchaId = data.captcha_id;
+    console.log('📦 Carregando script reCAPTCHA...');
     
-    container.innerHTML = `
-        <div class="mb-3">
-            <label class="form-label small fw-bold">CAPTCHA</label>
-            <div class="d-flex align-items-center gap-2">
-                <img src="${data.image}" alt="CAPTCHA" class="img-fluid border rounded" 
-                     style="max-width: 150px; height: 50px; object-fit: cover;">
-                <i class="fas fa-sync-alt text-primary" style="cursor: pointer;" 
-                   onclick="window.app.reloadCaptcha()" title="Recarregar CAPTCHA"></i>
-            </div>
-            <input type="text" class="form-control mt-2" id="captcha-input" 
-                   placeholder="Digite o resultado" required>
-            <small class="text-muted">Digite o resultado da operação matemática</small>
-        </div>
-    `;
+    window.onRecaptchaLoad = function() {
+        console.log('✅ reCAPTCHA pronto');
+        recaptchaReady = true;
+    };
     
-    console.log('✅ CAPTCHA customizado exibido, ID:', captchaId);
+    const script = document.createElement('script');
+    script.id = 'recaptcha-script';
+    script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}&onload=onRecaptchaLoad`;
+    script.async = true;
+    script.defer = true;
+    
+    script.onerror = () => {
+        console.warn('⚠️ reCAPTCHA não carregou - modo fallback ativado');
+        recaptchaReady = true; // Fallback para desenvolvimento
+    };
+    
+    document.head.appendChild(script);
 }
 
-async function reloadCaptcha() {
-    await loadCaptcha();
-}
-
-function getCaptchaData() {
-    if (captchaType === 'recaptcha_v3') {
-        return new Promise((resolve) => {
-            if (window.grecaptcha && captchaSiteKey) {
-                window.grecaptcha.ready(function() {
-                    window.grecaptcha.execute(captchaSiteKey, {action: 'register'})
-                        .then(token => {
-                            resolve({
-                                captcha_type: 'recaptcha_v3',
-                                captcha_token: token
-                            });
-                        })
-                        .catch(() => resolve(null));
-                });
-            } else {
-                resolve(null);
-            }
-        });
-    }
-    
-    if (captchaType === 'recaptcha_v2') {
-        const token = document.getElementById('g-recaptcha-response')?.value;
-        if (!token) {
-            console.warn('⚠️ reCAPTCHA v2 não preenchido');
-            return null;
+async function generateRecaptchaToken(action = 'login') {
+    // Fallback para desenvolvimento
+    if (!recaptchaReady || !window.grecaptcha || !window.grecaptcha.execute) {
+        if (window.location.hostname === 'localhost') {
+            console.warn('⚠️ Usando fallback para desenvolvimento');
+            return 'dev-fallback-token';
         }
-        return {
-            captcha_type: 'recaptcha_v2',
-            captcha_token: token
-        };
+        return null;
     }
     
-    if (captchaType === 'custom') {
-        const input = document.getElementById('captcha-input');
-        if (!input || !input.value) {
-            console.warn('⚠️ CAPTCHA não preenchido');
-            return null;
-        }
-        
-        return {
-            captcha_type: 'custom',
-            captcha_id: captchaId,
-            captcha_text: input.value.trim()
-        };
+    try {
+        const token = await window.grecaptcha.execute(siteKey, { action });
+        return token;
+    } catch (error) {
+        console.error('❌ Erro ao gerar token:', error);
+        return null;
     }
-    
-    return null;
-}
-
-function loadRecaptchaV2(siteKey) {
-    const container = document.getElementById('captcha-container');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    const recaptchaDiv = document.createElement('div');
-    recaptchaDiv.id = 'recaptcha-element';
-    container.appendChild(recaptchaDiv);
-    
-    if (!document.getElementById('recaptcha-script')) {
-        const script = document.createElement('script');
-        script.id = 'recaptcha-script';
-        script.src = 'https://www.google.com/recaptcha/api.js';
-        script.async = true;
-        script.defer = true;
-        script.onload = () => {
-            if (window.grecaptcha) {
-                window.grecaptcha.render('recaptcha-element', {
-                    'sitekey': siteKey,
-                    'theme': 'light'
-                });
-            }
-        };
-        document.head.appendChild(script);
-    } else if (window.grecaptcha) {
-        window.grecaptcha.render('recaptcha-element', {
-            'sitekey': siteKey,
-            'theme': 'light'
-        });
-    }
-}
-
-async function executeRecaptchaV3(action = 'login') {
-    return new Promise((resolve) => {
-        if (window.grecaptcha && captchaSiteKey) {
-            window.grecaptcha.ready(function() {
-                window.grecaptcha.execute(captchaSiteKey, {action: action})
-                    .then(resolve)
-                    .catch(() => resolve(''));
-            });
-        } else {
-            resolve('');
-        }
-    });
 }
 
 // ==============================================
-// AUTENTICAÇÃO - FUNÇÕES CORRIGIDAS
+// LOGIN
 // ==============================================
 
 async function login(email, password) {
     try {
-        showLoading('login');
+        showLoading('loginForm');
+        
+        if (!email || !password) {
+            showMessage('Preencha todos os campos', 'warning');
+            hideLoading('loginForm');
+            return;
+        }
+        
+        const recaptchaToken = await generateRecaptchaToken('login');
         
         const loginData = {
-            email: email,
+            email: email.trim().toLowerCase(),
             password: password
         };
         
-        const captchaData = getCaptchaData();
-        if (captchaData) {
-            if (captchaData.captcha_type === 'custom') {
-                loginData.captcha_id = captchaData.captcha_id;
-                loginData.captcha_text = captchaData.captcha_text;
-            } else {
-                window.captchaToken = captchaData.captcha_token;
-            }
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        if (recaptchaToken) {
+            headers['X-Captcha-Token'] = recaptchaToken;
         }
         
-        const response = await fetch(`${API_BASE}/auth/login`, {
+        const url = buildUrl('/auth/login');
+        if (!url) {
+            hideLoading('loginForm');
+            return;
+        }
+        
+        const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Captcha-Token': window.captchaToken || ''
-            },
+            headers: headers,
             body: JSON.stringify(loginData)
         });
         
-        hideLoading('login');
+        hideLoading('loginForm');
         
         if (response.ok) {
             const data = await response.json();
@@ -451,106 +265,120 @@ async function login(email, password) {
             localStorage.setItem('refresh_token', data.refresh_token);
             
             const userData = {
-                name: data.user_name,
-                email: data.user_email,
-                workshop: data.workshop_name,
-                role: data.role,
-                plan: data.plan,
-                credits: data.credits
+                name: data.user_name || '',
+                email: data.user_email || email,
+                workshop: data.workshop_name || '',
+                role: data.role || 'user',
+                plan: data.plan || 'free',
+                credits: data.credits || 0
             };
             localStorage.setItem('user', JSON.stringify(userData));
             
             showMessage('Login realizado com sucesso!', 'success');
-            
-            setTimeout(() => {
-                window.location.href = '/dashboard';
-            }, 1000);
+            setTimeout(() => window.location.href = '/dashboard', 1000);
         } else {
-            const error = await response.json();
-            showMessage(error.detail || 'Erro no login', 'error');
-            await loadCaptcha();
+            let errorMessage = 'Erro no login';
+            try {
+                const error = await response.json();
+                errorMessage = error.detail || error.message || errorMessage;
+            } catch {
+                errorMessage = `Erro ${response.status}`;
+            }
+            showMessage(errorMessage, 'error');
         }
     } catch (error) {
-        hideLoading('login');
+        hideLoading('loginForm');
         console.error('❌ Erro no login:', error);
-        showMessage('Erro de conexão com o servidor', 'error');
+        showMessage('Erro de conexão', 'error');
     }
 }
 
-/**
- * 🔥 FUNÇÃO DE REGISTRO CORRIGIDA - Agora envia CAPTCHA corretamente
- */
+// ==============================================
+// REGISTRO
+// ==============================================
+
 async function register(userData) {
     try {
-        showLoading('register');
+        showLoading('registerForm');
         
-        const registerData = {
-            name: userData.name,
-            email: userData.email,
-            password: userData.password,
-            workshop_name: userData.workshop_name || ''
-        };
-        
-        // 🔥 OBTER DADOS DO CAPTCHA
-        const captchaData = getCaptchaData();
-        
-        // Se for CAPTCHA customizado, adicionar campos no body
-        if (captchaData && captchaData.captcha_type === 'custom') {
-            registerData.captcha_id = captchaData.captcha_id;
-            registerData.captcha_text = captchaData.captcha_text;
-            console.log('📤 Enviando CAPTCHA customizado:', {
-                id: captchaData.captcha_id,
-                text: captchaData.captcha_text
-            });
+        // Validações
+        if (!userData.name || !userData.email || !userData.password) {
+            showMessage('Preencha todos os campos', 'warning');
+            hideLoading('registerForm');
+            return;
         }
         
-        // Preparar headers
+        if (userData.password !== document.getElementById('regConfirmPassword')?.value) {
+            showMessage('As senhas não coincidem', 'error');
+            hideLoading('registerForm');
+            return;
+        }
+        
+        const termsChecked = document.getElementById('terms')?.checked;
+        if (!termsChecked) {
+            showMessage('Aceite os termos de uso', 'warning');
+            hideLoading('registerForm');
+            return;
+        }
+        
+        const recaptchaToken = await generateRecaptchaToken('register');
+        
+        const registerData = {
+            name: userData.name.trim(),
+            email: userData.email.trim().toLowerCase(),
+            password: userData.password,
+            workshop_name: userData.workshop_name?.trim() || ''
+        };
+        
         const headers = {
             'Content-Type': 'application/json'
         };
         
-        // Se for reCAPTCHA, adicionar token no header
-        if (captchaData && captchaData.captcha_type?.startsWith('recaptcha')) {
-            headers['X-Captcha-Token'] = captchaData.captcha_token;
-            console.log('📤 Enviando reCAPTCHA token');
+        if (recaptchaToken) {
+            headers['X-Captcha-Token'] = recaptchaToken;
         }
         
-        console.log('📤 Enviando registro:', {
-            url: `${API_BASE}/auth/register`,
-            data: { ...registerData, password: '***' }
-        });
+        const url = buildUrl('/auth/register');
+        if (!url) {
+            hideLoading('registerForm');
+            return;
+        }
         
-        const response = await fetch(`${API_BASE}/auth/register`, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(registerData)
         });
         
-        hideLoading('register');
+        hideLoading('registerForm');
         
         if (response.ok) {
-            const data = await response.json();
-            showMessage('Conta criada com sucesso! Faça login.', 'success');
-            
+            showMessage('Conta criada! Faça login.', 'success');
             document.getElementById('registerForm')?.reset();
             
             setTimeout(() => {
                 document.getElementById('login-tab')?.click();
             }, 1500);
         } else {
-            const error = await response.json();
-            console.error('❌ Erro no registro:', error);
-            showMessage(error.detail || 'Erro no registro', 'error');
-            
-            // 🔥 RECARREGAR CAPTCHA em caso de erro
-            await loadCaptcha();
+            let errorMessage = 'Erro no registro';
+            try {
+                const error = await response.json();
+                errorMessage = error.detail || error.message || errorMessage;
+            } catch {
+                errorMessage = `Erro ${response.status}`;
+            }
+            showMessage(errorMessage, 'error');
         }
     } catch (error) {
-        hideLoading('register');
+        hideLoading('registerForm');
         console.error('❌ Erro no registro:', error);
-        showMessage('Erro de conexão com o servidor', 'error');
+        showMessage('Erro de conexão', 'error');
     }
 }
+
+// ==============================================
+// LOGOUT
+// ==============================================
 
 async function logout() {
     await clearSession(true);
@@ -558,7 +386,7 @@ async function logout() {
 }
 
 // ==============================================
-// UTILITÁRIOS DE UI
+// UTILITÁRIOS
 // ==============================================
 
 function showLoading(formId) {
@@ -606,57 +434,35 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
-// ==============================================
-// CONFIGURAÇÃO DE FORMULÁRIOS
-// ==============================================
-
 function setupForms() {
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        loginForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            login(email, password);
-        });
-    }
+    document.getElementById('loginForm')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        login(
+            document.getElementById('loginEmail').value,
+            document.getElementById('loginPassword').value
+        );
+    });
     
-    const registerForm = document.getElementById('registerForm');
-    if (registerForm) {
-        registerForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const password = document.getElementById('regPassword').value;
-            const confirmPassword = document.getElementById('regConfirmPassword').value;
-            
-            if (password !== confirmPassword) {
-                showMessage('As senhas não coincidem', 'error');
-                return;
-            }
-            
-            const userData = {
-                name: document.getElementById('regName').value,
-                email: document.getElementById('regEmail').value,
-                password: password,
-                workshop_name: document.getElementById('regWorkshop')?.value || ''
-            };
-            
-            register(userData);
+    document.getElementById('registerForm')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        register({
+            name: document.getElementById('regName').value,
+            email: document.getElementById('regEmail').value,
+            password: document.getElementById('regPassword').value,
+            workshop_name: document.getElementById('regWorkshop')?.value
         });
-    }
+    });
 }
 
 // ==============================================
 // INICIALIZAÇÃO
 // ==============================================
 
-document.addEventListener('DOMContentLoaded', async function() {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Auth.js inicializado');
     
     await validarELimparSessao();
-    
     setInterval(validarELimparSessao, CHECK_INTERVAL);
-    window.addEventListener('focus', validarELimparSessao);
     
     if (window.location.pathname === '/login' && isAuthenticated()) {
         window.location.href = '/dashboard';
@@ -669,34 +475,29 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     if (window.location.pathname === '/login') {
-        await loadCaptcha();
+        await loadCaptchaConfig();
     }
     
     setupForms();
 });
 
 // ==============================================
-// EXPORTAÇÕES PARA USO GLOBAL
+// EXPORTAÇÕES
 // ==============================================
 
 window.app = {
     login,
     register,
     logout,
-    apiRequest,
     isAuthenticated,
-    validateSession: validarELimparSessao,
-    reloadCaptcha: loadCaptcha,
     getCurrentUser: () => {
         try {
-            const user = localStorage.getItem('user');
-            return user ? JSON.parse(user) : null;
+            return JSON.parse(localStorage.getItem('user') || 'null');
         } catch {
             return null;
         }
     },
-    getToken: () => localStorage.getItem('access_token'),
-    getRefreshToken: () => localStorage.getItem('refresh_token')
+    getToken: () => localStorage.getItem('access_token')
 };
 
-console.log('✅ Auth.js carregado com sucesso');
+console.log('✅ Auth.js carregado');

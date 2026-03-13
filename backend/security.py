@@ -5,12 +5,15 @@ Todo o sistema DEVE importar daqui: from backend.security import ...
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple
 import secrets
 import hashlib
 import hmac
 import logging
 import json
+import io
+import random
+import string
 
 # Argon2
 from argon2 import PasswordHasher
@@ -22,7 +25,7 @@ from jose import JWTError, jwt
 # FastAPI
 from fastapi import HTTPException, status, Request, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 # Redis
 import redis.asyncio as redis
@@ -437,7 +440,7 @@ class JWTManager:
         return auth_header.strip()
 
 # ==============================================
-# 3. CAPTCHA MANAGER (OTIMIZADO)
+# 3. CAPTCHA MANAGER (OTIMIZADO COM IMAGEM DIRETA)
 # ==============================================
 
 class CaptchaManager:
@@ -450,10 +453,171 @@ class CaptchaManager:
         self._dev_mode = settings.DEBUG and not self.site_key
         self._cache = {}  # Cache para desenvolvimento
         
+        # 🔥 NOVO: Cache para CAPTCHA customizado
+        self._captcha_store = {}  # {captcha_id: text}
+        self._captcha_expiry = 300  # 5 minutos
+        
         if self._dev_mode:
             logger.warning("⚠️ CAPTCHA em modo desenvolvimento (sempre válido)")
         else:
             logger.info(f"✅ CAPTCHA configurado: {self.captcha_type}")
+    
+    # ==============================================
+    # NOVO: GERADOR DE CAPTCHA CUSTOMIZADO COM IMAGEM DIRETA
+    # ==============================================
+    
+    def generate_custom_captcha_image(self) -> Tuple[bytes, str]:
+        """
+        Gera imagem CAPTCHA e retorna (bytes_imagem, texto_captcha)
+        """
+        try:
+            # Tentar importar PIL (Pillow)
+            try:
+                from PIL import Image, ImageDraw, ImageFont, ImageFilter
+                PIL_AVAILABLE = True
+            except ImportError:
+                logger.warning("⚠️ Pillow não instalado. Usando gerador simples.")
+                PIL_AVAILABLE = False
+            
+            if PIL_AVAILABLE:
+                return self._generate_image_with_pillow()
+            else:
+                return self._generate_simple_image()
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar imagem CAPTCHA: {e}")
+            # Fallback para imagem simples em caso de erro
+            return self._generate_simple_image()
+    
+    def _generate_image_with_pillow(self) -> Tuple[bytes, str]:
+        """Gera imagem CAPTCHA usando Pillow"""
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
+        
+        # Gerar texto aleatório (6 dígitos)
+        captcha_text = ''.join(random.choices(string.digits, k=6))
+        
+        # Dimensões da imagem
+        width, height = 200, 70
+        
+        # Criar imagem
+        image = Image.new('RGB', (width, height), color=(255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        
+        # Adicionar ruído de fundo (pontos aleatórios)
+        for _ in range(200):
+            x = random.randint(0, width)
+            y = random.randint(0, height)
+            color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))
+            draw.point((x, y), fill=color)
+        
+        # Adicionar linhas onduladas
+        for i in range(3):
+            x1 = random.randint(0, width // 3)
+            y1 = random.randint(0, height)
+            x2 = random.randint(width // 2, width)
+            y2 = random.randint(0, height)
+            draw.line([(x1, y1), (x2, y2)], fill=(random.randint(100, 200), random.randint(100, 200), random.randint(100, 200)), width=1)
+        
+        # Desenhar texto com distorção
+        try:
+            # Tentar usar uma fonte um pouco maior
+            font = ImageFont.load_default()
+        except:
+            font = None
+        
+        for i, char in enumerate(captcha_text):
+            x = 25 + i * 25
+            y = 20 + random.randint(-5, 5)
+            
+            # Cores diferentes para cada caractere
+            color = (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100))
+            
+            if font:
+                draw.text((x, y), char, fill=color, font=font)
+            else:
+                draw.text((x, y), char, fill=color)
+        
+        # Aplicar blur leve para dificultar OCR
+        image = image.filter(ImageFilter.GaussianBlur(radius=0.5))
+        
+        # Converter para bytes
+        img_bytes = io.BytesIO()
+        image.save(img_bytes, format='PNG')
+        img_bytes = img_bytes.getvalue()
+        
+        # Armazenar texto para validação posterior
+        captcha_id = secrets.token_urlsafe(16)
+        self._captcha_store[captcha_id] = {
+            'text': captcha_text,
+            'expires': datetime.now().timestamp() + self._captcha_expiry
+        }
+        
+        # Limpar cache expirado
+        self._cleanup_captcha_store()
+        
+        return img_bytes, captcha_id
+    
+    def _generate_simple_image(self) -> Tuple[bytes, str]:
+        """Gera uma imagem CAPTCHA simples sem Pillow (fallback)"""
+        import base64
+        
+        # Gerar texto aleatório
+        captcha_text = ''.join(random.choices(string.digits, k=6))
+        
+        # Criar uma imagem SVG simples
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="70">
+            <rect width="200" height="70" fill="#f0f0f0" rx="10" ry="10"/>
+            <text x="30" y="45" font-family="Arial" font-size="30" fill="#333">{captcha_text}</text>
+            <line x1="10" y1="20" x2="190" y2="50" stroke="#999" stroke-width="1"/>
+            <line x1="20" y1="60" x2="180" y2="30" stroke="#999" stroke-width="1"/>
+        </svg>'''
+        
+        img_bytes = svg.encode('utf-8')
+        
+        # Armazenar texto para validação posterior
+        captcha_id = secrets.token_urlsafe(16)
+        self._captcha_store[captcha_id] = {
+            'text': captcha_text,
+            'expires': datetime.now().timestamp() + self._captcha_expiry
+        }
+        
+        return img_bytes, captcha_id
+    
+    def _cleanup_captcha_store(self):
+        """Remove CAPTCHAS expirados do cache"""
+        now = datetime.now().timestamp()
+        expired = [cid for cid, data in self._captcha_store.items() 
+                  if data['expires'] < now]
+        
+        for cid in expired:
+            del self._captcha_store[cid]
+        
+        if expired:
+            logger.debug(f"🧹 {len(expired)} CAPTCHAS expirados removidos")
+    
+    def validate_custom_captcha(self, captcha_id: str, captcha_text: str) -> bool:
+        """Valida CAPTCHA customizado"""
+        self._cleanup_captcha_store()
+        
+        if captcha_id not in self._captcha_store:
+            logger.warning(f"⚠️ CAPTCHA ID não encontrado: {captcha_id}")
+            return False
+        
+        data = self._captcha_store[captcha_id]
+        
+        # Validar texto (case insensitive)
+        if data['text'].lower() == captcha_text.lower().strip():
+            # Remover após uso (one-time use)
+            del self._captcha_store[captcha_id]
+            logger.info(f"✅ CAPTCHA válido: {captcha_id}")
+            return True
+        
+        logger.warning(f"❌ CAPTCHA inválido: esperado '{data['text']}', recebido '{captcha_text}'")
+        return False
+    
+    # ==============================================
+    # MÉTODOS EXISTENTES (VERIFICAÇÃO DE CAPTCHAS EXTERNOS)
+    # ==============================================
     
     async def verify_recaptcha(self, token: str, remote_ip: str = None) -> bool:
         """Verifica reCAPTCHA v2/v3"""

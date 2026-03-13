@@ -1,6 +1,7 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA E OTIMIZADA
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA COM IMAGEM DIRETA
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -23,14 +24,27 @@ router = APIRouter(tags=["authentication"])
 # ROTAS PÚBLICAS COM CAPTCHA
 # ==============================================
 
-# CORRIGIDO: POST -> GET para funcionar com frontend
+# 🔥 CORRIGIDO: Agora retorna imagem direta em vez de JSON
 @router.get("/captcha/generate")
 async def generate_captcha():
-    """Gera CAPTCHA próprio (para versão custom)"""
+    """Gera CAPTCHA próprio e retorna imagem direta"""
     print("🔄 Gerando CAPTCHA...")
     
     if captcha_manager.captcha_type == "custom":
-        return captcha_manager.generate_custom_captcha()
+        # Gerar imagem e ID
+        img_bytes, captcha_id = captcha_manager.generate_custom_captcha_image()
+        
+        # 🔥 IMPORTANTE: Retornar imagem com headers especiais
+        return Response(
+            content=img_bytes,
+            media_type="image/png",
+            headers={
+                "X-Captcha-ID": captcha_id,  # Enviar ID no header
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     else:
         return {
             "site_key": captcha_manager.site_key,
@@ -41,8 +55,7 @@ async def generate_captcha():
 async def register(
     request: Request,
     user_data: schemas.UserCreate,
-    db: Session = Depends(get_db),
-    captcha_valid: bool = Depends(check_captcha)
+    db: Session = Depends(get_db)
 ):
     """Registro público com CAPTCHA obrigatório"""
     
@@ -60,6 +73,23 @@ async def register(
             detail="Muitas tentativas de registro. Tente novamente mais tarde."
         )
     
+    # 🔥 VALIDAR CAPTCHA CUSTOMIZADO
+    if captcha_manager.captcha_type == "custom":
+        captcha_id = request.headers.get("X-Captcha-ID")
+        captcha_text = user_data.captcha_text
+        
+        if not captcha_id or not captcha_text:
+            raise HTTPException(
+                status_code=400,
+                detail="CAPTCHA ID e texto são obrigatórios"
+            )
+        
+        if not captcha_manager.validate_custom_captcha(captcha_id, captcha_text):
+            raise HTTPException(
+                status_code=400,
+                detail="CAPTCHA inválido"
+            )
+    
     # Impede registro como admin via API pública
     if user_data.role == schemas.UserRole.ADMIN:
         user_data.role = schemas.UserRole.USER
@@ -74,13 +104,11 @@ async def register(
     
     return user
 
-# 🔥 TEMPORÁRIO: CAPTCHA removido para testes
 @router.post("/login", response_model=schemas.Token)
 async def login(
     request: Request,
     login_data: schemas.UserLogin,
     db: Session = Depends(get_db)
-    # captcha_valid: bool = Depends(check_captcha)  # <-- Comentado para testes
 ):
     """Login com CAPTCHA obrigatório"""
     
@@ -106,6 +134,23 @@ async def login(
             status_code=429,
             detail="Muitas tentativas de login. Tente novamente mais tarde."
         )
+    
+    # 🔥 VALIDAR CAPTCHA CUSTOMIZADO
+    if captcha_manager.captcha_type == "custom":
+        captcha_id = request.headers.get("X-Captcha-ID")
+        captcha_text = login_data.captcha_text
+        
+        if not captcha_id or not captcha_text:
+            raise HTTPException(
+                status_code=400,
+                detail="CAPTCHA ID e texto são obrigatórios"
+            )
+        
+        if not captcha_manager.validate_custom_captcha(captcha_id, captcha_text):
+            raise HTTPException(
+                status_code=400,
+                detail="CAPTCHA inválido"
+            )
     
     # Buscar usuário
     user = crud.get_user_by_email(db, email=login_data.email)
