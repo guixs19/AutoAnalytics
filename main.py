@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM ARQUITETURA SAAS
+# main.py (na raiz) - VERSÃO CORRIGIDA COM ARQUITETURA SAAS E CAPTCHA PRÓPRIO
 import sys
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ import string
 from sqlalchemy.orm import Session
 
 print("=" * 60)
-print("🚀 AUTOANALYTICS v2.0 - SERVIDOR COMPLETO COM JWT E PAGAMENTOS")
+print("🚀 AUTOANALYTICS v2.0 - SERVIDOR COMPLETO COM JWT E CAPTCHA PRÓPRIO")
 print("=" * 60)
 
 # Configurar paths
@@ -70,10 +70,10 @@ class Settings:
     ARGON2_MEMORY_COST = 65536  # 64 MB
     ARGON2_PARALLELISM = 4
     
-    # CAPTCHA
-    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "recaptcha_v2")
-    CAPTCHA_SITE_KEY = os.getenv("CAPTCHA_SITE_KEY", "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI")
-    CAPTCHA_SECRET_KEY = os.getenv("CAPTCHA_SECRET_KEY", "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe")
+    # 🔥 CAPTCHA PRÓPRIO (NÃO USA MAIS GOOGLE)
+    CAPTCHA_TYPE = "custom"  # Sempre custom agora
+    CAPTCHA_SITE_KEY = ""    # Não usado mais
+    CAPTCHA_SECRET_KEY = ""  # Não usado mais
     
     # Rate Limiting
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -163,7 +163,7 @@ except ImportError as e:
 app = FastAPI(
     title=settings.APP_NAME,
     version="2.0.0",
-    description="Sistema inteligente para oficinas mecânicas com autenticação JWT e sistema de créditos",
+    description="Sistema inteligente para oficinas mecânicas com autenticação JWT, sistema de créditos e CAPTCHA próprio",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
@@ -267,9 +267,6 @@ if frontend_available:
             return FileResponse(checkout_path)
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
-    # 3️⃣ IMPORTANTE: NÃO temos mais a rota genérica /{file_path:path}
-    # Isso evita conflitos com as rotas da API!
-    
     print("✅ Rotas HTML configuradas sem conflito com API")
 
 # ==============================================
@@ -323,13 +320,17 @@ try:
     from backend.security import (
         hasher,
         jwt_manager,
-        captcha_manager,
+        captcha_manager,  # ✅ NOVO: CAPTCHA próprio
         rate_limiter,
         get_current_user,
         get_current_active_user,
         get_current_admin_user
     )
     print("✅ Módulos de segurança carregados")
+    print(f"   🔐 Argon2: OK")
+    print(f"   🎫 JWT: OK")
+    print(f"   🖼️ CAPTCHA próprio: OK (expiração: 2min, uso único)")
+    print(f"   ⏱️ Rate Limiting: OK")
     
     # Importar serviços
     from backend.services.daily_credits_service import DailyCreditsService
@@ -380,6 +381,9 @@ try:
     # Incluir rotas com prefixo /api
     app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
     print("✅ Rotas de autenticação: /api/auth/*")
+    print("   🔑 Login (com CAPTCHA próprio)")
+    print("   📝 Registro (com CAPTCHA próprio)")
+    print("   🖼️ /captcha/generate - Gera imagem CAPTCHA")
     
     app.include_router(routes.router, prefix="/api", tags=["api"])
     print("✅ Rotas da API: /api/*")
@@ -453,6 +457,9 @@ async def health_check():
     """Verifica saúde do sistema"""
     db_status = "connected" if db_path.exists() else "disconnected"
     
+    # 🔥 Estatísticas do CAPTCHA
+    captcha_stats = captcha_manager.get_stats() if hasattr(captcha_manager, 'get_stats') else {"total_active": 0}
+    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -461,7 +468,8 @@ async def health_check():
             "enabled": True,
             "argon2": True,
             "jwt": True,
-            "captcha": settings.CAPTCHA_TYPE,
+            "captcha": "CUSTOM (próprio)",
+            "captcha_active": captcha_stats["total_active"],
             "rate_limiting": True
         },
         "database": db_status,
@@ -476,7 +484,9 @@ async def health_check():
             "enabled": DISCORD_ENABLED
         },
         "frontend": {
-            "available": frontend_available
+            "available": frontend_available,
+            "login": login_available,
+            "dashboard": dashboard_available
         }
     }
 
@@ -486,19 +496,45 @@ async def security_info():
     return {
         "security_layers": {
             "password_hashing": {
-                "algorithm": "Argon2"
+                "algorithm": "Argon2id",
+                "time_cost": settings.ARGON2_TIME_COST
             },
             "jwt": {
                 "algorithm": settings.ALGORITHM,
                 "access_token_expire": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes"
             },
             "captcha": {
-                "type": settings.CAPTCHA_TYPE,
-                "enabled": bool(settings.CAPTCHA_SITE_KEY)
+                "type": "CUSTOM",
+                "description": "CAPTCHA próprio com números",
+                "expiration": "2 minutos",
+                "usage": "Uso único",
+                "ip_validation": True
+            },
+            "rate_limiting": {
+                "login_per_ip": "10/15min",
+                "login_per_email": "5/15min",
+                "register_per_ip": "3/hora"
             }
         },
         "status": "active"
     }
+
+@app.get("/api/captcha/stats", tags=["admin"])
+async def get_captcha_stats(
+    current_user = Depends(get_current_admin_user)
+):
+    """ADMIN: Retorna estatísticas dos CAPTCHAS ativos"""
+    try:
+        stats = captcha_manager.get_stats()
+        return {
+            "success": True,
+            "stats": stats
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 # ==============================================
 # ROTAS ADMIN (protegidas)
@@ -548,13 +584,24 @@ async def startup_event():
         except Exception as e:
             print(f"⚠️  Erro ao enviar alerta: {e}")
     
+    # 🔥 Verificar CAPTCHA manager
+    captcha_status = "✅ ATIVO" if captcha_manager else "❌ FALHA"
+    
     print(f"""
     🎉 {settings.APP_NAME} v2.0 INICIADO!
     
     📍 Diretório: {PROJECT_ROOT}
     🌐 Frontend: {'✅ Disponível' if frontend_available else '❌ Não disponível'}
     
-    🔐 SEGURANÇA: Argon2 + JWT + CAPTCHA + Rate Limiting
+    🔐 SEGURANÇA:
+       🔑 Argon2: ✅ ATIVO
+       🎫 JWT: ✅ ATIVO
+       🖼️ CAPTCHA PRÓPRIO: {captcha_status}
+          • Expiração: 2 minutos
+          • Uso único: Sim
+          • Validação de IP: Sim
+       ⏱️ Rate Limiting: ✅ ATIVO
+    
     💰 PAGAMENTOS: {'✅ Configurado' if settings.MP_ACCESS_TOKEN else '❌ Não configurado'}
     💎 CRÉDITOS: 1 crédito por dia via upload
     💬 DISCORD: {'✅ Ativos' if DISCORD_ENABLED else '❌ Desativados'}
@@ -564,6 +611,7 @@ async def startup_event():
        {'📊 Dashboard: http://localhost:' + str(settings.PORT) + '/dashboard' if dashboard_available else ''}
        📚 API Docs: http://localhost:{settings.PORT}/api/docs
        💎 Créditos API: http://localhost:{settings.PORT}/api/user/credits
+       🖼️ CAPTCHA: http://localhost:{settings.PORT}/api/auth/captcha/generate
        
     📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     """)
@@ -584,6 +632,7 @@ async def not_found_exception_handler(request: Request, exc):
                     "/api/docs",
                     "/api/health",
                     "/api/auth/login",
+                    "/api/auth/captcha/generate",
                     "/api/user/credits"
                 ]
             }
@@ -625,9 +674,11 @@ if __name__ == "__main__":
     print("🛑 Pressione CTRL+C para parar\n")
     
     print("🔒 MODO SEGURO: Todas as camadas de segurança ativas")
+    print("   🔑 Argon2 | 🎫 JWT | 🖼️ CAPTCHA próprio | ⏱️ Rate Limiting")
     print("📁 ARQUIVOS ESTÁTICOS: /static/*")
     print("🌐 ROTAS HTML: /, /login, /dashboard, /planos, /checkout")
-    print("🔌 API ROTAS: /api/*\n")
+    print("🔌 API ROTAS: /api/*")
+    print("🖼️ CAPTCHA: /api/auth/captcha/generate\n")
     
     uvicorn.run(
         "main:app",

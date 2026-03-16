@@ -1,7 +1,7 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA COM IMAGEM DIRETA
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA COM CAPTCHA PRÓPRIO
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -9,47 +9,47 @@ from backend.database import get_db
 from backend import crud, schemas
 from backend.security import (
     hasher,
-    captcha_manager,
+    captcha_manager,      # ✅ NOVO: CAPTCHA próprio
     jwt_manager,
     rate_limiter,
     get_current_active_user,
     get_current_admin_user,
     check_captcha,
-    oauth2_scheme
+    oauth2_scheme,
+    set_auth_cookies,
+    clear_auth_cookies
 )
 
 router = APIRouter(tags=["authentication"])
 
 # ==============================================
-# ROTAS PÚBLICAS COM CAPTCHA
+# ROTAS PÚBLICAS COM CAPTCHA PRÓPRIO
 # ==============================================
 
-# 🔥 CORRIGIDO: Agora retorna imagem direta em vez de JSON
 @router.get("/captcha/generate")
-async def generate_captcha():
+async def generate_captcha(request: Request):
     """Gera CAPTCHA próprio e retorna imagem direta"""
-    print("🔄 Gerando CAPTCHA...")
+    print("🔄 Gerando CAPTCHA próprio...")
     
-    if captcha_manager.captcha_type == "custom":
-        # Gerar imagem e ID
-        img_bytes, captcha_id = captcha_manager.generate_custom_captcha_image()
-        
-        # 🔥 IMPORTANTE: Retornar imagem com headers especiais
-        return Response(
-            content=img_bytes,
-            media_type="image/png",
-            headers={
-                "X-Captcha-ID": captcha_id,  # Enviar ID no header
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-    else:
-        return {
-            "site_key": captcha_manager.site_key,
-            "type": captcha_manager.captcha_type
+    # Pegar IP do cliente para vincular ao CAPTCHA
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Gerar imagem e ID (uso único, expira em 2 minutos)
+    img_bytes, captcha_id = captcha_manager.generate_captcha_image(client_ip)
+    
+    print(f"✅ CAPTCHA gerado para IP {client_ip}: {captcha_id}")
+    
+    # Retornar imagem com headers especiais
+    return Response(
+        content=img_bytes,
+        media_type="image/png",
+        headers={
+            "X-Captcha-ID": captcha_id,  # ID único do CAPTCHA
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
         }
+    )
 
 @router.post("/register")
 async def register(
@@ -57,7 +57,7 @@ async def register(
     user_data: schemas.UserCreate,
     db: Session = Depends(get_db)
 ):
-    """Registro público com CAPTCHA obrigatório"""
+    """Registro público com CAPTCHA próprio"""
     
     # Rate limiting por IP
     client_ip = request.client.host
@@ -73,22 +73,24 @@ async def register(
             detail="Muitas tentativas de registro. Tente novamente mais tarde."
         )
     
-    # 🔥 VALIDAR CAPTCHA CUSTOMIZADO
-    if captcha_manager.captcha_type == "custom":
-        captcha_id = request.headers.get("X-Captcha-ID")
-        captcha_text = user_data.captcha_text
-        
-        if not captcha_id or not captcha_text:
-            raise HTTPException(
-                status_code=400,
-                detail="CAPTCHA ID e texto são obrigatórios"
-            )
-        
-        if not captcha_manager.validate_custom_captcha(captcha_id, captcha_text):
-            raise HTTPException(
-                status_code=400,
-                detail="CAPTCHA inválido"
-            )
+    # 🔥 VALIDAR CAPTCHA PRÓPRIO
+    captcha_id = request.headers.get("X-Captcha-ID")
+    captcha_text = user_data.captcha_text
+    
+    if not captcha_id or not captcha_text:
+        raise HTTPException(
+            status_code=400,
+            detail="CAPTCHA ID e texto são obrigatórios"
+        )
+    
+    # Validar CAPTCHA (uso único, 2 minutos, mesmo IP)
+    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
+        raise HTTPException(
+            status_code=400,
+            detail="CAPTCHA inválido, expirado ou já utilizado"
+        )
+    
+    print(f"✅ CAPTCHA validado para registro: {client_ip}")
     
     # Impede registro como admin via API pública
     if user_data.role == schemas.UserRole.ADMIN:
@@ -102,15 +104,17 @@ async def register(
     # Criar usuário
     user = crud.create_user(db=db, user=user_data)
     
+    print(f"✅ Usuário registrado: {user.email}")
+    
     return user
 
-@router.post("/login", response_model=schemas.Token)
+@router.post("/login")  # REMOVIDO response_model=schemas.Token
 async def login(
     request: Request,
     login_data: schemas.UserLogin,
     db: Session = Depends(get_db)
 ):
-    """Login com CAPTCHA obrigatório"""
+    """Login com CAPTCHA próprio - Retorna cookies HTTP-only"""
     
     # Rate limiting por email e IP
     client_ip = request.client.host
@@ -135,22 +139,24 @@ async def login(
             detail="Muitas tentativas de login. Tente novamente mais tarde."
         )
     
-    # 🔥 VALIDAR CAPTCHA CUSTOMIZADO
-    if captcha_manager.captcha_type == "custom":
-        captcha_id = request.headers.get("X-Captcha-ID")
-        captcha_text = login_data.captcha_text
-        
-        if not captcha_id or not captcha_text:
-            raise HTTPException(
-                status_code=400,
-                detail="CAPTCHA ID e texto são obrigatórios"
-            )
-        
-        if not captcha_manager.validate_custom_captcha(captcha_id, captcha_text):
-            raise HTTPException(
-                status_code=400,
-                detail="CAPTCHA inválido"
-            )
+    # 🔥 VALIDAR CAPTCHA PRÓPRIO
+    captcha_id = request.headers.get("X-Captcha-ID")
+    captcha_text = login_data.captcha_text
+    
+    if not captcha_id or not captcha_text:
+        raise HTTPException(
+            status_code=400,
+            detail="CAPTCHA ID e texto são obrigatórios"
+        )
+    
+    # Validar CAPTCHA (uso único, 2 minutos, mesmo IP)
+    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
+        raise HTTPException(
+            status_code=400,
+            detail="CAPTCHA inválido, expirado ou já utilizado"
+        )
+    
+    print(f"✅ CAPTCHA validado para login: {client_ip}")
     
     # Buscar usuário
     user = crud.get_user_by_email(db, email=login_data.email)
@@ -195,25 +201,42 @@ async def login(
     )
     db.commit()
     
-    return {
+    # 🔥 CRIAR RESPOSTA COM COOKIES
+    response_data = {
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
         "token_type": "bearer",
         "user_name": user.name,
         "user_email": user.email,
         "workshop_name": user.workshop_name,
-        "role": user.role,
-        "plan": user.plan,
+        "role": str(user.role),
+        "plan": str(user.plan),
         "credits": user.credits,
-        "expires_in": tokens["expires_in"]
+        "expires_in": tokens["expires_in"],
+        "message": "Login realizado com sucesso"
     }
+    
+    # Criar resposta JSON
+    response = JSONResponse(content=response_data)
+    
+    # Definir os cookies HTTP-only
+    response = set_auth_cookies(
+        response=response,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        expires_in=tokens["expires_in"]
+    )
+    
+    print(f"✅ Login bem-sucedido: {user.email} - Cookies definidos")
+    
+    return response
 
 @router.post("/refresh")
 async def refresh_token(
     refresh_data: schemas.TokenRefresh,
     db: Session = Depends(get_db)
 ):
-    """Renova access token usando refresh token"""
+    """Renova access token usando refresh token e atualiza cookies"""
     
     new_tokens = await jwt_manager.refresh_access_token(
         refresh_data.refresh_token, 
@@ -226,14 +249,35 @@ async def refresh_token(
             detail="Refresh token inválido ou expirado"
         )
     
-    return new_tokens
+    # Criar resposta com novos tokens
+    response_data = {
+        "access_token": new_tokens["access_token"],
+        "refresh_token": new_tokens["refresh_token"],
+        "token_type": "bearer",
+        "expires_in": new_tokens["expires_in"],
+        "message": "Token renovado com sucesso"
+    }
+    
+    response = JSONResponse(content=response_data)
+    
+    # Atualizar os cookies com os novos tokens
+    response = set_auth_cookies(
+        response=response,
+        access_token=new_tokens["access_token"],
+        refresh_token=new_tokens["refresh_token"],
+        expires_in=new_tokens["expires_in"]
+    )
+    
+    print(f"✅ Token renovado - Cookies atualizados")
+    
+    return response
 
 @router.post("/logout")
 async def logout(
     refresh_data: schemas.TokenRefresh,
     db: Session = Depends(get_db)
 ):
-    """Faz logout invalidando o refresh token no banco"""
+    """Faz logout invalidando o refresh token no banco e removendo cookies"""
     
     success = await jwt_manager.logout(refresh_data.refresh_token, db)
     
@@ -243,7 +287,17 @@ async def logout(
             detail="Erro ao fazer logout"
         )
     
-    return {"message": "Logout realizado com sucesso"}
+    # Criar resposta e remover cookies
+    response = JSONResponse(content={
+        "message": "Logout realizado com sucesso"
+    })
+    
+    # Remover os cookies
+    response = clear_auth_cookies(response)
+    
+    print(f"✅ Logout realizado - Cookies removidos")
+    
+    return response
 
 # ==============================================
 # ROTA DE VALIDAÇÃO DE TOKEN (NOVA)
@@ -334,3 +388,14 @@ async def get_user_stats_admin(
 ):
     """Estatísticas do sistema (somente admin)"""
     return crud.get_user_stats(db)
+
+# ==============================================
+# ROTA DE ADMIN PARA VER CAPTCHAS ATIVOS (DEBUG)
+# ==============================================
+
+@router.get("/admin/captcha-stats")
+async def get_captcha_stats(
+    current_user: schemas.UserResponse = Depends(get_current_admin_user)
+):
+    """Retorna estatísticas dos CAPTCHAS ativos (somente admin)"""
+    return captcha_manager.get_stats()

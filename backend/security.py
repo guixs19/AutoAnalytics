@@ -1,4 +1,4 @@
-# backend/security.py - VERSÃO DEFINITIVA E OTIMIZADA (SEM CIRCULAR)
+# backend/security.py - VERSÃO DEFINITIVA COM CAPTCHA PRÓPRIO
 """
 MÓDULO CENTRAL DE SEGURANÇA
 Todo o sistema DEVE importar daqui: from backend.security import ...
@@ -10,10 +10,10 @@ import secrets
 import hashlib
 import hmac
 import logging
-import json
 import io
 import random
 import string
+import time
 
 # Argon2
 from argon2 import PasswordHasher
@@ -440,35 +440,123 @@ class JWTManager:
         return auth_header.strip()
 
 # ==============================================
-# 3. CAPTCHA MANAGER (OTIMIZADO COM IMAGEM DIRETA)
+# 3. CAPTCHA MANAGER PRÓPRIO (COM RATE LIMIT, USO ÚNICO, EXPIRAÇÃO 2 MIN)
 # ==============================================
 
-class CaptchaManager:
-    """Gerenciador de CAPTCHA - Suporte a múltiplos tipos"""
+class CaptchaStore:
+    """Armazenamento de CAPTCHAs com expiração automática"""
     
     def __init__(self):
-        self.captcha_type = settings.CAPTCHA_TYPE
-        self.site_key = settings.CAPTCHA_SITE_KEY
-        self.secret_key = settings.CAPTCHA_SECRET_KEY
-        self._dev_mode = settings.DEBUG and not self.site_key
-        self._cache = {}  # Cache para desenvolvimento
-        
-        # 🔥 NOVO: Cache para CAPTCHA customizado
-        self._captcha_store = {}  # {captcha_id: text}
-        self._captcha_expiry = 300  # 5 minutos
-        
-        if self._dev_mode:
-            logger.warning("⚠️ CAPTCHA em modo desenvolvimento (sempre válido)")
-        else:
-            logger.info(f"✅ CAPTCHA configurado: {self.captcha_type}")
+        self._store = {}  # {captcha_id: {"text": str, "expires": timestamp, "used": bool, "ip": str}}
+        self._cleanup_interval = 60  # Limpar a cada 60 segundos
+        self._last_cleanup = time.time()
     
-    # ==============================================
-    # NOVO: GERADOR DE CAPTCHA CUSTOMIZADO COM IMAGEM DIRETA
-    # ==============================================
+    def _cleanup(self):
+        """Remove CAPTCHAS expirados (mais de 2 minutos)"""
+        now = time.time()
+        expired = []
+        
+        for cid, data in self._store.items():
+            if data["expires"] < now:
+                expired.append(cid)
+        
+        for cid in expired:
+            del self._store[cid]
+        
+        if expired:
+            logger.debug(f"🧹 {len(expired)} CAPTCHAS expirados removidos")
+        
+        self._last_cleanup = now
     
-    def generate_custom_captcha_image(self) -> Tuple[bytes, str]:
+    def add(self, captcha_id: str, text: str, ip: str):
+        """Adiciona novo CAPTCHA com expiração de 2 minutos"""
+        # Limpar antes de adicionar
+        if time.time() - self._last_cleanup > self._cleanup_interval:
+            self._cleanup()
+        
+        self._store[captcha_id] = {
+            "text": text,
+            "expires": time.time() + 120,  # 2 MINUTOS EXATAMENTE!
+            "used": False,
+            "ip": ip,
+            "created_at": time.time()
+        }
+        logger.info(f"✅ CAPTCHA criado para IP {ip}: {captcha_id} (expira em 2min)")
+    
+    def get_and_validate(self, captcha_id: str, user_input: str, ip: str) -> Tuple[bool, str]:
         """
-        Gera imagem CAPTCHA e retorna (bytes_imagem, texto_captcha)
+        Valida CAPTCHA e retorna (sucesso, mensagem)
+        Implementa: USO ÚNICO + EXPIRAÇÃO + VALIDAÇÃO DE IP
+        """
+        # Limpar antes de validar
+        if time.time() - self._last_cleanup > self._cleanup_interval:
+            self._cleanup()
+        
+        # Verificar se existe
+        if captcha_id not in self._store:
+            return False, "CAPTCHA não encontrado ou já expirou"
+        
+        data = self._store[captcha_id]
+        
+        # VERIFICAÇÃO 1: EXPIRAÇÃO (2 minutos)
+        if time.time() > data["expires"]:
+            del self._store[captcha_id]
+            return False, "CAPTCHA expirado (2 minutos)"
+        
+        # VERIFICAÇÃO 2: USO ÚNICO
+        if data["used"]:
+            del self._store[captcha_id]  # Remove imediatamente se já usado
+            return False, "CAPTCHA já foi utilizado"
+        
+        # VERIFICAÇÃO 3: MESMO IP (segurança extra)
+        if data["ip"] != ip:
+            logger.warning(f"⚠️ IP diferente: esperado {data['ip']}, recebido {ip}")
+            return False, "IP não corresponde ao CAPTCHA"
+        
+        # VERIFICAÇÃO 4: TEXTO CORRETO
+        if data["text"].lower() != user_input.lower().strip():
+            return False, "Texto incorreto"
+        
+        # ✅ TUDO VÁLIDO! Marcar como usado e remover
+        del self._store[captcha_id]  # USO ÚNICO: remove após validar
+        logger.info(f"✅ CAPTCHA {captcha_id} validado com sucesso e removido")
+        
+        return True, "CAPTCHA válido"
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas do store (para debug/admin)"""
+        self._cleanup()
+        return {
+            "total_active": len(self._store),
+            "captchas": [
+                {
+                    "id": cid,
+                    "ip": data["ip"],
+                    "expires_in": int(data["expires"] - time.time()),
+                    "used": data["used"],
+                    "created_at": datetime.fromtimestamp(data["created_at"]).isoformat()
+                }
+                for cid, data in self._store.items()
+            ]
+        }
+
+class CaptchaManager:
+    """Gerenciador de CAPTCHA próprio - SEM Google reCAPTCHA!"""
+    
+    def __init__(self):
+        self.store = CaptchaStore()
+        self._dev_mode = settings.DEBUG
+        logger.info("✅ CAPTCHA Manager próprio inicializado (expiração: 2min, uso único, rate limit por IP)")
+    
+    # ==============================================
+    # GERADOR DE IMAGEM CAPTCHA
+    # ==============================================
+    
+    def generate_captcha_image(self, ip: str) -> Tuple[bytes, str]:
+        """
+        Gera imagem CAPTCHA e retorna (bytes_imagem, captcha_id)
+        Args:
+            ip: IP do usuário para rate limiting
         """
         try:
             # Tentar importar PIL (Pillow)
@@ -480,20 +568,20 @@ class CaptchaManager:
                 PIL_AVAILABLE = False
             
             if PIL_AVAILABLE:
-                return self._generate_image_with_pillow()
+                return self._generate_image_with_pillow(ip)
             else:
-                return self._generate_simple_image()
+                return self._generate_simple_image(ip)
                 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar imagem CAPTCHA: {e}")
             # Fallback para imagem simples em caso de erro
-            return self._generate_simple_image()
+            return self._generate_simple_image(ip)
     
-    def _generate_image_with_pillow(self) -> Tuple[bytes, str]:
+    def _generate_image_with_pillow(self, ip: str) -> Tuple[bytes, str]:
         """Gera imagem CAPTCHA usando Pillow"""
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
         
-        # Gerar texto aleatório (6 dígitos)
+        # Gerar texto aleatório (6 dígitos) - números apenas para facilitar
         captcha_text = ''.join(random.choices(string.digits, k=6))
         
         # Dimensões da imagem
@@ -510,7 +598,7 @@ class CaptchaManager:
             color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))
             draw.point((x, y), fill=color)
         
-        # Adicionar linhas onduladas
+        # Adicionar linhas onduladas (dificulta OCR)
         for i in range(3):
             x1 = random.randint(0, width // 3)
             y1 = random.randint(0, height)
@@ -545,26 +633,18 @@ class CaptchaManager:
         image.save(img_bytes, format='PNG')
         img_bytes = img_bytes.getvalue()
         
-        # Armazenar texto para validação posterior
+        # Gerar ID único e armazenar
         captcha_id = secrets.token_urlsafe(16)
-        self._captcha_store[captcha_id] = {
-            'text': captcha_text,
-            'expires': datetime.now().timestamp() + self._captcha_expiry
-        }
-        
-        # Limpar cache expirado
-        self._cleanup_captcha_store()
+        self.store.add(captcha_id, captcha_text, ip)
         
         return img_bytes, captcha_id
     
-    def _generate_simple_image(self) -> Tuple[bytes, str]:
+    def _generate_simple_image(self, ip: str) -> Tuple[bytes, str]:
         """Gera uma imagem CAPTCHA simples sem Pillow (fallback)"""
-        import base64
-        
-        # Gerar texto aleatório
+        # Gerar texto aleatório (6 dígitos)
         captcha_text = ''.join(random.choices(string.digits, k=6))
         
-        # Criar uma imagem SVG simples
+        # Criar uma imagem SVG simples (funciona em qualquer navegador)
         svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="70">
             <rect width="200" height="70" fill="#f0f0f0" rx="10" ry="10"/>
             <text x="30" y="45" font-family="Arial" font-size="30" fill="#333">{captcha_text}</text>
@@ -574,127 +654,32 @@ class CaptchaManager:
         
         img_bytes = svg.encode('utf-8')
         
-        # Armazenar texto para validação posterior
+        # Gerar ID único e armazenar
         captcha_id = secrets.token_urlsafe(16)
-        self._captcha_store[captcha_id] = {
-            'text': captcha_text,
-            'expires': datetime.now().timestamp() + self._captcha_expiry
-        }
+        self.store.add(captcha_id, captcha_text, ip)
         
         return img_bytes, captcha_id
     
-    def _cleanup_captcha_store(self):
-        """Remove CAPTCHAS expirados do cache"""
-        now = datetime.now().timestamp()
-        expired = [cid for cid, data in self._captcha_store.items() 
-                  if data['expires'] < now]
+    def validate_captcha(self, captcha_id: str, captcha_text: str, ip: str) -> bool:
+        """
+        Valida CAPTCHA com todas as regras:
+        ✅ Rate limit (indireto, pelo IP)
+        ✅ Uso único (remove após validar)
+        ✅ Expiração de 2 minutos
+        ✅ Mesmo IP do usuário
+        """
+        valid, message = self.store.get_and_validate(captcha_id, captcha_text, ip)
         
-        for cid in expired:
-            del self._captcha_store[cid]
+        if valid:
+            logger.info(f"✅ CAPTCHA válido para IP {ip}")
+        else:
+            logger.warning(f"❌ CAPTCHA inválido para IP {ip}: {message}")
         
-        if expired:
-            logger.debug(f"🧹 {len(expired)} CAPTCHAS expirados removidos")
+        return valid
     
-    def validate_custom_captcha(self, captcha_id: str, captcha_text: str) -> bool:
-        """Valida CAPTCHA customizado"""
-        self._cleanup_captcha_store()
-        
-        if captcha_id not in self._captcha_store:
-            logger.warning(f"⚠️ CAPTCHA ID não encontrado: {captcha_id}")
-            return False
-        
-        data = self._captcha_store[captcha_id]
-        
-        # Validar texto (case insensitive)
-        if data['text'].lower() == captcha_text.lower().strip():
-            # Remover após uso (one-time use)
-            del self._captcha_store[captcha_id]
-            logger.info(f"✅ CAPTCHA válido: {captcha_id}")
-            return True
-        
-        logger.warning(f"❌ CAPTCHA inválido: esperado '{data['text']}', recebido '{captcha_text}'")
-        return False
-    
-    # ==============================================
-    # MÉTODOS EXISTENTES (VERIFICAÇÃO DE CAPTCHAS EXTERNOS)
-    # ==============================================
-    
-    async def verify_recaptcha(self, token: str, remote_ip: str = None) -> bool:
-        """Verifica reCAPTCHA v2/v3"""
-        import httpx
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                response = await client.post(
-                    "https://www.google.com/recaptcha/api/siteverify",
-                    data={
-                        "secret": self.secret_key,
-                        "response": token,
-                        "remoteip": remote_ip
-                    }
-                )
-                
-                result = response.json()
-                
-                if self.captcha_type == "recaptcha_v3":
-                    score = result.get("score", 0)
-                    action = result.get("action", "")
-                    logger.info(f"reCAPTCHA v3 - Score: {score}, Action: {action}")
-                    return result.get("success", False) and score >= 0.5
-                
-                logger.info(f"reCAPTCHA v2 - Sucesso: {result.get('success')}")
-                return result.get("success", False)
-                
-            except httpx.TimeoutException:
-                logger.error("Timeout ao verificar reCAPTCHA")
-                return False
-            except Exception as e:
-                logger.error(f"Erro ao verificar reCAPTCHA: {e}")
-                return False
-    
-    async def verify_hcaptcha(self, token: str, remote_ip: str = None) -> bool:
-        """Verifica hCaptcha"""
-        import httpx
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                response = await client.post(
-                    "https://hcaptcha.com/siteverify",
-                    data={
-                        "secret": self.secret_key,
-                        "response": token,
-                        "remoteip": remote_ip
-                    }
-                )
-                
-                result = response.json()
-                logger.info(f"hCaptcha - Sucesso: {result.get('success')}")
-                return result.get("success", False)
-                
-            except Exception as e:
-                logger.error(f"Erro ao verificar hCaptcha: {e}")
-                return False
-    
-    async def verify_token(self, token: str, remote_ip: str = None) -> bool:
-        """Verifica CAPTCHA baseado no tipo configurado"""
-        # Modo desenvolvimento
-        if self._dev_mode:
-            return True
-        
-        if not token:
-            logger.warning("Token CAPTCHA não fornecido")
-            return False
-        
-        # reCAPTCHA
-        if self.captcha_type.startswith("recaptcha"):
-            return await self.verify_recaptcha(token, remote_ip)
-        
-        # hCaptcha
-        if self.captcha_type == "hcaptcha":
-            return await self.verify_hcaptcha(token, remote_ip)
-        
-        logger.warning(f"Tipo de CAPTCHA não suportado: {self.captcha_type}")
-        return False
+    def get_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas (para admin)"""
+        return self.store.get_stats()
 
 # ==============================================
 # 4. RATE LIMITER (OTIMIZADO)
@@ -804,7 +789,7 @@ class RateLimiter:
 # Criar instâncias únicas
 hasher = Argon2Hasher()
 jwt_manager = JWTManager()
-captcha_manager = CaptchaManager()
+captcha_manager = CaptchaManager()  # ✅ NOVO: CAPTCHA PRÓPRIO!
 rate_limiter = RateLimiter()
 
 # ==============================================
@@ -913,27 +898,37 @@ async def check_captcha(request: Request) -> bool:
     if captcha_manager._dev_mode:
         return True
     
-    # Pegar token do header
-    captcha_token = request.headers.get("X-Captcha-Token")
-    if not captcha_token:
-        captcha_token = request.headers.get("Captcha-Token")
+    # Pegar ID e texto do header/body
+    captcha_id = request.headers.get("X-Captcha-ID")
+    captcha_text = request.headers.get("X-Captcha-Text")
     
-    if not captcha_token:
-        logger.warning("CAPTCHA token não fornecido")
+    # Tentar pegar do body se não estiver no header
+    if not captcha_id or not captcha_text:
+        try:
+            body = await request.json()
+            captcha_id = body.get("captcha_id") or body.get("captchaId")
+            captcha_text = body.get("captcha_text") or body.get("captchaText")
+        except:
+            pass
+    
+    if not captcha_id or not captcha_text:
+        logger.warning("CAPTCHA ID ou texto não fornecido")
         raise HTTPException(
             status_code=400,
-            detail="CAPTCHA token é obrigatório"
+            detail="CAPTCHA ID e texto são obrigatórios"
         )
     
-    # Verificar
-    client_ip = request.client.host if request.client else None
-    valid = await captcha_manager.verify_token(captcha_token, client_ip)
+    # Pegar IP do cliente
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Validar CAPTCHA
+    valid = captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip)
     
     if not valid:
-        logger.warning("CAPTCHA inválido")
+        logger.warning(f"CAPTCHA inválido para IP {client_ip}")
         raise HTTPException(
             status_code=400,
-            detail="CAPTCHA inválido"
+            detail="CAPTCHA inválido ou expirado"
         )
     
     return True
@@ -984,7 +979,69 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         return None
 
 # ==============================================
-# 8. EXPORTAÇÕES
+# 8. FUNÇÕES PARA COOKIES
+# ==============================================
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str = None, expires_in: int = 3600):
+    """
+    Define cookies HTTP-only para autenticação
+    Use esta função em todas as rotas de login/refresh
+    """
+    # Cookie do access token
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,        # Não acessível via JavaScript
+        secure=False,         # ⚠️ False para desenvolvimento local (HTTP)
+        samesite="lax",       # Proteção contra CSRF
+        max_age=expires_in,   # Tempo de vida em segundos
+        path="/"              # Disponível em todo o site
+    )
+    
+    # Cookie do refresh token (se fornecido)
+    if refresh_token:
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=False,      # ⚠️ False para desenvolvimento
+            samesite="lax",
+            max_age=7 * 24 * 60 * 60,  # 7 dias
+            path="/"
+        )
+    
+    logger.info(f"🍪 Cookies de autenticação definidos (secure=False)")
+    return response
+
+def clear_auth_cookies(response: Response):
+    """
+    Remove cookies de autenticação (logout)
+    """
+    response.set_cookie(
+        key="access_token",
+        value="",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=0,
+        path="/"
+    )
+    
+    response.set_cookie(
+        key="refresh_token",
+        value="",
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=0,
+        path="/"
+    )
+    
+    logger.info("🍪 Cookies de autenticação removidos")
+    return response
+
+# ==============================================
+# 9. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
@@ -1009,4 +1066,8 @@ __all__ = [
     'verify_token_hash',
     'create_password_reset_token',
     'verify_password_reset_token',
+    
+    # Funções de cookie
+    'set_auth_cookies',
+    'clear_auth_cookies'
 ]

@@ -1,8 +1,8 @@
-# backend/api/routes.py - VERSÃO CORRIGIDA COM SECURITY CENTRAL E CRÉDITOS
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status
+# backend/api/routes.py - VERSÃO CORRIGIDA SEM ERRO DE SESSÃO
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, date
 import uuid
 import os
 import json
@@ -19,7 +19,7 @@ print("🔧 Iniciando routes.py v2.0 com sistema de créditos...")
 try:
     from backend.database import get_db
     from backend import crud, schemas
-    from backend.security import get_current_user
+    from backend.security import get_current_user, set_auth_cookies, clear_auth_cookies
     from backend.models import User
     print("✅ Módulos de autenticação importados")
 except ImportError as e:
@@ -87,10 +87,9 @@ except ImportError:
                     f.write(content)
                 return file_path
 
-# 2. DataPreprocessor - CORRIGIDO: Usando ModelTrainer do preprocessing.py
+# 2. DataPreprocessor
 DataPreprocessor = None
 try:
-    # Primeiro tenta importar ModelTrainer e usar como DataPreprocessor
     from backend.preprocessing import ModelTrainer
     DataPreprocessor = ModelTrainer
     print("✅ Usando ModelTrainer como DataPreprocessor")
@@ -599,6 +598,7 @@ async def get_user_profile(
     db: Session = Depends(get_db)
 ):
     """Retorna perfil do usuário"""
+    # 🔥 CORRIGIDO: Refresh pode ser usado aqui porque o objeto ainda está na sessão
     db.refresh(current_user)
     return {
         "id": current_user.id,
@@ -609,18 +609,112 @@ async def get_user_profile(
         "total_purchased": current_user.total_purchased
     }
 
+# ==============================================
+# 🔥 ROTA CORRIGIDA - SEM ERRO DE SESSÃO
+# ==============================================
 @router.get("/stats")
 async def get_stats(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna estatísticas do dashboard"""
-    analyses = crud.get_user_analyses(db, current_user.id)
-    db.refresh(current_user)
+    """Retorna estatísticas do dashboard - VERSÃO CORRIGIDA"""
+    try:
+        print(f"📊 Buscando estatísticas para usuário: {current_user.email}")
+        
+        # 🔥 CORREÇÃO 1: NÃO usar db.refresh() - causa o erro!
+        # db.refresh(current_user)  ← ISSO ESTAVA CAUSANDO O ERRO 500!
+        
+        # 🔥 CORREÇÃO 2: Buscar análises do usuário
+        analyses = crud.get_user_analyses(db, current_user.id)
+        
+        # Calcular análises de hoje
+        hoje = date.today()
+        analises_hoje = sum(1 for a in analyses if a.uploaded_at.date() == hoje)
+        
+        # 🔥 CORREÇÃO 3: Acessar atributos diretamente, sem refresh
+        return {
+            "total_analises": len(analyses),
+            "analises_hoje": analises_hoje,
+            "creditos": current_user.credits,  # ✅ Acesso direto
+            "nome": current_user.name,
+            "email": current_user.email,
+            "workshop": current_user.workshop_name,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        print(f"❌ Erro em get_stats: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Retornar dados parciais em caso de erro
+        return {
+            "total_analises": 0,
+            "analises_hoje": 0,
+            "creditos": current_user.credits if current_user else 0,
+            "nome": current_user.name if current_user else "Usuário",
+            "email": current_user.email if current_user else "",
+            "status": "error",
+            "mensagem": "Erro ao carregar estatísticas completas"
+        }
+
+# ==============================================
+# 🔥 NOVA ROTA: Histórico de análises (resolve o 404)
+# ==============================================
+@router.get("/analyses/history")
+async def get_analysis_history(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 10
+):
+    """Retorna histórico de análises do usuário"""
+    try:
+        print(f"📜 Buscando histórico para usuário: {current_user.email}")
+        
+        analyses = crud.get_user_analyses(db, current_user.id, limit=limit)
+        
+        return [
+            {
+                "id": a.id,
+                "filename": a.filename,
+                "status": a.status,
+                "created_at": a.uploaded_at.isoformat(),
+                "analysis_type": a.analysis_type,
+                "ai_used": a.ai_used,
+                "rows_processed": a.rows_processed,
+                "columns_processed": a.columns_processed
+            }
+            for a in analyses
+        ]
+    except Exception as e:
+        print(f"❌ Erro ao buscar histórico: {e}")
+        return []
+
+# ==============================================
+# ROTA DO DASHBOARD (SEM BARRA!)
+# ==============================================
+@router.get("/dashboard")
+async def dashboard(
+    request: Request,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Rota do dashboard - SEM BARRA NO FINAL para evitar redirect 307
+    """
+    from fastapi.responses import HTMLResponse
+    from fastapi.templating import Jinja2Templates
     
-    return {
-        "total_analises": len(analyses),
-        "creditos": current_user.credits
-    }
+    templates = Jinja2Templates(directory="frontend")
+    
+    return templates.TemplateResponse(
+        "dashboard.html", 
+        {
+            "request": request, 
+            "user": current_user,
+            "credits": current_user.credits,
+            "name": current_user.name
+        }
+    )
 
 print("✅ routes.py carregado com sucesso!")

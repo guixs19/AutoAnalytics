@@ -1,5 +1,5 @@
-// frontend/js/auth.js - VERSÃO SIMPLIFICADA
-// Sistema de autenticação com JWT e reCAPTCHA
+// frontend/js/auth.js - VERSÃO FINAL CORRIGIDA COM IDs CORRETOS
+// Sistema de autenticação com JWT e CAPTCHA próprio
 
 const API_BASE = (function() {
     const isLocalhost = window.location.hostname === 'localhost' || 
@@ -13,10 +13,15 @@ const API_BASE = (function() {
 
 console.log('🌐 API Base URL:', API_BASE);
 
-const CHECK_INTERVAL = 5 * 60 * 1000;
+const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
 
-let siteKey = null;
-let recaptchaReady = false;
+// Armazenar CAPTCHA IDs
+let loginCaptchaId = null;
+let registerCaptchaId = null;
+let loginCaptchaExpiration = null;
+let registerCaptchaExpiration = null;
+let loginTimerInterval = null;
+let registerTimerInterval = null;
 
 function buildUrl(endpoint) {
     if (!endpoint) return null;
@@ -36,7 +41,7 @@ async function validarELimparSessao() {
     const token = localStorage.getItem('access_token');
     
     if (!token) {
-        if (isProtectedPage()) window.location.href = '/login';
+        if (isProtectedPage()) window.location.href = '/login.html';
         return;
     }
 
@@ -54,9 +59,9 @@ async function validarELimparSessao() {
 
         if (response.status === 401) {
             await clearSession();
-            showMessage('Sessão expirada. Faça login novamente.', 'warning');
-            if (window.location.pathname !== '/login') {
-                setTimeout(() => window.location.href = '/login', 1500);
+            showMessage('⏰ Sessão expirada. Faça login novamente.', 'warning');
+            if (window.location.pathname !== '/login.html') {
+                setTimeout(() => window.location.href = '/login.html', 1500);
             }
         } else if (response.ok) {
             const data = await response.json();
@@ -110,7 +115,7 @@ async function clearSession(showMessage_ = false) {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     
-    if (showMessage_) showMessage('Sessão encerrada.', 'info');
+    if (showMessage_) showMessage('👋 Sessão encerrada.', 'info');
 }
 
 async function refreshAccessToken() {
@@ -143,106 +148,206 @@ async function refreshAccessToken() {
 }
 
 // ==============================================
-// reCAPTCHA
+// CAPTCHA PRÓPRIO
 // ==============================================
 
-async function loadCaptchaConfig() {
+async function loadCaptchaForTab(tab) {
     try {
-        console.log('🔄 Carregando configuração do reCAPTCHA...');
+        console.log(`🔄 Carregando CAPTCHA para ${tab}...`);
         
         const url = buildUrl('/auth/captcha/generate');
         if (!url) return null;
         
         const response = await fetch(url + `?t=${Date.now()}`);
-        if (!response.ok) return null;
         
-        const data = await response.json();
-        console.log('✅ Configuração reCAPTCHA:', data);
-        
-        if (data.site_key) {
-            siteKey = data.site_key;
-            loadRecaptchaScript();
+        if (!response.ok) {
+            console.error('❌ Erro ao carregar CAPTCHA:', response.status);
+            return null;
         }
         
-        return data;
+        // Pegar ID do header
+        const captchaId = response.headers.get('X-Captcha-ID');
+        
+        // Converter para blob e criar URL
+        const blob = await response.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        
+        // Atualizar elementos na tela
+        if (tab === 'login') {
+            const captchaImage = document.getElementById('loginCaptchaImage');
+            const captchaInput = document.getElementById('loginCaptchaInput');
+            const timerElement = document.getElementById('loginCaptchaTimer');
+            
+            if (captchaImage) {
+                // Limpar URL antiga
+                if (captchaImage.dataset.url) {
+                    URL.revokeObjectURL(captchaImage.dataset.url);
+                }
+                
+                captchaImage.src = imageUrl;
+                captchaImage.dataset.url = imageUrl;
+                captchaImage.dataset.captchaId = captchaId;
+                
+                // Armazenar ID global
+                loginCaptchaId = captchaId;
+                
+                // Limpar input
+                if (captchaInput) captchaInput.value = '';
+                
+                // Configurar timer de 2 minutos
+                loginCaptchaExpiration = Date.now() + 2 * 60 * 1000;
+                
+                if (loginTimerInterval) clearInterval(loginTimerInterval);
+                loginTimerInterval = setInterval(() => {
+                    updateCaptchaTimer('login', timerElement);
+                }, 1000);
+                
+                console.log('✅ CAPTCHA login carregado:', captchaId);
+            }
+        } else {
+            const captchaImage = document.getElementById('registerCaptchaImage');
+            const captchaInput = document.getElementById('registerCaptchaInput');
+            const timerElement = document.getElementById('registerCaptchaTimer');
+            
+            if (captchaImage) {
+                // Limpar URL antiga
+                if (captchaImage.dataset.url) {
+                    URL.revokeObjectURL(captchaImage.dataset.url);
+                }
+                
+                captchaImage.src = imageUrl;
+                captchaImage.dataset.url = imageUrl;
+                captchaImage.dataset.captchaId = captchaId;
+                
+                // Armazenar ID global
+                registerCaptchaId = captchaId;
+                
+                // Limpar input
+                if (captchaInput) captchaInput.value = '';
+                
+                // Configurar timer de 2 minutos
+                registerCaptchaExpiration = Date.now() + 2 * 60 * 1000;
+                
+                if (registerTimerInterval) clearInterval(registerTimerInterval);
+                registerTimerInterval = setInterval(() => {
+                    updateCaptchaTimer('register', timerElement);
+                }, 1000);
+                
+                console.log('✅ CAPTCHA registro carregado:', captchaId);
+            }
+        }
+        
+        return captchaId;
     } catch (error) {
-        console.error('❌ Erro:', error);
+        console.error('❌ Erro ao carregar CAPTCHA:', error);
         return null;
     }
 }
 
-function loadRecaptchaScript() {
-    if (document.getElementById('recaptcha-script')) return;
-    if (!siteKey) return;
+function updateCaptchaTimer(tab, timerElement) {
+    if (!timerElement) return;
     
-    console.log('📦 Carregando script reCAPTCHA...');
+    const expiration = tab === 'login' ? loginCaptchaExpiration : registerCaptchaExpiration;
     
-    window.onRecaptchaLoad = function() {
-        console.log('✅ reCAPTCHA pronto');
-        recaptchaReady = true;
-    };
+    if (!expiration) {
+        timerElement.textContent = '2:00';
+        return;
+    }
     
-    const script = document.createElement('script');
-    script.id = 'recaptcha-script';
-    script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}&onload=onRecaptchaLoad`;
-    script.async = true;
-    script.defer = true;
+    const now = Date.now();
+    const remaining = Math.max(0, Math.floor((expiration - now) / 1000));
     
-    script.onerror = () => {
-        console.warn('⚠️ reCAPTCHA não carregou - modo fallback ativado');
-        recaptchaReady = true; // Fallback para desenvolvimento
-    };
+    if (remaining <= 0) {
+        // CAPTCHA expirou
+        timerElement.textContent = 'Expirado';
+        timerElement.style.color = '#e53e3e';
+        
+        // Limpar ID
+        if (tab === 'login') {
+            loginCaptchaId = null;
+            if (loginTimerInterval) clearInterval(loginTimerInterval);
+        } else {
+            registerCaptchaId = null;
+            if (registerTimerInterval) clearInterval(registerTimerInterval);
+        }
+        return;
+    }
     
-    document.head.appendChild(script);
+    const minutes = Math.floor(remaining / 60);
+    const seconds = remaining % 60;
+    timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    timerElement.style.color = remaining < 30 ? '#e53e3e' : '#667eea';
 }
 
-async function generateRecaptchaToken(action = 'login') {
-    // Fallback para desenvolvimento
-    if (!recaptchaReady || !window.grecaptcha || !window.grecaptcha.execute) {
-        if (window.location.hostname === 'localhost') {
-            console.warn('⚠️ Usando fallback para desenvolvimento');
-            return 'dev-fallback-token';
-        }
-        return null;
-    }
-    
-    try {
-        const token = await window.grecaptcha.execute(siteKey, { action });
-        return token;
-    } catch (error) {
-        console.error('❌ Erro ao gerar token:', error);
-        return null;
-    }
+function refreshCaptcha(tab) {
+    console.log(`🔄 Atualizando CAPTCHA ${tab}...`);
+    loadCaptchaForTab(tab);
 }
 
 // ==============================================
-// LOGIN
+// LOGIN CORRIGIDO COM IDs CORRETOS
 // ==============================================
 
 async function login(email, password) {
     try {
         showLoading('loginForm');
         
-        if (!email || !password) {
-            showMessage('Preencha todos os campos', 'warning');
+        // 🔥 VALIDAÇÕES
+        if (!email) {
+            showMessage('📧 Digite seu e-mail', 'warning');
             hideLoading('loginForm');
+            document.getElementById('loginEmail')?.focus();
             return;
         }
         
-        const recaptchaToken = await generateRecaptchaToken('login');
+        if (!email.includes('@') || !email.includes('.')) {
+            showMessage('📧 Digite um e-mail válido (ex: nome@email.com)', 'warning');
+            hideLoading('loginForm');
+            document.getElementById('loginEmail')?.focus();
+            return;
+        }
+        
+        if (!password) {
+            showMessage('🔒 Digite sua senha', 'warning');
+            hideLoading('loginForm');
+            document.getElementById('loginPassword')?.focus();
+            return;
+        }
+        
+        // PEGAR CAPTCHA
+        const captchaImage = document.getElementById('loginCaptchaImage');
+        const captchaInput = document.getElementById('loginCaptchaInput');
+        
+        if (!captchaImage || !captchaImage.dataset.captchaId) {
+            showMessage('🔄 CAPTCHA não carregado. Clique no botão de atualizar ao lado da imagem', 'warning');
+            hideLoading('loginForm');
+            await loadCaptchaForTab('login');
+            return;
+        }
+        
+        const captchaText = captchaInput ? captchaInput.value : '';
+        
+        if (!captchaText) {
+            showMessage('🔢 Digite os números que aparecem na imagem CAPTCHA', 'warning');
+            hideLoading('loginForm');
+            document.getElementById('loginCaptchaInput')?.focus();
+            return;
+        }
+        
+        if (captchaText.length !== 6 || !/^\d+$/.test(captchaText)) {
+            showMessage('🔢 O CAPTCHA deve conter exatamente 6 números', 'warning');
+            hideLoading('loginForm');
+            document.getElementById('loginCaptchaInput')?.focus();
+            return;
+        }
+        
+        const captchaId = captchaImage.dataset.captchaId;
         
         const loginData = {
             email: email.trim().toLowerCase(),
-            password: password
+            password: password,
+            captcha_text: captchaText
         };
-        
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        
-        if (recaptchaToken) {
-            headers['X-Captcha-Token'] = recaptchaToken;
-        }
         
         const url = buildUrl('/auth/login');
         if (!url) {
@@ -252,7 +357,10 @@ async function login(email, password) {
         
         const response = await fetch(url, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Captcha-ID': captchaId
+            },
             body: JSON.stringify(loginData)
         });
         
@@ -269,74 +377,138 @@ async function login(email, password) {
                 email: data.user_email || email,
                 workshop: data.workshop_name || '',
                 role: data.role || 'user',
-                plan: data.plan || 'free',
+                plan: data.plan || 'basico',
                 credits: data.credits || 0
             };
             localStorage.setItem('user', JSON.stringify(userData));
             
-            showMessage('Login realizado com sucesso!', 'success');
+            showMessage('✅ Login realizado com sucesso! Redirecionando...', 'success');
+            
+            if (loginTimerInterval) clearInterval(loginTimerInterval);
+            
             setTimeout(() => window.location.href = '/dashboard', 1000);
         } else {
             let errorMessage = 'Erro no login';
             try {
                 const error = await response.json();
                 errorMessage = error.detail || error.message || errorMessage;
+                
+                if (errorMessage.includes('CAPTCHA')) {
+                    errorMessage = '🔢 CAPTCHA inválido ou expirado. Tente novamente.';
+                    await loadCaptchaForTab('login');
+                } else if (errorMessage.includes('Email ou senha incorretos')) {
+                    errorMessage = '📧🔒 E-mail ou senha incorretos. Verifique e tente novamente.';
+                } else if (errorMessage.includes('Conta desativada')) {
+                    errorMessage = '🚫 Sua conta foi desativada. Entre em contato com o suporte.';
+                }
             } catch {
-                errorMessage = `Erro ${response.status}`;
+                errorMessage = `❌ Erro ${response.status} no servidor`;
             }
             showMessage(errorMessage, 'error');
         }
     } catch (error) {
         hideLoading('loginForm');
         console.error('❌ Erro no login:', error);
-        showMessage('Erro de conexão', 'error');
+        showMessage('❌ Erro de conexão com o servidor. Verifique sua internet.', 'error');
     }
 }
 
 // ==============================================
-// REGISTRO
+// REGISTRO CORRIGIDO COM IDs CORRETOS
 // ==============================================
 
 async function register(userData) {
     try {
         showLoading('registerForm');
         
-        // Validações
-        if (!userData.name || !userData.email || !userData.password) {
-            showMessage('Preencha todos os campos', 'warning');
+        // 🔥 VALIDAÇÕES
+        if (!userData.name || userData.name.trim().length < 3) {
+            showMessage('👤 Por favor, digite seu nome completo (mínimo 3 caracteres)', 'warning');
             hideLoading('registerForm');
+            document.getElementById('regName')?.focus();
             return;
         }
         
-        if (userData.password !== document.getElementById('regConfirmPassword')?.value) {
-            showMessage('As senhas não coincidem', 'error');
+        if (!userData.email) {
+            showMessage('📧 Digite seu e-mail', 'warning');
             hideLoading('registerForm');
+            document.getElementById('regEmail')?.focus();
             return;
         }
         
+        if (!userData.email.includes('@') || !userData.email.includes('.')) {
+            showMessage('📧 Digite um e-mail válido (ex: nome@email.com)', 'warning');
+            hideLoading('registerForm');
+            document.getElementById('regEmail')?.focus();
+            return;
+        }
+        
+        if (!userData.password) {
+            showMessage('🔒 Digite sua senha', 'warning');
+            hideLoading('registerForm');
+            document.getElementById('regPassword')?.focus();
+            return;
+        }
+        
+        if (userData.password.length < 6) {
+            showMessage('🔒 A senha deve ter pelo menos 6 caracteres', 'warning');
+            hideLoading('registerForm');
+            document.getElementById('regPassword')?.focus();
+            return;
+        }
+        
+        const confirmPassword = document.getElementById('regConfirmPassword')?.value;
+        if (userData.password !== confirmPassword) {
+            showMessage('🔒 As senhas não coincidem. Digite a mesma senha nos dois campos', 'error');
+            hideLoading('registerForm');
+            document.getElementById('regConfirmPassword')?.focus();
+            return;
+        }
+        
+        // Workshop é opcional
         const termsChecked = document.getElementById('terms')?.checked;
         if (!termsChecked) {
-            showMessage('Aceite os termos de uso', 'warning');
+            showMessage('📝 Você precisa aceitar os Termos de Uso para continuar', 'warning');
             hideLoading('registerForm');
             return;
         }
         
-        const recaptchaToken = await generateRecaptchaToken('register');
+        // PEGAR CAPTCHA
+        const captchaImage = document.getElementById('registerCaptchaImage');
+        const captchaInput = document.getElementById('registerCaptchaInput');
+        
+        if (!captchaImage || !captchaImage.dataset.captchaId) {
+            showMessage('🔄 CAPTCHA não carregado. Clique no botão de atualizar ao lado da imagem', 'warning');
+            hideLoading('registerForm');
+            await loadCaptchaForTab('register');
+            return;
+        }
+        
+        const captchaText = captchaInput ? captchaInput.value : '';
+        
+        if (!captchaText) {
+            showMessage('🔢 Digite os números que aparecem na imagem CAPTCHA', 'warning');
+            hideLoading('registerForm');
+            document.getElementById('registerCaptchaInput')?.focus();
+            return;
+        }
+        
+        if (captchaText.length !== 6 || !/^\d+$/.test(captchaText)) {
+            showMessage('🔢 O CAPTCHA deve conter exatamente 6 números', 'warning');
+            hideLoading('registerForm');
+            document.getElementById('registerCaptchaInput')?.focus();
+            return;
+        }
+        
+        const captchaId = captchaImage.dataset.captchaId;
         
         const registerData = {
             name: userData.name.trim(),
             email: userData.email.trim().toLowerCase(),
             password: userData.password,
-            workshop_name: userData.workshop_name?.trim() || ''
+            workshop_name: userData.workshop_name?.trim() || null,
+            captcha_text: captchaText
         };
-        
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        
-        if (recaptchaToken) {
-            headers['X-Captcha-Token'] = recaptchaToken;
-        }
         
         const url = buildUrl('/auth/register');
         if (!url) {
@@ -346,33 +518,50 @@ async function register(userData) {
         
         const response = await fetch(url, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Captcha-ID': captchaId
+            },
             body: JSON.stringify(registerData)
         });
         
         hideLoading('registerForm');
         
         if (response.ok) {
-            showMessage('Conta criada! Faça login.', 'success');
+            showMessage('✅ Conta criada com sucesso! Agora faça login.', 'success');
             document.getElementById('registerForm')?.reset();
+            
+            if (registerTimerInterval) clearInterval(registerTimerInterval);
             
             setTimeout(() => {
                 document.getElementById('login-tab')?.click();
+                loadCaptchaForTab('login');
             }, 1500);
         } else {
             let errorMessage = 'Erro no registro';
             try {
                 const error = await response.json();
                 errorMessage = error.detail || error.message || errorMessage;
+                
+                if (errorMessage.includes('CAPTCHA')) {
+                    errorMessage = '🔢 CAPTCHA inválido ou expirado. Tente novamente.';
+                    await loadCaptchaForTab('register');
+                } else if (errorMessage.includes('Email já cadastrado')) {
+                    errorMessage = '📧 Este e-mail já está cadastrado. Faça login ou use outro e-mail.';
+                } else if (errorMessage.includes('Nome deve ter')) {
+                    errorMessage = '👤 ' + errorMessage;
+                } else if (errorMessage.includes('Senha deve ter')) {
+                    errorMessage = '🔒 ' + errorMessage;
+                }
             } catch {
-                errorMessage = `Erro ${response.status}`;
+                errorMessage = `❌ Erro ${response.status} no servidor`;
             }
             showMessage(errorMessage, 'error');
         }
     } catch (error) {
         hideLoading('registerForm');
         console.error('❌ Erro no registro:', error);
-        showMessage('Erro de conexão', 'error');
+        showMessage('❌ Erro de conexão com o servidor. Verifique sua internet.', 'error');
     }
 }
 
@@ -381,8 +570,10 @@ async function register(userData) {
 // ==============================================
 
 async function logout() {
-    await clearSession(true);
-    window.location.href = '/login';
+    if (confirm('Deseja realmente sair?')) {
+        await clearSession(true);
+        window.location.href = '/login.html';
+    }
 }
 
 // ==============================================
@@ -429,27 +620,69 @@ function showMessage(message, type = 'info') {
         </div>
     `;
     
+    // Auto-dismiss após 5 segundos
     setTimeout(() => {
-        messageDiv.innerHTML = '';
+        const alert = messageDiv.querySelector('.alert');
+        if (alert) {
+            alert.classList.remove('show');
+            setTimeout(() => {
+                if (messageDiv.innerHTML.includes(alert.outerHTML)) {
+                    messageDiv.innerHTML = '';
+                }
+            }, 300);
+        }
     }, 5000);
 }
 
+// ==============================================
+// SETUP DOS FORMULÁRIOS CORRIGIDO
+// ==============================================
+
 function setupForms() {
-    document.getElementById('loginForm')?.addEventListener('submit', (e) => {
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            login(
+                document.getElementById('loginEmail').value,     // ✅ ID CORRETO
+                document.getElementById('loginPassword').value   // ✅ ID CORRETO
+            );
+        });
+    }
+    
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            register({
+                name: document.getElementById('regName').value,
+                email: document.getElementById('regEmail').value,
+                password: document.getElementById('regPassword').value,
+                workshop_name: document.getElementById('regWorkshop')?.value
+            });
+        });
+    }
+    
+    // Botões de refresh do CAPTCHA
+    document.getElementById('refreshLoginCaptcha')?.addEventListener('click', (e) => {
         e.preventDefault();
-        login(
-            document.getElementById('loginEmail').value,
-            document.getElementById('loginPassword').value
-        );
+        refreshCaptcha('login');
     });
     
-    document.getElementById('registerForm')?.addEventListener('submit', (e) => {
+    document.getElementById('refreshRegisterCaptcha')?.addEventListener('click', (e) => {
         e.preventDefault();
-        register({
-            name: document.getElementById('regName').value,
-            email: document.getElementById('regEmail').value,
-            password: document.getElementById('regPassword').value,
-            workshop_name: document.getElementById('regWorkshop')?.value
+        refreshCaptcha('register');
+    });
+    
+    // Quando mudar de aba, carregar CAPTCHA correspondente
+    document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(button => {
+        button.addEventListener('shown.bs.tab', (event) => {
+            const targetId = event.target.getAttribute('data-bs-target');
+            if (targetId === '#login') {
+                loadCaptchaForTab('login');
+            } else if (targetId === '#register') {
+                loadCaptchaForTab('register');
+            }
         });
     });
 }
@@ -459,23 +692,34 @@ function setupForms() {
 // ==============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 Auth.js inicializado');
+    console.log('🚀 Auth.js inicializado (CAPTCHA próprio)');
     
-    await validarELimparSessao();
-    setInterval(validarELimparSessao, CHECK_INTERVAL);
+    // SÓ validar sessão se NÃO estiver na página de login
+    if (window.location.pathname !== '/login.html') {
+        await validarELimparSessao();
+        setInterval(validarELimparSessao, CHECK_INTERVAL);
+    }
     
-    if (window.location.pathname === '/login' && isAuthenticated()) {
+    // Redirecionar se já estiver logado
+    if (window.location.pathname === '/login.html' && isAuthenticated()) {
+        console.log('👤 Usuário já logado, redirecionando para dashboard');
         window.location.href = '/dashboard';
         return;
     }
     
+    // Proteger páginas
     if (isProtectedPage() && !isAuthenticated()) {
-        window.location.href = '/login';
+        console.log('🔒 Página protegida, redirecionando para login');
+        window.location.href = '/login.html';
         return;
     }
     
-    if (window.location.pathname === '/login') {
-        await loadCaptchaConfig();
+    // Carregar CAPTCHA se estiver na página de login
+    if (window.location.pathname === '/login.html') {
+        console.log('🖼️ Página de login detectada, carregando CAPTCHA...');
+        setTimeout(() => {
+            loadCaptchaForTab('login');
+        }, 200);
     }
     
     setupForms();
@@ -490,6 +734,7 @@ window.app = {
     register,
     logout,
     isAuthenticated,
+    refreshCaptcha,
     getCurrentUser: () => {
         try {
             return JSON.parse(localStorage.getItem('user') || 'null');
@@ -500,4 +745,4 @@ window.app = {
     getToken: () => localStorage.getItem('access_token')
 };
 
-console.log('✅ Auth.js carregado');
+console.log('✅ Auth.js carregado com mensagens específicas'); 

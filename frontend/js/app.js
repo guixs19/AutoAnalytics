@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO COMPLETA COM TODAS AS VALIDAÇÕES
+// frontend/js/app.js - VERSÃO COMPLETA COM CAPTCHA PRÓPRIO
 
 class AutoAnalytics {
     constructor() {
@@ -13,6 +13,9 @@ class AutoAnalytics {
         this.selectedFeatures = [];
         this.selectedTarget = null;
         
+        // 🔥 NOVO: Armazenar CAPTCHA ID
+        this.currentCaptchaId = null;
+        
         // Inicializar
         this.init();
     }
@@ -25,6 +28,95 @@ class AutoAnalytics {
         await this.loadAnalysisHistory();
         this.setupLogout();
         this.initGSAPAnimations();
+        this.checkAuthentication();
+        
+        // 🔥 NOVO: Carregar CAPTCHA se estiver na página de login/registro
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            await this.loadCaptcha();
+        }
+    }
+    
+    // 🔥 NOVO: Verificar se está na página de login
+    isLoginPage() {
+        return window.location.pathname.includes('login.html') || 
+               window.location.pathname === '/login';
+    }
+    
+    // 🔥 NOVO: Verificar se está na página de registro
+    isRegisterPage() {
+        return window.location.pathname.includes('register.html') || 
+               window.location.pathname === '/register';
+    }
+    
+    // 🔥 NOVO: Verificar se usuário está autenticado
+    checkAuthentication() {
+        // Se estiver na página de login ou registro, não precisa verificar
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            return;
+        }
+        
+        // Verificar se tem token no localStorage ou cookie
+        const token = localStorage.getItem('access_token');
+        
+        // Se não tiver token e não estiver na página pública, redirecionar
+        if (!token && !this.isPublicPage()) {
+            console.log('🔒 Usuário não autenticado, redirecionando para login');
+            window.location.href = '/login.html';
+        }
+    }
+    
+    // 🔥 NOVO: Verificar se é página pública
+    isPublicPage() {
+        const publicPages = ['/login.html', '/register.html', '/index.html', '/'];
+        return publicPages.includes(window.location.pathname);
+    }
+    
+    // 🔥 NOVO: Carregar CAPTCHA
+    async loadCaptcha() {
+        try {
+            console.log('🔄 Carregando CAPTCHA...');
+            
+            const response = await fetch(`${this.apiBase}/auth/captcha/generate`);
+            
+            if (response.ok) {
+                // Pegar o ID do header
+                this.currentCaptchaId = response.headers.get('X-Captcha-ID');
+                
+                // Converter resposta para blob e criar URL
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                
+                // Atualizar imagem na tela
+                const captchaImg = document.getElementById('captchaImage');
+                if (captchaImg) {
+                    captchaImg.src = imageUrl;
+                    
+                    // Limpar URL antiga se existir
+                    if (captchaImg.dataset.url) {
+                        URL.revokeObjectURL(captchaImg.dataset.url);
+                    }
+                    captchaImg.dataset.url = imageUrl;
+                }
+                
+                // Limpar input do CAPTCHA
+                const captchaInput = document.getElementById('captchaInput');
+                if (captchaInput) {
+                    captchaInput.value = '';
+                }
+                
+                console.log('✅ CAPTCHA carregado:', this.currentCaptchaId);
+            } else {
+                console.error('❌ Erro ao carregar CAPTCHA:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ Erro ao carregar CAPTCHA:', error);
+        }
+    }
+    
+    // 🔥 NOVO: Refresh do CAPTCHA (quando usuário clica para atualizar)
+    async refreshCaptcha() {
+        console.log('🔄 Atualizando CAPTCHA...');
+        await this.loadCaptcha();
     }
     
     initializeElements() {
@@ -80,6 +172,11 @@ class AutoAnalytics {
         this.analisesHoje = document.getElementById('analisesHoje');
         this.iaUtilizada = document.getElementById('iaUtilizada');
         
+        // 🔥 NOVO: Elementos de CAPTCHA
+        this.captchaImage = document.getElementById('captchaImage');
+        this.captchaInput = document.getElementById('captchaInput');
+        this.refreshCaptchaBtn = document.getElementById('refreshCaptcha');
+        
         if (this.iaUtilizada) {
             this.iaUtilizada.textContent = 'R² 0.94';
         }
@@ -126,6 +223,183 @@ class AutoAnalytics {
         
         if (this.viewRawData) {
             this.viewRawData.addEventListener('click', () => this.showRawData());
+        }
+        
+        // 🔥 NOVO: Botão de refresh do CAPTCHA
+        if (this.refreshCaptchaBtn) {
+            this.refreshCaptchaBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.refreshCaptcha();
+            });
+        }
+        
+        // 🔥 NOVO: Form de login
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+        }
+        
+        // 🔥 NOVO: Form de registro
+        const registerForm = document.getElementById('registerForm');
+        if (registerForm) {
+            registerForm.addEventListener('submit', (e) => this.handleRegister(e));
+        }
+    }
+    
+    // 🔥 NOVO: Handle de login
+    async handleLogin(event) {
+        event.preventDefault();
+        
+        const email = document.getElementById('email')?.value;
+        const password = document.getElementById('password')?.value;
+        const captchaInput = document.getElementById('captchaInput')?.value;
+        
+        if (!email || !password) {
+            this.showAlert('❌ Preencha email e senha', 'warning');
+            return;
+        }
+        
+        if (!this.currentCaptchaId) {
+            this.showAlert('❌ CAPTCHA não carregado. Clique no ícone de refresh.', 'warning');
+            await this.loadCaptcha();
+            return;
+        }
+        
+        if (!captchaInput) {
+            this.showAlert('❌ Digite o código CAPTCHA', 'warning');
+            return;
+        }
+        
+        // Desabilitar botão de login
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Entrando...';
+        }
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': this.currentCaptchaId
+                },
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                    captcha_text: captchaInput
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                // Login bem-sucedido
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_name', data.user_name);
+                localStorage.setItem('user_email', data.user_email);
+                localStorage.setItem('workshop_name', data.workshop_name || '');
+                localStorage.setItem('user_credits', data.credits || 0);
+                
+                this.showAlert('✅ Login realizado com sucesso!', 'success');
+                
+                // Redirecionar para dashboard (SEM BARRA)
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
+            } else {
+                // Erro no login
+                this.showAlert('❌ ' + (data.detail || 'Falha no login'), 'error');
+                
+                // Gerar novo CAPTCHA em caso de erro
+                await this.loadCaptcha();
+            }
+        } catch (error) {
+            console.error('Erro no login:', error);
+            this.showAlert('❌ Erro de conexão com o servidor', 'error');
+            await this.loadCaptcha();
+        } finally {
+            // Reabilitar botão
+            if (loginBtn) {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Entrar';
+            }
+        }
+    }
+    
+    // 🔥 NOVO: Handle de registro
+    async handleRegister(event) {
+        event.preventDefault();
+        
+        const name = document.getElementById('name')?.value;
+        const email = document.getElementById('email')?.value;
+        const password = document.getElementById('password')?.value;
+        const workshop = document.getElementById('workshop')?.value;
+        const captchaInput = document.getElementById('captchaInput')?.value;
+        
+        if (!name || !email || !password) {
+            this.showAlert('❌ Preencha todos os campos obrigatórios', 'warning');
+            return;
+        }
+        
+        if (!this.currentCaptchaId) {
+            this.showAlert('❌ CAPTCHA não carregado. Clique no ícone de refresh.', 'warning');
+            await this.loadCaptcha();
+            return;
+        }
+        
+        if (!captchaInput) {
+            this.showAlert('❌ Digite o código CAPTCHA', 'warning');
+            return;
+        }
+        
+        // Desabilitar botão de registro
+        const registerBtn = document.getElementById('registerBtn');
+        if (registerBtn) {
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Registrando...';
+        }
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': this.currentCaptchaId
+                },
+                body: JSON.stringify({
+                    name: name,
+                    email: email,
+                    password: password,
+                    workshop_name: workshop || '',
+                    captcha_text: captchaInput
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showAlert('✅ Registro realizado! Faça login.', 'success');
+                
+                // Redirecionar para login
+                setTimeout(() => {
+                    window.location.href = '/login.html';
+                }, 2000);
+            } else {
+                this.showAlert('❌ ' + (data.detail || 'Falha no registro'), 'error');
+                await this.loadCaptcha(); // Novo CAPTCHA
+            }
+        } catch (error) {
+            console.error('Erro no registro:', error);
+            this.showAlert('❌ Erro de conexão com o servidor', 'error');
+            await this.loadCaptcha();
+        } finally {
+            // Reabilitar botão
+            if (registerBtn) {
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = 'Registrar';
+            }
         }
     }
     
@@ -199,8 +473,8 @@ class AutoAnalytics {
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (file) {
-            // VALIDAÇÃO DE TAMANHO - 10MB (10 * 1024 * 1024 bytes)
-            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB em bytes
+            // VALIDAÇÃO DE TAMANHO - 10MB
+            const MAX_FILE_SIZE = 10 * 1024 * 1024;
             
             if (file.size > MAX_FILE_SIZE) {
                 const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -245,15 +519,13 @@ class AutoAnalytics {
                 Papa.parse(file, {
                     header: true,
                     preview: 10,
-                    delimiter: '', // Auto-detectar delimitador
+                    delimiter: '',
                     complete: (result) => {
-                        // VALIDAÇÃO: Verificar separador decimal
                         if (result.data && result.data.length > 0) {
                             const firstRow = result.data[0];
                             for (let key in firstRow) {
                                 const value = firstRow[key];
                                 if (typeof value === 'string' && value.includes(',') && !value.includes('.')) {
-                                    // Se encontrar vírgula como decimal, mas não ponto
                                     const numericValue = parseFloat(value.replace(',', '.'));
                                     if (!isNaN(numericValue)) {
                                         this.showAlert('⚠️ Detectado uso de vírgula como separador decimal. O sistema aceita ambos os formatos.', 'warning');
@@ -284,7 +556,6 @@ class AutoAnalytics {
                                 const obj = {};
                                 headers.forEach((header, index) => {
                                     let value = row[index];
-                                    // Converter números com vírgula
                                     if (typeof value === 'string' && value.includes(',')) {
                                         const numValue = parseFloat(value.replace(',', '.'));
                                         if (!isNaN(numValue)) {
@@ -324,13 +595,9 @@ class AutoAnalytics {
         this.fileData = data;
         this.columns = columns;
         
-        // Mostrar preview
         this.showDataPreview(data, columns);
-        
-        // Mostrar seletor de colunas
         this.showColumnSelector(columns);
         
-        // Habilitar botão de upload
         if (this.uploadButton) {
             this.uploadButton.disabled = false;
         }
@@ -341,7 +608,6 @@ class AutoAnalytics {
     showDataPreview(data, columns) {
         if (!this.dataPreview || !this.previewHeader || !this.previewBody) return;
         
-        // Criar cabeçalho
         this.previewHeader.innerHTML = '';
         columns.forEach(col => {
             const th = document.createElement('th');
@@ -349,14 +615,12 @@ class AutoAnalytics {
             this.previewHeader.appendChild(th);
         });
         
-        // Criar corpo
         this.previewBody.innerHTML = '';
         data.slice(0, 5).forEach(row => {
             const tr = document.createElement('tr');
             columns.forEach(col => {
                 const td = document.createElement('td');
                 let value = row[col] !== undefined ? row[col] : '-';
-                // Formatar números
                 if (typeof value === 'number') {
                     value = value.toFixed(2).replace('.', ',');
                 }
@@ -368,7 +632,6 @@ class AutoAnalytics {
         
         this.dataPreview.classList.remove('d-none');
         
-        // Animação
         if (typeof gsap !== 'undefined') {
             gsap.from(this.dataPreview, {
                 duration: 0.5,
@@ -384,25 +647,19 @@ class AutoAnalytics {
         
         this.columnSelector.classList.remove('d-none');
         
-        // Limpar containers
         this.targetColumnContainer.innerHTML = '';
         this.featureColumnsContainer.innerHTML = '';
         
-        // Adicionar colunas como chips
         columns.forEach(col => {
-            // Chip para coluna alvo
             const targetChip = this.createColumnChip(col, 'target');
             this.targetColumnContainer.appendChild(targetChip);
             
-            // Chip para features
             const featureChip = this.createColumnChip(col, 'feature');
             this.featureColumnsContainer.appendChild(featureChip);
         });
         
-        // Atualizar contador
         this.updateSelectedCount();
         
-        // Animação
         if (typeof gsap !== 'undefined') {
             gsap.from('.column-chip', {
                 duration: 0.3,
@@ -429,12 +686,10 @@ class AutoAnalytics {
     }
     
     selectTargetColumn(column, element) {
-        // Remover seleção anterior
         document.querySelectorAll('.column-chip.target').forEach(chip => {
             chip.classList.remove('target');
         });
         
-        // Selecionar novo
         element.classList.add('target');
         this.selectedTarget = column;
         
@@ -469,7 +724,7 @@ class AutoAnalytics {
                 return radio.value;
             }
         }
-        return 'random_forest'; // Default
+        return 'random_forest';
     }
     
     getAlgorithmName(value) {
@@ -528,7 +783,6 @@ class AutoAnalytics {
             return;
         }
         
-        // Validar seleção de colunas
         if (!this.selectedTarget) {
             this.showAlert('❌ Selecione uma coluna alvo (o que deseja prever)', 'warning');
             return;
@@ -636,7 +890,7 @@ class AutoAnalytics {
                         this.showResult(status);
                         await this.loadDashboardStats();
                         await this.loadUserCredits();
-                        await this.loadAnalysisHistory(); // Recarregar histórico
+                        await this.loadAnalysisHistory();
                         
                         document.getElementById('progressContainer')?.remove();
                     } else {
@@ -687,7 +941,6 @@ class AutoAnalytics {
         if (this.resultContainer) {
             this.resultContainer.style.display = 'block';
             
-            // Mostrar nome da coluna alvo e algoritmo
             if (this.targetColumnName && this.selectedTarget) {
                 this.targetColumnName.textContent = this.selectedTarget;
             }
@@ -707,7 +960,6 @@ class AutoAnalytics {
             }
         }
         
-        // Usar dados do resultado ou gerar exemplo
         const metrics = result.metrics || {
             r2: 0.94,
             mae: 12.5,
@@ -719,13 +971,8 @@ class AutoAnalytics {
         const predictions = result.predictions || this.generateSamplePredictions(10);
         const actuals = result.actuals || this.generateSamplePredictions(10, true);
         
-        // Atualizar métricas
         this.updateMetrics(metrics, featureNames);
-        
-        // Atualizar gráfico
         this.updateComparisonChart(actuals, predictions);
-        
-        // Atualizar tabela
         this.displayMLResults(actuals, predictions);
     }
     
@@ -755,7 +1002,6 @@ class AutoAnalytics {
             this.metricImportance.textContent = importance.length;
         }
         
-        // Mostrar importância das features
         if (this.featureImportance && featureNames.length > 0) {
             const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
             let html = '';
@@ -1157,15 +1403,33 @@ class AutoAnalytics {
         }
     }
     
-    logout() {
+    async logout() {
         if (confirm('Deseja realmente sair?')) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_name');
-            localStorage.removeItem('user_email');
-            localStorage.removeItem('workshop_name');
-            localStorage.removeItem('user_credits');
-            window.location.href = 'login.html';
+            try {
+                const refreshToken = localStorage.getItem('refresh_token');
+                
+                if (refreshToken) {
+                    await fetch(`${this.apiBase}/auth/logout`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                        },
+                        body: JSON.stringify({ refresh_token: refreshToken })
+                    });
+                }
+            } catch (error) {
+                console.error('Erro no logout:', error);
+            } finally {
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user_name');
+                localStorage.removeItem('user_email');
+                localStorage.removeItem('workshop_name');
+                localStorage.removeItem('user_credits');
+                
+                window.location.href = '/login.html';
+            }
         }
     }
     
@@ -1221,7 +1485,6 @@ class AutoAnalytics {
     }
     
     showAlert(message, type = 'info') {
-        // Remover alertas anteriores do mesmo tipo se houver muitos
         const existingAlerts = document.querySelectorAll('.custom-alert');
         if (existingAlerts.length > 3) {
             existingAlerts[0].remove();
@@ -1242,7 +1505,6 @@ class AutoAnalytics {
             padding: 1rem 1.25rem;
         `;
         
-        // Ícones baseados no tipo
         let icon = '📌';
         if (type === 'success') icon = '✅';
         if (type === 'error') icon = '❌';
@@ -1259,10 +1521,8 @@ class AutoAnalytics {
         
         document.body.appendChild(alertDiv);
         
-        // Auto-fechar após 5 segundos
         setTimeout(() => {
             if (alertDiv.parentNode) {
-                // Animação de fade out
                 alertDiv.style.transition = 'opacity 0.3s';
                 alertDiv.style.opacity = '0';
                 setTimeout(() => {
@@ -1278,7 +1538,6 @@ class AutoAnalytics {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         
-        // Se for maior que 1MB, mostrar com 2 casas decimais
         if (i >= 2) {
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }

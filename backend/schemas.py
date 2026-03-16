@@ -1,5 +1,5 @@
-# backend/schemas.py - VERSÃO COMPLETA COM PLANO PREMIUM
-from pydantic import BaseModel, EmailStr
+# backend/schemas.py - VERSÃO COMPLETA COM PLANO PREMIUM E CORREÇÕES
+from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from enum import Enum
@@ -44,17 +44,19 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    captcha_text: Optional[str] = None  # 🔥 ADICIONADO: captcha para registro
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    captcha_text: Optional[str] = None  # 🔥 ADICIONADO: captcha para login
 
 class UserResponse(UserBase):
     id: int
     is_active: bool
     is_verified: bool
     created_at: datetime
-    last_login: Optional[datetime]
+    last_login: Optional[datetime] = None
     
     # ===== NOVOS CAMPOS =====
     credits: int = 0
@@ -108,7 +110,7 @@ class DailyCreditLogResponse(DailyCreditLogBase):
     """Resposta com log de crédito diário"""
     id: int
     user_id: int
-    payment_id: Optional[int]
+    payment_id: Optional[int] = None
     created_at: datetime
     
     class Config:
@@ -139,7 +141,7 @@ class Token(BaseModel):
     token_type: str
     user_name: str
     user_email: str
-    workshop_name: Optional[str]
+    workshop_name: Optional[str] = None
     role: UserRole
     # NOVO: incluir plano no token
     plan: UserPlan = UserPlan.BASICO
@@ -220,9 +222,9 @@ class PixPaymentResponse(BaseModel):
     success: bool
     payment_id: int
     mp_payment_id: str
-    qr_code_base64: Optional[str]
-    qr_code: Optional[str]
-    expiration_date: Optional[str]
+    qr_code_base64: Optional[str] = None
+    qr_code: Optional[str] = None
+    expiration_date: Optional[str] = None
     credits: int
     amount: float
     status: str
