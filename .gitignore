@@ -1,12 +1,32 @@
+# Environment variables
 .env
 .env.local
-temp/
-outputs/
-data/
-models/
-*.db
+*.env
+
 # Python
 __pycache__/
-*.py[cod]
-venv/
-.venv/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+
+# Docker volumes (dados)
+postgres_data/
+redis_data/
+pgdata/
+
+# Application data
+temp/
+outputs/
+models/
+uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
