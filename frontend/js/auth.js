@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO FINAL CORRIGIDA COM IDs CORRETOS
+// frontend/js/auth.js - VERSÃO ATUALIZADA COM SUPORTE A ADMIN
 // Sistema de autenticação com JWT e CAPTCHA próprio
 
 const API_BASE = (function() {
@@ -34,6 +34,22 @@ function buildUrl(endpoint) {
 }
 
 // ==============================================
+// FUNÇÕES DE ADMIN
+// ==============================================
+
+function isAdmin() {
+    const user = getCurrentUser();
+    return user?.is_admin === true;
+}
+
+function getCreditsDisplay() {
+    const user = getCurrentUser();
+    if (!user) return '0';
+    if (user.is_admin) return '∞';
+    return user.credits?.toString() || '0';
+}
+
+// ==============================================
 // VALIDAÇÃO DE SESSÃO
 // ==============================================
 
@@ -65,22 +81,44 @@ async function validarELimparSessao() {
             }
         } else if (response.ok) {
             const data = await response.json();
-            updateUserData(data);
+            await updateUserData(data);
         }
     } catch (error) {
         console.error('❌ Erro ao validar sessão:', error);
     }
 }
 
-function updateUserData(data) {
+async function updateUserData(data) {
     try {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
         if (data.name) user.name = data.name;
-        if (data.email) user.email = data.email;
+        if (data.user) user.email = data.user;
         if (data.credits !== undefined) user.credits = data.credits;
+        if (data.is_admin !== undefined) user.is_admin = data.is_admin;  // ✅ ADICIONADO
+        
         localStorage.setItem('user', JSON.stringify(user));
+        
+        // Atualizar elementos na UI se existirem
+        updateCreditsDisplay();
     } catch (error) {
         console.error('Erro ao atualizar dados:', error);
+    }
+}
+
+function updateCreditsDisplay() {
+    // Atualizar elementos que mostram créditos na navbar
+    const creditsElements = document.querySelectorAll('.credits-display');
+    creditsElements.forEach(el => {
+        el.textContent = getCreditsDisplay();
+    });
+    
+    // Adicionar badge de admin se necessário
+    if (isAdmin()) {
+        document.body.classList.add('is-admin');
+        const adminBadges = document.querySelectorAll('.admin-badge');
+        adminBadges.forEach(el => {
+            el.style.display = 'inline-block';
+        });
     }
 }
 
@@ -285,7 +323,7 @@ function refreshCaptcha(tab) {
 }
 
 // ==============================================
-// LOGIN CORRIGIDO COM IDs CORRETOS
+// LOGIN ATUALIZADO
 // ==============================================
 
 async function login(email, password) {
@@ -372,17 +410,20 @@ async function login(email, password) {
             localStorage.setItem('access_token', data.access_token);
             localStorage.setItem('refresh_token', data.refresh_token);
             
+            // ✅ ARMAZENAR IS_ADMIN
             const userData = {
                 name: data.user_name || '',
                 email: data.user_email || email,
                 workshop: data.workshop_name || '',
                 role: data.role || 'user',
                 plan: data.plan || 'basico',
-                credits: data.credits || 0
+                credits: data.credits || 0,
+                is_admin: data.is_admin || false  // ✅ ADICIONADO
             };
             localStorage.setItem('user', JSON.stringify(userData));
             
-            showMessage('✅ Login realizado com sucesso! Redirecionando...', 'success');
+            const adminMsg = userData.is_admin ? '👑 ' : '';
+            showMessage(`${adminMsg}Login realizado com sucesso! Redirecionando...`, 'success');
             
             if (loginTimerInterval) clearInterval(loginTimerInterval);
             
@@ -414,7 +455,7 @@ async function login(email, password) {
 }
 
 // ==============================================
-// REGISTRO CORRIGIDO COM IDs CORRETOS
+// REGISTRO
 // ==============================================
 
 async function register(userData) {
@@ -635,7 +676,7 @@ function showMessage(message, type = 'info') {
 }
 
 // ==============================================
-// SETUP DOS FORMULÁRIOS CORRIGIDO
+// SETUP DOS FORMULÁRIOS
 // ==============================================
 
 function setupForms() {
@@ -644,8 +685,8 @@ function setupForms() {
         loginForm.addEventListener('submit', (e) => {
             e.preventDefault();
             login(
-                document.getElementById('loginEmail').value,     // ✅ ID CORRETO
-                document.getElementById('loginPassword').value   // ✅ ID CORRETO
+                document.getElementById('loginEmail').value,
+                document.getElementById('loginPassword').value
             );
         });
     }
@@ -698,6 +739,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.location.pathname !== '/login.html') {
         await validarELimparSessao();
         setInterval(validarELimparSessao, CHECK_INTERVAL);
+        
+        // Atualizar display de créditos na navbar
+        updateCreditsDisplay();
     }
     
     // Redirecionar se já estiver logado
@@ -734,6 +778,8 @@ window.app = {
     register,
     logout,
     isAuthenticated,
+    isAdmin,  // ✅ NOVA FUNÇÃO
+    getCreditsDisplay,  // ✅ NOVA FUNÇÃO
     refreshCaptcha,
     getCurrentUser: () => {
         try {
@@ -745,4 +791,4 @@ window.app = {
     getToken: () => localStorage.getItem('access_token')
 };
 
-console.log('✅ Auth.js carregado com mensagens específicas'); 
+console.log('✅ Auth.js carregado com suporte a admin');

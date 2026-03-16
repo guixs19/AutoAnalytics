@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA COM CAPTCHA PRÓPRIO
+# backend/api/auth_routes.py - VERSÃO ATUALIZADA COM SUPORTE A ADMIN
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response, JSONResponse
@@ -108,7 +108,7 @@ async def register(
     
     return user
 
-@router.post("/login")  # REMOVIDO response_model=schemas.Token
+@router.post("/login")
 async def login(
     request: Request,
     login_data: schemas.UserLogin,
@@ -183,15 +183,19 @@ async def login(
     # Atualiza último login
     crud.update_last_login(db, user.id)
     
-    # Cria par de tokens
-    tokens = jwt_manager.create_token_pair({
+    # ✅ INCLUIR IS_ADMIN NOS DADOS DO USUÁRIO
+    user_data = {
         "sub": user.email,
         "email": user.email,
         "name": user.name,
         "role": user.role.value if hasattr(user.role, 'value') else user.role,
         "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
-        "credits": user.credits
-    })
+        "credits": user.credits,
+        "is_admin": user.is_admin  # ✅ ADICIONADO
+    }
+    
+    # Cria par de tokens
+    tokens = jwt_manager.create_token_pair(user_data)
     
     # Salvar refresh token no banco
     user.set_refresh_token(
@@ -201,7 +205,7 @@ async def login(
     )
     db.commit()
     
-    # 🔥 CRIAR RESPOSTA COM COOKIES
+    # 🔥 CRIAR RESPOSTA COM COOKIES - INCLUINDO IS_ADMIN
     response_data = {
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
@@ -212,6 +216,8 @@ async def login(
         "role": str(user.role),
         "plan": str(user.plan),
         "credits": user.credits,
+        "is_admin": user.is_admin,  # ✅ ADICIONADO
+        "credits_display": "∞" if user.is_admin else str(user.credits),  # ✅ ADICIONADO
         "expires_in": tokens["expires_in"],
         "message": "Login realizado com sucesso"
     }
@@ -227,7 +233,8 @@ async def login(
         expires_in=tokens["expires_in"]
     )
     
-    print(f"✅ Login bem-sucedido: {user.email} - Cookies definidos")
+    admin_tag = "👑 " if user.is_admin else ""
+    print(f"✅ {admin_tag}Login bem-sucedido: {user.email} - Cookies definidos")
     
     return response
 
@@ -319,6 +326,9 @@ async def check_token(
         "message": "Token válido",
         "user": current_user.email,
         "name": current_user.name,
+        "is_admin": current_user.is_admin,  # ✅ ADICIONADO
+        "credits": current_user.credits,
+        "credits_display": "∞" if current_user.is_admin else str(current_user.credits),
         "expires_in": jwt_manager.access_expire_minutes * 60
     }
 
@@ -379,7 +389,8 @@ async def get_all_users_admin(
     limit: int = 100
 ):
     """Lista todos os usuários (somente admin)"""
-    return crud.get_all_users(db, skip=skip, limit=limit)
+    users = crud.get_all_users(db, skip=skip, limit=limit)
+    return users
 
 @router.get("/admin/stats")
 async def get_user_stats_admin(
@@ -388,6 +399,50 @@ async def get_user_stats_admin(
 ):
     """Estatísticas do sistema (somente admin)"""
     return crud.get_user_stats(db)
+
+# ✅ NOVA ROTA: Tornar usuário admin (somente admin)
+@router.post("/admin/make-admin")
+async def make_user_admin(
+    email: str,
+    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Torna um usuário administrador (somente admin)"""
+    user = crud.get_user_by_email(db, email)
+    
+    if not user:
+        raise HTTPException(404, "Usuário não encontrado")
+    
+    if user.is_admin:
+        return {"message": f"{email} já é administrador"}
+    
+    user.is_admin = True
+    db.commit()
+    
+    print(f"👑 Admin {current_user.email} tornou {email} administrador")
+    return {"message": f"{email} agora é administrador"}
+
+# ✅ NOVA ROTA: Remover admin (somente admin)
+@router.post("/admin/remove-admin")
+async def remove_user_admin(
+    email: str,
+    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Remove privilégios de admin (somente admin)"""
+    user = crud.get_user_by_email(db, email)
+    
+    if not user:
+        raise HTTPException(404, "Usuário não encontrado")
+    
+    if not user.is_admin:
+        return {"message": f"{email} não é administrador"}
+    
+    user.is_admin = False
+    db.commit()
+    
+    print(f"👑 Admin {current_user.email} removeu admin de {email}")
+    return {"message": f"Privilégios de admin removidos de {email}"}
 
 # ==============================================
 # ROTA DE ADMIN PARA VER CAPTCHAS ATIVOS (DEBUG)

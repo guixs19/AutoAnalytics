@@ -1,4 +1,4 @@
-# backend/api/routes.py - VERSÃO CORRIGIDA SEM ERRO DE SESSÃO
+# backend/api/routes.py - VERSÃO COMPLETA COM SUPORTE A ADMIN
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-print("🔧 Iniciando routes.py v2.0 com sistema de créditos...")
+print("🔧 Iniciando routes.py v3.0 com suporte a ADMIN...")
 
 # ==============================================
 # IMPORTS OBRIGATÓRIOS
@@ -21,6 +21,8 @@ try:
     from backend import crud, schemas
     from backend.security import get_current_user, set_auth_cookies, clear_auth_cookies
     from backend.models import User
+    # ✅ IMPORT DAS NOVAS FUNÇÕES DO CRUD
+    from backend.crud import get_credits_display, check_credits, deduct_credits
     print("✅ Módulos de autenticação importados")
 except ImportError as e:
     print(f"❌ Erro CRÍTICO: {e}")
@@ -293,8 +295,9 @@ async def health_check():
     }
 
 # ==============================================
-# ENDPOINTS PROTEGIDOS
+# ENDPOINTS PROTEGIDOS (COM SUPORTE A ADMIN)
 # ==============================================
+
 @router.post("/upload")
 async def upload_file(
     background_tasks: BackgroundTasks,
@@ -306,22 +309,32 @@ async def upload_file(
 ):
     """
     Upload de arquivo para análise
-    Requer autenticação JWT e 1 crédito
+    Requer autenticação JWT
+    ✅ Admin tem créditos ilimitados
     """
     try:
         print(f"📥 Upload: {file.filename}, Usuário: {current_user.email}")
         
-        # Verificar créditos
-        if not crud.check_credits(db, current_user.id, 1):
+        # ✅ VERIFICAÇÃO DE CRÉDITOS USANDO O CRUD (já trata admin)
+        if not check_credits(db, current_user.id, 1):
             print(f"❌ Usuário {current_user.id} sem créditos. Atual: {current_user.credits}")
+            
+            # Mensagem personalizada para admin (nunca deve cair aqui, mas por segurança)
+            if current_user.is_admin:
+                error_msg = "Erro interno: admin deveria ter créditos ilimitados"
+            else:
+                error_msg = "Você não tem créditos para realizar esta análise."
+            
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "Créditos insuficientes",
-                    "message": "Você não tem créditos para realizar esta análise.",
+                    "message": error_msg,
                     "credits": current_user.credits,
+                    "credits_display": get_credits_display(current_user),
                     "required": 1,
-                    "redirect": "/planos.html"
+                    "redirect": "/planos.html",
+                    "is_admin": current_user.is_admin
                 }
             )
         
@@ -366,7 +379,8 @@ async def upload_file(
             "analysis_type": analysis_type,
             "status": "uploaded",
             "progress": 0,
-            "started_at": datetime.now().isoformat()
+            "started_at": datetime.now().isoformat(),
+            "is_admin": current_user.is_admin  # ✅ ADICIONADO
         }
         
         # Processamento em background
@@ -412,7 +426,10 @@ async def upload_file(
                 # 4. Gerar relatório
                 update_status(process_id, "processing", 90, "Gerando relatório...")
                 
-                report = f"""RELATÓRIO DE ANÁLISE - {settings.APP_NAME}
+                # ✅ ADICIONAR INFO DE ADMIN NO RELATÓRIO SE FOR ADMIN
+                admin_tag = " [ADMIN - CRÉDITOS ILIMITADOS]" if current_user.is_admin else ""
+                
+                report = f"""RELATÓRIO DE ANÁLISE - {settings.APP_NAME}{admin_tag}
 {'='*60}
 
 📋 INFORMAÇÕES GERAIS
@@ -422,6 +439,7 @@ ID da Análise: {db_analysis.id}
 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 Usuário: {current_user.name} ({current_user.email})
 Oficina: {current_user.workshop_name or 'Não informada'}
+Tipo: {'👑 ADMIN' if current_user.is_admin else 'Usuário comum'}
 
 📁 ARQUIVO
 ──────────────────────────────
@@ -466,7 +484,13 @@ Nenhuma previsão gerada"""
                 else:
                     report += f"\nIA não disponível no momento."
                 
+                # ✅ ADICIONAR INFO DE CRÉDITOS NO FINAL DO RELATÓRIO
+                credits_text = "∞ (ilimitado)" if current_user.is_admin else str(current_user.credits or 0)
                 report += f"""
+
+💰 CRÉDITOS
+──────────────────────────────
+Créditos restantes: {credits_text}
 
 {'='*60}
 Relatório gerado automaticamente
@@ -475,12 +499,16 @@ Relatório gerado automaticamente
                 # Salvar relatório
                 result_file = await FileManager.save_result(report, process_id, ".txt")
                 
-                # Deduzir crédito
-                db.refresh(current_user)
-                credits_deducted = crud.deduct_credits(db, current_user.id, 1)
+                # ✅ DEDUZIR CRÉDITO USANDO O CRUD (já trata admin)
+                credits_deducted = deduct_credits(db, current_user.id, 1, f"Análise: {file.filename}")
                 
                 if credits_deducted:
-                    print(f"💰 Crédito deduzido. Novo saldo: {current_user.credits - 1}")
+                    if current_user.is_admin:
+                        print(f"👑 Admin {current_user.email} - operação sem consumo de créditos")
+                    else:
+                        # Buscar saldo atualizado
+                        db.refresh(current_user)
+                        print(f"💰 Crédito deduzido. Novo saldo: {current_user.credits}")
                 
                 # Atualizar análise no banco
                 updates = {
@@ -502,7 +530,8 @@ Relatório gerado automaticamente
                     "completed_at": datetime.now().isoformat(),
                     "result_file": result_file,
                     "predictions": normalize_predictions(predictions),
-                    "prediction_stats": prediction_stats
+                    "prediction_stats": prediction_stats,
+                    "credits_remaining": "∞" if current_user.is_admin else (current_user.credits if hasattr(current_user, 'credits') else 0)
                 })
                 
                 print(f"✅ Processamento concluído: {process_id}")
@@ -531,13 +560,17 @@ Relatório gerado automaticamente
                     except: pass
         
         background_tasks.add_task(process_file_background)
-        db.refresh(current_user)
+        
+        # ✅ RESPOSTA COM INFORMAÇÃO DE ADMIN
+        credits_remaining = "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits else 0)
         
         return {
             "message": "Arquivo recebido",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_remaining": current_user.credits - 1,
+            "credits_remaining": credits_remaining,
+            "credits_display": get_credits_display(current_user),
+            "is_admin": current_user.is_admin,
             "status": "processing"
         }
         
@@ -559,6 +592,10 @@ async def get_status(
     data = processing_cache[process_id]
     if data.get("user_id") != current_user.id:
         raise HTTPException(403, "Acesso negado")
+    
+    # ✅ ADICIONAR DISPLAY DE CRÉDITOS NA RESPOSTA
+    if "credits_remaining" not in data and current_user:
+        data["credits_remaining"] = "∞" if current_user.is_admin else current_user.credits
     
     return data
 
@@ -597,7 +634,7 @@ async def get_user_profile(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna perfil do usuário"""
+    """Retorna perfil do usuário com info de admin"""
     # 🔥 CORRIGIDO: Refresh pode ser usado aqui porque o objeto ainda está na sessão
     db.refresh(current_user)
     return {
@@ -606,11 +643,15 @@ async def get_user_profile(
         "email": current_user.email,
         "workshop_name": current_user.workshop_name,
         "credits": current_user.credits,
-        "total_purchased": current_user.total_purchased
+        "credits_display": get_credits_display(current_user),  # ✅ ADICIONADO
+        "total_purchased": current_user.total_purchased,
+        "is_admin": current_user.is_admin,  # ✅ ADICIONADO
+        "role": current_user.role.value if hasattr(current_user.role, 'value') else current_user.role,
+        "plan": current_user.plan.value if hasattr(current_user.plan, 'value') else current_user.plan
     }
 
 # ==============================================
-# 🔥 ROTA CORRIGIDA - SEM ERRO DE SESSÃO
+# ROTA DE STATS CORRIGIDA
 # ==============================================
 @router.get("/stats")
 async def get_stats(
@@ -631,14 +672,17 @@ async def get_stats(
         hoje = date.today()
         analises_hoje = sum(1 for a in analyses if a.uploaded_at.date() == hoje)
         
-        # 🔥 CORREÇÃO 3: Acessar atributos diretamente, sem refresh
+        # ✅ CORREÇÃO 3: Usar get_credits_display para admin
         return {
             "total_analises": len(analyses),
             "analises_hoje": analises_hoje,
-            "creditos": current_user.credits,  # ✅ Acesso direto
+            "creditos": "∞" if current_user.is_admin else current_user.credits,  # ✅ MODIFICADO
+            "creditos_numeric": 999999 if current_user.is_admin else current_user.credits,
+            "creditos_display": get_credits_display(current_user),
             "nome": current_user.name,
             "email": current_user.email,
             "workshop": current_user.workshop_name,
+            "is_admin": current_user.is_admin,  # ✅ ADICIONADO
             "status": "success"
         }
         
@@ -651,15 +695,17 @@ async def get_stats(
         return {
             "total_analises": 0,
             "analises_hoje": 0,
-            "creditos": current_user.credits if current_user else 0,
+            "creditos": "∞" if current_user.is_admin else (current_user.credits if current_user else 0),
+            "creditos_display": get_credits_display(current_user) if current_user else "0",
             "nome": current_user.name if current_user else "Usuário",
             "email": current_user.email if current_user else "",
+            "is_admin": current_user.is_admin if current_user else False,
             "status": "error",
             "mensagem": "Erro ao carregar estatísticas completas"
         }
 
 # ==============================================
-# 🔥 NOVA ROTA: Histórico de análises (resolve o 404)
+# HISTÓRICO DE ANÁLISES
 # ==============================================
 @router.get("/analyses/history")
 async def get_analysis_history(
@@ -691,7 +737,7 @@ async def get_analysis_history(
         return []
 
 # ==============================================
-# ROTA DO DASHBOARD (SEM BARRA!)
+# DASHBOARD
 # ==============================================
 @router.get("/dashboard")
 async def dashboard(
@@ -712,9 +758,26 @@ async def dashboard(
         {
             "request": request, 
             "user": current_user,
-            "credits": current_user.credits,
-            "name": current_user.name
+            "credits": "∞" if current_user.is_admin else current_user.credits,
+            "credits_display": get_credits_display(current_user),
+            "name": current_user.name,
+            "is_admin": current_user.is_admin
         }
     )
 
-print("✅ routes.py carregado com sucesso!")
+# ==============================================
+# NOVAS ROTAS DE ADMIN (OPCIONAL)
+# ==============================================
+
+@router.get("/admin/check")
+async def check_admin_status(
+    current_user = Depends(get_current_user)
+):
+    """Verifica se usuário é admin (útil para o frontend)"""
+    return {
+        "is_admin": current_user.is_admin,
+        "credits_display": get_credits_display(current_user),
+        "email": current_user.email
+    }
+
+print("✅ routes.py v3.0 carregado com sucesso!")

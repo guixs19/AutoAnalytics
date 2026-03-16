@@ -46,6 +46,9 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     last_login = Column(DateTime)
     
+    # ✅ CAMPO ADMIN ADICIONADO AQUI
+    is_admin = Column(Boolean, default=False)
+    
     # Créditos
     credits = Column(Integer, default=0)
     total_purchased = Column(Integer, default=0)
@@ -75,9 +78,15 @@ class User(Base):
         self.hashed_password = hasher.hash_password(password)
     
     def has_credits(self, required: int = 1) -> bool:
+        # ✅ ADMIN sempre tem créditos
+        if self.is_admin:
+            return True
         return self.credits >= required
     
-    def deduct_credit(self, amount: int = 1):
+    def deduct_credit(self, amount: int = 1) -> bool:
+        # ✅ ADMIN não deduz créditos
+        if self.is_admin:
+            return True
         if self.credits >= amount:
             self.credits -= amount
             return True
@@ -201,6 +210,7 @@ class DailyCreditLog(Base):
     date = Column(Date, default=datetime.now().date)
     day_number = Column(Integer)
     total_after = Column(Integer)
+    source = Column(String, default="daily_upload")  # ✅ ADICIONADO CAMPO SOURCE
     
     created_at = Column(DateTime, default=datetime.now)
     
@@ -215,6 +225,7 @@ class DailyCreditLog(Base):
             "date": self.date.isoformat() if self.date else None,
             "day_number": self.day_number,
             "total_after": self.total_after,
+            "source": self.source,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 

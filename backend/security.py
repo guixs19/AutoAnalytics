@@ -1,4 +1,4 @@
-# backend/security.py - VERSÃO DEFINITIVA COM CAPTCHA PRÓPRIO
+# backend/security.py - VERSÃO DEFINITIVA COM CAPTCHA PRÓPRIO E SUPORTE A ADMIN
 """
 MÓDULO CENTRAL DE SEGURANÇA
 Todo o sistema DEVE importar daqui: from backend.security import ...
@@ -179,6 +179,8 @@ class JWTManager:
             "role": data.get("role", "user"),
             "plan": data.get("plan", "basico"),
             "credits": data.get("credits", 0),
+            # ✅ ADICIONADO is_admin NO PAYLOAD
+            "is_admin": data.get("is_admin", False),
             "type": token_type,
             "iat": now,
             "exp": now + expires_delta,
@@ -216,7 +218,9 @@ class JWTManager:
             "name": user_data.get("name", ""),
             "role": user_data.get("role", "user"),
             "plan": user_data.get("plan", "basico"),
-            "credits": user_data.get("credits", 0)
+            "credits": user_data.get("credits", 0),
+            # ✅ ADICIONADO is_admin AQUI TAMBÉM
+            "is_admin": user_data.get("is_admin", False)
         }
         
         # Criar tokens
@@ -334,7 +338,9 @@ class JWTManager:
             "name": user.name,
             "role": user.role.value if hasattr(user.role, 'value') else user.role,
             "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
-            "credits": user.credits
+            "credits": user.credits,
+            # ✅ ADICIONADO is_admin
+            "is_admin": user.is_admin
         }
         
         # TOKEN ROTATION: Invalidar token antigo
@@ -842,6 +848,10 @@ async def get_current_user(
             logger.warning(f"Usuário {email} não encontrado")
             raise credentials_exception
         
+        # ✅ ADICIONADO LOG PARA VERIFICAR SE USUÁRIO É ADMIN
+        if user.is_admin:
+            logger.info(f"👑 Admin logado: {user.email}")
+        
         return user
     finally:
         if should_close:
@@ -863,10 +873,8 @@ async def get_current_admin_user(
     current_user = Depends(get_current_active_user)
 ):
     """Verifica se é administrador"""
-    # 🔥 CORRIGIDO: Comparação com strings em vez de enum
-    role_value = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
-    
-    if role_value not in ["admin", "ADMIN"]:
+    # 🔥 VERIFICA PELO CAMPO is_admin
+    if not current_user.is_admin:
         logger.warning(f"Usuário {current_user.email} tentou acesso admin")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -878,7 +886,10 @@ async def get_current_manager_user(
     current_user = Depends(get_current_active_user)
 ):
     """Verifica se é gestor ou admin"""
-    # 🔥 CORRIGIDO: Comparação com strings em vez de enum
+    # 🔥 VERIFICA PELO CAMPO is_admin OU role
+    if current_user.is_admin:
+        return current_user
+    
     role_value = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
     
     if role_value not in ["admin", "ADMIN", "manager", "MANAGER"]:

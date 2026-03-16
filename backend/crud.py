@@ -1,4 +1,4 @@
-# backend/crud.py - VERSÃO COMPLETA COM TODAS AS FUNCIONALIDADES
+# backend/crud.py - VERSÃO COMPLETA COM SUPORTE A ADMIN
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from datetime import datetime, date, timedelta
@@ -74,7 +74,8 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
         created_at=datetime.now(),
         credits=0,
         total_purchased=0,
-        plan=schemas.UserPlan.BASICO
+        plan=schemas.UserPlan.BASICO,
+        is_admin=False  # ✅ NOVO: admin começa como False
     )
     
     db.add(db_user)
@@ -100,7 +101,12 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[models
         logger.warning(f"Senha incorreta para: {email}")
         return None
     
-    logger.info(f"✅ Login bem-sucedido: {email}")
+    # ✅ LOG PARA ADMIN
+    if user.is_admin:
+        logger.info(f"👑 Admin logado: {email}")
+    else:
+        logger.info(f"✅ Login bem-sucedido: {email}")
+    
     return user
 
 def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.UserUpdate]) -> Optional[models.User]:
@@ -177,13 +183,47 @@ def delete_user(db: Session, user_id: int) -> bool:
     return False
 
 # ==============================================
-# CRÉDITOS - OPERAÇÕES
+# ADMIN - FUNÇÕES ESPECÍFICAS
+# ==============================================
+
+def set_user_admin(db: Session, user_id: int, admin_status: bool = True) -> bool:
+    """Torna um usuário admin ou remove privilégios de admin"""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return False
+    
+    user.is_admin = admin_status
+    safe_commit(db, "Erro ao alterar status de admin")
+    
+    status = "agora é admin" if admin_status else "não é mais admin"
+    logger.info(f"👑 Usuário {user.email} {status}")
+    return True
+
+def get_all_admins(db: Session) -> List[models.User]:
+    """Retorna todos os usuários admin"""
+    return db.query(models.User).filter(models.User.is_admin == True).all()
+
+# ==============================================
+# CRÉDITOS - OPERAÇÕES (ATUALIZADO)
 # ==============================================
 
 def get_user_credits(db: Session, user_id: int) -> int:
     """Retorna saldo de créditos do usuário"""
     user = get_user_by_id(db, user_id)
-    return user.credits if user else 0
+    if not user:
+        return 0
+    
+    # ✅ Admin retorna um número grande para compatibilidade
+    if user.is_admin:
+        return 999999
+    
+    return user.credits or 0
+
+def get_credits_display(user: models.User) -> str:
+    """Retorna string formatada para exibição de créditos"""
+    if user.is_admin:
+        return "∞"
+    return str(user.credits or 0)
 
 def add_credits(db: Session, user_id: int, amount: int, description: str = "") -> bool:
     """Adiciona créditos ao usuário com log"""
@@ -191,10 +231,12 @@ def add_credits(db: Session, user_id: int, amount: int, description: str = "") -
     if not user or amount <= 0:
         return False
     
-    user.add_credits(amount)
+    # ✅ Admin não precisa ganhar créditos
+    if user.is_admin:
+        logger.info(f"👑 Admin {user.email} - créditos ilimitados (add_credits ignorado)")
+        return True
     
-    # Log da operação (se tiver tabela de logs)
-    # log_credits_operation(db, user_id, "add", amount, description)
+    user.add_credits(amount)
     
     safe_commit(db, "Erro ao adicionar créditos")
     logger.info(f"💰 {amount} créditos adicionados ao usuário {user_id}")
@@ -206,14 +248,16 @@ def deduct_credits(db: Session, user_id: int, amount: int = 1, description: str 
     if not user or amount <= 0:
         return False
     
+    # ✅ ADMIN NUNCA DEDUZ CRÉDITOS
+    if user.is_admin:
+        logger.info(f"👑 Admin {user.email} - operação sem consumo de créditos")
+        return True
+    
     if not user.has_credits(amount):
         logger.warning(f"⚠️ Créditos insuficientes para usuário {user_id}")
         return False
     
     user.deduct_credit(amount)
-    
-    # Log da operação
-    # log_credits_operation(db, user_id, "deduct", amount, description)
     
     safe_commit(db, "Erro ao deduzir créditos")
     logger.info(f"💰 {amount} créditos deduzidos do usuário {user_id}")
@@ -222,7 +266,14 @@ def deduct_credits(db: Session, user_id: int, amount: int = 1, description: str 
 def check_credits(db: Session, user_id: int, required: int = 1) -> bool:
     """Verifica se usuário tem créditos suficientes"""
     user = get_user_by_id(db, user_id)
-    return user.has_credits(required) if user else False
+    if not user:
+        return False
+    
+    # ✅ ADMIN SEMPRE TEM CRÉDITOS
+    if user.is_admin:
+        return True
+    
+    return user.has_credits(required)
 
 def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: int) -> bool:
     """Transfere créditos entre usuários"""
@@ -235,6 +286,15 @@ def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: in
     if not from_user or not to_user:
         return False
     
+    # ✅ Admin que está transferindo não tem limite
+    if from_user.is_admin:
+        # Admin pode transferir sem ter créditos
+        to_user.add_credits(amount)
+        safe_commit(db, "Erro ao transferir créditos")
+        logger.info(f"👑 Admin {from_user.email} transferiu {amount} créditos para {to_user.email}")
+        return True
+    
+    # Usuário comum precisa ter créditos
     if not from_user.has_credits(amount):
         return False
     
@@ -340,7 +400,7 @@ def check_premium_status(db: Session, user_id: int) -> Dict[str, Any]:
     
     return {
         "is_premium": user.is_premium(),
-        "plan": user.plan.value,
+        "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
         "activated_at": user.premium_activated_at,
         "expires_at": user.premium_expires_at,
         "days_left": user.get_premium_days_left(),
@@ -514,7 +574,7 @@ def get_recent_analyses(db: Session, limit: int = 10) -> List[models.Analysis]:
     ).limit(limit).all()
 
 # ==============================================
-# ADMIN - OPERAÇÕES
+# ADMIN - OPERAÇÕES AVANÇADAS
 # ==============================================
 
 def get_all_users(
@@ -546,8 +606,11 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
     total = db.query(models.User).count()
     active = db.query(models.User).filter(models.User.is_active == True).count()
     
+    # ✅ ADMIN STATS
+    admins = db.query(models.User).filter(models.User.is_admin == True).count()
+    
     # Por role
-    admins = db.query(models.User).filter(models.User.role == schemas.UserRole.ADMIN).count()
+    role_admins = db.query(models.User).filter(models.User.role == schemas.UserRole.ADMIN).count()
     managers = db.query(models.User).filter(models.User.role == schemas.UserRole.MANAGER).count()
     users = db.query(models.User).filter(models.User.role == schemas.UserRole.USER).count()
     
@@ -557,9 +620,13 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
         models.User.premium_expires_at >= date.today()
     ).count()
     
-    # Créditos
-    total_credits = db.query(func.sum(models.User.credits)).scalar() or 0
-    avg_credits = db.query(func.avg(models.User.credits)).scalar() or 0
+    # Créditos (excluindo admins do cálculo porque eles têm "infinito")
+    total_credits = db.query(func.sum(models.User.credits)).filter(
+        models.User.is_admin == False
+    ).scalar() or 0
+    avg_credits = db.query(func.avg(models.User.credits)).filter(
+        models.User.is_admin == False
+    ).scalar() or 0
     
     # Análises
     total_analyses = db.query(models.Analysis).count()
@@ -581,14 +648,16 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
             "total": total,
             "active": active,
             "inactive": total - active,
-            "admins": admins,
+            "admins": admins,  # ✅ NOVO
+            "role_admins": role_admins,
             "managers": managers,
             "users": users,
             "premium": premium
         },
         "credits": {
             "total_in_system": total_credits,
-            "average_per_user": round(avg_credits, 2)
+            "average_per_user": round(avg_credits, 2),
+            "admins_have_unlimited": admins
         },
         "analyses": {
             "total": total_analyses,
@@ -608,10 +677,12 @@ def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
     # Análises do usuário
     analyses = get_user_analyses(db, user_id, limit=5)
     
-    # Créditos
+    # Créditos (com display especial para admin)
     credits_info = {
-        "balance": user.credits if user else 0,
-        "total_purchased": user.total_purchased if user else 0
+        "balance": user.credits if user and not user.is_admin else 999999,
+        "balance_display": get_credits_display(user) if user else "0",
+        "total_purchased": user.total_purchased if user else 0,
+        "is_admin": user.is_admin if user else False
     }
     
     # Premium
@@ -624,7 +695,8 @@ def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
         "user": {
             "name": user.name if user else "",
             "email": user.email if user else "",
-            "workshop": user.workshop_name if user else ""
+            "workshop": user.workshop_name if user else "",
+            "is_admin": user.is_admin if user else False
         },
         "credits": credits_info,
         "premium": premium_info,

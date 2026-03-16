@@ -11,9 +11,12 @@ services:
       - ./backend/.env:/app/.env
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/autoanalytics
+      - REDIS_HOST=redis      # ← ADICIONADO
+      - REDIS_PORT=6379       # ← ADICIONADO
     depends_on:
       - db
       - flowise
+      - redis                 # ← ADICIONADO
 
   # Frontend (nginx para servir arquivos estáticos)
   frontend:
@@ -46,3 +49,22 @@ services:
     volumes:
       - flowise_data:/root/.flowise
 
+  # Redis
+  redis:
+    image: redis:alpine
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  flowise_data:
+  redis_data:

@@ -1,4 +1,4 @@
-// frontend/js/dashboard.js - Versão atualizada com créditos
+// frontend/js/dashboard.js - Versão com suporte a admin
 
 const API_URL = 'http://localhost:8000/api';
 
@@ -11,17 +11,28 @@ function checkAuth() {
     return true;
 }
 
-// Função para fazer logout (mantida)
+// ===== NOVAS FUNÇÕES DE ADMIN =====
+
+function isAdmin() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return user.is_admin === true;
+}
+
+function getCreditsDisplay() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (user.is_admin) return '∞';
+    return user.credits || 0;
+}
+
+// Função para fazer logout (modificada)
 function logout() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_email');
-    localStorage.removeItem('workshop_name');
+    localStorage.removeItem('user');
     window.location.href = 'login.html';
 }
 
-// ===== NOVAS FUNÇÕES DE CRÉDITOS =====
+// ===== FUNÇÕES DE CRÉDITOS (MODIFICADAS) =====
 
 // Carregar créditos do usuário
 async function loadUserCredits() {
@@ -30,19 +41,52 @@ async function loadUserCredits() {
         if (response.ok) {
             const data = await response.json();
             
-            // Atualizar em todos os lugares que mostram créditos
-            const creditElements = document.querySelectorAll('#navbarCredits, .user-credits');
-            creditElements.forEach(el => {
-                el.textContent = data.credits || 0;
-            });
+            // Atualizar user no localStorage
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            user.credits = data.credits || 0;
+            user.is_admin = data.is_admin || false;
+            localStorage.setItem('user', JSON.stringify(user));
+            
+            // Atualizar display
+            updateCreditsDisplay();
         }
     } catch (error) {
         console.error('Erro ao carregar créditos:', error);
     }
 }
 
-// Verificar créditos antes do upload
+// Atualizar display de créditos
+function updateCreditsDisplay() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const creditsDisplay = user.is_admin ? '∞' : (user.credits || 0);
+    
+    // Atualizar em todos os lugares que mostram créditos
+    const creditElements = document.querySelectorAll('#navbarCredits, .user-credits');
+    creditElements.forEach(el => {
+        el.textContent = creditsDisplay;
+    });
+    
+    // Mostrar badge de admin se necessário
+    const adminBadges = document.querySelectorAll('.admin-badge');
+    if (user.is_admin) {
+        adminBadges.forEach(el => {
+            el.style.display = 'inline-block';
+        });
+        document.body.classList.add('is-admin');
+    } else {
+        adminBadges.forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+}
+
+// Verificar créditos antes do upload (MODIFICADA)
 async function checkCreditsBeforeUpload() {
+    // ✅ Admin sempre pode
+    if (isAdmin()) {
+        return true;
+    }
+    
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/check-analysis`);
         if (response.ok) {
@@ -60,8 +104,13 @@ async function checkCreditsBeforeUpload() {
     return false;
 }
 
-// Modal de créditos insuficientes
+// Modal de créditos insuficientes (MODIFICADA)
 function showCreditsModal() {
+    // Não mostrar modal para admin
+    if (isAdmin()) {
+        return;
+    }
+    
     // Verificar se modal já existe
     let modal = document.getElementById('creditsModal');
     
@@ -103,34 +152,33 @@ function showCreditsModal() {
     
     // Atualizar saldo no modal
     const modalCredits = document.getElementById('modalCredits');
-    const currentCredits = document.getElementById('navbarCredits')?.textContent || '0';
-    if (modalCredits) modalCredits.textContent = currentCredits;
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (modalCredits) modalCredits.textContent = user.credits || 0;
     
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
 }
 
-// ===== FUNÇÕES EXISTENTES (modificadas para incluir créditos) =====
+// ===== FUNÇÕES EXISTENTES (MODIFICADAS) =====
 
 // Carregar informações do usuário (modificada)
 async function loadUserInfo() {
-    const userName = localStorage.getItem('user_name');
-    const userEmail = localStorage.getItem('user_email');
-    const workshopName = localStorage.getItem('workshop_name');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
     
     // Exibir no navbar ou sidebar
     const userElement = document.getElementById('userName');
     if (userElement) {
-        userElement.textContent = userName || 'Usuário';
+        userElement.textContent = user.name || 'Usuário';
     }
     
     const workshopElement = document.getElementById('workshopName');
     if (workshopElement) {
-        workshopElement.textContent = workshopName || 'Oficina';
+        workshopElement.textContent = user.workshop || 'Oficina';
     }
     
-    // Carregar créditos
+    // Carregar créditos e atualizar display
     await loadUserCredits();
+    updateCreditsDisplay();
 }
 
 // Carregar histórico de análises (mantida)
@@ -196,7 +244,6 @@ function setupLogout() {
 }
 
 // ===== FUNÇÃO DE UPLOAD MODIFICADA =====
-// Esta função substitui a do seu app.js para verificar créditos
 async function handleUpload(e) {
     e.preventDefault();
     
@@ -206,7 +253,7 @@ async function handleUpload(e) {
         return;
     }
     
-    // Verificar créditos primeiro
+    // Verificar créditos primeiro (admin sempre passa)
     const hasCredits = await checkCreditsBeforeUpload();
     if (!hasCredits) return;
     
@@ -234,10 +281,10 @@ async function handleUpload(e) {
             const data = await response.json();
             showAlert('Análise iniciada com sucesso!', 'success');
             
-            // Atualizar créditos (já deduzidos no backend)
+            // Atualizar créditos (admin não perde)
             await loadUserCredits();
             
-            // Iniciar processamento (chamar sua função existente)
+            // Iniciar processamento
             if (window.app) {
                 window.app.currentProcessId = data.process_id;
                 window.app.showProgress();
@@ -358,7 +405,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Substituir o handler de upload do formulário
     const uploadForm = document.getElementById('uploadForm');
     if (uploadForm) {
-        uploadForm.removeEventListener('submit', window.app?.handleUpload); // Remover handler antigo se existir
+        uploadForm.removeEventListener('submit', window.app?.handleUpload);
         uploadForm.addEventListener('submit', handleUpload);
+    }
+    
+    // Adicionar badge de admin no HTML se necessário
+    const navbar = document.querySelector('.navbar-modern .container');
+    if (navbar && isAdmin()) {
+        const adminBadge = document.createElement('span');
+        adminBadge.className = 'admin-badge badge bg-warning text-dark ms-2';
+        adminBadge.innerHTML = '<i class="fas fa-crown me-1"></i>Admin';
+        navbar.appendChild(adminBadge);
     }
 });

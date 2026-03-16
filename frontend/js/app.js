@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO COMPLETA COM CAPTCHA PRÓPRIO
+// frontend/js/app.js - VERSÃO COMPLETA COM SUPORTE A ADMIN
 
 class AutoAnalytics {
     constructor() {
@@ -20,6 +20,50 @@ class AutoAnalytics {
         this.init();
     }
     
+    // ===== NOVAS FUNÇÕES DE ADMIN =====
+    
+    isAdmin() {
+        const user = this.getCurrentUser();
+        return user?.is_admin === true;
+    }
+    
+    getCurrentUser() {
+        try {
+            return JSON.parse(localStorage.getItem('user') || '{}');
+        } catch {
+            return {};
+        }
+    }
+    
+    getCreditsDisplay() {
+        if (this.isAdmin()) return '∞';
+        const user = this.getCurrentUser();
+        return user.credits || 0;
+    }
+    
+    updateCreditsDisplay() {
+        const creditsDisplay = this.getCreditsDisplay();
+        
+        // Atualizar elementos na navbar
+        const creditElements = document.querySelectorAll('#navbarCredits, .user-credits');
+        creditElements.forEach(el => {
+            el.textContent = creditsDisplay;
+        });
+        
+        // Mostrar badge de admin
+        const adminBadges = document.querySelectorAll('.admin-badge');
+        if (this.isAdmin()) {
+            adminBadges.forEach(el => {
+                el.style.display = 'inline-block';
+            });
+            document.body.classList.add('is-admin');
+        } else {
+            adminBadges.forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+    }
+    
     async init() {
         this.initializeElements();
         this.bindEvents();
@@ -29,6 +73,9 @@ class AutoAnalytics {
         this.setupLogout();
         this.initGSAPAnimations();
         this.checkAuthentication();
+        
+        // Atualizar display de créditos
+        this.updateCreditsDisplay();
         
         // 🔥 NOVO: Carregar CAPTCHA se estiver na página de login/registro
         if (this.isLoginPage() || this.isRegisterPage()) {
@@ -297,14 +344,23 @@ class AutoAnalytics {
                 // Login bem-sucedido
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.setItem('user_name', data.user_name);
-                localStorage.setItem('user_email', data.user_email);
-                localStorage.setItem('workshop_name', data.workshop_name || '');
-                localStorage.setItem('user_credits', data.credits || 0);
                 
-                this.showAlert('✅ Login realizado com sucesso!', 'success');
+                // ✅ ARMAZENAR TODOS OS DADOS DO USUÁRIO
+                const userData = {
+                    name: data.user_name || '',
+                    email: data.user_email || email,
+                    workshop: data.workshop_name || '',
+                    role: data.role || 'user',
+                    plan: data.plan || 'basico',
+                    credits: data.credits || 0,
+                    is_admin: data.is_admin || false
+                };
+                localStorage.setItem('user', JSON.stringify(userData));
                 
-                // Redirecionar para dashboard (SEM BARRA)
+                const adminMsg = userData.is_admin ? '👑 ' : '';
+                this.showAlert(`${adminMsg}Login realizado com sucesso!`, 'success');
+                
+                // Redirecionar para dashboard
                 setTimeout(() => {
                     window.location.href = '/dashboard';
                 }, 1000);
@@ -757,7 +813,13 @@ class AutoAnalytics {
         e.stopPropagation();
     }
     
+    // Verificar créditos antes do upload (MODIFICADA)
     async checkCreditsBeforeUpload() {
+        // ✅ Admin sempre pode
+        if (this.isAdmin()) {
+            return true;
+        }
+        
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
             if (response.ok) {
@@ -772,6 +834,59 @@ class AutoAnalytics {
             console.error('Erro ao verificar créditos:', error);
         }
         return false;
+    }
+    
+    // Modal de créditos (MODIFICADA)
+    showCreditsModal() {
+        // Não mostrar para admin
+        if (this.isAdmin()) {
+            return;
+        }
+        
+        let modal = document.getElementById('creditsModal');
+        
+        if (!modal) {
+            const modalHtml = `
+                <div class="modal fade" id="creditsModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content rounded-4">
+                            <div class="modal-header bg-warning border-0">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Créditos Insuficientes
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center py-4">
+                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
+                                <h5>Você não tem créditos para realizar esta análise</h5>
+                                <p class="text-muted">Cada treinamento consome 1 crédito.</p>
+                                <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
+                            </div>
+                            <div class="modal-footer justify-content-center border-0">
+                                <a href="/planos.html" class="btn btn-gradient">
+                                    <i class="fas fa-credit-card me-2"></i>
+                                    Assinar Plano R$97
+                                </a>
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            modal = document.getElementById('creditsModal');
+        }
+        
+        const modalCredits = document.getElementById('modalCredits');
+        const user = this.getCurrentUser();
+        if (modalCredits) modalCredits.textContent = user.credits || 0;
+        
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
     }
     
     async handleUpload(e) {
@@ -793,6 +908,7 @@ class AutoAnalytics {
             return;
         }
         
+        // Verificar créditos (admin sempre passa)
         const hasCredits = await this.checkCreditsBeforeUpload();
         if (!hasCredits) return;
         
@@ -822,7 +938,10 @@ class AutoAnalytics {
             
             if (response.ok) {
                 this.currentProcessId = data.process_id;
-                this.showAlert('✅ Modelo em treinamento!', 'success');
+                
+                const adminMsg = this.isAdmin() ? '👑 ' : '';
+                this.showAlert(`${adminMsg}Modelo em treinamento!`, 'success');
+                
                 await this.loadUserCredits();
                 this.showProgress();
                 this.startProgressPolling();
@@ -1145,81 +1264,18 @@ class AutoAnalytics {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
             if (response.ok) {
                 const data = await response.json();
-                this.updateCreditsDisplay(data.credits || 0);
                 
-                localStorage.setItem('user_credits', data.credits || 0);
-                localStorage.setItem('user_name', data.user_name || 'Usuário');
-                localStorage.setItem('workshop_name', data.workshop_name || 'Oficina');
+                // Atualizar user no localStorage
+                const user = this.getCurrentUser();
+                user.credits = data.credits || 0;
+                user.is_admin = data.is_admin || false;
+                localStorage.setItem('user', JSON.stringify(user));
+                
+                this.updateCreditsDisplay();
             }
         } catch (error) {
             console.error('Erro ao carregar créditos:', error);
         }
-    }
-    
-    updateCreditsDisplay(credits) {
-        if (this.navbarCredits) {
-            if (this.navbarCredits.tagName === 'SPAN') {
-                this.navbarCredits.textContent = credits;
-            } else {
-                const span = this.navbarCredits.querySelector('span');
-                if (span) span.textContent = credits;
-            }
-        }
-        if (this.uploadCredits) this.uploadCredits.textContent = credits;
-        
-        if (this.userName) {
-            this.userName.textContent = localStorage.getItem('user_name') || 'Usuário';
-        }
-        if (this.workshopName) {
-            this.workshopName.textContent = localStorage.getItem('workshop_name') || 'Oficina';
-        }
-    }
-    
-    showCreditsModal() {
-        let modal = document.getElementById('creditsModal');
-        
-        if (!modal) {
-            const modalHtml = `
-                <div class="modal fade" id="creditsModal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content rounded-4">
-                            <div class="modal-header bg-warning border-0">
-                                <h5 class="modal-title">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    Créditos Insuficientes
-                                </h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body text-center py-4">
-                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
-                                <h5>Você não tem créditos para realizar esta análise</h5>
-                                <p class="text-muted">Cada treinamento consome 1 crédito.</p>
-                                <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
-                            </div>
-                            <div class="modal-footer justify-content-center border-0">
-                                <a href="/planos.html" class="btn btn-gradient">
-                                    <i class="fas fa-credit-card me-2"></i>
-                                    Assinar Plano R$97
-                                </a>
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            modal = document.getElementById('creditsModal');
-        }
-        
-        const modalCredits = document.getElementById('modalCredits');
-        const currentCredits = this.navbarCredits?.textContent || '0';
-        if (modalCredits) modalCredits.textContent = currentCredits;
-        
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
     }
     
     // ===== FUNÇÕES DE RESULTADO =====
@@ -1342,7 +1398,8 @@ class AutoAnalytics {
     resetUploadButton() {
         if (this.uploadButton) {
             this.uploadButton.disabled = false;
-            this.uploadButton.innerHTML = '<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">1 crédito</span>';
+            const creditText = this.isAdmin() ? '∞' : '1 crédito';
+            this.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
         }
     }
     
@@ -1423,10 +1480,7 @@ class AutoAnalytics {
             } finally {
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user_name');
-                localStorage.removeItem('user_email');
-                localStorage.removeItem('workshop_name');
-                localStorage.removeItem('user_credits');
+                localStorage.removeItem('user');
                 
                 window.location.href = '/login.html';
             }

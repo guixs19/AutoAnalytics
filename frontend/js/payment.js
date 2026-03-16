@@ -1,4 +1,10 @@
-// frontend/js/payment.js - Funções para a página de planos
+// frontend/js/payment.js - Versão com suporte a admin
+
+// Função para verificar se é admin
+function isAdmin() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return user.is_admin === true;
+}
 
 // Carregar planos na página planos.html
 async function loadPlans() {
@@ -13,11 +19,27 @@ async function loadPlans() {
     }
 }
 
-// Renderizar planos
+// Renderizar planos (MODIFICADA)
 function renderPlans(plans) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
     
+    // Se for admin, mostrar mensagem especial
+    if (isAdmin()) {
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-warning text-center p-5 rounded-4">
+                    <i class="fas fa-crown fa-4x mb-3 text-warning"></i>
+                    <h3>👑 Você é Administrador</h3>
+                    <p class="lead">Como admin, você tem acesso ilimitado a todas as funcionalidades.</p>
+                    <p class="text-muted">Não é necessário comprar planos ou créditos.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Render normal para usuários comuns
     let html = '';
     
     for (const [key, plan] of Object.entries(plans)) {
@@ -45,7 +67,7 @@ function renderPlans(plans) {
                         </div>
                         <div class="plan-feature">
                             <i class="fas fa-check-circle text-success"></i>
-                            Previsões TensorFlow
+                            Previsões Scikit-Learn
                         </div>
                         
                         <div class="d-grid gap-2 mt-4">
@@ -67,8 +89,14 @@ function renderPlans(plans) {
     container.innerHTML = html;
 }
 
-// Selecionar plano
+// Selecionar plano (MODIFICADA)
 async function selectPlan(planId, method) {
+    // Admin não precisa comprar
+    if (isAdmin()) {
+        alert('👑 Como administrador, você tem acesso ilimitado. Não é necessário comprar planos.');
+        return;
+    }
+    
     try {
         if (method === 'pix') {
             const response = await fetchWithAuth(`${API_URL}/payments/create-pix`, {
@@ -105,7 +133,7 @@ async function selectPlan(planId, method) {
     }
 }
 
-// Mostrar modal PIX
+// Mostrar modal PIX (mantida)
 function showPixModal(data) {
     const modal = new bootstrap.Modal(document.getElementById('pixModal'));
     
@@ -138,7 +166,7 @@ function showPixModal(data) {
     startPaymentPolling(data.payment_id);
 }
 
-// Copiar código PIX
+// Copiar código PIX (mantida)
 function copyPixCode() {
     const pixCode = document.getElementById('pixCode');
     if (pixCode) {
@@ -147,7 +175,7 @@ function copyPixCode() {
     }
 }
 
-// Verificar status do pagamento
+// Verificar status do pagamento (mantida)
 let paymentPolling = null;
 
 function startPaymentPolling(paymentId) {
@@ -186,3 +214,33 @@ async function checkPaymentStatus(paymentId) {
         console.error('Erro:', error);
     }
 }
+
+// Função para fazer requisições com token (adicionada)
+async function fetchWithAuth(url, options = {}) {
+    const token = localStorage.getItem('access_token');
+    
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(url, { ...options, headers });
+    
+    if (response.status === 401) {
+        // Redirecionar para login
+        window.location.href = 'login.html';
+    }
+    
+    return response;
+}
+
+// Inicializar na página de planos
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.location.pathname.includes('planos.html')) {
+        loadPlans();
+    }
+});
