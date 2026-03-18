@@ -1,12 +1,3 @@
-# backend/services/daily_credits_service.py - VERSÃO CORRETA (COM PLANO PREMIUM)
-"""
-SERVIÇO DE CRÉDITOS DIÁRIOS - PLANO PREMIUM
--------------------------------------------
-✅ Usuários comuns: começam com 3 créditos (definido no cadastro)
-⭐ Plano Premium: ganham 1 crédito por dia durante 30 dias
-👑 Admin: créditos ilimitados
-"""
-
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from backend.models import User, DailyCreditLog, Payment, Analysis, UserPlan

@@ -166,9 +166,6 @@
             50% { transform: translateY(-10px); }
         }
 
-        /* ✅ REMOVIDO: Seletor de Colunas */
-        /* ✅ REMOVIDO: Preview de Dados */
-
         /* Indicador de Processamento */
         .processing-indicator {
             background: #f8fafc;
@@ -188,47 +185,6 @@
         .processing-text {
             color: #4a5568;
             font-size: 1rem;
-        }
-
-        /* Seletor de Algoritmo */
-        .algorithm-selector {
-            background: white;
-            border-radius: 15px;
-            padding: 1rem;
-            border: 1px solid #e2e8f0;
-        }
-
-        .algorithm-option {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-        }
-
-        .algorithm-option:hover {
-            background: #f8fafc;
-            border-color: #e2e8f0;
-        }
-
-        .algorithm-option.selected {
-            background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
-            border-color: #667eea;
-        }
-
-        .algorithm-option input[type="radio"] {
-            margin-right: 1rem;
-        }
-
-        .algorithm-badge {
-            background: #e2e8f0;
-            color: #4a5568;
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            margin-left: 0.5rem;
         }
 
         /* Botão de Upload */
@@ -494,7 +450,7 @@
                         <span class="gradient-text">sua oficina mecânica</span>
                     </h1>
                     <p class="hero-subtitle">
-                        <strong>🚀 NOVO: Upload automático!</strong><br>
+                        <strong>🚀 Upload automático!</strong><br>
                         Basta enviar seu arquivo CSV ou Excel. 
                         O sistema detecta automaticamente os padrões e gera insights poderosos.
                     </p>
@@ -543,8 +499,8 @@
                         </div>
                         <div class="col-4">
                             <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="iaUtilizada">R² 0.94</div>
-                                <div class="metric-label">Precisão</div>
+                                <div class="metric-value" id="iaUtilizada">AutoML</div>
+                                <div class="metric-label">Tecnologia</div>
                             </div>
                         </div>
                     </div>
@@ -604,8 +560,8 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- ✅ REMOVIDO: Preview dos Dados -->
-                                    <!-- ✅ REMOVIDO: Seletor de Colunas -->
+                                    <!-- 🔥 NOVO: Preview Tecnológico -->
+                                    <div id="dataPreview" class="mt-4 d-none"></div>
                                     
                                     <!-- Indicador de Processamento Automático -->
                                     <div class="processing-indicator mb-3">
@@ -623,48 +579,12 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Seletor de Algoritmo (OPCIONAL) -->
-                                    <div class="algorithm-selector mb-3">
-                                        <label class="form-label small fw-bold mb-2">
-                                            <i class="fas fa-brain me-1"></i>
-                                            Algoritmo (opcional)
-                                        </label>
-                                        <p class="text-muted small mb-2">
-                                            O sistema escolhe automaticamente, mas você pode preferir um específico:
-                                        </p>
-                                        
-                                        <div class="algorithm-option" onclick="app.selectAlgorithm('random_forest', this)">
-                                            <input type="radio" name="algorithm" id="algRandomForest" value="random_forest" checked>
-                                            <div>
-                                                <strong>Random Forest</strong>
-                                                <span class="algorithm-badge">Recomendado</span>
-                                                <p class="text-muted small mb-0">Melhor para padrões gerais e comportamento de clientes</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="algorithm-option" onclick="app.selectAlgorithm('xgboost', this)">
-                                            <input type="radio" name="algorithm" id="algXGBoost" value="xgboost">
-                                            <div>
-                                                <strong>XGBoost</strong>
-                                                <p class="text-muted small mb-0">Mais preciso, ideal para previsão de estoque</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="algorithm-option" onclick="app.selectAlgorithm('linear', this)">
-                                            <input type="radio" name="algorithm" id="algLinear" value="linear">
-                                            <div>
-                                                <strong>Regressão Linear</strong>
-                                                <p class="text-muted small mb-0">Simples, bom para tendências de preço</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
                                     <!-- Botão de Upload -->
                                     <div class="d-grid">
                                         <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
                                             <i class="fas fa-play-circle me-2"></i>
-                                            Analisar Dados Automaticamente
-                                            <span class="badge bg-light text-dark ms-2">1 crédito</span>
+                                            Iniciar Análise Automática
+                                            <span class="badge bg-light text-dark ms-2" id="uploadCreditBadge">1 crédito</span>
                                         </button>
                                     </div>
                                 </form>
@@ -714,7 +634,7 @@
                             Resultados da Análise Automática
                         </h2>
                         <p class="text-muted small mb-0" id="resultDescription">
-                            Análise completa do arquivo utilizando <span id="algorithmName" class="fw-bold"></span>
+                            Análise completa do arquivo
                         </p>
                     </div>
                     <div class="model-badge">
@@ -844,10 +764,9 @@
                     <div class="text-start small">
                         <p class="mb-2"><i class="fas fa-info-circle text-primary me-2"></i>Como funcionam os créditos:</p>
                         <ul class="text-muted">
-                            <li>Você ganha 1 crédito por dia ao fazer upload</li>
-                            <li>Créditos não utilizados são acumulados</li>
+                            <li>Você começa com 3 créditos</li>
+                            <li>⭐ Premium ganha 1 crédito por dia</li>
                             <li>Cada análise consome 1 crédito</li>
-                            <li>Mantenha uma sequência de dias para ganhar bônus</li>
                         </ul>
                     </div>
                 </div>
@@ -917,7 +836,6 @@
     
     <!-- Inicialização e verificação de autenticação -->
     <script>
-        // Verificar se usuário está autenticado ao carregar o dashboard
         document.addEventListener('DOMContentLoaded', function() {
             const token = localStorage.getItem('access_token');
             if (!token) {
@@ -925,16 +843,13 @@
                 return;
             }
             
-            // Inicializar AOS
             AOS.init({
                 once: true,
                 duration: 1000
             });
 
-            // GSAP Animations
             gsap.registerPlugin(ScrollTrigger);
 
-            // Animação da Navbar
             window.addEventListener('scroll', function() {
                 const navbar = document.getElementById('mainNavbar');
                 if (window.scrollY > 50) {
@@ -944,7 +859,6 @@
                 }
             });
 
-            // Animação dos elementos
             gsap.from('.hero-title', {
                 duration: 1,
                 y: 100,
@@ -964,11 +878,10 @@
                 ease: 'power3.out'
             });
             
-            // Inicializar o app
             if (window.app) {
                 window.app.init();
             } else {
-                console.error('App não carregado. Verifique o caminho do script.');
+                console.error('App não carregado');
                 toastr.error('Erro ao carregar a aplicação');
             }
         });

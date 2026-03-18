@@ -1,4 +1,13 @@
-# backend/api/routes.py - VERSÃO COMPLETA COM CRÉDITOS FIXOS (3 INICIAIS)
+# backend/api/routes.py - VERSÃO COMPLETA E ATUALIZADA
+"""
+ROUTES.PY - VERSÃO FINAL
+----------------------
+✅ Usuários comuns: começam com 3 créditos (definido no cadastro)
+⭐ Plano Premium: ganham 1 crédito por dia (gerenciado pelo daily_credits_service)
+👑 Admin: créditos ilimitados
+💰 Upload: apenas CONSome créditos (NÃO ganham)
+"""
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request, Form
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
@@ -11,7 +20,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-print("🔧 Iniciando routes.py v5.0 - Créditos Fixos (3 iniciais)")
+print("🔧 Iniciando routes.py v5.0 - Créditos: 3 iniciais + Premium diário")
 
 # ==============================================
 # IMPORTS OBRIGATÓRIOS
@@ -20,9 +29,11 @@ try:
     from backend.database import get_db
     from backend import crud, schemas
     from backend.security import get_current_user, set_auth_cookies, clear_auth_cookies
-    from backend.models import User
+    from backend.models import User, UserPlan
     # ✅ IMPORT DAS FUNÇÕES DE CRÉDITOS
     from backend.crud import get_credits_display, check_credits, deduct_credits
+    # ✅ IMPORT DO SERVIÇO DE CRÉDITOS DIÁRIOS (PREMIUM)
+    from backend.services.daily_credits_service import DailyCreditsService
     print("✅ Módulos de autenticação importados")
 except ImportError as e:
     print(f"❌ Erro CRÍTICO: {e}")
@@ -196,14 +207,12 @@ except ImportError:
         print("⚠️ AutoML não disponível")
         automl_office = None
 
-# 7. 🔥 NOVO: DailyCreditsService (desativado, mantido apenas para compatibilidade)
+# 7. DailyCreditsService (para plano premium)
 try:
-    from backend.services.daily_credits_service import DailyCreditsService
-    print("✅ DailyCreditsService importado")
-    # Criar instância mas NÃO usar para adicionar créditos
     daily_credits_service = DailyCreditsService()
-except ImportError:
-    print("⚠️ DailyCreditsService não encontrado")
+    print("✅ DailyCreditsService inicializado")
+except Exception as e:
+    print(f"⚠️ Erro ao inicializar DailyCreditsService: {e}")
     daily_credits_service = None
 
 # ==============================================
@@ -318,60 +327,45 @@ async def auto_detect_target(df):
     # Última coluna numérica
     return numeric_cols[-1], "regression", "Última coluna numérica (padrão)"
 
-# ==============================================
-# 🔥 FUNÇÃO PARA ATUALIZAR CRÉDITOS - SEM GANHO DIÁRIO
-# ==============================================
-
-def update_credits_after_analysis(current_user: User, db: Session, filename: str) -> dict:
+def check_user_credits_before_upload(user: User, db: Session) -> Dict:
     """
-    🔥 NOVA VERSÃO: NÃO adiciona créditos por upload
-    Apenas deduz 1 crédito e retorna saldo atualizado
-    
-    ✅ Admin: não deduz, retorna "∞"
-    Usuário comum: deduz 1 crédito
+    Verifica créditos antes do upload
+    ✅ Admin: sempre OK
+    ⭐ Premium: verifica saldo (mas pode ganhar amanhã)
+    👤 Comum: verifica saldo
     """
-    # Se for admin, não deduz
-    if current_user.is_admin:
+    if user.is_admin:
         return {
-            "credits_remaining": "∞",
+            "can_proceed": True,
             "credits_display": "∞",
-            "credits_numeric": 999999,
-            "message": "Admin - créditos ilimitados",
-            "deducted": False
+            "message": "Admin - créditos ilimitados"
         }
     
-    # Usuário comum: verificar e deduzir
-    if current_user.credits <= 0:
-        return {
-            "credits_remaining": 0,
-            "credits_display": "0",
-            "credits_numeric": 0,
-            "message": "Créditos insuficientes",
-            "deducted": False
-        }
+    if user.credits <= 0:
+        # Verificar se é premium (pode ganhar amanhã, mas hoje não tem)
+        is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
+        
+        if is_premium:
+            return {
+                "can_proceed": False,
+                "credits_display": "0",
+                "message": "Você usou todos seus créditos. Amanhã você ganha mais 1 do plano premium!",
+                "suggestion": "Volte amanhã ou compre mais créditos"
+            }
+        else:
+            return {
+                "can_proceed": False,
+                "credits_display": "0",
+                "message": "Você não tem créditos suficientes",
+                "suggestion": "Compre créditos na página de planos"
+            }
     
-    # Deduzir 1 crédito
-    old_credits = current_user.credits
-    success = deduct_credits(db, current_user.id, 1, f"Análise: {filename}")
-    
-    if success:
-        # Atualizar objeto
-        db.refresh(current_user)
-        return {
-            "credits_remaining": current_user.credits,
-            "credits_display": str(current_user.credits),
-            "credits_numeric": current_user.credits,
-            "message": f"Crédito deduzido. Saldo: {current_user.credits}",
-            "deducted": True
-        }
-    else:
-        return {
-            "credits_remaining": old_credits,
-            "credits_display": str(old_credits),
-            "credits_numeric": old_credits,
-            "message": "Erro ao deduzir crédito",
-            "deducted": False
-        }
+    return {
+        "can_proceed": True,
+        "credits_display": str(user.credits),
+        "credits_remaining": user.credits - 1,
+        "message": f"Você tem {user.credits} créditos. Esta análise consumirá 1 crédito."
+    }
 
 # ==============================================
 # ENDPOINTS PÚBLICOS
@@ -388,6 +382,7 @@ async def test_endpoint():
             "FlowiseService": FlowiseService is not None,
             "ModelPredictor": ModelPredictor is not None,
             "AutoML": automl_office is not None,
+            "DailyCreditsService": daily_credits_service is not None,
             "JWT_Auth": True
         }
     }
@@ -405,12 +400,13 @@ async def health_check():
             "ai_service": "online" if FlowiseService else "offline",
             "predictor": "online" if ModelPredictor else "offline",
             "automl": "online" if automl_office else "offline",
+            "daily_credits": "online" if daily_credits_service else "offline",
             "jwt_auth": "enabled"
         }
     }
 
 # ==============================================
-# ENDPOINTS PROTEGIDOS (COM SUPORTE A ADMIN)
+# ENDPOINTS PROTEGIDOS
 # ==============================================
 
 @router.post("/upload")
@@ -423,31 +419,31 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """
-    Upload de arquivo para análise (modo tradicional)
-    🔥 ALTERADO: NÃO ganha crédito por upload, apenas consome
+    Upload de arquivo para análise
+    ✅ Admin: não consome créditos
+    ⭐ Premium: consome 1 crédito (pode ganhar outro amanhã)
+    👤 Comum: consome 1 crédito
+    ❌ Ninguém ganha crédito por upload (só premium ganha diariamente)
     """
     try:
         print(f"📥 Upload: {file.filename}, Usuário: {current_user.email}")
         
         # ✅ VERIFICAÇÃO DE CRÉDITOS
-        if not check_credits(db, current_user.id, 1):
-            print(f"❌ Usuário {current_user.id} sem créditos. Atual: {current_user.credits}")
-            
-            if current_user.is_admin:
-                error_msg = "Erro interno: admin deveria ter créditos ilimitados"
-            else:
-                error_msg = f"Você não tem créditos para realizar esta análise. Seu saldo: {current_user.credits}"
-            
+        credit_check = check_user_credits_before_upload(current_user, db)
+        
+        if not credit_check["can_proceed"]:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "Créditos insuficientes",
-                    "message": error_msg,
+                    "message": credit_check["message"],
+                    "suggestion": credit_check.get("suggestion", "Compre mais créditos"),
                     "credits": current_user.credits,
                     "credits_display": get_credits_display(current_user),
                     "required": 1,
                     "redirect": "/planos.html",
-                    "is_admin": current_user.is_admin
+                    "is_admin": current_user.is_admin,
+                    "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
                 }
             )
         
@@ -493,7 +489,8 @@ async def upload_file(
             "status": "uploaded",
             "progress": 0,
             "started_at": datetime.now().isoformat(),
-            "is_admin": current_user.is_admin
+            "is_admin": current_user.is_admin,
+            "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
         }
         
         # Processamento em background
@@ -540,8 +537,28 @@ async def upload_file(
                 update_status(process_id, "processing", 90, "Gerando relatório...")
                 
                 admin_tag = " [ADMIN - CRÉDITOS ILIMITADOS]" if current_user.is_admin else ""
+                premium_tag = " ⭐ [PLANO PREMIUM]" if (current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()) else ""
                 
-                report = f"""RELATÓRIO DE ANÁLISE - {settings.APP_NAME}{admin_tag}
+                # 5. CONSUMIR CRÉDITO (APENAS SE NÃO FOR ADMIN)
+                credits_before = current_user.credits
+                credits_after = credits_before
+                
+                if not current_user.is_admin:
+                    # Deduzir 1 crédito
+                    success = deduct_credits(db, current_user.id, 1, f"Análise: {file.filename}")
+                    if success:
+                        db.refresh(current_user)
+                        credits_after = current_user.credits
+                        print(f"💰 Crédito deduzido: {credits_before} → {credits_after}")
+                    else:
+                        print(f"❌ Erro ao deduzir crédito para {current_user.email}")
+                
+                # 6. ⭐ Verificar status do premium (opcional, apenas informativo)
+                premium_info = None
+                if daily_credits_service and current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium():
+                    premium_info = await daily_credits_service.check_premium_daily_credit(db, current_user.id)
+                
+                report = f"""RELATÓRIO DE ANÁLISE - {settings.APP_NAME}{admin_tag}{premium_tag}
 {'='*60}
 
 📋 INFORMAÇÕES GERAIS
@@ -551,7 +568,7 @@ ID da Análise: {db_analysis.id}
 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 Usuário: {current_user.name} ({current_user.email})
 Oficina: {current_user.workshop_name or 'Não informada'}
-Tipo: {'👑 ADMIN' if current_user.is_admin else 'Usuário comum'}
+Tipo: {'👑 ADMIN' if current_user.is_admin else '⭐ PREMIUM' if (current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()) else '👤 USUÁRIO COMUM'}
 
 📁 ARQUIVO
 ──────────────────────────────
@@ -596,19 +613,32 @@ Nenhuma previsão gerada"""
                 else:
                     report += f"\nIA não disponível no momento."
                 
-                # ✅ ATUALIZAÇÃO DE CRÉDITOS - NÃO GANHA MAIS POR UPLOAD
-                credit_info = update_credits_after_analysis(current_user, db, file.filename)
-                
-                # Se não conseguiu deduzir (créditos insuficientes), abortar
-                if not credit_info["deducted"] and not current_user.is_admin:
-                    raise Exception("Não foi possível deduzir o crédito para esta análise")
+                # Informações de créditos
+                if current_user.is_admin:
+                    credits_text = "∞ (ilimitado)"
+                else:
+                    credits_text = f"{credits_after} crédito(s) restante(s)"
                 
                 report += f"""
 
 💰 CRÉDITOS
 ──────────────────────────────
-Créditos restantes: {credit_info['credits_display']}
+Créditos antes: { '∞' if current_user.is_admin else credits_before }
+Créditos depois: { '∞' if current_user.is_admin else credits_after }
+Status: {'👑 ADMIN (não consome)' if current_user.is_admin else '✅ Crédito consumido'}
 
+"""
+                
+                if premium_info and premium_info.get('is_premium'):
+                    report += f"""
+⭐ PLANO PREMIUM
+──────────────────────────────
+Recebeu hoje: {'✅ Sim' if premium_info.get('received_today') else '❌ Não'}
+Dias restantes: {premium_info.get('days_left', 0)}
+Próximo crédito: {premium_info.get('next_credit_date', 'Amanhã')}
+"""
+                
+                report += f"""
 {'='*60}
 Relatório gerado automaticamente
 """
@@ -637,7 +667,10 @@ Relatório gerado automaticamente
                     "result_file": result_file,
                     "predictions": normalize_predictions(predictions),
                     "prediction_stats": prediction_stats,
-                    "credits_remaining": credit_info['credits_display']
+                    "credits_before": credits_before,
+                    "credits_after": credits_after,
+                    "credits_display": "∞" if current_user.is_admin else str(credits_after),
+                    "premium_info": premium_info
                 })
                 
                 print(f"✅ Processamento concluído: {process_id}")
@@ -667,18 +700,18 @@ Relatório gerado automaticamente
         
         background_tasks.add_task(process_file_background)
         
-        # ✅ RESPOSTA IMEDIATA - NÃO GANHOU CRÉDITO
-        credit_info = update_credits_after_analysis(current_user, db, file.filename)
-        
+        # ✅ RESPOSTA IMEDIATA
         return {
             "message": "Arquivo recebido para processamento",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_remaining": credit_info['credits_display'],
-            "credits_display": credit_info['credits_display'],
+            "credits_before": current_user.credits,
+            "credits_after": current_user.credits - 1 if not current_user.is_admin and current_user.credits > 0 else current_user.credits,
+            "credits_display": get_credits_display(current_user),
             "is_admin": current_user.is_admin,
+            "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium(),
             "status": "processing",
-            "note": "Créditos só são obtidos através de compra (não por upload)"
+            "note": "Esta análise consumirá 1 crédito" if not current_user.is_admin else "Admin não consome créditos"
         }
         
     except HTTPException:
@@ -701,18 +734,22 @@ async def upload_auto(
     db: Session = Depends(get_db)
 ):
     """
-    🚀 UPLOAD AUTOMÁTICO - NÃO ganha crédito, apenas consome
+    🚀 UPLOAD AUTOMÁTICO - Detecta tudo sozinho
+    Mesma lógica de créditos do upload normal
     """
     try:
         print(f"📥 Upload automático: {file.filename}, Usuário: {current_user.email}")
         
         # ✅ VERIFICAÇÃO DE CRÉDITOS
-        if not check_credits(db, current_user.id, 1):
+        credit_check = check_user_credits_before_upload(current_user, db)
+        
+        if not credit_check["can_proceed"]:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "Créditos insuficientes",
-                    "message": f"Você não tem créditos para realizar esta análise. Saldo: {current_user.credits}",
+                    "message": credit_check["message"],
+                    "suggestion": credit_check.get("suggestion", "Compre mais créditos"),
                     "credits": current_user.credits,
                     "required": 1
                 }
@@ -760,7 +797,8 @@ async def upload_auto(
             "status": "uploaded",
             "progress": 0,
             "started_at": datetime.now().isoformat(),
-            "is_admin": current_user.is_admin
+            "is_admin": current_user.is_admin,
+            "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
         }
         
         # Processamento em background
@@ -836,10 +874,22 @@ async def upload_auto(
                     "accuracy": model_info.get("accuracy", 0.85)
                 }
                 
-                # 7. ATUALIZAR CRÉDITOS - NÃO GANHA MAIS
-                credit_info = update_credits_after_analysis(current_user, db, file.filename)
+                # 7. CONSUMIR CRÉDITO (APENAS SE NÃO FOR ADMIN)
+                credits_before = current_user.credits
+                credits_after = credits_before
                 
-                # 8. Atualizar cache
+                if not current_user.is_admin:
+                    success = deduct_credits(db, current_user.id, 1, f"Auto análise: {file.filename}")
+                    if success:
+                        db.refresh(current_user)
+                        credits_after = current_user.credits
+                
+                # 8. ⭐ Verificar status do premium
+                premium_info = None
+                if daily_credits_service and current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium():
+                    premium_info = await daily_credits_service.check_premium_daily_credit(db, current_user.id)
+                
+                # 9. Atualizar cache
                 processing_cache[process_id].update({
                     "status": "completed",
                     "progress": 100,
@@ -850,10 +900,13 @@ async def upload_auto(
                     "problem_type": problem_type,
                     "analysis_info": analysis_info,
                     "rows_processed": len(df),
-                    "credits_remaining": credit_info['credits_display']
+                    "credits_before": credits_before,
+                    "credits_after": credits_after,
+                    "credits_display": "∞" if current_user.is_admin else str(credits_after),
+                    "premium_info": premium_info
                 })
                 
-                # 9. Atualizar análise no banco
+                # 10. Atualizar análise no banco
                 crud.update_analysis(db, db_analysis.id, {
                     "status": "completed",
                     "rows_processed": len(df),
@@ -888,18 +941,17 @@ async def upload_auto(
         background_tasks.add_task(process_auto_background)
         
         # Resposta imediata
-        credit_info = update_credits_after_analysis(current_user, db, file.filename)
-        
         return {
             "message": "Análise automática iniciada com sucesso!",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_remaining": credit_info['credits_display'],
-            "credits_display": credit_info['credits_display'],
+            "credits_before": current_user.credits,
+            "credits_after": current_user.credits - 1 if not current_user.is_admin and current_user.credits > 0 else current_user.credits,
+            "credits_display": get_credits_display(current_user),
             "is_admin": current_user.is_admin,
+            "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium(),
             "status": "processing",
-            "info": "O sistema irá detectar automaticamente os padrões nos dados",
-            "note": "Créditos só são obtidos através de compra (não por upload)"
+            "info": "O sistema irá detectar automaticamente os padrões nos dados"
         }
         
     except HTTPException:
@@ -922,12 +974,8 @@ async def get_status(
         raise HTTPException(404, "Processo não encontrado")
     
     data = processing_cache[process_id]
-    if data.get("user_id") != current_user.id:
+    if data.get("user_id") != current_user.id and not current_user.is_admin:
         raise HTTPException(403, "Acesso negado")
-    
-    # Adicionar display de créditos
-    if "credits_remaining" not in data and current_user:
-        data["credits_remaining"] = "∞" if current_user.is_admin else current_user.credits
     
     return data
 
@@ -941,7 +989,7 @@ async def get_result(
         raise HTTPException(404, "Processo não encontrado")
     
     data = processing_cache[process_id]
-    if data.get("user_id") != current_user.id:
+    if data.get("user_id") != current_user.id and not current_user.is_admin:
         raise HTTPException(403, "Acesso negado")
     
     if data["status"] != "completed":
@@ -958,7 +1006,7 @@ async def get_result(
             "problem_type": data.get("problem_type"),
             "analysis_info": data.get("analysis_info", {}),
             "rows_processed": data.get("rows_processed", 0),
-            "credits_remaining": data.get("credits_remaining", "0")
+            "credits_remaining": data.get("credits_display", "0")
         })
     
     # Para análises tradicionais, retornar arquivo se existir
@@ -974,7 +1022,7 @@ async def get_result(
         "status": "completed",
         "predictions": data.get("predictions", []),
         "prediction_stats": data.get("prediction_stats", {}),
-        "credits_remaining": data.get("credits_remaining", "0")
+        "credits_remaining": data.get("credits_display", "0")
     })
 
 # ==============================================
@@ -986,8 +1034,12 @@ async def get_user_profile(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna perfil do usuário com info de admin"""
+    """Retorna perfil do usuário com info de admin e premium"""
     db.refresh(current_user)
+    
+    # Verificar status premium
+    is_premium = current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
+    
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -997,8 +1049,11 @@ async def get_user_profile(
         "credits_display": get_credits_display(current_user),
         "total_purchased": current_user.total_purchased,
         "is_admin": current_user.is_admin,
+        "is_premium": is_premium,
         "role": current_user.role.value if hasattr(current_user.role, 'value') else current_user.role,
-        "plan": current_user.plan.value if hasattr(current_user.plan, 'value') else current_user.plan
+        "plan": current_user.plan.value if hasattr(current_user.plan, 'value') else current_user.plan,
+        "premium_expires_at": current_user.premium_expires_at.isoformat() if current_user.premium_expires_at else None,
+        "premium_days_left": current_user.get_premium_days_left() if is_premium else 0
     }
 
 @router.get("/stats")
@@ -1015,6 +1070,14 @@ async def get_stats(
         hoje = date.today()
         analises_hoje = sum(1 for a in analyses if a.uploaded_at.date() == hoje)
         
+        # Verificar status premium
+        is_premium = current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
+        
+        # Buscar informações de crédito premium
+        premium_info = None
+        if daily_credits_service and is_premium:
+            premium_info = await daily_credits_service.check_premium_daily_credit(db, current_user.id)
+        
         return {
             "total_analises": len(analyses),
             "analises_hoje": analises_hoje,
@@ -1025,9 +1088,10 @@ async def get_stats(
             "email": current_user.email,
             "workshop": current_user.workshop_name,
             "is_admin": current_user.is_admin,
-            "status": "success",
-            "credit_system": "FIXO",  # Indica que não ganha mais créditos por upload
-            "initial_credits": 3  # Lembrar que começou com 3
+            "is_premium": is_premium,
+            "premium_info": premium_info,
+            "initial_credits": 3,
+            "status": "success"
         }
         
     except Exception as e:
@@ -1040,6 +1104,7 @@ async def get_stats(
             "nome": current_user.name if current_user else "Usuário",
             "email": current_user.email if current_user else "",
             "is_admin": current_user.is_admin if current_user else False,
+            "is_premium": False,
             "status": "error",
             "mensagem": "Erro ao carregar estatísticas completas"
         }
@@ -1078,6 +1143,87 @@ async def get_analysis_history(
         return []
 
 # ==============================================
+# ROTAS DE CRÉDITOS E PREMIUM
+# ==============================================
+
+@router.get("/credits/status")
+async def get_credits_status(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna status detalhado dos créditos do usuário
+    """
+    db.refresh(current_user)
+    
+    # Verificar status premium
+    is_premium = current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
+    
+    # Buscar informações do premium
+    premium_info = None
+    if daily_credits_service and is_premium:
+        premium_info = await daily_credits_service.get_premium_summary(db, current_user.id)
+    
+    if current_user.is_admin:
+        return {
+            "success": True,
+            "credits": "∞",
+            "credits_numeric": 999999,
+            "credits_display": "∞",
+            "is_admin": True,
+            "is_premium": False,
+            "message": "Admin tem créditos ilimitados"
+        }
+    
+    return {
+        "success": True,
+        "credits": current_user.credits,
+        "credits_numeric": current_user.credits,
+        "credits_display": str(current_user.credits),
+        "is_admin": False,
+        "is_premium": is_premium,
+        "premium_info": premium_info,
+        "message": f"Você tem {current_user.credits} crédito(s) disponível(is)",
+        "initial_credits": 3,
+        "note": "Você começou com 3 créditos. Assine o plano premium para ganhar 1 crédito por dia!"
+    }
+
+@router.get("/premium/status")
+async def get_premium_status(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna status específico do plano premium
+    """
+    if not daily_credits_service:
+        raise HTTPException(503, "Serviço de créditos premium indisponível")
+    
+    return await daily_credits_service.get_premium_summary(db, current_user.id)
+
+@router.post("/premium/check-daily")
+async def check_premium_daily(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    ⭐ Verifica e adiciona crédito diário do premium (se disponível)
+    """
+    if not daily_credits_service:
+        raise HTTPException(503, "Serviço de créditos premium indisponível")
+    
+    # Verificar se é premium
+    is_premium = current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
+    
+    if not is_premium:
+        raise HTTPException(403, "Usuário não possui plano premium ativo")
+    
+    # Adicionar crédito diário se disponível
+    result = await daily_credits_service.check_and_add_daily_credit(db, current_user.id)
+    
+    return result
+
+# ==============================================
 # DASHBOARD
 # ==============================================
 
@@ -1095,6 +1241,9 @@ async def dashboard(
     
     templates = Jinja2Templates(directory="frontend")
     
+    # Verificar status premium
+    is_premium = current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()
+    
     return templates.TemplateResponse(
         "dashboard.html", 
         {
@@ -1103,7 +1252,8 @@ async def dashboard(
             "credits": "∞" if current_user.is_admin else current_user.credits,
             "credits_display": get_credits_display(current_user),
             "name": current_user.name,
-            "is_admin": current_user.is_admin
+            "is_admin": current_user.is_admin,
+            "is_premium": is_premium
         }
     )
 
@@ -1122,42 +1272,4 @@ async def check_admin_status(
         "email": current_user.email
     }
 
-# ==============================================
-# ROTA ESPECIAL: VER CRÉDITOS RESTANTES
-# ==============================================
-
-@router.get("/credits/status")
-async def get_credits_status(
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna status detalhado dos créditos do usuário
-    """
-    db.refresh(current_user)
-    
-    if current_user.is_admin:
-        return {
-            "success": True,
-            "credits": "∞",
-            "credits_numeric": 999999,
-            "credits_display": "∞",
-            "is_admin": True,
-            "message": "Admin tem créditos ilimitados",
-            "credit_system": "FIXO",
-            "initial_credits": "N/A"
-        }
-    
-    return {
-        "success": True,
-        "credits": current_user.credits,
-        "credits_numeric": current_user.credits,
-        "credits_display": str(current_user.credits),
-        "is_admin": False,
-        "message": f"Você tem {current_user.credits} crédito(s) disponível(is)",
-        "credit_system": "FIXO",
-        "initial_credits": 3,
-        "note": "Você começou com 3 créditos. Créditos só são obtidos através de compra."
-    }
-
-print("✅ routes.py v5.0 carregado - Créditos Fixos (3 iniciais, sem ganho por upload)!")
+print("✅ routes.py v5.0 carregado - Créditos: 3 iniciais + Premium diário!")

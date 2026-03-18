@@ -1,4 +1,11 @@
-// frontend/js/app.js - VERSÃO OTIMIZADA (USA FUNÇÕES DO auth.js)
+// frontend/js/app.js - VERSÃO COMPLETA COM SUPORTE A PREMIUM
+/*
+ * app.js - Dashboard e Upload
+ * 
+ * ✅ Delega autenticação para auth.js
+ * ⭐ Suporte a usuários premium
+ * 👑 Suporte a admin
+ */
 
 class AutoAnalytics {
     constructor() {
@@ -18,10 +25,23 @@ class AutoAnalytics {
     }
     
     // ===== FUNÇÕES DELEGADAS PARA auth.js =====
-    // ✅ TODAS usam as funções globais do auth.js
     
     isAdmin() {
         return window.appAuth ? window.appAuth.isAdmin() : false;
+    }
+    
+    /**
+     * ⭐ NOVO: Verifica se usuário é premium
+     */
+    isPremium() {
+        return window.appAuth ? window.appAuth.isPremium() : false;
+    }
+    
+    /**
+     * ⭐ NOVO: Retorna informações do premium
+     */
+    getPremiumInfo() {
+        return window.appAuth ? window.appAuth.getPremiumInfo() : null;
     }
     
     getCurrentUser() {
@@ -42,23 +62,32 @@ class AutoAnalytics {
         await this.loadUserCredits();
         await this.loadDashboardStats();
         await this.loadAnalysisHistory();
+        
+        // ⭐ NOVO: Carregar status premium se for premium
+        if (this.isPremium()) {
+            await this.loadPremiumStatus();
+        }
+        
         this.setupLogout();
         this.initGSAPAnimations();
         this.checkAuthentication();
         
         // Atualizar display de créditos
         this.updateCreditsDisplay();
+        
+        // ⭐ NOVO: Verificar crédito diário ao carregar (se for premium)
+        if (this.isPremium()) {
+            setTimeout(() => this.checkPremiumDailyCredit(), 2000);
+        }
     }
     
     // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
     
     checkAuthentication() {
-        // Se estiver na página de login ou registro, não precisa verificar
         if (this.isLoginPage() || this.isRegisterPage()) {
             return;
         }
         
-        // Usar função do auth.js
         if (!window.appAuth || !window.appAuth.isAuthenticated()) {
             console.log('🔒 Usuário não autenticado, redirecionando para login');
             window.location.href = '/login.html';
@@ -75,7 +104,7 @@ class AutoAnalytics {
                window.location.pathname === '/register';
     }
     
-    // ===== CRÉDITOS (USANDO auth.js) =====
+    // ===== CRÉDITOS =====
     
     async loadUserCredits() {
         try {
@@ -83,11 +112,11 @@ class AutoAnalytics {
             if (response.ok) {
                 const data = await response.json();
                 
-                // Atualizar via auth.js
                 if (window.appAuth) {
                     const user = window.appAuth.getCurrentUser();
                     user.credits = data.credits || 0;
                     user.is_admin = data.is_admin || false;
+                    user.is_premium = data.is_premium || false;
                     localStorage.setItem('user', JSON.stringify(user));
                     window.appAuth.updateCreditsDisplay();
                 }
@@ -97,19 +126,159 @@ class AutoAnalytics {
         }
     }
     
+    /**
+     * ⭐ NOVO: Carrega status do premium
+     */
+    async loadPremiumStatus() {
+        if (!this.isPremium()) return;
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/premium/status`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.displayPremiumInfo(data);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar status premium:', error);
+        }
+    }
+    
+    /**
+     * ⭐ NOVO: Exibe informações do premium no dashboard
+     */
+    displayPremiumInfo(data) {
+        if (!data?.has_premium) return;
+        
+        // Criar container se não existir
+        let premiumContainer = document.getElementById('premiumDashboardInfo');
+        
+        if (!premiumContainer) {
+            const uploadCard = document.querySelector('.upload-card');
+            if (!uploadCard) return;
+            
+            premiumContainer = document.createElement('div');
+            premiumContainer.id = 'premiumDashboardInfo';
+            premiumContainer.className = 'premium-info-box mb-4';
+            uploadCard.insertAdjacentElement('beforebegin', premiumContainer);
+        }
+        
+        const daysLeft = data.plan?.days_left || 0;
+        const progress = data.plan?.progress || 0;
+        const receivedToday = data.credits?.next_credit_today || false;
+        const daysPassed = data.plan?.days_passed || 0;
+        
+        premiumContainer.innerHTML = `
+            <div class="alert alert-warning premium-info-box" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #fbbf24; border-radius: 16px; padding: 1rem;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-star fa-2x text-warning me-3"></i>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong>⭐ Plano Premium Ativo</strong>
+                            <span class="badge bg-warning text-dark">${daysLeft} dias restantes</span>
+                        </div>
+                        
+                        <div class="progress-modern mt-2" style="height: 6px; background: rgba(245, 158, 11, 0.2);">
+                            <div class="progress-modern-bar" style="width: ${progress}%; background: linear-gradient(90deg, #fbbf24, #f59e0b);"></div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between small mt-1">
+                            <span>Dia ${daysPassed} de 30</span>
+                            <span class="${receivedToday ? 'text-success' : 'text-warning'}">
+                                ${receivedToday ? '✅ Crédito de hoje recebido' : '⏳ Crédito disponível hoje'}
+                            </span>
+                        </div>
+                        
+                        ${!receivedToday && daysLeft > 0 ? `
+                            <div class="text-center mt-2">
+                                <button class="btn btn-sm btn-warning" onclick="window.app?.checkPremiumDailyCredit()">
+                                    <i class="fas fa-gift me-1"></i>
+                                    Receber crédito de hoje
+                                </button>
+                            </div>
+                        ` : ''}
+                        
+                        ${data.credits?.upcoming_credits?.length > 0 ? `
+                            <div class="mt-2 small">
+                                <strong>Próximos créditos:</strong>
+                                <div class="d-flex gap-1 mt-1 flex-wrap">
+                                    ${data.credits.upcoming_credits.slice(0, 5).map(day => `
+                                        <span class="daily-credit-indicator" style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 50px; padding: 0.15rem 0.5rem; font-size: 0.7rem;">
+                                            <i class="far fa-calendar-alt"></i>
+                                            ${new Date(day.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * ⭐ NOVO: Verifica e adiciona crédito diário do premium
+     */
+    async checkPremiumDailyCredit() {
+        if (!this.isPremium()) {
+            this.showAlert('❌ Você não possui plano premium', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/premium/check-daily`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.credits_added > 0) {
+                    this.showAlert(`⭐ Você ganhou ${data.credits_added} crédito do plano premium!`, 'success');
+                    await this.loadUserCredits();
+                    await this.loadPremiumStatus(); // Recarregar status
+                    
+                    // Atualizar usuário no auth.js
+                    if (window.appAuth) {
+                        await window.appAuth.fetchPremiumStatus();
+                    }
+                } else if (data.already_received_today) {
+                    this.showAlert('⏳ Você já recebeu seu crédito hoje! Volte amanhã.', 'info');
+                } else if (data.days_left === 0) {
+                    this.showAlert('⚠️ Seu plano premium expirou. Renove para continuar ganhando créditos!', 'warning');
+                }
+                
+                return data;
+            } else {
+                const error = await response.json();
+                this.showAlert(`❌ ${error.detail || 'Erro ao verificar crédito'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Erro ao verificar crédito premium:', error);
+            this.showAlert('❌ Erro de conexão', 'error');
+        }
+    }
+    
     // Verificar créditos antes do upload
     async checkCreditsBeforeUpload() {
-        // ✅ Admin sempre pode (usando auth.js)
+        // ✅ Admin sempre pode
         if (this.isAdmin()) {
             return true;
         }
         
+        // ⭐ Premium também precisa verificar saldo (mas pode ganhar amanhã)
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
             if (response.ok) {
                 const data = await response.json();
                 if (!data.has_credits) {
-                    this.showCreditsModal();
+                    // Se for premium mas está sem créditos, mensagem especial
+                    if (this.isPremium()) {
+                        this.showAlert('⭐ Você usou todos os créditos. Amanhã você ganha mais 1 do plano premium!', 'warning');
+                    } else {
+                        this.showCreditsModal();
+                    }
                     return false;
                 }
                 return true;
@@ -122,7 +291,6 @@ class AutoAnalytics {
     
     // Modal de créditos
     showCreditsModal() {
-        // Não mostrar para admin
         if (this.isAdmin()) {
             return;
         }
@@ -144,13 +312,20 @@ class AutoAnalytics {
                             <div class="modal-body text-center py-4">
                                 <i class="fas fa-coins fa-4x text-warning mb-3"></i>
                                 <h5>Você não tem créditos para realizar esta análise</h5>
-                                <p class="text-muted">Cada treinamento consome 1 crédito.</p>
+                                <p class="text-muted">Cada análise consome 1 crédito.</p>
                                 <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
+                                
+                                ${this.isPremium() ? `
+                                    <div class="alert alert-info mt-3">
+                                        <i class="fas fa-star me-2"></i>
+                                        Você é premium! Amanhã você ganha +1 crédito.
+                                    </div>
+                                ` : ''}
                             </div>
                             <div class="modal-footer justify-content-center border-0">
                                 <a href="/planos.html" class="btn btn-gradient">
                                     <i class="fas fa-credit-card me-2"></i>
-                                    Assinar Plano R$97
+                                    ${this.isPremium() ? 'Renovar Premium' : 'Assinar Plano'}
                                 </a>
                                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                                     Cancelar
@@ -194,7 +369,6 @@ class AutoAnalytics {
             return;
         }
         
-        // Verificar créditos (admin sempre passa)
         const hasCredits = await this.checkCreditsBeforeUpload();
         if (!hasCredits) return;
         
@@ -225,8 +399,8 @@ class AutoAnalytics {
             if (response.ok) {
                 this.currentProcessId = data.process_id;
                 
-                const adminMsg = this.isAdmin() ? '👑 ' : '';
-                this.showAlert(`${adminMsg}Modelo em treinamento!`, 'success');
+                const roleIcon = this.isAdmin() ? '👑 ' : (this.isPremium() ? '⭐ ' : '');
+                this.showAlert(`${roleIcon}Modelo em treinamento!`, 'success');
                 
                 await this.loadUserCredits();
                 this.showProgress();
@@ -249,8 +423,18 @@ class AutoAnalytics {
     resetUploadButton() {
         if (this.uploadButton) {
             this.uploadButton.disabled = false;
-            const creditText = this.isAdmin() ? '∞' : '1 crédito';
-            this.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
+            
+            let creditText = '1 crédito';
+            let icon = '';
+            
+            if (this.isAdmin()) {
+                creditText = '∞';
+                icon = '👑 ';
+            } else if (this.isPremium()) {
+                icon = '⭐ ';
+            }
+            
+            this.uploadButton.innerHTML = `${icon}<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
         }
     }
     
@@ -1385,9 +1569,8 @@ function showHistoryModal(analyses) {
 
 // Inicializar - AGUARDA auth.js primeiro
 document.addEventListener('DOMContentLoaded', () => {
-    // Pequeno delay para garantir que auth.js carregou primeiro
     setTimeout(() => {
         window.app = new AutoAnalytics();
-        console.log('✅ app.js inicializado (delegando para auth.js)');
+        console.log('✅ app.js inicializado com suporte a premium');
     }, 100);
 });
