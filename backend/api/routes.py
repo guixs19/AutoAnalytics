@@ -1,4 +1,4 @@
-# backend/api/routes.py - VERSÃO COMPLETA COM SUPORTE A ADMIN E UPLOAD AUTOMÁTICO
+# backend/api/routes.py - VERSÃO COMPLETA COM CRÉDITOS FIXOS (3 INICIAIS)
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request, Form
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-print("🔧 Iniciando routes.py v4.0 com Upload Automático...")
+print("🔧 Iniciando routes.py v5.0 - Créditos Fixos (3 iniciais)")
 
 # ==============================================
 # IMPORTS OBRIGATÓRIOS
@@ -21,7 +21,7 @@ try:
     from backend import crud, schemas
     from backend.security import get_current_user, set_auth_cookies, clear_auth_cookies
     from backend.models import User
-    # ✅ IMPORT DAS NOVAS FUNÇÕES DO CRUD
+    # ✅ IMPORT DAS FUNÇÕES DE CRÉDITOS
     from backend.crud import get_credits_display, check_credits, deduct_credits
     print("✅ Módulos de autenticação importados")
 except ImportError as e:
@@ -56,7 +56,7 @@ def smart_import(module_path, class_name=None):
     return None
 
 # ==============================================
-# IMPORTS DOS SERVIÇOS - CORRIGIDO!
+# IMPORTS DOS SERVIÇOS
 # ==============================================
 
 # 1. FileManager
@@ -196,6 +196,16 @@ except ImportError:
         print("⚠️ AutoML não disponível")
         automl_office = None
 
+# 7. 🔥 NOVO: DailyCreditsService (desativado, mantido apenas para compatibilidade)
+try:
+    from backend.services.daily_credits_service import DailyCreditsService
+    print("✅ DailyCreditsService importado")
+    # Criar instância mas NÃO usar para adicionar créditos
+    daily_credits_service = DailyCreditsService()
+except ImportError:
+    print("⚠️ DailyCreditsService não encontrado")
+    daily_credits_service = None
+
 # ==============================================
 # INICIALIZAÇÃO
 # ==============================================
@@ -309,6 +319,61 @@ async def auto_detect_target(df):
     return numeric_cols[-1], "regression", "Última coluna numérica (padrão)"
 
 # ==============================================
+# 🔥 FUNÇÃO PARA ATUALIZAR CRÉDITOS - SEM GANHO DIÁRIO
+# ==============================================
+
+def update_credits_after_analysis(current_user: User, db: Session, filename: str) -> dict:
+    """
+    🔥 NOVA VERSÃO: NÃO adiciona créditos por upload
+    Apenas deduz 1 crédito e retorna saldo atualizado
+    
+    ✅ Admin: não deduz, retorna "∞"
+    Usuário comum: deduz 1 crédito
+    """
+    # Se for admin, não deduz
+    if current_user.is_admin:
+        return {
+            "credits_remaining": "∞",
+            "credits_display": "∞",
+            "credits_numeric": 999999,
+            "message": "Admin - créditos ilimitados",
+            "deducted": False
+        }
+    
+    # Usuário comum: verificar e deduzir
+    if current_user.credits <= 0:
+        return {
+            "credits_remaining": 0,
+            "credits_display": "0",
+            "credits_numeric": 0,
+            "message": "Créditos insuficientes",
+            "deducted": False
+        }
+    
+    # Deduzir 1 crédito
+    old_credits = current_user.credits
+    success = deduct_credits(db, current_user.id, 1, f"Análise: {filename}")
+    
+    if success:
+        # Atualizar objeto
+        db.refresh(current_user)
+        return {
+            "credits_remaining": current_user.credits,
+            "credits_display": str(current_user.credits),
+            "credits_numeric": current_user.credits,
+            "message": f"Crédito deduzido. Saldo: {current_user.credits}",
+            "deducted": True
+        }
+    else:
+        return {
+            "credits_remaining": old_credits,
+            "credits_display": str(old_credits),
+            "credits_numeric": old_credits,
+            "message": "Erro ao deduzir crédito",
+            "deducted": False
+        }
+
+# ==============================================
 # ENDPOINTS PÚBLICOS
 # ==============================================
 @router.get("/test")
@@ -359,21 +424,19 @@ async def upload_file(
 ):
     """
     Upload de arquivo para análise (modo tradicional)
-    Requer autenticação JWT
-    ✅ Admin tem créditos ilimitados
+    🔥 ALTERADO: NÃO ganha crédito por upload, apenas consome
     """
     try:
         print(f"📥 Upload: {file.filename}, Usuário: {current_user.email}")
         
-        # ✅ VERIFICAÇÃO DE CRÉDITOS USANDO O CRUD (já trata admin)
+        # ✅ VERIFICAÇÃO DE CRÉDITOS
         if not check_credits(db, current_user.id, 1):
             print(f"❌ Usuário {current_user.id} sem créditos. Atual: {current_user.credits}")
             
-            # Mensagem personalizada para admin (nunca deve cair aqui, mas por segurança)
             if current_user.is_admin:
                 error_msg = "Erro interno: admin deveria ter créditos ilimitados"
             else:
-                error_msg = "Você não tem créditos para realizar esta análise."
+                error_msg = f"Você não tem créditos para realizar esta análise. Seu saldo: {current_user.credits}"
             
             raise HTTPException(
                 status_code=402,
@@ -476,7 +539,6 @@ async def upload_file(
                 # 4. Gerar relatório
                 update_status(process_id, "processing", 90, "Gerando relatório...")
                 
-                # ✅ ADICIONAR INFO DE ADMIN NO RELATÓRIO SE FOR ADMIN
                 admin_tag = " [ADMIN - CRÉDITOS ILIMITADOS]" if current_user.is_admin else ""
                 
                 report = f"""RELATÓRIO DE ANÁLISE - {settings.APP_NAME}{admin_tag}
@@ -534,13 +596,18 @@ Nenhuma previsão gerada"""
                 else:
                     report += f"\nIA não disponível no momento."
                 
-                # ✅ ADICIONAR INFO DE CRÉDITOS NO FINAL DO RELATÓRIO
-                credits_text = "∞ (ilimitado)" if current_user.is_admin else str(current_user.credits or 0)
+                # ✅ ATUALIZAÇÃO DE CRÉDITOS - NÃO GANHA MAIS POR UPLOAD
+                credit_info = update_credits_after_analysis(current_user, db, file.filename)
+                
+                # Se não conseguiu deduzir (créditos insuficientes), abortar
+                if not credit_info["deducted"] and not current_user.is_admin:
+                    raise Exception("Não foi possível deduzir o crédito para esta análise")
+                
                 report += f"""
 
 💰 CRÉDITOS
 ──────────────────────────────
-Créditos restantes: {credits_text}
+Créditos restantes: {credit_info['credits_display']}
 
 {'='*60}
 Relatório gerado automaticamente
@@ -548,17 +615,6 @@ Relatório gerado automaticamente
                 
                 # Salvar relatório
                 result_file = await FileManager.save_result(report, process_id, ".txt")
-                
-                # ✅ DEDUZIR CRÉDITO USANDO O CRUD (já trata admin)
-                credits_deducted = deduct_credits(db, current_user.id, 1, f"Análise: {file.filename}")
-                
-                if credits_deducted:
-                    if current_user.is_admin:
-                        print(f"👑 Admin {current_user.email} - operação sem consumo de créditos")
-                    else:
-                        # Buscar saldo atualizado
-                        db.refresh(current_user)
-                        print(f"💰 Crédito deduzido. Novo saldo: {current_user.credits}")
                 
                 # Atualizar análise no banco
                 updates = {
@@ -581,7 +637,7 @@ Relatório gerado automaticamente
                     "result_file": result_file,
                     "predictions": normalize_predictions(predictions),
                     "prediction_stats": prediction_stats,
-                    "credits_remaining": "∞" if current_user.is_admin else (current_user.credits if hasattr(current_user, 'credits') else 0)
+                    "credits_remaining": credit_info['credits_display']
                 })
                 
                 print(f"✅ Processamento concluído: {process_id}")
@@ -611,17 +667,18 @@ Relatório gerado automaticamente
         
         background_tasks.add_task(process_file_background)
         
-        # ✅ RESPOSTA COM INFORMAÇÃO DE ADMIN
-        credits_remaining = "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits else 0)
+        # ✅ RESPOSTA IMEDIATA - NÃO GANHOU CRÉDITO
+        credit_info = update_credits_after_analysis(current_user, db, file.filename)
         
         return {
-            "message": "Arquivo recebido",
+            "message": "Arquivo recebido para processamento",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_remaining": credits_remaining,
-            "credits_display": get_credits_display(current_user),
+            "credits_remaining": credit_info['credits_display'],
+            "credits_display": credit_info['credits_display'],
             "is_admin": current_user.is_admin,
-            "status": "processing"
+            "status": "processing",
+            "note": "Créditos só são obtidos através de compra (não por upload)"
         }
         
     except HTTPException:
@@ -631,7 +688,7 @@ Relatório gerado automaticamente
         raise HTTPException(500, f"Erro interno: {str(e)}")
 
 # ==============================================
-# NOVA ROTA: UPLOAD AUTOMÁTICO (SEM SELEÇÃO DE COLUNAS)
+# NOVA ROTA: UPLOAD AUTOMÁTICO
 # ==============================================
 
 @router.post("/upload-auto")
@@ -644,24 +701,18 @@ async def upload_auto(
     db: Session = Depends(get_db)
 ):
     """
-    🚀 UPLOAD AUTOMÁTICO - NÃO precisa selecionar colunas!
-    
-    O sistema detecta automaticamente:
-    - Qual coluna é o alvo (target)
-    - Se é classificação ou regressão
-    - As features mais importantes
-    - O melhor algoritmo
+    🚀 UPLOAD AUTOMÁTICO - NÃO ganha crédito, apenas consome
     """
     try:
         print(f"📥 Upload automático: {file.filename}, Usuário: {current_user.email}")
         
-        # ✅ VERIFICAÇÃO DE CRÉDITOS (admin sempre OK)
+        # ✅ VERIFICAÇÃO DE CRÉDITOS
         if not check_credits(db, current_user.id, 1):
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "Créditos insuficientes",
-                    "message": "Você não tem créditos para realizar esta análise.",
+                    "message": f"Você não tem créditos para realizar esta análise. Saldo: {current_user.credits}",
                     "credits": current_user.credits,
                     "required": 1
                 }
@@ -745,7 +796,6 @@ async def upload_auto(
                 if automl_office and algorithm == "auto":
                     update_status(process_id, "training", 60, "Executando AutoML...")
                     
-                    # Usar AutoML para escolher melhor modelo
                     ranking = automl_office.comparar_modelos_classificacao(
                         df_numeric,
                         target_column,
@@ -786,7 +836,10 @@ async def upload_auto(
                     "accuracy": model_info.get("accuracy", 0.85)
                 }
                 
-                # 7. Atualizar cache
+                # 7. ATUALIZAR CRÉDITOS - NÃO GANHA MAIS
+                credit_info = update_credits_after_analysis(current_user, db, file.filename)
+                
+                # 8. Atualizar cache
                 processing_cache[process_id].update({
                     "status": "completed",
                     "progress": 100,
@@ -797,11 +850,8 @@ async def upload_auto(
                     "problem_type": problem_type,
                     "analysis_info": analysis_info,
                     "rows_processed": len(df),
-                    "credits_remaining": "∞" if current_user.is_admin else (current_user.credits if hasattr(current_user, 'credits') else 0)
+                    "credits_remaining": credit_info['credits_display']
                 })
-                
-                # 8. Deduzir crédito (admin não perde)
-                deduct_credits(db, current_user.id, 1, f"Auto análise: {file.filename}")
                 
                 # 9. Atualizar análise no banco
                 crud.update_analysis(db, db_analysis.id, {
@@ -838,17 +888,18 @@ async def upload_auto(
         background_tasks.add_task(process_auto_background)
         
         # Resposta imediata
-        credits_remaining = "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits else 0)
+        credit_info = update_credits_after_analysis(current_user, db, file.filename)
         
         return {
             "message": "Análise automática iniciada com sucesso!",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_remaining": credits_remaining,
-            "credits_display": get_credits_display(current_user),
+            "credits_remaining": credit_info['credits_display'],
+            "credits_display": credit_info['credits_display'],
             "is_admin": current_user.is_admin,
             "status": "processing",
-            "info": "O sistema irá detectar automaticamente os padrões nos dados"
+            "info": "O sistema irá detectar automaticamente os padrões nos dados",
+            "note": "Créditos só são obtidos através de compra (não por upload)"
         }
         
     except HTTPException:
@@ -906,7 +957,8 @@ async def get_result(
             "target_detected": data.get("target_detected"),
             "problem_type": data.get("problem_type"),
             "analysis_info": data.get("analysis_info", {}),
-            "rows_processed": data.get("rows_processed", 0)
+            "rows_processed": data.get("rows_processed", 0),
+            "credits_remaining": data.get("credits_remaining", "0")
         })
     
     # Para análises tradicionais, retornar arquivo se existir
@@ -921,7 +973,8 @@ async def get_result(
         "process_id": process_id,
         "status": "completed",
         "predictions": data.get("predictions", []),
-        "prediction_stats": data.get("prediction_stats", {})
+        "prediction_stats": data.get("prediction_stats", {}),
+        "credits_remaining": data.get("credits_remaining", "0")
     })
 
 # ==============================================
@@ -972,7 +1025,9 @@ async def get_stats(
             "email": current_user.email,
             "workshop": current_user.workshop_name,
             "is_admin": current_user.is_admin,
-            "status": "success"
+            "status": "success",
+            "credit_system": "FIXO",  # Indica que não ganha mais créditos por upload
+            "initial_credits": 3  # Lembrar que começou com 3
         }
         
     except Exception as e:
@@ -1067,4 +1122,42 @@ async def check_admin_status(
         "email": current_user.email
     }
 
-print("✅ routes.py v4.0 carregado com Upload Automático!")
+# ==============================================
+# ROTA ESPECIAL: VER CRÉDITOS RESTANTES
+# ==============================================
+
+@router.get("/credits/status")
+async def get_credits_status(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna status detalhado dos créditos do usuário
+    """
+    db.refresh(current_user)
+    
+    if current_user.is_admin:
+        return {
+            "success": True,
+            "credits": "∞",
+            "credits_numeric": 999999,
+            "credits_display": "∞",
+            "is_admin": True,
+            "message": "Admin tem créditos ilimitados",
+            "credit_system": "FIXO",
+            "initial_credits": "N/A"
+        }
+    
+    return {
+        "success": True,
+        "credits": current_user.credits,
+        "credits_numeric": current_user.credits,
+        "credits_display": str(current_user.credits),
+        "is_admin": False,
+        "message": f"Você tem {current_user.credits} crédito(s) disponível(is)",
+        "credit_system": "FIXO",
+        "initial_credits": 3,
+        "note": "Você começou com 3 créditos. Créditos só são obtidos através de compra."
+    }
+
+print("✅ routes.py v5.0 carregado - Créditos Fixos (3 iniciais, sem ganho por upload)!")
