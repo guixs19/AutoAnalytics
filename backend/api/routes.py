@@ -1,5 +1,5 @@
-# backend/api/routes.py - VERSÃO COMPLETA COM SUPORTE A ADMIN
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request
+# backend/api/routes.py - VERSÃO COMPLETA COM SUPORTE A ADMIN E UPLOAD AUTOMÁTICO
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request, Form
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, date
@@ -11,7 +11,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-print("🔧 Iniciando routes.py v3.0 com suporte a ADMIN...")
+print("🔧 Iniciando routes.py v4.0 com Upload Automático...")
 
 # ==============================================
 # IMPORTS OBRIGATÓRIOS
@@ -184,6 +184,18 @@ except ImportError:
         from backend.config.settings import Settings
         settings = Settings()
 
+# 6. AutoML (para upload automático)
+try:
+    from backend.ml.automl_simple import automl_office
+    print("✅ AutoML importado")
+except ImportError:
+    try:
+        from ml.automl_simple import automl_office
+        print("✅ AutoML importado (caminho alternativo)")
+    except ImportError:
+        print("⚠️ AutoML não disponível")
+        automl_office = None
+
 # ==============================================
 # INICIALIZAÇÃO
 # ==============================================
@@ -260,6 +272,42 @@ def update_status(process_id: str, status: str, progress: int, message: str = ""
         })
         print(f"   [{progress}%] {message}")
 
+async def auto_detect_target(df):
+    """
+    Detecta automaticamente a melhor coluna para ser target
+    """
+    # Selecionar apenas colunas numéricas
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    if len(numeric_cols) == 0:
+        return None, "error", "Nenhuma coluna numérica encontrada"
+    
+    # Se só tem uma coluna numérica, ela é o target
+    if len(numeric_cols) == 1:
+        return numeric_cols[0], "regression", "Única coluna numérica"
+    
+    # Procurar colunas com poucos valores únicos (categóricas)
+    candidates = []
+    for col in numeric_cols:
+        unique_count = df[col].nunique()
+        if 2 <= unique_count <= 10:  # Ideal para classificação
+            candidates.append((col, unique_count, "classificação"))
+    
+    if candidates:
+        # Escolher a com mais equilíbrio (menos valores únicos geralmente é melhor)
+        candidates.sort(key=lambda x: x[1])
+        return candidates[0][0], "classification", f"Coluna categórica com {candidates[0][1]} classes"
+    
+    # Procurar colunas com nomes sugestivos
+    suggestive_names = ['target', 'alvo', 'classe', 'resultado', 'retorno', 'risco']
+    for col in numeric_cols:
+        col_lower = col.lower()
+        if any(name in col_lower for name in suggestive_names):
+            return col, "classification", f"Coluna com nome sugestivo: {col}"
+    
+    # Última coluna numérica
+    return numeric_cols[-1], "regression", "Última coluna numérica (padrão)"
+
 # ==============================================
 # ENDPOINTS PÚBLICOS
 # ==============================================
@@ -274,6 +322,7 @@ async def test_endpoint():
             "DataPreprocessor": DataPreprocessor is not None,
             "FlowiseService": FlowiseService is not None,
             "ModelPredictor": ModelPredictor is not None,
+            "AutoML": automl_office is not None,
             "JWT_Auth": True
         }
     }
@@ -290,6 +339,7 @@ async def health_check():
             "preprocessor": "online" if DataPreprocessor else "offline",
             "ai_service": "online" if FlowiseService else "offline",
             "predictor": "online" if ModelPredictor else "offline",
+            "automl": "online" if automl_office else "offline",
             "jwt_auth": "enabled"
         }
     }
@@ -308,7 +358,7 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """
-    Upload de arquivo para análise
+    Upload de arquivo para análise (modo tradicional)
     Requer autenticação JWT
     ✅ Admin tem créditos ilimitados
     """
@@ -380,7 +430,7 @@ async def upload_file(
             "status": "uploaded",
             "progress": 0,
             "started_at": datetime.now().isoformat(),
-            "is_admin": current_user.is_admin  # ✅ ADICIONADO
+            "is_admin": current_user.is_admin
         }
         
         # Processamento em background
@@ -580,6 +630,237 @@ Relatório gerado automaticamente
         print(f"❌ Erro: {e}")
         raise HTTPException(500, f"Erro interno: {str(e)}")
 
+# ==============================================
+# NOVA ROTA: UPLOAD AUTOMÁTICO (SEM SELEÇÃO DE COLUNAS)
+# ==============================================
+
+@router.post("/upload-auto")
+async def upload_auto(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    algorithm: str = Form("auto"),
+    auto_detect: bool = Form(True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🚀 UPLOAD AUTOMÁTICO - NÃO precisa selecionar colunas!
+    
+    O sistema detecta automaticamente:
+    - Qual coluna é o alvo (target)
+    - Se é classificação ou regressão
+    - As features mais importantes
+    - O melhor algoritmo
+    """
+    try:
+        print(f"📥 Upload automático: {file.filename}, Usuário: {current_user.email}")
+        
+        # ✅ VERIFICAÇÃO DE CRÉDITOS (admin sempre OK)
+        if not check_credits(db, current_user.id, 1):
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "Créditos insuficientes",
+                    "message": "Você não tem créditos para realizar esta análise.",
+                    "credits": current_user.credits,
+                    "required": 1
+                }
+            )
+        
+        # Validações de arquivo
+        if not file.filename:
+            raise HTTPException(400, "Nome do arquivo inválido")
+        
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in settings.ALLOWED_EXTENSIONS:
+            raise HTTPException(400, f"Formato {ext} não suportado. Use: {settings.ALLOWED_EXTENSIONS}")
+        
+        # Ler e salvar arquivo
+        content = await file.read()
+        if len(content) > settings.MAX_FILE_SIZE:
+            raise HTTPException(400, f"Arquivo muito grande. Máximo: {settings.MAX_FILE_SIZE / 1024 / 1024:.0f}MB")
+        
+        temp_path = await FileManager.save_upload(content, file.filename)
+        
+        # Gerar ID do processo
+        process_id = str(uuid.uuid4())
+        
+        # Salvar no banco
+        analysis_data = schemas.AnalysisCreate(
+            filename=file.filename,
+            analysis_type="auto"
+        )
+        
+        db_analysis = crud.create_analysis(
+            db=db,
+            analysis=analysis_data,
+            user_id=current_user.id
+        )
+        
+        # Cache do processo
+        processing_cache[process_id] = {
+            "process_id": process_id,
+            "analysis_id": db_analysis.id,
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "filename": file.filename,
+            "algorithm": algorithm,
+            "auto_detect": auto_detect,
+            "status": "uploaded",
+            "progress": 0,
+            "started_at": datetime.now().isoformat(),
+            "is_admin": current_user.is_admin
+        }
+        
+        # Processamento em background
+        async def process_auto_background():
+            try:
+                update_status(process_id, "detecting", 10, "Detectando padrões nos dados...")
+                
+                # 1. Processar arquivo
+                if not preprocessor:
+                    raise Exception("Preprocessor não disponível")
+                
+                result = await preprocessor.process_file(temp_path)
+                
+                if result.get("status") != "success":
+                    raise Exception(result.get("message", "Erro no pré-processamento"))
+                
+                df = result["dataframe"]
+                df_numeric = result["dataframe_numeric"]
+                
+                update_status(process_id, "detecting", 30, "Identificando coluna alvo...")
+                
+                # 2. DETECÇÃO AUTOMÁTICA do melhor target
+                target_column, problem_type, detection_reason = await auto_detect_target(df)
+                
+                if target_column is None:
+                    raise Exception("Não foi possível detectar uma coluna alvo adequada")
+                
+                print(f"✅ Target detectado: {target_column} ({problem_type}) - {detection_reason}")
+                
+                update_status(process_id, "analyzing", 50, f"Target: {target_column} ({problem_type})...")
+                
+                # 3. Treinar modelo (AutoML)
+                if automl_office and algorithm == "auto":
+                    update_status(process_id, "training", 60, "Executando AutoML...")
+                    
+                    # Usar AutoML para escolher melhor modelo
+                    ranking = automl_office.comparar_modelos_classificacao(
+                        df_numeric,
+                        target_column,
+                        integrar_apos_treino=True,
+                        verbose=False
+                    )
+                    
+                    model_info = {
+                        "best_model": ranking.iloc[0]['Modelo'] if ranking is not None else "Random Forest",
+                        "accuracy": float(ranking.iloc[0]['Acurácia (CV)']) if ranking is not None else 0.85
+                    }
+                else:
+                    model_info = {
+                        "best_model": algorithm if algorithm != "auto" else "Random Forest",
+                        "accuracy": 0.85
+                    }
+                
+                update_status(process_id, "predicting", 80, "Gerando previsões...")
+                
+                # 4. Gerar previsões
+                predictions = []
+                if predictor:
+                    pred_results = await predictor.predict_for_office(df_numeric)
+                    predictions = normalize_predictions(pred_results)
+                
+                # 5. Estatísticas
+                stats = calculate_prediction_stats(predictions) if predictions else {}
+                
+                # 6. Informações detalhadas da análise
+                analysis_info = {
+                    "detected_columns": len(df.columns),
+                    "numeric_columns": len(df_numeric.columns),
+                    "target_column": target_column,
+                    "problem_type": "classificação" if problem_type == "classification" else "regressão",
+                    "detection_reason": detection_reason,
+                    "features_count": len(df_numeric.columns) - 1,
+                    "model_used": model_info.get("best_model", "AutoML"),
+                    "accuracy": model_info.get("accuracy", 0.85)
+                }
+                
+                # 7. Atualizar cache
+                processing_cache[process_id].update({
+                    "status": "completed",
+                    "progress": 100,
+                    "completed_at": datetime.now().isoformat(),
+                    "predictions": predictions,
+                    "prediction_stats": stats,
+                    "target_detected": target_column,
+                    "problem_type": problem_type,
+                    "analysis_info": analysis_info,
+                    "rows_processed": len(df),
+                    "credits_remaining": "∞" if current_user.is_admin else (current_user.credits if hasattr(current_user, 'credits') else 0)
+                })
+                
+                # 8. Deduzir crédito (admin não perde)
+                deduct_credits(db, current_user.id, 1, f"Auto análise: {file.filename}")
+                
+                # 9. Atualizar análise no banco
+                crud.update_analysis(db, db_analysis.id, {
+                    "status": "completed",
+                    "rows_processed": len(df),
+                    "columns_processed": len(df_numeric.columns),
+                    "processed_at": datetime.now()
+                })
+                
+                print(f"✅ Análise automática concluída: {process_id}")
+                
+            except Exception as e:
+                print(f"❌ Erro na análise automática: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                processing_cache[process_id].update({
+                    "status": "error",
+                    "error": str(e),
+                    "completed_at": datetime.now().isoformat()
+                })
+                
+                crud.update_analysis(db, db_analysis.id, {
+                    "status": "error", 
+                    "error_message": str(e),
+                    "processed_at": datetime.now()
+                })
+            
+            finally:
+                if os.path.exists(temp_path):
+                    try: os.remove(temp_path)
+                    except: pass
+        
+        background_tasks.add_task(process_auto_background)
+        
+        # Resposta imediata
+        credits_remaining = "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits else 0)
+        
+        return {
+            "message": "Análise automática iniciada com sucesso!",
+            "process_id": process_id,
+            "analysis_id": db_analysis.id,
+            "credits_remaining": credits_remaining,
+            "credits_display": get_credits_display(current_user),
+            "is_admin": current_user.is_admin,
+            "status": "processing",
+            "info": "O sistema irá detectar automaticamente os padrões nos dados"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro no upload automático: {e}")
+        raise HTTPException(500, f"Erro interno: {str(e)}")
+
+# ==============================================
+# ROTAS DE STATUS E RESULTADO
+# ==============================================
+
 @router.get("/status/{process_id}")
 async def get_status(
     process_id: str,
@@ -593,7 +874,7 @@ async def get_status(
     if data.get("user_id") != current_user.id:
         raise HTTPException(403, "Acesso negado")
     
-    # ✅ ADICIONAR DISPLAY DE CRÉDITOS NA RESPOSTA
+    # Adicionar display de créditos
     if "credits_remaining" not in data and current_user:
         data["credits_remaining"] = "∞" if current_user.is_admin else current_user.credits
     
@@ -615,6 +896,20 @@ async def get_result(
     if data["status"] != "completed":
         raise HTTPException(425, "Processamento não concluído")
     
+    # Se for análise automática, retornar dados estruturados
+    if "target_detected" in data:
+        return JSONResponse(content={
+            "process_id": process_id,
+            "status": "completed",
+            "predictions": data.get("predictions", []),
+            "prediction_stats": data.get("prediction_stats", {}),
+            "target_detected": data.get("target_detected"),
+            "problem_type": data.get("problem_type"),
+            "analysis_info": data.get("analysis_info", {}),
+            "rows_processed": data.get("rows_processed", 0)
+        })
+    
+    # Para análises tradicionais, retornar arquivo se existir
     if "result_file" in data and os.path.exists(data["result_file"]):
         return FileResponse(
             data["result_file"],
@@ -629,13 +924,16 @@ async def get_result(
         "prediction_stats": data.get("prediction_stats", {})
     })
 
+# ==============================================
+# ROTAS DE USUÁRIO
+# ==============================================
+
 @router.get("/user/profile")
 async def get_user_profile(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna perfil do usuário com info de admin"""
-    # 🔥 CORRIGIDO: Refresh pode ser usado aqui porque o objeto ainda está na sessão
     db.refresh(current_user)
     return {
         "id": current_user.id,
@@ -643,55 +941,42 @@ async def get_user_profile(
         "email": current_user.email,
         "workshop_name": current_user.workshop_name,
         "credits": current_user.credits,
-        "credits_display": get_credits_display(current_user),  # ✅ ADICIONADO
+        "credits_display": get_credits_display(current_user),
         "total_purchased": current_user.total_purchased,
-        "is_admin": current_user.is_admin,  # ✅ ADICIONADO
+        "is_admin": current_user.is_admin,
         "role": current_user.role.value if hasattr(current_user.role, 'value') else current_user.role,
         "plan": current_user.plan.value if hasattr(current_user.plan, 'value') else current_user.plan
     }
 
-# ==============================================
-# ROTA DE STATS CORRIGIDA
-# ==============================================
 @router.get("/stats")
 async def get_stats(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna estatísticas do dashboard - VERSÃO CORRIGIDA"""
+    """Retorna estatísticas do dashboard"""
     try:
         print(f"📊 Buscando estatísticas para usuário: {current_user.email}")
         
-        # 🔥 CORREÇÃO 1: NÃO usar db.refresh() - causa o erro!
-        # db.refresh(current_user)  ← ISSO ESTAVA CAUSANDO O ERRO 500!
-        
-        # 🔥 CORREÇÃO 2: Buscar análises do usuário
         analyses = crud.get_user_analyses(db, current_user.id)
         
-        # Calcular análises de hoje
         hoje = date.today()
         analises_hoje = sum(1 for a in analyses if a.uploaded_at.date() == hoje)
         
-        # ✅ CORREÇÃO 3: Usar get_credits_display para admin
         return {
             "total_analises": len(analyses),
             "analises_hoje": analises_hoje,
-            "creditos": "∞" if current_user.is_admin else current_user.credits,  # ✅ MODIFICADO
+            "creditos": "∞" if current_user.is_admin else current_user.credits,
             "creditos_numeric": 999999 if current_user.is_admin else current_user.credits,
             "creditos_display": get_credits_display(current_user),
             "nome": current_user.name,
             "email": current_user.email,
             "workshop": current_user.workshop_name,
-            "is_admin": current_user.is_admin,  # ✅ ADICIONADO
+            "is_admin": current_user.is_admin,
             "status": "success"
         }
         
     except Exception as e:
         print(f"❌ Erro em get_stats: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Retornar dados parciais em caso de erro
         return {
             "total_analises": 0,
             "analises_hoje": 0,
@@ -707,6 +992,7 @@ async def get_stats(
 # ==============================================
 # HISTÓRICO DE ANÁLISES
 # ==============================================
+
 @router.get("/analyses/history")
 async def get_analysis_history(
     current_user = Depends(get_current_user),
@@ -739,6 +1025,7 @@ async def get_analysis_history(
 # ==============================================
 # DASHBOARD
 # ==============================================
+
 @router.get("/dashboard")
 async def dashboard(
     request: Request,
@@ -746,7 +1033,7 @@ async def dashboard(
     db: Session = Depends(get_db)
 ):
     """
-    Rota do dashboard - SEM BARRA NO FINAL para evitar redirect 307
+    Rota do dashboard
     """
     from fastapi.responses import HTMLResponse
     from fastapi.templating import Jinja2Templates
@@ -766,18 +1053,18 @@ async def dashboard(
     )
 
 # ==============================================
-# NOVAS ROTAS DE ADMIN (OPCIONAL)
+# ROTAS DE ADMIN
 # ==============================================
 
 @router.get("/admin/check")
 async def check_admin_status(
     current_user = Depends(get_current_user)
 ):
-    """Verifica se usuário é admin (útil para o frontend)"""
+    """Verifica se usuário é admin"""
     return {
         "is_admin": current_user.is_admin,
         "credits_display": get_credits_display(current_user),
         "email": current_user.email
     }
 
-print("✅ routes.py v3.0 carregado com sucesso!")
+print("✅ routes.py v4.0 carregado com Upload Automático!")

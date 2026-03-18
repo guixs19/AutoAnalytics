@@ -166,57 +166,28 @@
             50% { transform: translateY(-10px); }
         }
 
-        /* Seletor de Colunas */
-        .column-selector {
+        /* ✅ REMOVIDO: Seletor de Colunas */
+        /* ✅ REMOVIDO: Preview de Dados */
+
+        /* Indicador de Processamento */
+        .processing-indicator {
             background: #f8fafc;
             border-radius: 20px;
             padding: 1.5rem;
             margin: 1.5rem 0;
             border: 1px solid #e2e8f0;
-            transition: all 0.3s;
+            text-align: center;
         }
 
-        .column-selector:hover {
-            border-color: #667eea;
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.1);
+        .processing-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 1rem;
         }
 
-        .column-chip {
-            display: inline-block;
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 50px;
-            padding: 0.5rem 1rem;
-            margin: 0.25rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.9rem;
-        }
-
-        .column-chip:hover {
-            border-color: #667eea;
-            background: #f0f4ff;
-        }
-
-        .column-chip.selected {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: transparent;
-        }
-
-        .column-chip.target {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            border-color: transparent;
-            position: relative;
-        }
-
-        .column-chip.target::after {
-            content: '🎯';
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            font-size: 12px;
+        .processing-text {
+            color: #4a5568;
+            font-size: 1rem;
         }
 
         /* Seletor de Algoritmo */
@@ -260,114 +231,28 @@
             margin-left: 0.5rem;
         }
 
-        /* Preview de Dados */
-        .data-preview {
-            background: white;
-            border-radius: 15px;
-            padding: 1rem;
-            max-height: 200px;
-            overflow: auto;
-            font-size: 0.85rem;
-            border: 1px solid #e2e8f0;
-        }
-
-        .data-preview table {
-            width: 100%;
-        }
-
-        .data-preview th {
-            background: #f8fafc;
-            position: sticky;
-            top: 0;
-            padding: 0.5rem;
+        /* Botão de Upload */
+        .btn-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 50px;
             font-weight: 600;
-            color: #4a5568;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .data-preview td {
-            padding: 0.5rem;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        /* Métricas Cards */
-        .metric-card {
-            background: white;
-            border-radius: 20px;
-            padding: 1.5rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
             transition: all 0.3s;
-            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
 
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-        }
-
-        .metric-icon {
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
             color: white;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
         }
 
-        .metric-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #2d3748;
-            margin-bottom: 0.25rem;
-        }
-
-        .metric-label {
-            color: #718096;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        /* Plan Card */
-        .plan-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 30px;
-            padding: 2rem;
-            color: white;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.3);
-        }
-
-        .plan-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
-            animation: rotate 20s linear infinite;
-        }
-
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .plan-price {
-            font-size: 3rem;
-            font-weight: 800;
-            margin: 1rem 0;
-        }
-
-        .plan-price small {
-            font-size: 1rem;
-            font-weight: 400;
-            opacity: 0.8;
+        .btn-gradient:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
 
         /* Timeline para histórico */
@@ -390,7 +275,6 @@
         .timeline-item {
             position: relative;
             padding-bottom: 1.5rem;
-            position: relative;
         }
 
         .timeline-item:last-child {
@@ -412,11 +296,6 @@
         .timeline-marker.bg-success {
             background: #48bb78;
             box-shadow: 0 0 0 2px #48bb7820;
-        }
-
-        .timeline-marker.bg-warning {
-            background: #f6ad55;
-            box-shadow: 0 0 0 2px #f6ad5520;
         }
 
         .timeline-content {
@@ -491,104 +370,48 @@
             transition: width 1s ease;
         }
 
-        /* Buttons */
-        .btn-gradient {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+            
+            .upload-card {
+                padding: 1.5rem;
+            }
+            
+            .model-metrics {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* ✅ NOVOS ESTILOS PARA ADMIN */
+        .admin-badge {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
             color: white;
-            border: none;
-            padding: 0.75rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }
-
-        .btn-gradient:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-            color: white;
-        }
-
-        .btn-gradient:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-outline-gradient {
-            background: transparent;
-            border: 2px solid #667eea;
-            color: #667eea;
-            padding: 0.75rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .btn-outline-gradient:hover {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: transparent;
-        }
-
-        /* Modal de Créditos */
-        .credits-modal-content {
-            text-align: center;
-            padding: 2rem;
-        }
-
-        .credits-icon {
-            font-size: 4rem;
-            color: #f6d365;
-            margin-bottom: 1rem;
-        }
-
-        .credits-count {
-            font-size: 3rem;
-            font-weight: 800;
-            color: #2d3748;
-        }
-
-        .streak-badge {
-            background: #fef3c7;
-            color: #92400e;
             padding: 0.5rem 1rem;
             border-radius: 50px;
-            display: inline-block;
-            margin: 1rem 0;
-        }
-
-        /* Loading Spinner */
-        .spinner-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+            font-weight: 600;
             display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            backdrop-filter: blur(5px);
+            margin-left: 0.5rem;
         }
 
-        .spinner-container {
-            text-align: center;
+        .admin-badge-nav {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
         }
 
-        .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .admin-badge-nav i {
+            margin-right: 0.3rem;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        body.is-admin .admin-badge {
+            display: inline-block;
         }
 
         /* Toastr customização */
@@ -606,21 +429,6 @@
 
         .toast-warning {
             background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
-        }
-
-        /* Responsividade */
-        @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2.5rem;
-            }
-            
-            .upload-card {
-                padding: 1.5rem;
-            }
-            
-            .plan-card {
-                margin-top: 2rem;
-            }
         }
     </style>
 </head>
@@ -661,7 +469,7 @@
                             </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
-                                <a class="dropdown-item" href="#" onclick="app.logout()">
+                                <a class="dropdown-item" href="#" onclick="window.appAuth?.logout()">
                                     <i class="fas fa-sign-out-alt me-2"></i>Sair
                                 </a>
                             </li>
@@ -682,13 +490,42 @@
                         <i class="fas fa-robot me-2"></i>Scikit-learn + IA
                     </span>
                     <h1 class="hero-title">
-                        Machine Learning para<br>
+                        Análise Inteligente para<br>
                         <span class="gradient-text">sua oficina mecânica</span>
                     </h1>
                     <p class="hero-subtitle">
-                        Selecione as colunas, escolha o algoritmo e deixe nossa IA fazer previsões precisas.
-                        <br><span class="text-primary"><i class="fas fa-info-circle"></i> 1 crédito por análise</span>
+                        <strong>🚀 NOVO: Upload automático!</strong><br>
+                        Basta enviar seu arquivo CSV ou Excel. 
+                        O sistema detecta automaticamente os padrões e gera insights poderosos.
                     </p>
+                    
+                    <!-- Benefícios do upload automático -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small>Sem seleção de colunas</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small>Detecção automática</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small>Análise completa</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small>Resultados em segundos</small>
+                            </div>
+                        </div>
+                    </div>
                     
                     <!-- Métricas Rápidas -->
                     <div class="row g-3 mb-4">
@@ -716,12 +553,12 @@
                 <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
                     <div class="row">
                         <div class="col-12">
-                            <!-- Card de Upload com Seletor de Colunas -->
+                            <!-- Card de Upload SIMPLIFICADO -->
                             <div class="upload-card mb-4">
                                 <div class="d-flex align-items-center justify-content-between mb-4">
                                     <h3 class="h5 mb-0 fw-bold">
                                         <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>
-                                        Upload de Dados
+                                        Upload Automático
                                     </h3>
                                     <span class="badge bg-warning text-dark py-2 px-3" id="uploadCreditsBadge">
                                         <i class="fas fa-coins me-1"></i>
@@ -736,7 +573,10 @@
                                             <i class="fas fa-file-excel"></i>
                                         </div>
                                         <h4 class="h6 mb-2">Arraste seu arquivo aqui</h4>
-                                        <p class="text-muted small mb-3">CSV ou Excel com dados da oficina</p>
+                                        <p class="text-muted small mb-3">
+                                            <i class="fas fa-file-csv me-1"></i> CSV 
+                                            <i class="fas fa-file-excel ms-2 me-1"></i> Excel
+                                        </p>
                                         <div class="text-muted small mb-2">
                                             <i class="fas fa-info-circle me-1"></i>
                                             Limite de <strong>10MB</strong> por arquivo
@@ -764,64 +604,41 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Preview dos Dados (aparece após upload) -->
-                                    <div class="data-preview mb-3 d-none" id="dataPreview">
-                                        <table class="table-sm">
-                                            <thead id="previewHeader">
-                                                <tr></tr>
-                                            </thead>
-                                            <tbody id="previewBody"></tbody>
-                                        </table>
-                                    </div>
+                                    <!-- ✅ REMOVIDO: Preview dos Dados -->
+                                    <!-- ✅ REMOVIDO: Seletor de Colunas -->
                                     
-                                    <!-- Seletor Inteligente de Colunas (aparece após upload) -->
-                                    <div class="column-selector d-none" id="columnSelector">
-                                        <div class="d-flex align-items-center justify-content-between mb-3">
-                                            <h6 class="mb-0 fw-bold">
-                                                <i class="fas fa-table me-2 text-primary"></i>
-                                                Selecione as Colunas
-                                            </h6>
-                                            <span class="badge bg-info" id="selectedColumnsCount">0/0</span>
+                                    <!-- Indicador de Processamento Automático -->
+                                    <div class="processing-indicator mb-3">
+                                        <div class="processing-icon">
+                                            <i class="fas fa-robot"></i>
                                         </div>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label small fw-bold text-muted">
-                                                <i class="fas fa-bullseye me-1"></i>
-                                                Coluna Alvo (o que quer prever)
-                                            </label>
-                                            <div class="column-chips" id="targetColumnContainer">
-                                                <!-- Colunas serão inseridas aqui via JS -->
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label small fw-bold text-muted">
-                                                <i class="fas fa-chart-bar me-1"></i>
-                                                Colunas de Entrada (features)
-                                            </label>
-                                            <div class="text-muted small mb-2">
-                                                <i class="fas fa-info-circle me-1"></i>
-                                                Clique para selecionar múltiplas colunas
-                                            </div>
-                                            <div class="column-chips" id="featureColumnsContainer">
-                                                <!-- Colunas serão inseridas aqui via JS -->
-                                            </div>
+                                        <div class="processing-text">
+                                            <strong>Processamento automático</strong>
+                                            <p class="small text-muted mb-0">
+                                                O sistema detectará automaticamente:
+                                                <br>• Colunas mais importantes
+                                                <br>• Padrões nos dados
+                                                <br>• Melhor tipo de análise
+                                            </p>
                                         </div>
                                     </div>
                                     
-                                    <!-- Seletor de Algoritmo Scikit-learn -->
+                                    <!-- Seletor de Algoritmo (OPCIONAL) -->
                                     <div class="algorithm-selector mb-3">
                                         <label class="form-label small fw-bold mb-2">
                                             <i class="fas fa-brain me-1"></i>
-                                            Algoritmo de Machine Learning
+                                            Algoritmo (opcional)
                                         </label>
+                                        <p class="text-muted small mb-2">
+                                            O sistema escolhe automaticamente, mas você pode preferir um específico:
+                                        </p>
                                         
                                         <div class="algorithm-option" onclick="app.selectAlgorithm('random_forest', this)">
                                             <input type="radio" name="algorithm" id="algRandomForest" value="random_forest" checked>
                                             <div>
                                                 <strong>Random Forest</strong>
                                                 <span class="algorithm-badge">Recomendado</span>
-                                                <p class="text-muted small mb-0">Conjunto de árvores de decisão, alta precisão</p>
+                                                <p class="text-muted small mb-0">Melhor para padrões gerais e comportamento de clientes</p>
                                             </div>
                                         </div>
                                         
@@ -829,7 +646,7 @@
                                             <input type="radio" name="algorithm" id="algXGBoost" value="xgboost">
                                             <div>
                                                 <strong>XGBoost</strong>
-                                                <p class="text-muted small mb-0">Gradient boosting, ótimo para dados tabulares</p>
+                                                <p class="text-muted small mb-0">Mais preciso, ideal para previsão de estoque</p>
                                             </div>
                                         </div>
                                         
@@ -837,15 +654,7 @@
                                             <input type="radio" name="algorithm" id="algLinear" value="linear">
                                             <div>
                                                 <strong>Regressão Linear</strong>
-                                                <p class="text-muted small mb-0">Simples e interpretável, para relações lineares</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="algorithm-option" onclick="app.selectAlgorithm('svr', this)">
-                                            <input type="radio" name="algorithm" id="algSVR" value="svr">
-                                            <div>
-                                                <strong>SVR</strong>
-                                                <p class="text-muted small mb-0">Support Vector Regression, bom para não-lineares</p>
+                                                <p class="text-muted small mb-0">Simples, bom para tendências de preço</p>
                                             </div>
                                         </div>
                                     </div>
@@ -854,7 +663,7 @@
                                     <div class="d-grid">
                                         <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
                                             <i class="fas fa-play-circle me-2"></i>
-                                            Treinar Modelo e Analisar
+                                            Analisar Dados Automaticamente
                                             <span class="badge bg-light text-dark ms-2">1 crédito</span>
                                         </button>
                                     </div>
@@ -882,7 +691,7 @@
                                 </div>
                                 
                                 <div class="mt-3 text-center">
-                                    <button class="btn btn-link small text-decoration-none" onclick="app.loadFullHistory()">
+                                    <button class="btn btn-link small text-decoration-none" onclick="window.app?.loadFullHistory()">
                                         Ver todas as análises
                                     </button>
                                 </div>
@@ -902,16 +711,15 @@
                     <div>
                         <h2 class="h4 mb-1 fw-bold">
                             <i class="fas fa-chart-line me-2 text-primary"></i>
-                            Resultados do Modelo
+                            Resultados da Análise Automática
                         </h2>
-                        <p class="text-muted small mb-0">
-                            Previsões para <span id="targetColumnName" class="fw-bold text-primary"></span>
-                            usando <span id="algorithmName" class="fw-bold"></span>
+                        <p class="text-muted small mb-0" id="resultDescription">
+                            Análise completa do arquivo utilizando <span id="algorithmName" class="fw-bold"></span>
                         </p>
                     </div>
                     <div class="model-badge">
                         <i class="fas fa-brain me-2"></i>
-                        Scikit-learn
+                        AutoML
                     </div>
                 </div>
                 
@@ -919,11 +727,11 @@
                 <div class="model-metrics">
                     <div class="metric-box">
                         <div class="value" id="metricR2">0.94</div>
-                        <div class="label">R² Score</div>
+                        <div class="label">Precisão</div>
                     </div>
                     <div class="metric-box">
                         <div class="value" id="metricMAE">12.5</div>
-                        <div class="label">Erro Médio (MAE)</div>
+                        <div class="label">Erro Médio</div>
                     </div>
                     <div class="metric-box">
                         <div class="value" id="metricRMSE">18.3</div>
@@ -931,7 +739,19 @@
                     </div>
                     <div class="metric-box">
                         <div class="value" id="metricImportance">3</div>
-                        <div class="label">Features Importantes</div>
+                        <div class="label">Features Principais</div>
+                    </div>
+                </div>
+                
+                <!-- Informações da Análise -->
+                <div class="row mb-4">
+                    <div class="col-lg-12">
+                        <div class="bg-light p-3 rounded-4">
+                            <h6 class="mb-3">📊 O que o sistema detectou:</h6>
+                            <div id="analysisInfo" class="small">
+                                <!-- Informações serão inseridas via JS -->
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -944,7 +764,7 @@
                     </div>
                     <div class="col-lg-4">
                         <div class="bg-gradient p-4 rounded-4 text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                            <h5 class="mb-3">Importância das Features</h5>
+                            <h5 class="mb-3">Features Mais Importantes</h5>
                             <div id="featureImportance" class="small">
                                 <!-- Importâncias serão inseridas aqui -->
                             </div>
@@ -963,7 +783,7 @@
                                         <th>Valor Real</th>
                                         <th>Previsão</th>
                                         <th>Erro</th>
-                                        <th>Intervalo de Confiança</th>
+                                        <th>Confiança</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
@@ -1048,17 +868,17 @@
                 <div class="col-md-6">
                     <p class="text-muted small mb-0">
                         <i class="fas fa-robot me-2"></i>
-                        AutoAnalytics © 2024 - Machine Learning para oficinas
+                        AutoAnalytics © 2024 - IA para oficinas mecânicas
                     </p>
                 </div>
                 <div class="col-md-6 text-md-end">
                     <span class="badge bg-light text-dark py-2 px-3">
                         <i class="fas fa-brain me-1"></i>
-                        Scikit-learn
+                        AutoML
                     </span>
                     <span class="badge bg-light text-dark py-2 px-3 ms-2">
                         <i class="fas fa-chart-line me-1"></i>
-                        XGBoost
+                        Scikit-learn
                     </span>
                 </div>
             </div>
@@ -1089,8 +909,11 @@
         };
     </script>
     
-    <!-- Script principal do Dashboard -->
-    <script src="/static/js/app.js"></script>
+    <!-- Script principal de autenticação (PRIMEIRO) -->
+    <script src="/static/js/auth.js?v=2.0"></script>
+    
+    <!-- Script principal do Dashboard (SEGUNDO) -->
+    <script src="/static/js/app.js?v=2.0"></script>
     
     <!-- Inicialização e verificação de autenticação -->
     <script>

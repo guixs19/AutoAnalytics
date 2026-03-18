@@ -1,38 +1,39 @@
-// frontend/js/dashboard.js - Versão com suporte a admin
+// frontend/js/dashboard.js - Versão OTIMIZADA (usa auth.js)
 
 const API_URL = 'http://localhost:8000/api';
 
-// Função para verificar autenticação (mantida)
-function checkAuth() {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        return false;
-    }
-    return true;
-}
-
-// ===== NOVAS FUNÇÕES DE ADMIN =====
+// ===== FUNÇÕES DELEGADAS PARA auth.js =====
 
 function isAdmin() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    return user.is_admin === true;
+    return window.appAuth ? window.appAuth.isAdmin() : false;
 }
 
 function getCreditsDisplay() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.is_admin) return '∞';
-    return user.credits || 0;
+    return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
 }
 
-// Função para fazer logout (modificada)
+function getCurrentUser() {
+    return window.appAuth ? window.appAuth.getCurrentUser() : {};
+}
+
+// Função para verificar autenticação
+function checkAuth() {
+    return window.appAuth ? window.appAuth.isAuthenticated() : !!localStorage.getItem('access_token');
+}
+
+// Função para fazer logout
 function logout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
-    window.location.href = 'login.html';
+    if (window.appAuth) {
+        window.appAuth.logout();
+    } else {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = 'login.html';
+    }
 }
 
-// ===== FUNÇÕES DE CRÉDITOS (MODIFICADAS) =====
+// ===== FUNÇÕES DE CRÉDITOS =====
 
 // Carregar créditos do usuário
 async function loadUserCredits() {
@@ -41,13 +42,16 @@ async function loadUserCredits() {
         if (response.ok) {
             const data = await response.json();
             
-            // Atualizar user no localStorage
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            user.credits = data.credits || 0;
-            user.is_admin = data.is_admin || false;
-            localStorage.setItem('user', JSON.stringify(user));
+            // Atualizar via auth.js
+            if (window.appAuth) {
+                const user = window.appAuth.getCurrentUser();
+                user.credits = data.credits || 0;
+                user.is_admin = data.is_admin || false;
+                localStorage.setItem('user', JSON.stringify(user));
+                window.appAuth.updateCreditsDisplay();
+            }
             
-            // Atualizar display
+            // Atualizar display local
             updateCreditsDisplay();
         }
     } catch (error) {
@@ -57,13 +61,18 @@ async function loadUserCredits() {
 
 // Atualizar display de créditos
 function updateCreditsDisplay() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const creditsDisplay = user.is_admin ? '∞' : (user.credits || 0);
+    const user = getCurrentUser();
+    const creditsDisplay = getCreditsDisplay();
     
     // Atualizar em todos os lugares que mostram créditos
-    const creditElements = document.querySelectorAll('#navbarCredits, .user-credits');
+    const creditElements = document.querySelectorAll('#navbarCredits, .user-credits, #creditsCount');
     creditElements.forEach(el => {
-        el.textContent = creditsDisplay;
+        if (el.tagName === 'SPAN' || el.tagName === 'DIV') {
+            el.textContent = creditsDisplay;
+        } else {
+            const span = el.querySelector('span');
+            if (span) span.textContent = creditsDisplay;
+        }
     });
     
     // Mostrar badge de admin se necessário
@@ -77,10 +86,11 @@ function updateCreditsDisplay() {
         adminBadges.forEach(el => {
             el.style.display = 'none';
         });
+        document.body.classList.remove('is-admin');
     }
 }
 
-// Verificar créditos antes do upload (MODIFICADA)
+// Verificar créditos antes do upload
 async function checkCreditsBeforeUpload() {
     // ✅ Admin sempre pode
     if (isAdmin()) {
@@ -104,7 +114,7 @@ async function checkCreditsBeforeUpload() {
     return false;
 }
 
-// Modal de créditos insuficientes (MODIFICADA)
+// Modal de créditos insuficientes
 function showCreditsModal() {
     // Não mostrar modal para admin
     if (isAdmin()) {
@@ -152,18 +162,18 @@ function showCreditsModal() {
     
     // Atualizar saldo no modal
     const modalCredits = document.getElementById('modalCredits');
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = getCurrentUser();
     if (modalCredits) modalCredits.textContent = user.credits || 0;
     
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
 }
 
-// ===== FUNÇÕES EXISTENTES (MODIFICADAS) =====
+// ===== FUNÇÕES EXISTENTES =====
 
-// Carregar informações do usuário (modificada)
+// Carregar informações do usuário
 async function loadUserInfo() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = getCurrentUser();
     
     // Exibir no navbar ou sidebar
     const userElement = document.getElementById('userName');
@@ -181,7 +191,7 @@ async function loadUserInfo() {
     updateCreditsDisplay();
 }
 
-// Carregar histórico de análises (mantida)
+// Carregar histórico de análises
 async function loadHistory() {
     try {
         const response = await fetchWithAuth(`${API_URL}/analyses/history`);
@@ -195,7 +205,7 @@ async function loadHistory() {
     }
 }
 
-// Atualizar UI com histórico (mantida)
+// Atualizar UI com histórico
 function updateHistoryUI(analyses) {
     const container = document.getElementById('recentAnalyses');
     
@@ -228,7 +238,7 @@ function updateHistoryUI(analyses) {
     container.innerHTML = html;
 }
 
-// Configurar botão de logout (mantida)
+// Configurar botão de logout
 function setupLogout() {
     const logoutBtn = document.getElementById('logoutBtn');
     
@@ -243,7 +253,7 @@ function setupLogout() {
     }
 }
 
-// ===== FUNÇÃO DE UPLOAD MODIFICADA =====
+// ===== FUNÇÃO DE UPLOAD =====
 async function handleUpload(e) {
     e.preventDefault();
     
@@ -307,7 +317,7 @@ async function handleUpload(e) {
     }
 }
 
-// Função para fazer requisições com token (mantida)
+// Função para fazer requisições com token
 async function fetchWithAuth(url, options = {}) {
     const token = localStorage.getItem('access_token');
     
@@ -335,7 +345,7 @@ async function fetchWithAuth(url, options = {}) {
     return response;
 }
 
-// Refresh token (mantida)
+// Refresh token
 async function refreshToken() {
     const refreshToken = localStorage.getItem('refresh_token');
     
@@ -361,7 +371,7 @@ async function refreshToken() {
     return false;
 }
 
-// Mostrar alerta (mantida)
+// Mostrar alerta
 function showAlert(message, type = 'info') {
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
@@ -393,28 +403,33 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
     }
     
-    // Carregar informações do usuário
-    await loadUserInfo();
-    
-    // Carregar histórico
-    await loadHistory();
-    
-    // Configurar logout
-    setupLogout();
-    
-    // Substituir o handler de upload do formulário
-    const uploadForm = document.getElementById('uploadForm');
-    if (uploadForm) {
-        uploadForm.removeEventListener('submit', window.app?.handleUpload);
-        uploadForm.addEventListener('submit', handleUpload);
-    }
-    
-    // Adicionar badge de admin no HTML se necessário
-    const navbar = document.querySelector('.navbar-modern .container');
-    if (navbar && isAdmin()) {
-        const adminBadge = document.createElement('span');
-        adminBadge.className = 'admin-badge badge bg-warning text-dark ms-2';
-        adminBadge.innerHTML = '<i class="fas fa-crown me-1"></i>Admin';
-        navbar.appendChild(adminBadge);
-    }
+    // Pequeno delay para garantir que auth.js carregou
+    setTimeout(async () => {
+        // Carregar informações do usuário
+        await loadUserInfo();
+        
+        // Carregar histórico
+        await loadHistory();
+        
+        // Configurar logout
+        setupLogout();
+        
+        // Substituir o handler de upload do formulário
+        const uploadForm = document.getElementById('uploadForm');
+        if (uploadForm) {
+            uploadForm.removeEventListener('submit', window.app?.handleUpload);
+            uploadForm.addEventListener('submit', handleUpload);
+        }
+        
+        // Adicionar badge de admin no HTML se necessário
+        const navbar = document.querySelector('.navbar-modern .container');
+        if (navbar && isAdmin() && !document.querySelector('.admin-badge-nav')) {
+            const adminBadge = document.createElement('span');
+            adminBadge.className = 'admin-badge-nav badge bg-warning text-dark ms-2';
+            adminBadge.innerHTML = '<i class="fas fa-crown me-1"></i>Admin';
+            navbar.appendChild(adminBadge);
+        }
+        
+        console.log('✅ dashboard.js inicializado');
+    }, 200);
 });

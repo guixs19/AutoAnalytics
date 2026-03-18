@@ -1,9 +1,13 @@
-// frontend/js/payment.js - Versão com suporte a admin
+// frontend/js/payment.js - Versão OTIMIZADA (usa auth.js)
 
 // Função para verificar se é admin
 function isAdmin() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    return user.is_admin === true;
+    return window.appAuth ? window.appAuth.isAdmin() : false;
+}
+
+// Função para obter display de créditos
+function getCreditsDisplay() {
+    return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
 }
 
 // Carregar planos na página planos.html
@@ -19,7 +23,7 @@ async function loadPlans() {
     }
 }
 
-// Renderizar planos (MODIFICADA)
+// Renderizar planos
 function renderPlans(plans) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
@@ -89,7 +93,7 @@ function renderPlans(plans) {
     container.innerHTML = html;
 }
 
-// Selecionar plano (MODIFICADA)
+// Selecionar plano
 async function selectPlan(planId, method) {
     // Admin não precisa comprar
     if (isAdmin()) {
@@ -215,7 +219,7 @@ async function checkPaymentStatus(paymentId) {
     }
 }
 
-// Função para fazer requisições com token (adicionada)
+// Função para fazer requisições com token
 async function fetchWithAuth(url, options = {}) {
     const token = localStorage.getItem('access_token');
     
@@ -241,6 +245,10 @@ async function fetchWithAuth(url, options = {}) {
 // Inicializar na página de planos
 document.addEventListener('DOMContentLoaded', function() {
     if (window.location.pathname.includes('planos.html')) {
-        loadPlans();
+        // Pequeno delay para garantir que auth.js carregou
+        setTimeout(() => {
+            loadPlans();
+            console.log('✅ payment.js inicializado');
+        }, 200);
     }
 });

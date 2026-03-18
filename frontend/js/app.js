@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO COMPLETA COM SUPORTE A ADMIN
+// frontend/js/app.js - VERSÃO SIMPLIFICADA (SEM SELEÇÃO DE COLUNAS)
 
 class AutoAnalytics {
     constructor() {
@@ -9,59 +9,27 @@ class AutoAnalytics {
         this.currentProcessId = null;
         this.pollInterval = null;
         this.fileData = null;
-        this.columns = [];
-        this.selectedFeatures = [];
-        this.selectedTarget = null;
-        
-        // 🔥 NOVO: Armazenar CAPTCHA ID
-        this.currentCaptchaId = null;
         
         // Inicializar
         this.init();
     }
     
-    // ===== NOVAS FUNÇÕES DE ADMIN =====
+    // ===== FUNÇÕES DELEGADAS PARA auth.js =====
     
     isAdmin() {
-        const user = this.getCurrentUser();
-        return user?.is_admin === true;
+        return window.appAuth ? window.appAuth.isAdmin() : false;
     }
     
     getCurrentUser() {
-        try {
-            return JSON.parse(localStorage.getItem('user') || '{}');
-        } catch {
-            return {};
-        }
+        return window.appAuth ? window.appAuth.getCurrentUser() : {};
     }
     
     getCreditsDisplay() {
-        if (this.isAdmin()) return '∞';
-        const user = this.getCurrentUser();
-        return user.credits || 0;
+        return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
     }
     
     updateCreditsDisplay() {
-        const creditsDisplay = this.getCreditsDisplay();
-        
-        // Atualizar elementos na navbar
-        const creditElements = document.querySelectorAll('#navbarCredits, .user-credits');
-        creditElements.forEach(el => {
-            el.textContent = creditsDisplay;
-        });
-        
-        // Mostrar badge de admin
-        const adminBadges = document.querySelectorAll('.admin-badge');
-        if (this.isAdmin()) {
-            adminBadges.forEach(el => {
-                el.style.display = 'inline-block';
-            });
-            document.body.classList.add('is-admin');
-        } else {
-            adminBadges.forEach(el => {
-                el.style.display = 'none';
-            });
-        }
+        if (window.appAuth) window.appAuth.updateCreditsDisplay();
     }
     
     async init() {
@@ -76,746 +44,54 @@ class AutoAnalytics {
         
         // Atualizar display de créditos
         this.updateCreditsDisplay();
-        
-        // 🔥 NOVO: Carregar CAPTCHA se estiver na página de login/registro
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            await this.loadCaptcha();
-        }
     }
     
-    // 🔥 NOVO: Verificar se está na página de login
-    isLoginPage() {
-        return window.location.pathname.includes('login.html') || 
-               window.location.pathname === '/login';
-    }
+    // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
     
-    // 🔥 NOVO: Verificar se está na página de registro
-    isRegisterPage() {
-        return window.location.pathname.includes('register.html') || 
-               window.location.pathname === '/register';
-    }
-    
-    // 🔥 NOVO: Verificar se usuário está autenticado
     checkAuthentication() {
-        // Se estiver na página de login ou registro, não precisa verificar
         if (this.isLoginPage() || this.isRegisterPage()) {
             return;
         }
         
-        // Verificar se tem token no localStorage ou cookie
-        const token = localStorage.getItem('access_token');
-        
-        // Se não tiver token e não estiver na página pública, redirecionar
-        if (!token && !this.isPublicPage()) {
+        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
             console.log('🔒 Usuário não autenticado, redirecionando para login');
             window.location.href = '/login.html';
         }
     }
     
-    // 🔥 NOVO: Verificar se é página pública
-    isPublicPage() {
-        const publicPages = ['/login.html', '/register.html', '/index.html', '/'];
-        return publicPages.includes(window.location.pathname);
+    isLoginPage() {
+        return window.location.pathname.includes('login.html') || 
+               window.location.pathname === '/login';
     }
     
-    // 🔥 NOVO: Carregar CAPTCHA
-    async loadCaptcha() {
+    isRegisterPage() {
+        return window.location.pathname.includes('register.html') || 
+               window.location.pathname === '/register';
+    }
+    
+    // ===== CRÉDITOS =====
+    
+    async loadUserCredits() {
         try {
-            console.log('🔄 Carregando CAPTCHA...');
-            
-            const response = await fetch(`${this.apiBase}/auth/captcha/generate`);
-            
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
             if (response.ok) {
-                // Pegar o ID do header
-                this.currentCaptchaId = response.headers.get('X-Captcha-ID');
+                const data = await response.json();
                 
-                // Converter resposta para blob e criar URL
-                const blob = await response.blob();
-                const imageUrl = URL.createObjectURL(blob);
-                
-                // Atualizar imagem na tela
-                const captchaImg = document.getElementById('captchaImage');
-                if (captchaImg) {
-                    captchaImg.src = imageUrl;
-                    
-                    // Limpar URL antiga se existir
-                    if (captchaImg.dataset.url) {
-                        URL.revokeObjectURL(captchaImg.dataset.url);
-                    }
-                    captchaImg.dataset.url = imageUrl;
+                if (window.appAuth) {
+                    const user = window.appAuth.getCurrentUser();
+                    user.credits = data.credits || 0;
+                    user.is_admin = data.is_admin || false;
+                    localStorage.setItem('user', JSON.stringify(user));
+                    window.appAuth.updateCreditsDisplay();
                 }
-                
-                // Limpar input do CAPTCHA
-                const captchaInput = document.getElementById('captchaInput');
-                if (captchaInput) {
-                    captchaInput.value = '';
-                }
-                
-                console.log('✅ CAPTCHA carregado:', this.currentCaptchaId);
-            } else {
-                console.error('❌ Erro ao carregar CAPTCHA:', response.status);
             }
         } catch (error) {
-            console.error('❌ Erro ao carregar CAPTCHA:', error);
+            console.error('Erro ao carregar créditos:', error);
         }
     }
     
-    // 🔥 NOVO: Refresh do CAPTCHA (quando usuário clica para atualizar)
-    async refreshCaptcha() {
-        console.log('🔄 Atualizando CAPTCHA...');
-        await this.loadCaptcha();
-    }
-    
-    initializeElements() {
-        // Elementos existentes
-        this.uploadForm = document.getElementById('uploadForm');
-        this.fileInput = document.getElementById('fileInput');
-        this.uploadButton = document.getElementById('uploadButton');
-        this.dropArea = document.getElementById('dropArea');
-        this.selectedFile = document.getElementById('selectedFile');
-        this.fileName = document.getElementById('fileName');
-        this.fileSize = document.getElementById('fileSize');
-        this.removeFile = document.getElementById('removeFile');
-        
-        // Container do histórico
-        this.historyContainer = document.getElementById('recentAnalyses');
-        
-        // Seletores de colunas
-        this.columnSelector = document.getElementById('columnSelector');
-        this.dataPreview = document.getElementById('dataPreview');
-        this.previewHeader = document.getElementById('previewHeader')?.querySelector('tr');
-        this.previewBody = document.getElementById('previewBody');
-        this.targetColumnContainer = document.getElementById('targetColumnContainer');
-        this.featureColumnsContainer = document.getElementById('featureColumnsContainer');
-        this.selectedColumnsCount = document.getElementById('selectedColumnsCount');
-        
-        // Algoritmo
-        this.algorithmRadios = document.querySelectorAll('input[name="algorithm"]');
-        
-        // Créditos
-        this.navbarCredits = document.getElementById('navbarCredits')?.querySelector('span') || document.getElementById('navbarCredits');
-        this.uploadCredits = document.getElementById('uploadCredits');
-        this.userName = document.getElementById('userName');
-        this.workshopName = document.getElementById('workshopName');
-        
-        // Resultados
-        this.resultContainer = document.getElementById('resultContainer');
-        this.downloadButton = document.getElementById('downloadButton');
-        this.mlTable = document.getElementById('mlTable')?.querySelector('tbody');
-        this.exportCsv = document.getElementById('exportCsv');
-        this.viewRawData = document.getElementById('viewRawData');
-        this.targetColumnName = document.getElementById('targetColumnName');
-        this.algorithmName = document.getElementById('algorithmName');
-        
-        // Métricas do modelo
-        this.metricR2 = document.getElementById('metricR2');
-        this.metricMAE = document.getElementById('metricMAE');
-        this.metricRMSE = document.getElementById('metricRMSE');
-        this.metricImportance = document.getElementById('metricImportance');
-        this.featureImportance = document.getElementById('featureImportance');
-        
-        // Métricas do dashboard
-        this.totalAnalises = document.getElementById('totalAnalises');
-        this.analisesHoje = document.getElementById('analisesHoje');
-        this.iaUtilizada = document.getElementById('iaUtilizada');
-        
-        // 🔥 NOVO: Elementos de CAPTCHA
-        this.captchaImage = document.getElementById('captchaImage');
-        this.captchaInput = document.getElementById('captchaInput');
-        this.refreshCaptchaBtn = document.getElementById('refreshCaptcha');
-        
-        if (this.iaUtilizada) {
-            this.iaUtilizada.textContent = 'R² 0.94';
-        }
-    }
-    
-    bindEvents() {
-        if (this.uploadForm) {
-            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
-        }
-        
-        // Drag & Drop
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            if (this.dropArea) {
-                this.dropArea.addEventListener(eventName, this.preventDefaults.bind(this));
-            }
-        });
-        
-        if (this.dropArea) {
-            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
-            this.dropArea.addEventListener('click', () => this.fileInput?.click());
-            this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover'));
-            this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover'));
-        }
-        
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', () => this.handleFileSelect());
-        }
-        
-        if (this.removeFile) {
-            this.removeFile.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.resetFileSelection();
-            });
-        }
-        
-        // Botões de resultado
-        if (this.downloadButton) {
-            this.downloadButton.addEventListener('click', () => this.downloadResult());
-        }
-        
-        if (this.exportCsv) {
-            this.exportCsv.addEventListener('click', () => this.exportAsCsv());
-        }
-        
-        if (this.viewRawData) {
-            this.viewRawData.addEventListener('click', () => this.showRawData());
-        }
-        
-        // 🔥 NOVO: Botão de refresh do CAPTCHA
-        if (this.refreshCaptchaBtn) {
-            this.refreshCaptchaBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.refreshCaptcha();
-            });
-        }
-        
-        // 🔥 NOVO: Form de login
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) {
-            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-        }
-        
-        // 🔥 NOVO: Form de registro
-        const registerForm = document.getElementById('registerForm');
-        if (registerForm) {
-            registerForm.addEventListener('submit', (e) => this.handleRegister(e));
-        }
-    }
-    
-    // 🔥 NOVO: Handle de login
-    async handleLogin(event) {
-        event.preventDefault();
-        
-        const email = document.getElementById('email')?.value;
-        const password = document.getElementById('password')?.value;
-        const captchaInput = document.getElementById('captchaInput')?.value;
-        
-        if (!email || !password) {
-            this.showAlert('❌ Preencha email e senha', 'warning');
-            return;
-        }
-        
-        if (!this.currentCaptchaId) {
-            this.showAlert('❌ CAPTCHA não carregado. Clique no ícone de refresh.', 'warning');
-            await this.loadCaptcha();
-            return;
-        }
-        
-        if (!captchaInput) {
-            this.showAlert('❌ Digite o código CAPTCHA', 'warning');
-            return;
-        }
-        
-        // Desabilitar botão de login
-        const loginBtn = document.getElementById('loginBtn');
-        if (loginBtn) {
-            loginBtn.disabled = true;
-            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Entrando...';
-        }
-        
-        try {
-            const response = await fetch(`${this.apiBase}/auth/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Captcha-ID': this.currentCaptchaId
-                },
-                body: JSON.stringify({
-                    email: email,
-                    password: password,
-                    captcha_text: captchaInput
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok) {
-                // Login bem-sucedido
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                
-                // ✅ ARMAZENAR TODOS OS DADOS DO USUÁRIO
-                const userData = {
-                    name: data.user_name || '',
-                    email: data.user_email || email,
-                    workshop: data.workshop_name || '',
-                    role: data.role || 'user',
-                    plan: data.plan || 'basico',
-                    credits: data.credits || 0,
-                    is_admin: data.is_admin || false
-                };
-                localStorage.setItem('user', JSON.stringify(userData));
-                
-                const adminMsg = userData.is_admin ? '👑 ' : '';
-                this.showAlert(`${adminMsg}Login realizado com sucesso!`, 'success');
-                
-                // Redirecionar para dashboard
-                setTimeout(() => {
-                    window.location.href = '/dashboard';
-                }, 1000);
-            } else {
-                // Erro no login
-                this.showAlert('❌ ' + (data.detail || 'Falha no login'), 'error');
-                
-                // Gerar novo CAPTCHA em caso de erro
-                await this.loadCaptcha();
-            }
-        } catch (error) {
-            console.error('Erro no login:', error);
-            this.showAlert('❌ Erro de conexão com o servidor', 'error');
-            await this.loadCaptcha();
-        } finally {
-            // Reabilitar botão
-            if (loginBtn) {
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Entrar';
-            }
-        }
-    }
-    
-    // 🔥 NOVO: Handle de registro
-    async handleRegister(event) {
-        event.preventDefault();
-        
-        const name = document.getElementById('name')?.value;
-        const email = document.getElementById('email')?.value;
-        const password = document.getElementById('password')?.value;
-        const workshop = document.getElementById('workshop')?.value;
-        const captchaInput = document.getElementById('captchaInput')?.value;
-        
-        if (!name || !email || !password) {
-            this.showAlert('❌ Preencha todos os campos obrigatórios', 'warning');
-            return;
-        }
-        
-        if (!this.currentCaptchaId) {
-            this.showAlert('❌ CAPTCHA não carregado. Clique no ícone de refresh.', 'warning');
-            await this.loadCaptcha();
-            return;
-        }
-        
-        if (!captchaInput) {
-            this.showAlert('❌ Digite o código CAPTCHA', 'warning');
-            return;
-        }
-        
-        // Desabilitar botão de registro
-        const registerBtn = document.getElementById('registerBtn');
-        if (registerBtn) {
-            registerBtn.disabled = true;
-            registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Registrando...';
-        }
-        
-        try {
-            const response = await fetch(`${this.apiBase}/auth/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Captcha-ID': this.currentCaptchaId
-                },
-                body: JSON.stringify({
-                    name: name,
-                    email: email,
-                    password: password,
-                    workshop_name: workshop || '',
-                    captcha_text: captchaInput
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok) {
-                this.showAlert('✅ Registro realizado! Faça login.', 'success');
-                
-                // Redirecionar para login
-                setTimeout(() => {
-                    window.location.href = '/login.html';
-                }, 2000);
-            } else {
-                this.showAlert('❌ ' + (data.detail || 'Falha no registro'), 'error');
-                await this.loadCaptcha(); // Novo CAPTCHA
-            }
-        } catch (error) {
-            console.error('Erro no registro:', error);
-            this.showAlert('❌ Erro de conexão com o servidor', 'error');
-            await this.loadCaptcha();
-        } finally {
-            // Reabilitar botão
-            if (registerBtn) {
-                registerBtn.disabled = false;
-                registerBtn.innerHTML = 'Registrar';
-            }
-        }
-    }
-    
-    // Carregar histórico de análises
-    async loadAnalysisHistory() {
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
-            if (response.ok) {
-                const analyses = await response.json();
-                this.displayAnalysisHistory(analyses);
-            }
-        } catch (error) {
-            console.error('Erro ao carregar histórico:', error);
-        }
-    }
-    
-    // Exibir histórico de análises
-    displayAnalysisHistory(analyses) {
-        if (!this.historyContainer) return;
-        
-        if (!analyses || analyses.length === 0) {
-            this.historyContainer.innerHTML = `
-                <div class="timeline-item">
-                    <div class="timeline-marker"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">Nenhuma análise realizada</p>
-                        <small class="text-muted">Envie seu primeiro arquivo</small>
-                    </div>
-                </div>
-            `;
-            return;
-        }
-        
-        const html = analyses.slice(0, 5).map(analysis => {
-            const date = new Date(analysis.created_at);
-            const formattedDate = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
-            
-            return `
-                <div class="timeline-item">
-                    <div class="timeline-marker ${analysis.status === 'completed' ? 'bg-success' : 'bg-warning'}"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">
-                            <strong>${analysis.filename || 'Arquivo'}</strong>
-                            ${analysis.target_column ? `<br><small>Alvo: ${analysis.target_column}</small>` : ''}
-                        </p>
-                        <small class="text-muted">
-                            ${formattedDate}
-                            ${analysis.algorithm ? `• ${this.getAlgorithmName(analysis.algorithm)}` : ''}
-                        </small>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        this.historyContainer.innerHTML = html;
-    }
-    
-    resetFileSelection() {
-        if (this.fileInput) this.fileInput.value = '';
-        if (this.selectedFile) this.selectedFile.classList.add('d-none');
-        if (this.columnSelector) this.columnSelector.classList.add('d-none');
-        if (this.dataPreview) this.dataPreview.classList.add('d-none');
-        if (this.uploadButton) this.uploadButton.disabled = true;
-        
-        this.fileData = null;
-        this.columns = [];
-        this.selectedFeatures = [];
-        this.selectedTarget = null;
-    }
-    
-    async handleFileSelect() {
-        const file = this.fileInput?.files[0];
-        if (file) {
-            // VALIDAÇÃO DE TAMANHO - 10MB
-            const MAX_FILE_SIZE = 10 * 1024 * 1024;
-            
-            if (file.size > MAX_FILE_SIZE) {
-                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                this.showAlert(`❌ Arquivo muito grande (${fileSizeMB}MB). O tamanho máximo permitido é 10MB.`, 'error');
-                this.resetFileSelection();
-                return;
-            }
-            
-            // VALIDAÇÃO DE EXTENSÃO
-            const validExtensions = ['.csv', '.xlsx', '.xls'];
-            
-            if (!validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-                this.showAlert('❌ Formato não suportado. Use apenas arquivos CSV ou Excel (.csv, .xlsx, .xls)', 'error');
-                this.resetFileSelection();
-                return;
-            }
-            
-            if (this.fileName) this.fileName.textContent = file.name;
-            if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
-            if (this.selectedFile) this.selectedFile.classList.remove('d-none');
-            
-            // Animação GSAP
-            if (typeof gsap !== 'undefined') {
-                gsap.from(this.selectedFile, {
-                    duration: 0.5,
-                    y: 20,
-                    opacity: 0,
-                    ease: 'power3.out'
-                });
-            }
-            
-            // Analisar arquivo
-            await this.parseFile(file);
-        }
-    }
-    
-    async parseFile(file) {
-        this.showAlert('Analisando arquivo...', 'info');
-        
-        try {
-            if (file.name.endsWith('.csv')) {
-                Papa.parse(file, {
-                    header: true,
-                    preview: 10,
-                    delimiter: '',
-                    complete: (result) => {
-                        if (result.data && result.data.length > 0) {
-                            const firstRow = result.data[0];
-                            for (let key in firstRow) {
-                                const value = firstRow[key];
-                                if (typeof value === 'string' && value.includes(',') && !value.includes('.')) {
-                                    const numericValue = parseFloat(value.replace(',', '.'));
-                                    if (!isNaN(numericValue)) {
-                                        this.showAlert('⚠️ Detectado uso de vírgula como separador decimal. O sistema aceita ambos os formatos.', 'warning');
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        this.processParsedData(result.data, result.meta.fields);
-                    },
-                    error: (error) => {
-                        this.showAlert('❌ Erro ao ler CSV: ' + error, 'error');
-                        this.resetFileSelection();
-                    }
-                });
-            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                        
-                        if (jsonData.length > 0) {
-                            const headers = jsonData[0];
-                            const rows = jsonData.slice(1, 11).map(row => {
-                                const obj = {};
-                                headers.forEach((header, index) => {
-                                    let value = row[index];
-                                    if (typeof value === 'string' && value.includes(',')) {
-                                        const numValue = parseFloat(value.replace(',', '.'));
-                                        if (!isNaN(numValue)) {
-                                            value = numValue;
-                                        }
-                                    }
-                                    obj[header] = value;
-                                });
-                                return obj;
-                            });
-                            this.processParsedData(rows, headers);
-                        }
-                    } catch (error) {
-                        this.showAlert('❌ Erro ao ler arquivo Excel. Verifique se o arquivo não está corrompido.', 'error');
-                        this.resetFileSelection();
-                    }
-                };
-                reader.onerror = () => {
-                    this.showAlert('❌ Erro ao ler arquivo', 'error');
-                    this.resetFileSelection();
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        } catch (error) {
-            this.showAlert('❌ Erro ao processar arquivo', 'error');
-            this.resetFileSelection();
-        }
-    }
-    
-    processParsedData(data, columns) {
-        if (!data || data.length === 0) {
-            this.showAlert('❌ Arquivo vazio ou sem dados válidos', 'error');
-            this.resetFileSelection();
-            return;
-        }
-        
-        this.fileData = data;
-        this.columns = columns;
-        
-        this.showDataPreview(data, columns);
-        this.showColumnSelector(columns);
-        
-        if (this.uploadButton) {
-            this.uploadButton.disabled = false;
-        }
-        
-        this.showAlert('✅ Arquivo analisado! Selecione as colunas para análise.', 'success');
-    }
-    
-    showDataPreview(data, columns) {
-        if (!this.dataPreview || !this.previewHeader || !this.previewBody) return;
-        
-        this.previewHeader.innerHTML = '';
-        columns.forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = col;
-            this.previewHeader.appendChild(th);
-        });
-        
-        this.previewBody.innerHTML = '';
-        data.slice(0, 5).forEach(row => {
-            const tr = document.createElement('tr');
-            columns.forEach(col => {
-                const td = document.createElement('td');
-                let value = row[col] !== undefined ? row[col] : '-';
-                if (typeof value === 'number') {
-                    value = value.toFixed(2).replace('.', ',');
-                }
-                td.textContent = value;
-                tr.appendChild(td);
-            });
-            this.previewBody.appendChild(tr);
-        });
-        
-        this.dataPreview.classList.remove('d-none');
-        
-        if (typeof gsap !== 'undefined') {
-            gsap.from(this.dataPreview, {
-                duration: 0.5,
-                height: 0,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-        }
-    }
-    
-    showColumnSelector(columns) {
-        if (!this.columnSelector || !this.targetColumnContainer || !this.featureColumnsContainer) return;
-        
-        this.columnSelector.classList.remove('d-none');
-        
-        this.targetColumnContainer.innerHTML = '';
-        this.featureColumnsContainer.innerHTML = '';
-        
-        columns.forEach(col => {
-            const targetChip = this.createColumnChip(col, 'target');
-            this.targetColumnContainer.appendChild(targetChip);
-            
-            const featureChip = this.createColumnChip(col, 'feature');
-            this.featureColumnsContainer.appendChild(featureChip);
-        });
-        
-        this.updateSelectedCount();
-        
-        if (typeof gsap !== 'undefined') {
-            gsap.from('.column-chip', {
-                duration: 0.3,
-                scale: 0,
-                opacity: 0,
-                stagger: 0.05,
-                ease: 'back.out(1.7)'
-            });
-        }
-    }
-    
-    createColumnChip(columnName, type) {
-        const chip = document.createElement('span');
-        chip.className = `column-chip ${type === 'target' ? '' : 'feature-chip'}`;
-        chip.textContent = columnName;
-        
-        if (type === 'target') {
-            chip.addEventListener('click', () => this.selectTargetColumn(columnName, chip));
-        } else {
-            chip.addEventListener('click', () => this.toggleFeatureColumn(columnName, chip));
-        }
-        
-        return chip;
-    }
-    
-    selectTargetColumn(column, element) {
-        document.querySelectorAll('.column-chip.target').forEach(chip => {
-            chip.classList.remove('target');
-        });
-        
-        element.classList.add('target');
-        this.selectedTarget = column;
-        
-        this.showAlert(`✅ Coluna alvo selecionada: ${column}`, 'success');
-        this.updateSelectedCount();
-    }
-    
-    toggleFeatureColumn(column, element) {
-        element.classList.toggle('selected');
-        
-        if (element.classList.contains('selected')) {
-            this.selectedFeatures.push(column);
-            this.showAlert(`➕ Feature adicionada: ${column}`, 'info');
-        } else {
-            this.selectedFeatures = this.selectedFeatures.filter(c => c !== column);
-            this.showAlert(`➖ Feature removida: ${column}`, 'info');
-        }
-        
-        this.updateSelectedCount();
-    }
-    
-    updateSelectedCount() {
-        if (this.selectedColumnsCount) {
-            const total = this.selectedFeatures.length + (this.selectedTarget ? 1 : 0);
-            this.selectedColumnsCount.textContent = `${total}/${this.columns.length}`;
-        }
-    }
-    
-    getSelectedAlgorithm() {
-        for (const radio of this.algorithmRadios) {
-            if (radio.checked) {
-                return radio.value;
-            }
-        }
-        return 'random_forest';
-    }
-    
-    getAlgorithmName(value) {
-        const names = {
-            'random_forest': 'Random Forest',
-            'xgboost': 'XGBoost',
-            'linear': 'Regressão Linear',
-            'svr': 'SVR'
-        };
-        return names[value] || value;
-    }
-    
-    handleDrop(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        this.dropArea.classList.remove('dragover');
-        
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        
-        if (files.length > 0 && this.fileInput) {
-            this.fileInput.files = files;
-            this.handleFileSelect();
-        }
-    }
-    
-    preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
-    // Verificar créditos antes do upload (MODIFICADA)
+    // Verificar créditos antes do upload
     async checkCreditsBeforeUpload() {
-        // ✅ Admin sempre pode
         if (this.isAdmin()) {
             return true;
         }
@@ -836,9 +112,8 @@ class AutoAnalytics {
         return false;
     }
     
-    // Modal de créditos (MODIFICADA)
+    // Modal de créditos
     showCreditsModal() {
-        // Não mostrar para admin
         if (this.isAdmin()) {
             return;
         }
@@ -860,7 +135,7 @@ class AutoAnalytics {
                             <div class="modal-body text-center py-4">
                                 <i class="fas fa-coins fa-4x text-warning mb-3"></i>
                                 <h5>Você não tem créditos para realizar esta análise</h5>
-                                <p class="text-muted">Cada treinamento consome 1 crédito.</p>
+                                <p class="text-muted">Cada análise consome 1 crédito.</p>
                                 <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
                             </div>
                             <div class="modal-footer justify-content-center border-0">
@@ -889,22 +164,176 @@ class AutoAnalytics {
         bsModal.show();
     }
     
+    // ===== INICIALIZAÇÃO DE ELEMENTOS =====
+    
+    initializeElements() {
+        this.uploadForm = document.getElementById('uploadForm');
+        this.fileInput = document.getElementById('fileInput');
+        this.uploadButton = document.getElementById('uploadButton');
+        this.dropArea = document.getElementById('dropArea');
+        this.selectedFile = document.getElementById('selectedFile');
+        this.fileName = document.getElementById('fileName');
+        this.fileSize = document.getElementById('fileSize');
+        this.removeFile = document.getElementById('removeFile');
+        this.historyContainer = document.getElementById('recentAnalyses');
+        this.algorithmRadios = document.querySelectorAll('input[name="algorithm"]');
+        this.navbarCredits = document.getElementById('navbarCredits')?.querySelector('span') || document.getElementById('navbarCredits');
+        this.uploadCredits = document.getElementById('uploadCredits');
+        this.userName = document.getElementById('userName');
+        this.workshopName = document.getElementById('workshopName');
+        this.resultContainer = document.getElementById('resultContainer');
+        this.downloadButton = document.getElementById('downloadButton');
+        this.mlTable = document.getElementById('mlTable')?.querySelector('tbody');
+        this.exportCsv = document.getElementById('exportCsv');
+        this.viewRawData = document.getElementById('viewRawData');
+        this.algorithmName = document.getElementById('algorithmName');
+        this.metricR2 = document.getElementById('metricR2');
+        this.metricMAE = document.getElementById('metricMAE');
+        this.metricRMSE = document.getElementById('metricRMSE');
+        this.metricImportance = document.getElementById('metricImportance');
+        this.featureImportance = document.getElementById('featureImportance');
+        this.totalAnalises = document.getElementById('totalAnalises');
+        this.analisesHoje = document.getElementById('analisesHoje');
+        this.iaUtilizada = document.getElementById('iaUtilizada');
+        this.analysisInfo = document.getElementById('analysisInfo');
+        this.resultDescription = document.getElementById('resultDescription');
+        
+        if (this.iaUtilizada) {
+            this.iaUtilizada.textContent = 'AutoML';
+        }
+    }
+    
+    bindEvents() {
+        if (this.uploadForm) {
+            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
+        }
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            if (this.dropArea) {
+                this.dropArea.addEventListener(eventName, this.preventDefaults.bind(this));
+            }
+        });
+        
+        if (this.dropArea) {
+            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
+            this.dropArea.addEventListener('click', () => this.fileInput?.click());
+            this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover'));
+            this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover'));
+        }
+        
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', () => this.handleFileSelect());
+        }
+        
+        if (this.removeFile) {
+            this.removeFile.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.resetFileSelection();
+            });
+        }
+        
+        if (this.downloadButton) {
+            this.downloadButton.addEventListener('click', () => this.downloadResult());
+        }
+        
+        if (this.exportCsv) {
+            this.exportCsv.addEventListener('click', () => this.exportAsCsv());
+        }
+        
+        if (this.viewRawData) {
+            this.viewRawData.addEventListener('click', () => this.showRawData());
+        }
+    }
+    
+    // ===== FUNÇÕES DE ARQUIVO =====
+    
+    resetFileSelection() {
+        if (this.fileInput) this.fileInput.value = '';
+        if (this.selectedFile) this.selectedFile.classList.add('d-none');
+        if (this.uploadButton) this.uploadButton.disabled = true;
+        
+        this.fileData = null;
+    }
+    
+    async handleFileSelect() {
+        const file = this.fileInput?.files[0];
+        if (file) {
+            const MAX_FILE_SIZE = 10 * 1024 * 1024;
+            
+            if (file.size > MAX_FILE_SIZE) {
+                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                this.showAlert(`❌ Arquivo muito grande (${fileSizeMB}MB). O tamanho máximo permitido é 10MB.`, 'error');
+                this.resetFileSelection();
+                return;
+            }
+            
+            const validExtensions = ['.csv', '.xlsx', '.xls'];
+            
+            if (!validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+                this.showAlert('❌ Formato não suportado. Use apenas arquivos CSV ou Excel (.csv, .xlsx, .xls)', 'error');
+                this.resetFileSelection();
+                return;
+            }
+            
+            if (this.fileName) this.fileName.textContent = file.name;
+            if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
+            if (this.selectedFile) this.selectedFile.classList.remove('d-none');
+            
+            if (typeof gsap !== 'undefined') {
+                gsap.from(this.selectedFile, {
+                    duration: 0.5,
+                    y: 20,
+                    opacity: 0,
+                    ease: 'power3.out'
+                });
+            }
+            
+            // Habilitar botão de upload
+            if (this.uploadButton) {
+                this.uploadButton.disabled = false;
+            }
+            
+            this.showAlert('✅ Arquivo pronto para análise automática!', 'success');
+        }
+    }
+    
+    handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        this.dropArea.classList.remove('dragover');
+        
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0 && this.fileInput) {
+            this.fileInput.files = files;
+            this.handleFileSelect();
+        }
+    }
+    
+    preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // ===== FUNÇÃO DE UPLOAD SIMPLIFICADA =====
+    
+    getSelectedAlgorithm() {
+        for (const radio of this.algorithmRadios) {
+            if (radio.checked) {
+                return radio.value;
+            }
+        }
+        return 'auto'; // Auto-detecção
+    }
+    
     async handleUpload(e) {
         e.preventDefault();
         
         const file = this.fileInput?.files[0];
         if (!file) {
             this.showAlert('❌ Selecione um arquivo primeiro', 'warning');
-            return;
-        }
-        
-        if (!this.selectedTarget) {
-            this.showAlert('❌ Selecione uma coluna alvo (o que deseja prever)', 'warning');
-            return;
-        }
-        
-        if (this.selectedFeatures.length === 0) {
-            this.showAlert('❌ Selecione pelo menos uma coluna de entrada', 'warning');
             return;
         }
         
@@ -916,17 +345,16 @@ class AutoAnalytics {
         
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('target_column', this.selectedTarget);
-        formData.append('feature_columns', JSON.stringify(this.selectedFeatures));
         formData.append('algorithm', algorithm);
+        formData.append('auto_detect', 'true'); // ✅ Sinaliza que é análise automática
         
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Treinando modelo...';
+            this.uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Analisando...';
         }
         
         try {
-            const response = await fetch(`${this.apiBase}/upload`, {
+            const response = await fetch(`${this.apiBase}/upload-auto`, {  // ✅ NOVA ROTA
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
@@ -940,7 +368,7 @@ class AutoAnalytics {
                 this.currentProcessId = data.process_id;
                 
                 const adminMsg = this.isAdmin() ? '👑 ' : '';
-                this.showAlert(`${adminMsg}Modelo em treinamento!`, 'success');
+                this.showAlert(`${adminMsg}Análise automática iniciada!`, 'success');
                 
                 await this.loadUserCredits();
                 this.showProgress();
@@ -960,18 +388,28 @@ class AutoAnalytics {
         }
     }
     
+    resetUploadButton() {
+        if (this.uploadButton) {
+            this.uploadButton.disabled = false;
+            const creditText = this.isAdmin() ? '∞' : '1 crédito';
+            this.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i>Analisar Dados Automaticamente<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
+        }
+    }
+    
+    // ===== FUNÇÕES DE PROGRESSO =====
+    
     showProgress() {
         if (!document.getElementById('progressContainer')) {
             const progressHtml = `
                 <div id="progressContainer" class="upload-card mt-4">
                     <div class="d-flex align-items-center justify-content-between mb-3">
-                        <h5 class="mb-0">Treinando Modelo</h5>
+                        <h5 class="mb-0">Analisando Dados</h5>
                         <span class="badge bg-primary" id="processId">${this.currentProcessId}</span>
                     </div>
                     <div class="progress-modern mb-2">
                         <div class="progress-modern-bar" id="progressBar" style="width: 0%"></div>
                     </div>
-                    <p class="small text-muted mb-0" id="statusText">Iniciando...</p>
+                    <p class="small text-muted mb-0" id="statusText">Iniciando análise automática...</p>
                 </div>
             `;
             
@@ -1013,7 +451,7 @@ class AutoAnalytics {
                         
                         document.getElementById('progressContainer')?.remove();
                     } else {
-                        this.showAlert('❌ Erro no treinamento: ' + (status.error || 'Desconhecido'), 'error');
+                        this.showAlert('❌ Erro na análise: ' + (status.error || 'Desconhecido'), 'error');
                     }
                     
                     this.resetUploadButton();
@@ -1034,12 +472,11 @@ class AutoAnalytics {
     
     getStatusText(status) {
         if (status.status === 'uploaded') return '📤 Arquivo recebido';
-        if (status.status === 'preprocessing') return '🔄 Pré-processando dados';
-        if (status.status === 'training') return '🧠 Treinando modelo Scikit-learn';
-        if (status.status === 'predicting') return '🔮 Gerando previsões';
-        if (status.status === 'evaluating') return '📊 Calculando métricas';
-        if (status.status === 'generating_report') return '📝 Gerando relatório';
-        if (status.status === 'completed') return '✅ Modelo treinado com sucesso';
+        if (status.status === 'detecting') return '🔍 Detectando padrões...';
+        if (status.status === 'analyzing') return '📊 Analisando dados...';
+        if (status.status === 'training') return '🧠 Treinando modelo...';
+        if (status.status === 'generating_report') return '📝 Gerando relatório...';
+        if (status.status === 'completed') return '✅ Análise concluída!';
         return '⏳ Processando...';
     }
     
@@ -1056,17 +493,22 @@ class AutoAnalytics {
         }
     }
     
+    // ===== FUNÇÕES DE RESULTADO =====
+    
     showResult(result) {
         if (this.resultContainer) {
             this.resultContainer.style.display = 'block';
             
-            if (this.targetColumnName && this.selectedTarget) {
-                this.targetColumnName.textContent = this.selectedTarget;
-            }
-            
-            const algorithm = this.getSelectedAlgorithm();
+            const algorithm = result.algorithm || this.getSelectedAlgorithm();
             if (this.algorithmName) {
                 this.algorithmName.textContent = this.getAlgorithmName(algorithm);
+            }
+            
+            if (this.resultDescription) {
+                this.resultDescription.innerHTML = `
+                    Análise automática do arquivo <strong>${result.filename || 'upload'}</strong><br>
+                    <small class="text-muted">${result.rows_processed || 0} registros processados</small>
+                `;
             }
             
             if (typeof gsap !== 'undefined') {
@@ -1079,6 +521,28 @@ class AutoAnalytics {
             }
         }
         
+        // Exibir informações da análise
+        if (this.analysisInfo && result.analysis_info) {
+            const info = result.analysis_info;
+            let html = '<ul class="list-unstyled">';
+            
+            if (info.detected_columns) {
+                html += `<li><i class="fas fa-check-circle text-success me-2"></i> Colunas detectadas: ${info.detected_columns}</li>`;
+            }
+            if (info.target_column) {
+                html += `<li><i class="fas fa-bullseye text-primary me-2"></i> Coluna alvo detectada: <strong>${info.target_column}</strong></li>`;
+            }
+            if (info.features_count) {
+                html += `<li><i class="fas fa-chart-bar text-info me-2"></i> Features utilizadas: ${info.features_count}</li>`;
+            }
+            if (info.problem_type) {
+                html += `<li><i class="fas fa-tag text-warning me-2"></i> Tipo de problema: ${info.problem_type}</li>`;
+            }
+            
+            html += '</ul>';
+            this.analysisInfo.innerHTML = html;
+        }
+        
         const metrics = result.metrics || {
             r2: 0.94,
             mae: 12.5,
@@ -1086,7 +550,7 @@ class AutoAnalytics {
             feature_importance: [0.45, 0.30, 0.25]
         };
         
-        const featureNames = this.selectedFeatures || ['Feature 1', 'Feature 2', 'Feature 3'];
+        const featureNames = result.feature_names || ['Feature 1', 'Feature 2', 'Feature 3'];
         const predictions = result.predictions || this.generateSamplePredictions(10);
         const actuals = result.actuals || this.generateSamplePredictions(10, true);
         
@@ -1101,6 +565,17 @@ class AutoAnalytics {
         } else {
             return Array.from({ length }, () => 50 + Math.random() * 100);
         }
+    }
+    
+    getAlgorithmName(value) {
+        const names = {
+            'auto': 'AutoML',
+            'random_forest': 'Random Forest',
+            'xgboost': 'XGBoost',
+            'linear': 'Regressão Linear',
+            'svr': 'SVR'
+        };
+        return names[value] || value;
     }
     
     updateMetrics(metrics, featureNames) {
@@ -1125,7 +600,7 @@ class AutoAnalytics {
             const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
             let html = '';
             
-            featureNames.slice(0, 3).forEach((name, index) => {
+            featureNames.slice(0, 5).forEach((name, index) => {
                 const value = importance[index] || 0;
                 html += `
                     <div class="mb-2">
@@ -1219,7 +694,6 @@ class AutoAnalytics {
         this.mlTable.innerHTML = '';
         
         const validLength = Math.min(actuals.length, predictions.length, 10);
-        let totalError = 0;
         
         for (let i = 0; i < validLength; i++) {
             const actual = actuals[i];
@@ -1227,8 +701,6 @@ class AutoAnalytics {
             const error = Math.abs(actual - predicted);
             const errorPercent = (error / actual) * 100;
             const confidence = Math.max(0, 100 - errorPercent);
-            
-            totalError += error;
             
             const row = document.createElement('tr');
             row.innerHTML = `
@@ -1241,10 +713,10 @@ class AutoAnalytics {
                     </span>
                 </td>
                 <td>
-                    ± ${(error * 0.2).toFixed(2).replace('.', ',')}
                     <div class="progress-modern mt-1">
                         <div class="progress-modern-bar" style="width: ${confidence}%"></div>
                     </div>
+                    <small>${confidence.toFixed(0)}%</small>
                 </td>
                 <td>
                     <span class="badge ${errorPercent < 10 ? 'bg-success' : errorPercent < 20 ? 'bg-warning text-dark' : 'bg-danger'}">
@@ -1254,27 +726,6 @@ class AutoAnalytics {
             `;
             
             this.mlTable.appendChild(row);
-        }
-    }
-    
-    // ===== FUNÇÕES DE CRÉDITOS =====
-    
-    async loadUserCredits() {
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
-            if (response.ok) {
-                const data = await response.json();
-                
-                // Atualizar user no localStorage
-                const user = this.getCurrentUser();
-                user.credits = data.credits || 0;
-                user.is_admin = data.is_admin || false;
-                localStorage.setItem('user', JSON.stringify(user));
-                
-                this.updateCreditsDisplay();
-            }
-        } catch (error) {
-            console.error('Erro ao carregar créditos:', error);
         }
     }
     
@@ -1295,7 +746,7 @@ class AutoAnalytics {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `modelo_${this.currentProcessId}.txt`;
+                a.download = `analise_${this.currentProcessId}.txt`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -1349,7 +800,7 @@ class AutoAnalytics {
                         <div class="modal-header bg-dark text-white border-0">
                             <h5 class="modal-title">
                                 <i class="fas fa-database me-2"></i>
-                                Dados do Modelo Treinado
+                                Dados da Análise
                             </h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
@@ -1395,12 +846,57 @@ class AutoAnalytics {
         }
     }
     
-    resetUploadButton() {
-        if (this.uploadButton) {
-            this.uploadButton.disabled = false;
-            const creditText = this.isAdmin() ? '∞' : '1 crédito';
-            this.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
+    // ===== FUNÇÕES DE HISTÓRICO =====
+    
+    async loadAnalysisHistory() {
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
+            if (response.ok) {
+                const analyses = await response.json();
+                this.displayAnalysisHistory(analyses);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar histórico:', error);
         }
+    }
+    
+    displayAnalysisHistory(analyses) {
+        if (!this.historyContainer) return;
+        
+        if (!analyses || analyses.length === 0) {
+            this.historyContainer.innerHTML = `
+                <div class="timeline-item">
+                    <div class="timeline-marker"></div>
+                    <div class="timeline-content">
+                        <p class="mb-1 small">Nenhuma análise realizada</p>
+                        <small class="text-muted">Envie seu primeiro arquivo</small>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        const html = analyses.slice(0, 5).map(analysis => {
+            const date = new Date(analysis.created_at);
+            const formattedDate = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
+            
+            return `
+                <div class="timeline-item">
+                    <div class="timeline-marker ${analysis.status === 'completed' ? 'bg-success' : 'bg-warning'}"></div>
+                    <div class="timeline-content">
+                        <p class="mb-1 small">
+                            <strong>${analysis.filename || 'Arquivo'}</strong>
+                        </p>
+                        <small class="text-muted">
+                            ${formattedDate}
+                            ${analysis.records ? `• ${analysis.records} registros` : ''}
+                        </small>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        this.historyContainer.innerHTML = html;
     }
     
     async loadDashboardStats() {
@@ -1421,6 +917,8 @@ class AutoAnalytics {
         }
     }
     
+    // ===== FUNÇÕES DE UTILIDADE =====
+    
     initGSAPAnimations() {
         if (typeof gsap !== 'undefined') {
             gsap.registerPlugin(ScrollTrigger);
@@ -1436,17 +934,6 @@ class AutoAnalytics {
                 stagger: 0.2,
                 ease: 'power3.out'
             });
-            
-            gsap.from('.plan-card', {
-                scrollTrigger: {
-                    trigger: '.plan-card',
-                    start: 'top 80%'
-                },
-                duration: 1,
-                scale: 0.8,
-                opacity: 0,
-                ease: 'back.out(1.7)'
-            });
         }
     }
     
@@ -1455,7 +942,11 @@ class AutoAnalytics {
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.logout();
+                if (window.appAuth) {
+                    window.appAuth.logout();
+                } else {
+                    this.logout();
+                }
             });
         }
     }
@@ -1598,78 +1089,79 @@ class AutoAnalytics {
         
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
-}
-
-// Função global para carregar histórico completo
-window.loadFullHistory = async function() {
-    if (!window.app) return;
     
-    try {
-        const response = await window.app.fetchWithAuth(`${window.app.apiBase}/analyses/history?limit=100`);
-        if (response.ok) {
-            const analyses = await response.json();
-            showHistoryModal(analyses);
+    // Função para carregar histórico completo
+    async loadFullHistory() {
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history?limit=100`);
+            if (response.ok) {
+                const analyses = await response.json();
+                this.showHistoryModal(analyses);
+            }
+        } catch (error) {
+            this.showAlert('Erro ao carregar histórico completo', 'error');
         }
-    } catch (error) {
-        window.app.showAlert('Erro ao carregar histórico completo', 'error');
     }
-};
-
-function showHistoryModal(analyses) {
-    const modalHtml = `
-        <div class="modal fade" id="historyModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content rounded-4">
-                    <div class="modal-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                        <h5 class="modal-title">
-                            <i class="fas fa-history me-2"></i>
-                            Histórico Completo de Análises
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Data</th>
-                                    <th>Arquivo</th>
-                                    <th>Algoritmo</th>
-                                    <th>Coluna Alvo</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${analyses.map(a => `
+    
+    showHistoryModal(analyses) {
+        const modalHtml = `
+            <div class="modal fade" id="historyModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content rounded-4">
+                        <div class="modal-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <h5 class="modal-title">
+                                <i class="fas fa-history me-2"></i>
+                                Histórico Completo de Análises
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+                            <table class="table table-hover">
+                                <thead>
                                     <tr>
-                                        <td>${new Date(a.created_at).toLocaleDateString('pt-BR')}</td>
-                                        <td>${a.filename || '-'}</td>
-                                        <td>${window.app.getAlgorithmName(a.algorithm) || '-'}</td>
-                                        <td>${a.target_column || '-'}</td>
-                                        <td>
-                                            <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-warning'}">
-                                                ${a.status || 'Concluído'}
-                                            </span>
-                                        </td>
+                                        <th>Data</th>
+                                        <th>Arquivo</th>
+                                        <th>Registros</th>
+                                        <th>Algoritmo</th>
+                                        <th>Status</th>
                                     </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    ${analyses.map(a => `
+                                        <tr>
+                                            <td>${new Date(a.created_at).toLocaleDateString('pt-BR')}</td>
+                                            <td>${a.filename || '-'}</td>
+                                            <td>${a.records || a.rows_processed || '-'}</td>
+                                            <td>${this.getAlgorithmName(a.algorithm) || 'AutoML'}</td>
+                                            <td>
+                                                <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-warning'}">
+                                                    ${a.status || 'Concluído'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    `;
-    
-    const existingModal = document.getElementById('historyModal');
-    if (existingModal) existingModal.remove();
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    const modal = new bootstrap.Modal(document.getElementById('historyModal'));
-    modal.show();
+        `;
+        
+        const existingModal = document.getElementById('historyModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        const modal = new bootstrap.Modal(document.getElementById('historyModal'));
+        modal.show();
+    }
 }
 
 // Inicializar
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new AutoAnalytics();
+    setTimeout(() => {
+        window.app = new AutoAnalytics();
+        console.log('✅ app.js simplificado inicializado');
+    }, 100);
 });
