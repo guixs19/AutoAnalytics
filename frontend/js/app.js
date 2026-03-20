@@ -1,4 +1,3 @@
-// frontend/js/app.js - VERSÃO SIMPLIFICADA (SEM SELEÇÃO DE COLUNAS)
 
 class AutoAnalytics {
     constructor() {
@@ -9,15 +8,99 @@ class AutoAnalytics {
         this.currentProcessId = null;
         this.pollInterval = null;
         this.fileData = null;
+        this.columns = [];
+        this.dataTypes = {};
+        this.initialized = false;
+        this.authCheckInterval = null;
         
-        // Inicializar
-        this.init();
+        // ⏳ Aguardar auth.js inicializar
+        this.waitForAuth();
+    }
+    
+    // ===== AGUARDAR AUTH.JS INICIALIZAR =====
+    async waitForAuth() {
+        console.log('⏳ Aguardando auth.js inicializar...');
+        
+        // Tentar a cada 100ms até 5 segundos
+        for (let i = 0; i < 50; i++) {
+            if (window.appAuth) {
+                console.log('✅ auth.js encontrado!');
+                
+                // Verificar se está em página de login
+                if (this.isLoginPage() || this.isRegisterPage()) {
+                    console.log('📝 Página de autenticação - app não será inicializado');
+                    return;
+                }
+                
+                // Verificar autenticação
+                if (!window.appAuth.isAuthenticated()) {
+                    console.log('❌ Usuário não autenticado');
+                    this.redirectToLogin();
+                    return;
+                }
+                
+                console.log('✅ Usuário autenticado, inicializando app...');
+                this.init();
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Timeout - verificar se está em página de login
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            console.log('📝 Página de autenticação - app não será inicializado');
+            return;
+        }
+        
+        console.log('❌ Timeout aguardando auth.js');
+        this.redirectToLogin();
+    }
+    
+    // ===== VERIFICAÇÕES DE PÁGINA =====
+    
+    isLoginPage() {
+        return window.location.pathname.includes('login.html') || 
+               window.location.pathname === '/login' ||
+               window.location.pathname === '/';
+    }
+    
+    isRegisterPage() {
+        return window.location.pathname.includes('register.html') || 
+               window.location.pathname === '/register';
+    }
+    
+    isPlanosPage() {
+        return window.location.pathname.includes('planos.html') || 
+               window.location.pathname === '/planos';
+    }
+    
+    isCheckoutPage() {
+        return window.location.pathname.includes('checkout.html') || 
+               window.location.pathname === '/checkout';
+    }
+    
+    // ===== REDIRECIONAMENTO =====
+    
+    redirectToLogin() {
+        if (!this.isLoginPage() && !this.isRegisterPage() && 
+            !this.isPlanosPage() && !this.isCheckoutPage()) {
+            console.log('🔄 Redirecionando para login...');
+            window.location.href = '/login.html';
+        }
     }
     
     // ===== FUNÇÕES DELEGADAS PARA auth.js =====
     
     isAdmin() {
         return window.appAuth ? window.appAuth.isAdmin() : false;
+    }
+    
+    isPremium() {
+        return window.appAuth ? window.appAuth.isPremium() : false;
+    }
+    
+    getPremiumInfo() {
+        return window.appAuth ? window.appAuth.getPremiumInfo() : null;
     }
     
     getCurrentUser() {
@@ -32,55 +115,94 @@ class AutoAnalytics {
         if (window.appAuth) window.appAuth.updateCreditsDisplay();
     }
     
+    // ===== INICIALIZAÇÃO PRINCIPAL =====
+    
     async init() {
+        console.log('🚀 Inicializando AutoAnalytics App...');
+        
+        // ✅ NÃO inicializar em páginas de autenticação
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            console.log('🚫 App não inicializado em página de autenticação');
+            return;
+        }
+        
+        // ✅ Verificar autenticação novamente
+        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
+            console.log('❌ Não autenticado');
+            this.redirectToLogin();
+            return;
+        }
+        
         this.initializeElements();
         this.bindEvents();
-        await this.loadUserCredits();
-        await this.loadDashboardStats();
-        await this.loadAnalysisHistory();
-        this.setupLogout();
-        this.initGSAPAnimations();
-        this.checkAuthentication();
         
-        // Atualizar display de créditos
-        this.updateCreditsDisplay();
+        // ⏳ Pequeno delay para garantir que tudo está pronto
+        setTimeout(async () => {
+            await this.loadUserCredits();
+            await this.loadDashboardStats();
+            await this.loadAnalysisHistory();
+            
+            if (this.isPremium()) {
+                await this.loadPremiumStatus();
+            }
+            
+            this.setupLogout();
+            this.initAnimations();
+            this.updateCreditsDisplay();
+            this.initialized = true;
+            
+            console.log('✅ App inicializado com sucesso');
+            console.log(`👤 Usuário: ${this.getCurrentUser().email}`);
+            console.log(`💰 Créditos: ${this.getCreditsDisplay()}`);
+            
+            // Iniciar verificação periódica de autenticação
+            this.startAuthCheck();
+        }, 500);
+    }
+    
+    startAuthCheck() {
+        // Verificar autenticação a cada 5 minutos
+        this.authCheckInterval = setInterval(() => {
+            if (!window.appAuth || !window.appAuth.isAuthenticated()) {
+                console.log('❌ Sessão expirada');
+                this.redirectToLogin();
+            }
+        }, 5 * 60 * 1000);
     }
     
     // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
     
     checkAuthentication() {
+        if (this.isLoginPage() || this.isRegisterPage()) return;
+        
+        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
+            this.redirectToLogin();
+        }
+    }
+    
+    // ===== CRÉDITOS E PREMIUM =====
+    
+    async loadUserCredits() {
+        // ✅ NÃO carregar créditos em páginas de login
         if (this.isLoginPage() || this.isRegisterPage()) {
             return;
         }
         
+        // ✅ Verificar se está autenticado
         if (!window.appAuth || !window.appAuth.isAuthenticated()) {
-            console.log('🔒 Usuário não autenticado, redirecionando para login');
-            window.location.href = '/login.html';
+            return;
         }
-    }
-    
-    isLoginPage() {
-        return window.location.pathname.includes('login.html') || 
-               window.location.pathname === '/login';
-    }
-    
-    isRegisterPage() {
-        return window.location.pathname.includes('register.html') || 
-               window.location.pathname === '/register';
-    }
-    
-    // ===== CRÉDITOS =====
-    
-    async loadUserCredits() {
+        
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
-            if (response.ok) {
+            if (response && response.ok) {
                 const data = await response.json();
                 
                 if (window.appAuth) {
                     const user = window.appAuth.getCurrentUser();
                     user.credits = data.credits || 0;
                     user.is_admin = data.is_admin || false;
+                    user.is_premium = data.is_premium || false;
                     localStorage.setItem('user', JSON.stringify(user));
                     window.appAuth.updateCreditsDisplay();
                 }
@@ -90,271 +212,126 @@ class AutoAnalytics {
         }
     }
     
-    // Verificar créditos antes do upload
-    async checkCreditsBeforeUpload() {
-        if (this.isAdmin()) {
-            return true;
-        }
+    async loadPremiumStatus() {
+        if (!this.isPremium()) return;
+        
+        // ✅ NÃO carregar status premium em páginas de login
+        if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
-            if (response.ok) {
+            const response = await this.fetchWithAuth(`${this.apiBase}/premium/status`);
+            if (response && response.ok) {
                 const data = await response.json();
-                if (!data.has_credits) {
-                    this.showCreditsModal();
-                    return false;
-                }
-                return true;
+                this.displayPremiumInfo(data);
             }
         } catch (error) {
-            console.error('Erro ao verificar créditos:', error);
+            console.error('Erro ao carregar status premium:', error);
         }
-        return false;
     }
     
-    // Modal de créditos
-    showCreditsModal() {
-        if (this.isAdmin()) {
-            return;
+    displayPremiumInfo(data) {
+        if (!data?.has_premium) return;
+        
+        let premiumContainer = document.getElementById('premiumDashboardInfo');
+        
+        if (!premiumContainer) {
+            const uploadCard = document.querySelector('.upload-card');
+            if (!uploadCard) return;
+            
+            premiumContainer = document.createElement('div');
+            premiumContainer.id = 'premiumDashboardInfo';
+            premiumContainer.className = 'premium-info-box mb-4';
+            uploadCard.insertAdjacentElement('beforebegin', premiumContainer);
         }
         
-        let modal = document.getElementById('creditsModal');
+        const daysLeft = data.plan?.days_left || 0;
+        const progress = data.plan?.progress || 0;
+        const receivedToday = data.credits?.next_credit_today || false;
         
-        if (!modal) {
-            const modalHtml = `
-                <div class="modal fade" id="creditsModal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content rounded-4">
-                            <div class="modal-header bg-warning border-0">
-                                <h5 class="modal-title">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    Créditos Insuficientes
-                                </h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body text-center py-4">
-                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
-                                <h5>Você não tem créditos para realizar esta análise</h5>
-                                <p class="text-muted">Cada análise consome 1 crédito.</p>
-                                <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
-                            </div>
-                            <div class="modal-footer justify-content-center border-0">
-                                <a href="/planos.html" class="btn btn-gradient">
-                                    <i class="fas fa-credit-card me-2"></i>
-                                    Assinar Plano R$97
-                                </a>
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                                    Cancelar
+        premiumContainer.innerHTML = `
+            <div class="premium-glow-card">
+                <div class="d-flex align-items-center">
+                    <div class="premium-icon">
+                        <i class="fas fa-crown"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0 premium-title">PLANO PREMIUM ATIVO</h6>
+                            <span class="premium-days-badge">${daysLeft} dias</span>
+                        </div>
+                        
+                        <div class="premium-progress mt-2">
+                            <div class="premium-progress-bar" style="width: ${progress}%"></div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between small mt-1">
+                            <span class="premium-status-text">
+                                <i class="fas fa-calendar-alt me-1"></i>
+                                ${receivedToday ? 'Crédito de hoje recebido' : 'Crédito disponível hoje'}
+                            </span>
+                            ${!receivedToday && daysLeft > 0 ? `
+                                <button class="premium-claim-btn" onclick="window.app?.claimDailyCredit()">
+                                    <i class="fas fa-gift me-1"></i>
+                                    Receber
                                 </button>
-                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
-            `;
-            
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            modal = document.getElementById('creditsModal');
-        }
-        
-        const modalCredits = document.getElementById('modalCredits');
-        const user = this.getCurrentUser();
-        if (modalCredits) modalCredits.textContent = user.credits || 0;
-        
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
+            </div>
+        `;
     }
     
-    // ===== INICIALIZAÇÃO DE ELEMENTOS =====
-    
-    initializeElements() {
-        this.uploadForm = document.getElementById('uploadForm');
-        this.fileInput = document.getElementById('fileInput');
-        this.uploadButton = document.getElementById('uploadButton');
-        this.dropArea = document.getElementById('dropArea');
-        this.selectedFile = document.getElementById('selectedFile');
-        this.fileName = document.getElementById('fileName');
-        this.fileSize = document.getElementById('fileSize');
-        this.removeFile = document.getElementById('removeFile');
-        this.historyContainer = document.getElementById('recentAnalyses');
-        this.algorithmRadios = document.querySelectorAll('input[name="algorithm"]');
-        this.navbarCredits = document.getElementById('navbarCredits')?.querySelector('span') || document.getElementById('navbarCredits');
-        this.uploadCredits = document.getElementById('uploadCredits');
-        this.userName = document.getElementById('userName');
-        this.workshopName = document.getElementById('workshopName');
-        this.resultContainer = document.getElementById('resultContainer');
-        this.downloadButton = document.getElementById('downloadButton');
-        this.mlTable = document.getElementById('mlTable')?.querySelector('tbody');
-        this.exportCsv = document.getElementById('exportCsv');
-        this.viewRawData = document.getElementById('viewRawData');
-        this.algorithmName = document.getElementById('algorithmName');
-        this.metricR2 = document.getElementById('metricR2');
-        this.metricMAE = document.getElementById('metricMAE');
-        this.metricRMSE = document.getElementById('metricRMSE');
-        this.metricImportance = document.getElementById('metricImportance');
-        this.featureImportance = document.getElementById('featureImportance');
-        this.totalAnalises = document.getElementById('totalAnalises');
-        this.analisesHoje = document.getElementById('analisesHoje');
-        this.iaUtilizada = document.getElementById('iaUtilizada');
-        this.analysisInfo = document.getElementById('analysisInfo');
-        this.resultDescription = document.getElementById('resultDescription');
+    async claimDailyCredit() {
+        if (!this.isPremium()) return;
         
-        if (this.iaUtilizada) {
-            this.iaUtilizada.textContent = 'AutoML';
-        }
-    }
-    
-    bindEvents() {
-        if (this.uploadForm) {
-            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
-        }
+        // ✅ NÃO reivindicar crédito em páginas de login
+        if (this.isLoginPage() || this.isRegisterPage()) return;
         
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            if (this.dropArea) {
-                this.dropArea.addEventListener(eventName, this.preventDefaults.bind(this));
-            }
-        });
-        
-        if (this.dropArea) {
-            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
-            this.dropArea.addEventListener('click', () => this.fileInput?.click());
-            this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover'));
-            this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover'));
-        }
-        
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', () => this.handleFileSelect());
-        }
-        
-        if (this.removeFile) {
-            this.removeFile.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.resetFileSelection();
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/premium/check-daily`, {
+                method: 'POST'
             });
-        }
-        
-        if (this.downloadButton) {
-            this.downloadButton.addEventListener('click', () => this.downloadResult());
-        }
-        
-        if (this.exportCsv) {
-            this.exportCsv.addEventListener('click', () => this.exportAsCsv());
-        }
-        
-        if (this.viewRawData) {
-            this.viewRawData.addEventListener('click', () => this.showRawData());
-        }
-    }
-    
-    // ===== FUNÇÕES DE ARQUIVO =====
-    
-    resetFileSelection() {
-        if (this.fileInput) this.fileInput.value = '';
-        if (this.selectedFile) this.selectedFile.classList.add('d-none');
-        if (this.uploadButton) this.uploadButton.disabled = true;
-        
-        this.fileData = null;
-    }
-    
-    async handleFileSelect() {
-        const file = this.fileInput?.files[0];
-        if (file) {
-            const MAX_FILE_SIZE = 10 * 1024 * 1024;
             
-            if (file.size > MAX_FILE_SIZE) {
-                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                this.showAlert(`❌ Arquivo muito grande (${fileSizeMB}MB). O tamanho máximo permitido é 10MB.`, 'error');
-                this.resetFileSelection();
-                return;
+            if (response && response.ok) {
+                const data = await response.json();
+                
+                if (data.credits_added > 0) {
+                    this.showNotification('⭐ Você ganhou 1 crédito do plano premium!', 'success');
+                    await this.loadUserCredits();
+                    await this.loadPremiumStatus();
+                }
             }
-            
-            const validExtensions = ['.csv', '.xlsx', '.xls'];
-            
-            if (!validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-                this.showAlert('❌ Formato não suportado. Use apenas arquivos CSV ou Excel (.csv, .xlsx, .xls)', 'error');
-                this.resetFileSelection();
-                return;
-            }
-            
-            if (this.fileName) this.fileName.textContent = file.name;
-            if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
-            if (this.selectedFile) this.selectedFile.classList.remove('d-none');
-            
-            if (typeof gsap !== 'undefined') {
-                gsap.from(this.selectedFile, {
-                    duration: 0.5,
-                    y: 20,
-                    opacity: 0,
-                    ease: 'power3.out'
-                });
-            }
-            
-            // Habilitar botão de upload
-            if (this.uploadButton) {
-                this.uploadButton.disabled = false;
-            }
-            
-            this.showAlert('✅ Arquivo pronto para análise automática!', 'success');
+        } catch (error) {
+            console.error('Erro ao receber crédito:', error);
         }
     }
     
-    handleDrop(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        this.dropArea.classList.remove('dragover');
-        
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        
-        if (files.length > 0 && this.fileInput) {
-            this.fileInput.files = files;
-            this.handleFileSelect();
-        }
-    }
-    
-    preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
-    // ===== FUNÇÃO DE UPLOAD SIMPLIFICADA =====
-    
-    getSelectedAlgorithm() {
-        for (const radio of this.algorithmRadios) {
-            if (radio.checked) {
-                return radio.value;
-            }
-        }
-        return 'auto'; // Auto-detecção
-    }
+    // ===== UPLOAD - NOVA VERSÃO SEM SELEÇÃO =====
     
     async handleUpload(e) {
         e.preventDefault();
         
         const file = this.fileInput?.files[0];
         if (!file) {
-            this.showAlert('❌ Selecione um arquivo primeiro', 'warning');
+            this.showNotification('❌ Selecione um arquivo primeiro', 'warning');
             return;
         }
         
-        // Verificar créditos (admin sempre passa)
-        const hasCredits = await this.checkCreditsBeforeUpload();
-        if (!hasCredits) return;
-        
-        const algorithm = this.getSelectedAlgorithm();
+        // Verificar créditos
+        if (!this.isAdmin()) {
+            const creditsCheck = await this.checkCredits();
+            if (!creditsCheck) return;
+        }
         
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('algorithm', algorithm);
-        formData.append('auto_detect', 'true'); // ✅ Sinaliza que é análise automática
+        formData.append('auto_detect', 'true');
         
-        if (this.uploadButton) {
-            this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Analisando...';
-        }
+        this.setUploadLoading(true);
         
         try {
-            const response = await fetch(`${this.apiBase}/upload-auto`, {  // ✅ NOVA ROTA
+            const response = await fetch(`${this.apiBase}/upload-auto`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
@@ -366,66 +343,418 @@ class AutoAnalytics {
             
             if (response.ok) {
                 this.currentProcessId = data.process_id;
-                
-                const adminMsg = this.isAdmin() ? '👑 ' : '';
-                this.showAlert(`${adminMsg}Análise automática iniciada!`, 'success');
-                
+                this.showNotification('🚀 Análise iniciada!', 'success');
                 await this.loadUserCredits();
                 this.showProgress();
                 this.startProgressPolling();
             } else {
-                if (data.detail && data.detail.error === 'Créditos insuficientes') {
+                if (data.detail?.error === 'Créditos insuficientes') {
                     this.showCreditsModal();
                 } else {
-                    this.showAlert('❌ ' + (data.detail || 'Erro no upload'), 'error');
+                    this.showNotification('❌ ' + (data.detail || 'Erro no upload'), 'error');
                 }
-                this.resetUploadButton();
+                this.setUploadLoading(false);
             }
             
         } catch (error) {
-            this.showAlert('❌ Erro de conexão com o servidor', 'error');
-            this.resetUploadButton();
+            this.showNotification('❌ Erro de conexão', 'error');
+            this.setUploadLoading(false);
         }
     }
     
-    resetUploadButton() {
-        if (this.uploadButton) {
+    setUploadLoading(loading) {
+        if (!this.uploadButton) return;
+        
+        this.uploadButton.disabled = loading;
+        if (loading) {
+            this.uploadButton.innerHTML = '<div class="spinner-glow"></div><span>Processando...</span>';
+        } else {
+            const icon = this.isAdmin() ? '👑' : (this.isPremium() ? '⭐' : '🚀');
+            this.uploadButton.innerHTML = `${icon} Iniciar Análise Automática <span class="credit-badge">${this.getCreditsDisplay()} créditos</span>`;
+        }
+    }
+    
+    async checkCredits() {
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
+            if (response && response.ok) {
+                const data = await response.json();
+                if (!data.has_credits) {
+                    if (this.isPremium()) {
+                        this.showNotification('⭐ Você usou todos os créditos. Amanhã você ganha mais!', 'warning');
+                    } else {
+                        this.showCreditsModal();
+                    }
+                    return false;
+                }
+                return true;
+            }
+        } catch (error) {
+            console.error('Erro ao verificar créditos:', error);
+        }
+        return false;
+    }
+    
+    // ===== LEITURA DE ARQUIVO - NOVA VERSÃO COM VISUALIZAÇÃO TECNOLÓGICA =====
+    
+    async handleFileSelect() {
+        const file = this.fileInput?.files[0];
+        if (!file) return;
+        
+        // Validar arquivo
+        if (!this.validateFile(file)) return;
+        
+        // Mostrar info do arquivo
+        this.displayFileInfo(file);
+        
+        // Ler e analisar arquivo
+        await this.analyzeFile(file);
+    }
+    
+    validateFile(file) {
+        const MAX_SIZE = 10 * 1024 * 1024;
+        const validExtensions = ['.csv', '.xlsx', '.xls'];
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        
+        if (file.size > MAX_SIZE) {
+            this.showNotification(`❌ Arquivo muito grande (${(file.size/1024/1024).toFixed(2)}MB). Máx: 10MB`, 'error');
+            this.resetFileSelection();
+            return false;
+        }
+        
+        if (!validExtensions.includes(ext)) {
+            this.showNotification('❌ Formato não suportado. Use CSV ou Excel', 'error');
+            this.resetFileSelection();
+            return false;
+        }
+        
+        return true;
+    }
+    
+    displayFileInfo(file) {
+        if (this.fileName) this.fileName.textContent = file.name;
+        if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
+        if (this.selectedFile) {
+            this.selectedFile.classList.remove('d-none');
+            
+            // Adicionar efeito glow
+            this.selectedFile.innerHTML = `
+                <div class="file-info-glow">
+                    <div class="file-icon">
+                        <i class="fas fa-file-${file.name.endsWith('.csv') ? 'csv' : 'excel'}"></i>
+                    </div>
+                    <div class="file-details">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-meta">
+                            <span class="file-size">${this.formatFileSize(file.size)}</span>
+                            <span class="file-type">${file.name.endsWith('.csv') ? 'CSV' : 'Excel'}</span>
+                        </div>
+                    </div>
+                    <button class="file-remove-btn" id="removeFile">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            // Reattach remove event
+            document.getElementById('removeFile')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.resetFileSelection();
+            });
+        }
+        
+        // Animação
+        if (typeof gsap !== 'undefined') {
+            gsap.from(this.selectedFile, {
+                duration: 0.5,
+                y: 20,
+                opacity: 0,
+                ease: 'power3.out'
+            });
+        }
+    }
+    
+    async analyzeFile(file) {
+        this.showNotification('🔍 Analisando estrutura do arquivo...', 'info');
+        
+        try {
+            let data, columns, types;
+            
+            if (file.name.endsWith('.csv')) {
+                const result = await this.parseCSV(file);
+                data = result.data;
+                columns = result.columns;
+                types = result.types;
+            } else {
+                const result = await this.parseExcel(file);
+                data = result.data;
+                columns = result.columns;
+                types = result.types;
+            }
+            
+            this.fileData = data;
+            this.columns = columns;
+            this.dataTypes = types;
+            
+            // Mostrar preview tecnológico
+            this.showTechPreview(data, columns, types);
+            
+            // Habilitar botão de upload
             this.uploadButton.disabled = false;
-            const creditText = this.isAdmin() ? '∞' : '1 crédito';
-            this.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i>Analisar Dados Automaticamente<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
+            this.uploadButton.innerHTML = `🚀 Iniciar Análise Automática <span class="credit-badge">${this.getCreditsDisplay()} créditos</span>`;
+            
+            this.showNotification('✅ Arquivo analisado! Pronto para processar.', 'success');
+            
+        } catch (error) {
+            console.error('Erro ao analisar arquivo:', error);
+            this.showNotification('❌ Erro ao analisar arquivo', 'error');
+            this.resetFileSelection();
         }
     }
     
-    // ===== FUNÇÕES DE PROGRESSO =====
+    parseCSV(file) {
+        return new Promise((resolve, reject) => {
+            Papa.parse(file, {
+                header: true,
+                preview: 20,
+                dynamicTyping: true,
+                complete: (result) => {
+                    if (result.data && result.data.length > 0) {
+                        const columns = result.meta.fields || [];
+                        const types = {};
+                        
+                        // Detectar tipos de dados
+                        columns.forEach(col => {
+                            const values = result.data.map(row => row[col]).filter(v => v !== null && v !== undefined);
+                            if (values.length === 0) {
+                                types[col] = 'unknown';
+                            } else if (values.every(v => typeof v === 'number')) {
+                                types[col] = 'numeric';
+                            } else if (values.every(v => v instanceof Date || !isNaN(Date.parse(v)))) {
+                                types[col] = 'date';
+                            } else {
+                                types[col] = 'text';
+                            }
+                        });
+                        
+                        resolve({
+                            data: result.data.slice(0, 10),
+                            columns,
+                            types
+                        });
+                    } else {
+                        reject(new Error('Arquivo vazio'));
+                    }
+                },
+                error: reject
+            });
+        });
+    }
+    
+    parseExcel(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    if (jsonData.length > 0) {
+                        const headers = jsonData[0].map(h => String(h).trim());
+                        const rows = jsonData.slice(1, 11).map(row => {
+                            const obj = {};
+                            headers.forEach((header, index) => {
+                                obj[header] = row[index];
+                            });
+                            return obj;
+                        });
+                        
+                        // Detectar tipos
+                        const types = {};
+                        headers.forEach(col => {
+                            const values = rows.map(row => row[col]).filter(v => v !== undefined && v !== null);
+                            if (values.length === 0) {
+                                types[col] = 'unknown';
+                            } else if (values.every(v => typeof v === 'number')) {
+                                types[col] = 'numeric';
+                            } else if (values.every(v => !isNaN(Date.parse(v)))) {
+                                types[col] = 'date';
+                            } else {
+                                types[col] = 'text';
+                            }
+                        });
+                        
+                        resolve({
+                            data: rows,
+                            columns: headers,
+                            types
+                        });
+                    } else {
+                        reject(new Error('Arquivo vazio'));
+                    }
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    }
+    
+    // ===== VISUALIZAÇÃO TECNOLÓGICA =====
+    
+    showTechPreview(data, columns, types) {
+        const previewSection = document.getElementById('dataPreview');
+        if (!previewSection) return;
+        
+        // Criar estrutura moderna
+        let html = `
+            <div class="tech-preview-container">
+                <div class="preview-header">
+                    <div class="header-left">
+                        <span class="glow-dot"></span>
+                        <h5>ANÁLISE DE ESTRUTURA</h5>
+                    </div>
+                    <div class="header-right">
+                        <span class="badge-cols">${columns.length} colunas</span>
+                        <span class="badge-rows">${data.length} amostras</span>
+                    </div>
+                </div>
+                
+                <div class="columns-showcase">
+        `;
+        
+        // Mostrar colunas como cards tecnológicos
+        columns.forEach(col => {
+            const type = types[col] || 'unknown';
+            const typeIcon = {
+                'numeric': '📊',
+                'date': '📅',
+                'text': '📝',
+                'unknown': '❓'
+            }[type];
+            
+            html += `
+                <div class="column-card" data-type="${type}">
+                    <div class="column-icon">${typeIcon}</div>
+                    <div class="column-info">
+                        <div class="column-name">${this.truncate(col, 20)}</div>
+                        <div class="column-type">
+                            <span class="type-badge ${type}">${type}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `
+                </div>
+                
+                <div class="data-matrix">
+                    <div class="matrix-header">
+                        <span class="matrix-title">MATRIZ DE DADOS</span>
+                        <span class="matrix-dim">${data.length}×${columns.length}</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="tech-table">
+                        <thead>
+                            <tr>
+                                ${columns.slice(0, 6).map(col => `<th>${this.truncate(col, 15)}</th>`).join('')}
+                                ${columns.length > 6 ? '<th class="more-cols">+ mais</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.slice(0, 5).map(row => `
+                                <tr>
+                                    ${columns.slice(0, 6).map(col => {
+                                        let value = row[col];
+                                        if (value === undefined || value === null) value = '—';
+                                        if (typeof value === 'number') value = value.toFixed(2);
+                                        return `<td>${String(value).substring(0, 20)}</td>`;
+                                    }).join('')}
+                                    ${columns.length > 6 ? '<td class="more-cols">...</td>' : ''}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+                
+                <div class="insights-panel">
+                    <div class="insight-item">
+                        <i class="fas fa-calculator"></i>
+                        <span><strong>${columns.filter(c => types[c] === 'numeric').length}</strong> colunas numéricas</span>
+                    </div>
+                    <div class="insight-item">
+                        <i class="fas fa-font"></i>
+                        <span><strong>${columns.filter(c => types[c] === 'text').length}</strong> colunas de texto</span>
+                    </div>
+                    <div class="insight-item">
+                        <i class="fas fa-calendar"></i>
+                        <span><strong>${columns.filter(c => types[c] === 'date').length}</strong> colunas de data</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        previewSection.innerHTML = html;
+        previewSection.classList.remove('d-none');
+        
+        // Animação
+        if (typeof gsap !== 'undefined') {
+            gsap.from('.column-card', {
+                duration: 0.4,
+                scale: 0.8,
+                opacity: 0,
+                stagger: 0.03,
+                ease: 'back.out'
+            });
+        }
+    }
+    
+    truncate(str, max) {
+        if (!str) return '';
+        return str.length > max ? str.substring(0, max) + '…' : str;
+    }
+    
+    // ===== PROGRESSO =====
     
     showProgress() {
-        if (!document.getElementById('progressContainer')) {
-            const progressHtml = `
-                <div id="progressContainer" class="upload-card mt-4">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <h5 class="mb-0">Analisando Dados</h5>
-                        <span class="badge bg-primary" id="processId">${this.currentProcessId}</span>
+        let container = document.getElementById('progressContainer');
+        
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'progressContainer';
+            container.className = 'progress-glow-container mt-4';
+            container.innerHTML = `
+                <div class="progress-header">
+                    <div class="progress-title">
+                        <div class="pulse-dot"></div>
+                        <span>PROCESSAMENTO EM ANDAMENTO</span>
                     </div>
-                    <div class="progress-modern mb-2">
-                        <div class="progress-modern-bar" id="progressBar" style="width: 0%"></div>
-                    </div>
-                    <p class="small text-muted mb-0" id="statusText">Iniciando análise automática...</p>
+                    <span class="process-id" id="processId">${this.currentProcessId}</span>
                 </div>
+                <div class="progress-bar-glow">
+                    <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+                </div>
+                <div class="progress-status" id="statusText">Iniciando análise...</div>
             `;
             
             const uploadCard = document.querySelector('.upload-card');
             if (uploadCard) {
-                uploadCard.insertAdjacentHTML('afterend', progressHtml);
+                uploadCard.insertAdjacentElement('afterend', container);
             }
         } else {
-            document.getElementById('progressContainer')?.classList.remove('d-none');
+            container.classList.remove('d-none');
         }
     }
     
     startProgressPolling() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-        }
+        if (this.pollInterval) clearInterval(this.pollInterval);
         
         this.pollInterval = setInterval(async () => {
             if (!this.currentProcessId) return;
@@ -433,12 +762,11 @@ class AutoAnalytics {
             try {
                 const status = await this.getStatus(this.currentProcessId);
                 
-                this.updateProgress(status.progress || 0);
-                
+                const progressBar = document.getElementById('progressBar');
                 const statusText = document.getElementById('statusText');
-                if (statusText) {
-                    statusText.textContent = this.getStatusText(status);
-                }
+                
+                if (progressBar) progressBar.style.width = `${status.progress || 0}%`;
+                if (statusText) statusText.textContent = this.getStatusMessage(status);
                 
                 if (status.status === 'completed' || status.status === 'error') {
                     clearInterval(this.pollInterval);
@@ -448,13 +776,10 @@ class AutoAnalytics {
                         await this.loadDashboardStats();
                         await this.loadUserCredits();
                         await this.loadAnalysisHistory();
-                        
                         document.getElementById('progressContainer')?.remove();
-                    } else {
-                        this.showAlert('❌ Erro na análise: ' + (status.error || 'Desconhecido'), 'error');
                     }
                     
-                    this.resetUploadButton();
+                    this.setUploadLoading(false);
                 }
                 
             } catch (error) {
@@ -463,29 +788,10 @@ class AutoAnalytics {
         }, 2000);
     }
     
-    updateProgress(percent) {
-        const progressBar = document.getElementById('progressBar');
-        if (progressBar) {
-            progressBar.style.width = `${percent}%`;
-        }
-    }
-    
-    getStatusText(status) {
-        if (status.status === 'uploaded') return '📤 Arquivo recebido';
-        if (status.status === 'detecting') return '🔍 Detectando padrões...';
-        if (status.status === 'analyzing') return '📊 Analisando dados...';
-        if (status.status === 'training') return '🧠 Treinando modelo...';
-        if (status.status === 'generating_report') return '📝 Gerando relatório...';
-        if (status.status === 'completed') return '✅ Análise concluída!';
-        return '⏳ Processando...';
-    }
-    
     async getStatus(processId) {
         try {
             const response = await fetch(`${this.apiBase}/status/${processId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
             });
             return await response.json();
         } catch {
@@ -493,448 +799,225 @@ class AutoAnalytics {
         }
     }
     
-    // ===== FUNÇÕES DE RESULTADO =====
+    getStatusMessage(status) {
+        const messages = {
+            'uploaded': '📤 Arquivo recebido',
+            'detecting': '🔍 Detectando padrões...',
+            'analyzing': '📊 Analisando dados...',
+            'training': '🧠 Treinando modelo...',
+            'completed': '✅ Análise concluída!',
+            'error': '❌ Erro no processamento'
+        };
+        return messages[status.status] || '⏳ Processando...';
+    }
+    
+    // ===== RESULTADO =====
     
     showResult(result) {
-        if (this.resultContainer) {
-            this.resultContainer.style.display = 'block';
-            
-            const algorithm = result.algorithm || this.getSelectedAlgorithm();
-            if (this.algorithmName) {
-                this.algorithmName.textContent = this.getAlgorithmName(algorithm);
-            }
-            
-            if (this.resultDescription) {
-                this.resultDescription.innerHTML = `
-                    Análise automática do arquivo <strong>${result.filename || 'upload'}</strong><br>
-                    <small class="text-muted">${result.rows_processed || 0} registros processados</small>
-                `;
-            }
-            
-            if (typeof gsap !== 'undefined') {
-                gsap.from(this.resultContainer, {
-                    duration: 1,
-                    y: 50,
-                    opacity: 0,
-                    ease: 'power3.out'
-                });
-            }
-        }
+        const resultContainer = document.getElementById('resultContainer');
+        if (!resultContainer) return;
         
-        // Exibir informações da análise
-        if (this.analysisInfo && result.analysis_info) {
-            const info = result.analysis_info;
-            let html = '<ul class="list-unstyled">';
-            
-            if (info.detected_columns) {
-                html += `<li><i class="fas fa-check-circle text-success me-2"></i> Colunas detectadas: ${info.detected_columns}</li>`;
-            }
-            if (info.target_column) {
-                html += `<li><i class="fas fa-bullseye text-primary me-2"></i> Coluna alvo detectada: <strong>${info.target_column}</strong></li>`;
-            }
-            if (info.features_count) {
-                html += `<li><i class="fas fa-chart-bar text-info me-2"></i> Features utilizadas: ${info.features_count}</li>`;
-            }
-            if (info.problem_type) {
-                html += `<li><i class="fas fa-tag text-warning me-2"></i> Tipo de problema: ${info.problem_type}</li>`;
-            }
-            
-            html += '</ul>';
-            this.analysisInfo.innerHTML = html;
-        }
+        resultContainer.style.display = 'block';
         
-        const metrics = result.metrics || {
-            r2: 0.94,
-            mae: 12.5,
-            rmse: 18.3,
-            feature_importance: [0.45, 0.30, 0.25]
-        };
+        // Mostrar resultados de forma moderna
+        const analysisInfo = result.analysis_info || {};
+        const stats = result.prediction_stats || {};
         
-        const featureNames = result.feature_names || ['Feature 1', 'Feature 2', 'Feature 3'];
-        const predictions = result.predictions || this.generateSamplePredictions(10);
-        const actuals = result.actuals || this.generateSamplePredictions(10, true);
-        
-        this.updateMetrics(metrics, featureNames);
-        this.updateComparisonChart(actuals, predictions);
-        this.displayMLResults(actuals, predictions);
-    }
-    
-    generateSamplePredictions(length, isActual = false) {
-        if (isActual) {
-            return Array.from({ length }, () => 50 + Math.random() * 100);
-        } else {
-            return Array.from({ length }, () => 50 + Math.random() * 100);
-        }
-    }
-    
-    getAlgorithmName(value) {
-        const names = {
-            'auto': 'AutoML',
-            'random_forest': 'Random Forest',
-            'xgboost': 'XGBoost',
-            'linear': 'Regressão Linear',
-            'svr': 'SVR'
-        };
-        return names[value] || value;
-    }
-    
-    updateMetrics(metrics, featureNames) {
-        if (this.metricR2) {
-            this.metricR2.textContent = metrics.r2 ? metrics.r2.toFixed(2) : '0.94';
-        }
-        
-        if (this.metricMAE) {
-            this.metricMAE.textContent = metrics.mae ? metrics.mae.toFixed(1) : '12.5';
-        }
-        
-        if (this.metricRMSE) {
-            this.metricRMSE.textContent = metrics.rmse ? metrics.rmse.toFixed(1) : '18.3';
-        }
-        
-        if (this.metricImportance) {
-            const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
-            this.metricImportance.textContent = importance.length;
-        }
-        
-        if (this.featureImportance && featureNames.length > 0) {
-            const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
-            let html = '';
-            
-            featureNames.slice(0, 5).forEach((name, index) => {
-                const value = importance[index] || 0;
-                html += `
-                    <div class="mb-2">
-                        <div class="d-flex justify-content-between small">
-                            <span>${name}</span>
-                            <span>${(value * 100).toFixed(0)}%</span>
-                        </div>
-                        <div class="progress-modern">
-                            <div class="progress-modern-bar" style="width: ${value * 100}%"></div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            this.featureImportance.innerHTML = html;
-        }
-    }
-    
-    updateComparisonChart(actuals, predictions) {
-        if (typeof Chart === 'undefined') return;
-        
-        const ctx = document.getElementById('comparisonChart')?.getContext('2d');
-        if (!ctx) return;
-        
-        if (window.comparisonChart) {
-            window.comparisonChart.destroy();
-        }
-        
-        window.comparisonChart = new Chart(ctx, {
-            type: 'scatter',
-            data: {
-                datasets: [
-                    {
-                        label: 'Previsões vs Real',
-                        data: actuals.map((actual, i) => ({ x: actual, y: predictions[i] })),
-                        backgroundColor: '#667eea',
-                        pointRadius: 6,
-                        pointHoverRadius: 8
-                    },
-                    {
-                        label: 'Linha Perfeita',
-                        data: [
-                            { x: Math.min(...actuals, ...predictions), y: Math.min(...actuals, ...predictions) },
-                            { x: Math.max(...actuals, ...predictions), y: Math.max(...actuals, ...predictions) }
-                        ],
-                        type: 'line',
-                        borderColor: '#48bb78',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                return `Real: ${context.raw.x.toFixed(2)} | Previsto: ${context.raw.y.toFixed(2)}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Valores Reais'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Valores Previstos'
-                        }
-                    }
-                }
-            }
-        });
-    }
-    
-    displayMLResults(actuals, predictions) {
-        if (!this.mlTable) return;
-        
-        this.mlTable.innerHTML = '';
-        
-        const validLength = Math.min(actuals.length, predictions.length, 10);
-        
-        for (let i = 0; i < validLength; i++) {
-            const actual = actuals[i];
-            const predicted = predictions[i];
-            const error = Math.abs(actual - predicted);
-            const errorPercent = (error / actual) * 100;
-            const confidence = Math.max(0, 100 - errorPercent);
-            
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${i + 1}</td>
-                <td><strong>${actual.toFixed(2).replace('.', ',')}</strong></td>
-                <td class="text-primary">${predicted.toFixed(2).replace('.', ',')}</td>
-                <td>
-                    <span class="${error < 10 ? 'text-success' : error < 20 ? 'text-warning' : 'text-danger'}">
-                        ${error.toFixed(2).replace('.', ',')} (${errorPercent.toFixed(1).replace('.', ',')}%)
-                    </span>
-                </td>
-                <td>
-                    <div class="progress-modern mt-1">
-                        <div class="progress-modern-bar" style="width: ${confidence}%"></div>
-                    </div>
-                    <small>${confidence.toFixed(0)}%</small>
-                </td>
-                <td>
-                    <span class="badge ${errorPercent < 10 ? 'bg-success' : errorPercent < 20 ? 'bg-warning text-dark' : 'bg-danger'}">
-                        ${errorPercent < 10 ? 'Excelente' : errorPercent < 20 ? 'Bom' : 'Regular'}
-                    </span>
-                </td>
-            `;
-            
-            this.mlTable.appendChild(row);
-        }
-    }
-    
-    // ===== FUNÇÕES DE RESULTADO =====
-    
-    async downloadResult() {
-        if (!this.currentProcessId) return;
-        
-        try {
-            const response = await fetch(`${this.apiBase}/result/${this.currentProcessId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `analise_${this.currentProcessId}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+        let html = `
+            <div class="result-glow-card">
+                <div class="result-header">
+                    <h5>📊 RESULTADO DA ANÁLISE</h5>
+                    <span class="result-badge">${analysisInfo.problem_type || 'Automático'}</span>
+                </div>
                 
-                this.showAlert('✅ Download iniciado!', 'success');
-            } else {
-                this.showAlert('❌ Erro ao baixar resultado', 'error');
-            }
-            
-        } catch (error) {
-            this.showAlert('❌ Erro de conexão', 'error');
-        }
-    }
-    
-    async exportAsCsv() {
-        if (!this.currentProcessId) return;
-        
-        try {
-            const response = await fetch(`${this.apiBase}/export/${this.currentProcessId}?format=csv`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `previsoes_${this.currentProcessId}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                this.showAlert('✅ CSV exportado com sucesso!', 'success');
-            }
-        } catch (error) {
-            this.showAlert('❌ Erro ao exportar CSV', 'error');
-        }
-    }
-    
-    async showRawData() {
-        if (!this.currentProcessId) return;
-        
-        const modalHtml = `
-            <div class="modal fade" id="rawDataModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content rounded-4">
-                        <div class="modal-header bg-dark text-white border-0">
-                            <h5 class="modal-title">
-                                <i class="fas fa-database me-2"></i>
-                                Dados da Análise
-                            </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <pre class="bg-light p-3 rounded-3" style="max-height: 400px; overflow: auto;" id="rawDataContent">Carregando...</pre>
-                        </div>
+                <div class="result-metrics">
+                    <div class="metric-glow">
+                        <div class="metric-value">${stats.total || 0}</div>
+                        <div class="metric-label">Total de Registros</div>
                     </div>
+                    <div class="metric-glow">
+                        <div class="metric-value">${analysisInfo.features_count || 0}</div>
+                        <div class="metric-label">Features</div>
+                    </div>
+                    <div class="metric-glow">
+                        <div class="metric-value">${analysisInfo.model_used || 'AutoML'}</div>
+                        <div class="metric-label">Modelo</div>
+                    </div>
+                </div>
+                
+                <div class="target-info">
+                    <i class="fas fa-bullseye"></i>
+                    <span>Coluna alvo detectada: <strong>${analysisInfo.target_column || 'automática'}</strong></span>
                 </div>
             </div>
         `;
         
-        const existingModal = document.getElementById('rawDataModal');
-        if (existingModal) existingModal.remove();
+        resultContainer.innerHTML = html;
         
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-        const modal = new bootstrap.Modal(document.getElementById('rawDataModal'));
-        modal.show();
-        
-        await this.loadRawData();
-    }
-    
-    async loadRawData() {
-        const contentDiv = document.getElementById('rawDataContent');
-        if (!contentDiv) return;
-        
-        contentDiv.textContent = 'Carregando...';
-        
-        try {
-            const response = await fetch(`${this.apiBase}/raw/${this.currentProcessId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
+        if (typeof gsap !== 'undefined') {
+            gsap.from(resultContainer, {
+                duration: 0.8,
+                y: 30,
+                opacity: 0,
+                ease: 'power3.out'
             });
-            if (response.ok) {
-                const data = await response.json();
-                contentDiv.textContent = JSON.stringify(data, null, 2);
-            } else {
-                contentDiv.textContent = 'Erro ao carregar dados.';
-            }
-        } catch (error) {
-            contentDiv.textContent = 'Erro de conexão: ' + error.message;
         }
     }
     
-    // ===== FUNÇÕES DE HISTÓRICO =====
+    // ===== HISTÓRICO =====
     
     async loadAnalysisHistory() {
+        // ✅ NÃO carregar histórico em páginas de login
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            return;
+        }
+        
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
-            if (response.ok) {
+            if (response && response.ok) {
                 const analyses = await response.json();
-                this.displayAnalysisHistory(analyses);
+                this.displayHistory(analyses);
             }
         } catch (error) {
             console.error('Erro ao carregar histórico:', error);
         }
     }
     
-    displayAnalysisHistory(analyses) {
-        if (!this.historyContainer) return;
+    displayHistory(analyses) {
+        const container = document.getElementById('recentAnalyses');
+        if (!container) return;
         
         if (!analyses || analyses.length === 0) {
-            this.historyContainer.innerHTML = `
-                <div class="timeline-item">
-                    <div class="timeline-marker"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">Nenhuma análise realizada</p>
-                        <small class="text-muted">Envie seu primeiro arquivo</small>
-                    </div>
+            container.innerHTML = `
+                <div class="history-empty">
+                    <i class="fas fa-chart-line"></i>
+                    <p>Nenhuma análise realizada</p>
+                    <small>Envie seu primeiro arquivo</small>
                 </div>
             `;
             return;
         }
         
-        const html = analyses.slice(0, 5).map(analysis => {
-            const date = new Date(analysis.created_at);
-            const formattedDate = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
-            
+        const html = analyses.slice(0, 5).map(a => {
+            const date = new Date(a.created_at);
             return `
-                <div class="timeline-item">
-                    <div class="timeline-marker ${analysis.status === 'completed' ? 'bg-success' : 'bg-warning'}"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">
-                            <strong>${analysis.filename || 'Arquivo'}</strong>
-                        </p>
-                        <small class="text-muted">
-                            ${formattedDate}
-                            ${analysis.records ? `• ${analysis.records} registros` : ''}
-                        </small>
+                <div class="history-item">
+                    <div class="history-icon ${a.status}">
+                        <i class="fas ${a.status === 'completed' ? 'fa-check' : 'fa-clock'}"></i>
+                    </div>
+                    <div class="history-content">
+                        <div class="history-filename">${a.filename || 'Análise'}</div>
+                        <div class="history-meta">
+                            <span>${date.toLocaleDateString('pt-BR')}</span>
+                            <span class="status-badge ${a.status}">${a.status}</span>
+                        </div>
                     </div>
                 </div>
             `;
         }).join('');
         
-        this.historyContainer.innerHTML = html;
+        container.innerHTML = html;
     }
     
     async loadDashboardStats() {
+        // ✅ NÃO carregar stats em páginas de login
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            return;
+        }
+        
         try {
-            const response = await fetch(`${this.apiBase}/stats`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            const response = await this.fetchWithAuth(`${this.apiBase}/stats`);
+            if (response && response.ok) {
+                const stats = await response.json();
+                
+                if (stats) {
+                    if (this.totalAnalises) this.totalAnalises.textContent = stats.total_analises || 0;
+                    if (this.analisesHoje) this.analisesHoje.textContent = stats.analises_hoje || 0;
                 }
-            });
-            const stats = await response.json();
-            
-            if (stats) {
-                if (this.totalAnalises) this.totalAnalises.textContent = stats.total_analises || 0;
-                if (this.analisesHoje) this.analisesHoje.textContent = stats.analises_hoje || 0;
             }
         } catch (error) {
             console.error('Erro ao carregar stats:', error);
         }
     }
     
-    // ===== FUNÇÕES DE UTILIDADE =====
+    // ===== UTILIDADES =====
     
-    initGSAPAnimations() {
-        if (typeof gsap !== 'undefined') {
-            gsap.registerPlugin(ScrollTrigger);
-            
-            gsap.from('.metric-card', {
-                scrollTrigger: {
-                    trigger: '.metric-card',
-                    start: 'top 80%'
-                },
-                duration: 0.8,
-                y: 50,
-                opacity: 0,
-                stagger: 0.2,
-                ease: 'power3.out'
-            });
+    initializeElements() {
+        this.uploadForm = document.getElementById('uploadForm');
+        this.fileInput = document.getElementById('fileInput');
+        this.uploadButton = document.getElementById('uploadButton');
+        this.dropArea = document.getElementById('dropArea');
+        this.selectedFile = document.getElementById('selectedFile');
+        this.fileName = document.getElementById('fileName');
+        this.fileSize = document.getElementById('fileSize');
+        this.historyContainer = document.getElementById('recentAnalyses');
+        this.uploadCredits = document.getElementById('uploadCredits');
+        this.userName = document.getElementById('userName');
+        this.workshopName = document.getElementById('workshopName');
+        this.totalAnalises = document.getElementById('totalAnalises');
+        this.analisesHoje = document.getElementById('analisesHoje');
+        
+        // Inicializar com botão desabilitado
+        if (this.uploadButton) {
+            this.uploadButton.disabled = true;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
         }
+    }
+    
+    bindEvents() {
+        if (this.uploadForm) {
+            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
+        }
+        
+        // Drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
+            if (this.dropArea) {
+                this.dropArea.addEventListener(event, this.preventDefaults.bind(this));
+            }
+        });
+        
+        if (this.dropArea) {
+            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
+            this.dropArea.addEventListener('click', () => this.fileInput?.click());
+            this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover-glow'));
+            this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover-glow'));
+        }
+        
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', () => this.handleFileSelect());
+        }
+    }
+    
+    handleDrop(e) {
+        e.preventDefault();
+        this.dropArea.classList.remove('dragover-glow');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && this.fileInput) {
+            this.fileInput.files = files;
+            this.handleFileSelect();
+        }
+    }
+    
+    preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    resetFileSelection() {
+        if (this.fileInput) this.fileInput.value = '';
+        if (this.selectedFile) this.selectedFile.classList.add('d-none');
+        if (this.uploadButton) {
+            this.uploadButton.disabled = true;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
+        }
+        
+        // Esconder preview
+        const preview = document.getElementById('dataPreview');
+        if (preview) preview.classList.add('d-none');
+        
+        this.fileData = null;
+        this.columns = [];
     }
     
     setupLogout() {
@@ -942,226 +1025,203 @@ class AutoAnalytics {
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                if (window.appAuth) {
-                    window.appAuth.logout();
-                } else {
-                    this.logout();
-                }
+                window.appAuth?.logout();
             });
         }
     }
     
-    async logout() {
-        if (confirm('Deseja realmente sair?')) {
-            try {
-                const refreshToken = localStorage.getItem('refresh_token');
-                
-                if (refreshToken) {
-                    await fetch(`${this.apiBase}/auth/logout`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                        },
-                        body: JSON.stringify({ refresh_token: refreshToken })
-                    });
-                }
-            } catch (error) {
-                console.error('Erro no logout:', error);
-            } finally {
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user');
-                
-                window.location.href = '/login.html';
-            }
+    initAnimations() {
+        if (typeof gsap !== 'undefined') {
+            gsap.from('.metric-card', {
+                duration: 0.8,
+                y: 30,
+                opacity: 0,
+                stagger: 0.1,
+                ease: 'power3.out'
+            });
         }
     }
     
+    // ===== FETCH COM AUTENTICAÇÃO (VERSÃO CORRIGIDA) =====
+    
     async fetchWithAuth(url, options = {}) {
+        // ✅ Se estiver na página de login, não faz requisições
+        if (this.isLoginPage() || this.isRegisterPage()) {
+            console.log('🚫 Requisição bloqueada - página de autenticação');
+            return null;
+        }
+        
+        // ✅ Aguardar auth.js estar pronto
+        if (!window.appAuth) {
+            console.log('⏳ Aguardando auth.js...');
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
         const token = localStorage.getItem('access_token');
+        
+        // ✅ Se não tem token, redirecionar
+        if (!token) {
+            console.log('❌ Sem token - redirecionando');
+            this.redirectToLogin();
+            return null;
+        }
         
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
         };
         
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        const response = await fetch(url, { ...options, headers });
-        
-        if (response.status === 401) {
-            const refreshed = await this.refreshToken();
-            if (refreshed) {
-                return this.fetchWithAuth(url, options);
-            } else {
-                this.logout();
-            }
-        }
-        
-        return response;
-    }
-    
-    async refreshToken() {
-        const refreshToken = localStorage.getItem('refresh_token');
-        
-        if (!refreshToken) return false;
+        // ✅ FORMATO CORRETO: Bearer + token
+        headers['Authorization'] = `Bearer ${token}`;
         
         try {
-            const response = await fetch(`${this.apiBase}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
+            let response = await fetch(url, { ...options, headers });
             
-            if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                return true;
+            // Se for 401, tentar refresh
+            if (response.status === 401) {
+                console.log('🔄 Token 401 - tentando refresh...');
+                
+                // Usar refresh do auth.js
+                if (window.appAuth) {
+                    const refreshed = await window.appAuth.refreshToken();
+                    
+                    if (refreshed) {
+                        // Pegar novo token
+                        const newToken = localStorage.getItem('access_token');
+                        headers['Authorization'] = `Bearer ${newToken}`;
+                        
+                        // Tentar novamente
+                        response = await fetch(url, { ...options, headers });
+                        console.log('✅ Requisição retentada com novo token');
+                    } else {
+                        // Refresh falhou
+                        console.log('❌ Refresh falhou - redirecionando');
+                        this.redirectToLogin();
+                        return null;
+                    }
+                } else {
+                    this.redirectToLogin();
+                    return null;
+                }
             }
+            
+            return response;
+            
         } catch (error) {
-            console.error('Erro no refresh token:', error);
+            console.error('❌ Erro na requisição:', error);
+            
+            // Se for erro de rede, não redirecionar imediatamente
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                console.log('🔌 Erro de conexão com o servidor');
+                this.showNotification('Erro de conexão com o servidor', 'error');
+                return null;
+            }
+            
+            return null;
         }
-        
-        return false;
     }
     
-    showAlert(message, type = 'info') {
-        const existingAlerts = document.querySelectorAll('.custom-alert');
-        if (existingAlerts.length > 3) {
-            existingAlerts[0].remove();
+    // ===== REFRESH TOKEN (DELEGADO PARA AUTH.JS) =====
+    
+    async refreshToken() {
+        if (window.appAuth) {
+            const success = await window.appAuth.refreshToken();
+            return success ? localStorage.getItem('access_token') : null;
+        }
+        return null;
+    }
+    
+    // ===== NOTIFICAÇÕES =====
+    
+    showNotification(message, type = 'info') {
+        // Usar toastr se disponível
+        if (window.toastr) {
+            toastr[type](message);
+            return;
         }
         
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed custom-alert`;
-        alertDiv.style.cssText = `
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 350px;
-            max-width: 450px;
-            border-radius: 12px;
-            border: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-            font-size: 0.95rem;
-            padding: 1rem 1.25rem;
+        // Fallback para alert personalizado
+        const notification = document.createElement('div');
+        notification.className = `notification-glow ${type}`;
+        notification.innerHTML = `
+            <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+            <span>${message}</span>
         `;
         
-        let icon = '📌';
-        if (type === 'success') icon = '✅';
-        if (type === 'error') icon = '❌';
-        if (type === 'warning') icon = '⚠️';
-        if (type === 'info') icon = 'ℹ️';
-        
-        alertDiv.innerHTML = `
-            <div style="display: flex; align-items: center;">
-                <span style="font-size: 1.4rem; margin-right: 12px;">${icon}</span>
-                <div style="flex: 1;">${message}</div>
-                <button type="button" class="btn-close ms-3" data-bs-dismiss="alert" style="font-size: 0.8rem;"></button>
-            </div>
-        `;
-        
-        document.body.appendChild(alertDiv);
+        document.body.appendChild(notification);
         
         setTimeout(() => {
-            if (alertDiv.parentNode) {
-                alertDiv.style.transition = 'opacity 0.3s';
-                alertDiv.style.opacity = '0';
-                setTimeout(() => {
-                    if (alertDiv.parentNode) alertDiv.remove();
-                }, 300);
-            }
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
         }, 5000);
     }
     
     formatFileSize(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const sizes = ['Bytes', 'KB', 'MB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        
-        if (i >= 2) {
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-        
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
     
-    // Função para carregar histórico completo
-    async loadFullHistory() {
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history?limit=100`);
-            if (response.ok) {
-                const analyses = await response.json();
-                this.showHistoryModal(analyses);
-            }
-        } catch (error) {
-            this.showAlert('Erro ao carregar histórico completo', 'error');
-        }
-    }
-    
-    showHistoryModal(analyses) {
-        const modalHtml = `
-            <div class="modal fade" id="historyModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content rounded-4">
-                        <div class="modal-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                            <h5 class="modal-title">
-                                <i class="fas fa-history me-2"></i>
-                                Histórico Completo de Análises
-                            </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Data</th>
-                                        <th>Arquivo</th>
-                                        <th>Registros</th>
-                                        <th>Algoritmo</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${analyses.map(a => `
-                                        <tr>
-                                            <td>${new Date(a.created_at).toLocaleDateString('pt-BR')}</td>
-                                            <td>${a.filename || '-'}</td>
-                                            <td>${a.records || a.rows_processed || '-'}</td>
-                                            <td>${this.getAlgorithmName(a.algorithm) || 'AutoML'}</td>
-                                            <td>
-                                                <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-warning'}">
-                                                    ${a.status || 'Concluído'}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
+    showCreditsModal() {
+        let modal = document.getElementById('creditsModal');
+        
+        if (!modal) {
+            const modalHtml = `
+                <div class="modal fade" id="creditsModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content modal-glow">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-coins text-warning me-2"></i>
+                                    Créditos Insuficientes
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center py-4">
+                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
+                                <h5>Você não tem créditos suficientes</h5>
+                                <p class="text-muted">Cada análise consome 1 crédito.</p>
+                                <p>Seu saldo: <strong><span id="modalCredits">0</span></strong></p>
+                                ${this.isPremium() ? `
+                                    <div class="premium-tip mt-3">
+                                        <i class="fas fa-star me-2"></i>
+                                        Você é premium! Amanhã você ganha +1 crédito.
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="modal-footer">
+                                <a href="/planos.html" class="btn btn-gradient w-100">
+                                    <i class="fas fa-credit-card me-2"></i>
+                                    Comprar Créditos
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            modal = document.getElementById('creditsModal');
+        }
         
-        const existingModal = document.getElementById('historyModal');
-        if (existingModal) existingModal.remove();
+        const modalCredits = document.getElementById('modalCredits');
+        if (modalCredits) modalCredits.textContent = this.getCreditsDisplay();
         
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-        const modal = new bootstrap.Modal(document.getElementById('historyModal'));
-        modal.show();
+        new bootstrap.Modal(modal).show();
     }
 }
 
-// Inicializar
+// ===== INICIALIZAÇÃO SEGURA =====
 document.addEventListener('DOMContentLoaded', () => {
+    // Pequeno delay para garantir que auth.js carregou primeiro
     setTimeout(() => {
         window.app = new AutoAnalytics();
-        console.log('✅ app.js simplificado inicializado');
-    }, 100);
+    }, 200);
 });
+
+// ===== EXPOR FUNÇÕES GLOBAIS PARA ACESSO =====
+window.getApp = () => window.app;
+window.claimDailyCredit = () => window.app?.claimDailyCredit();
+window.showCreditsModal = () => window.app?.showCreditsModal();

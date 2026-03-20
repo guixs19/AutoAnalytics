@@ -1,11 +1,12 @@
-# backend/api/routes.py - VERSÃO COMPLETA E ATUALIZADA
+# backend/api/routes.py - VERSÃO COMPLETA COM CAPTCHA
 """
-ROUTES.PY - VERSÃO FINAL
+ROUTES.PY - VERSÃO FINAL COM CAPTCHA
 ----------------------
 ✅ Usuários comuns: começam com 3 créditos (definido no cadastro)
 ⭐ Plano Premium: ganham 1 crédito por dia (gerenciado pelo daily_credits_service)
 👑 Admin: créditos ilimitados
 💰 Upload: apenas CONSome créditos (NÃO ganham)
+🔐 CAPTCHA próprio com expiração de 2 minutos
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, status, Request, Form
@@ -1272,4 +1273,3 @@ async def check_admin_status(
         "email": current_user.email
     }
 
-print("✅ routes.py v5.0 carregado - Créditos: 3 iniciais + Premium diário!")

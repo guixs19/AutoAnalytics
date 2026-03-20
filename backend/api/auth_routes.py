@@ -1,65 +1,65 @@
-# backend/api/auth_routes.py - VERSÃO ATUALIZADA COM SUPORTE A ADMIN
-from datetime import timedelta
+# backend/api/auth_routes.py - VERSÃO FINAL COM CICLO DE VIDA COMPLETO
+from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+import logging
 
 from backend.database import get_db
 from backend import crud, schemas
 from backend.security import (
     hasher,
-    captcha_manager,      # ✅ NOVO: CAPTCHA próprio
+    captcha_manager,
     jwt_manager,
     rate_limiter,
     get_current_active_user,
     get_current_admin_user,
-    check_captcha,
-    oauth2_scheme,
+    get_current_user,
     set_auth_cookies,
-    clear_auth_cookies
+    clear_auth_cookies,
+    oauth2_scheme
 )
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authentication"])
 
 # ==============================================
-# ROTAS PÚBLICAS COM CAPTCHA PRÓPRIO
+# ROTAS PÚBLICAS COM CAPTCHA
 # ==============================================
 
 @router.get("/captcha/generate")
 async def generate_captcha(request: Request):
-    """Gera CAPTCHA próprio e retorna imagem direta"""
-    print("🔄 Gerando CAPTCHA próprio...")
-    
-    # Pegar IP do cliente para vincular ao CAPTCHA
+    """Gera CAPTCHA próprio"""
     client_ip = request.client.host if request.client else "unknown"
     
-    # Gerar imagem e ID (uso único, expira em 2 minutos)
-    img_bytes, captcha_id = captcha_manager.generate_captcha_image(client_ip)
+    try:
+        img_bytes, captcha_id = captcha_manager.generate_captcha_image(client_ip)
+    except Exception as e:
+        logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao gerar CAPTCHA")
     
-    print(f"✅ CAPTCHA gerado para IP {client_ip}: {captcha_id}")
-    
-    # Retornar imagem com headers especiais
     return Response(
         content=img_bytes,
         media_type="image/png",
         headers={
-            "X-Captcha-ID": captcha_id,  # ID único do CAPTCHA
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
+            "X-Captcha-ID": captcha_id,
+            "Cache-Control": "no-cache, no-store, must-revalidate"
         }
     )
 
-@router.post("/register")
+@router.post("/register", response_model=schemas.UserResponse)
 async def register(
     request: Request,
     user_data: schemas.UserCreate,
     db: Session = Depends(get_db)
 ):
-    """Registro público com CAPTCHA próprio"""
+    """Registro com CAPTCHA"""
     
-    # Rate limiting por IP
+    # Rate limiting
     client_ip = request.client.host
     allowed = await rate_limiter.check_rate_limit(
         f"register:{client_ip}", 
@@ -68,45 +68,29 @@ async def register(
     )
     
     if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="Muitas tentativas de registro. Tente novamente mais tarde."
-        )
+        raise HTTPException(status_code=429, detail="Muitas tentativas")
     
-    # 🔥 VALIDAR CAPTCHA PRÓPRIO
+    # Validar CAPTCHA
     captcha_id = request.headers.get("X-Captcha-ID")
-    captcha_text = user_data.captcha_text
+    if not captcha_id or not user_data.captcha_text:
+        raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
     
-    if not captcha_id or not captcha_text:
-        raise HTTPException(
-            status_code=400,
-            detail="CAPTCHA ID e texto são obrigatórios"
-        )
+    if not captcha_manager.validate_captcha(captcha_id, user_data.captcha_text, client_ip):
+        raise HTTPException(status_code=400, detail="CAPTCHA inválido")
     
-    # Validar CAPTCHA (uso único, 2 minutos, mesmo IP)
-    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
-        raise HTTPException(
-            status_code=400,
-            detail="CAPTCHA inválido, expirado ou já utilizado"
-        )
-    
-    print(f"✅ CAPTCHA validado para registro: {client_ip}")
-    
-    # Impede registro como admin via API pública
-    if user_data.role == schemas.UserRole.ADMIN:
-        user_data.role = schemas.UserRole.USER
-    
-    # Verificar se email já existe
-    db_user = crud.get_user_by_email(db, email=user_data.email)
-    if db_user:
+    # Verificar email
+    if crud.get_user_by_email(db, user_data.email):
         raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     # Criar usuário
     user = crud.create_user(db=db, user=user_data)
-    
-    print(f"✅ Usuário registrado: {user.email}")
+    logger.info(f"✅ Usuário registrado: {user.email}")
     
     return user
+
+# ==============================================
+# LOGIN - GERAÇÃO DO TOKEN
+# ==============================================
 
 @router.post("/login")
 async def login(
@@ -114,76 +98,42 @@ async def login(
     login_data: schemas.UserLogin,
     db: Session = Depends(get_db)
 ):
-    """Login com CAPTCHA próprio - Retorna cookies HTTP-only"""
+    """
+    🔐 LOGIN - Gera token com vida de 15 minutos
+    ✅ CAPTCHA validado
+    ✅ Rate limiting por IP/email
+    ✅ Cookies HTTP-only
+    ✅ is_admin no payload
+    """
     
-    # Rate limiting por email e IP
+    # Rate limiting
     client_ip = request.client.host
-    
-    # Tentativas por IP
-    ip_allowed = await rate_limiter.check_rate_limit(
-        f"login_ip:{client_ip}",
-        max_requests=10,
-        window=900
-    )
-    
-    # Tentativas por email
-    email_allowed = await rate_limiter.check_rate_limit(
-        f"login_email:{login_data.email}",
-        max_requests=5,
-        window=900
-    )
+    ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
+    email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
     if not ip_allowed or not email_allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="Muitas tentativas de login. Tente novamente mais tarde."
-        )
+        raise HTTPException(status_code=429, detail="Muitas tentativas")
     
-    # 🔥 VALIDAR CAPTCHA PRÓPRIO
+    # Validar CAPTCHA
     captcha_id = request.headers.get("X-Captcha-ID")
-    captcha_text = login_data.captcha_text
+    if not captcha_id or not login_data.captcha_text:
+        raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
     
-    if not captcha_id or not captcha_text:
-        raise HTTPException(
-            status_code=400,
-            detail="CAPTCHA ID e texto são obrigatórios"
-        )
-    
-    # Validar CAPTCHA (uso único, 2 minutos, mesmo IP)
-    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
-        raise HTTPException(
-            status_code=400,
-            detail="CAPTCHA inválido, expirado ou já utilizado"
-        )
-    
-    print(f"✅ CAPTCHA validado para login: {client_ip}")
+    if not captcha_manager.validate_captcha(captcha_id, login_data.captcha_text, client_ip):
+        raise HTTPException(status_code=400, detail="CAPTCHA inválido")
     
     # Buscar usuário
-    user = crud.get_user_by_email(db, email=login_data.email)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou senha incorretos"
-        )
-    
-    # Verificar senha com Argon2
-    if not user.verify_password(login_data.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou senha incorretos"
-        )
+    user = crud.get_user_by_email(db, login_data.email)
+    if not user or not user.verify_password(login_data.password):
+        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Conta desativada"
-        )
+        raise HTTPException(status_code=403, detail="Conta desativada")
     
-    # Atualiza último login
+    # Atualizar último login
     crud.update_last_login(db, user.id)
     
-    # ✅ INCLUIR IS_ADMIN NOS DADOS DO USUÁRIO
+    # ✅ Dados para o token (com is_admin)
     user_data = {
         "sub": user.email,
         "email": user.email,
@@ -191,83 +141,220 @@ async def login(
         "role": user.role.value if hasattr(user.role, 'value') else user.role,
         "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
         "credits": user.credits,
-        "is_admin": user.is_admin  # ✅ ADICIONADO
+        "is_admin": user.is_admin  # 🔥 ESSENCIAL
     }
     
-    # Cria par de tokens
+    # 🎫 CRIAR PAR DE TOKENS
+    # access_token: 15 minutos
+    # refresh_token: 7 dias (armazenado no banco)
     tokens = jwt_manager.create_token_pair(user_data)
     
     # Salvar refresh token no banco
     user.set_refresh_token(
-        tokens["refresh_token"], 
+        tokens["refresh_token"],
         tokens["refresh_jti"],
         7  # 7 dias
     )
     db.commit()
     
-    # 🔥 CRIAR RESPOSTA COM COOKIES - INCLUINDO IS_ADMIN
+    # 📦 Dados para o frontend (incluindo is_admin)
     response_data = {
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
         "token_type": "bearer",
+        "expires_in": tokens["expires_in"],  # 900 segundos = 15 minutos
         "user_name": user.name,
         "user_email": user.email,
         "workshop_name": user.workshop_name,
         "role": str(user.role),
         "plan": str(user.plan),
         "credits": user.credits,
-        "is_admin": user.is_admin,  # ✅ ADICIONADO
-        "credits_display": "∞" if user.is_admin else str(user.credits),  # ✅ ADICIONADO
-        "expires_in": tokens["expires_in"],
+        "is_admin": user.is_admin,  # ✅ PARA O FRONTEND
+        "credits_display": "∞" if user.is_admin else str(user.credits),
         "message": "Login realizado com sucesso"
     }
     
-    # Criar resposta JSON
+    # Criar resposta
     response = JSONResponse(content=response_data)
     
-    # Definir os cookies HTTP-only
+    # 🍪 Definir cookies HTTP-only
     response = set_auth_cookies(
         response=response,
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
-        expires_in=tokens["expires_in"]
+        expires_in=tokens["expires_in"]  # 15 minutos
     )
     
     admin_tag = "👑 " if user.is_admin else ""
-    print(f"✅ {admin_tag}Login bem-sucedido: {user.email} - Cookies definidos")
+    logger.info(f"✅ {admin_tag}Login: {user.email} - Token válido por 15min")
     
     return response
+
+# ==============================================
+# VERIFICAÇÃO DE TOKEN (USADA PELO FRONTEND)
+# ==============================================
+
+@router.get("/check-token")
+async def check_token(request: Request, db: Session = Depends(get_db)):
+    """
+    🔍 VERIFICAÇÃO DE TOKEN - CORAÇÃO DO SISTEMA
+    ✅ Se token válido (<15min) → retorna OK
+    ✅ Se token expirado (>15min) → tenta refresh
+    ✅ Se refresh inválido → limpa tudo (força novo login)
+    """
+    
+    # Tentar pegar token do cookie ou header
+    access_token = request.cookies.get("access_token")
+    if access_token and access_token.startswith("Bearer "):
+        access_token = access_token.replace("Bearer ", "")
+    
+    if not access_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            access_token = auth_header.replace("Bearer ", "")
+    
+    refresh_token = request.cookies.get("refresh_token")
+    
+    # CASO 1: SEM TOKEN ALGUM
+    if not access_token and not refresh_token:
+        logger.info("🔍 Check-token: Sem tokens - redirecionar para login")
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "no_token",
+                "message": "Nenhum token encontrado",
+                "action": "redirect_to_login"
+            }
+        )
+    
+    # Verificar access token atual
+    if access_token:
+        payload = await jwt_manager.verify_token_async(access_token, "access")
+        
+        # ✅ CASO 2: TOKEN VÁLIDO (menos de 15 minutos)
+        if payload:
+            # Buscar usuário para dados atualizados
+            email = payload.get("sub") or payload.get("email")
+            user = crud.get_user_by_email(db, email)
+            
+            if user and user.is_active:
+                logger.info(f"✅ Token válido para {email} - ainda dentro dos 15min")
+                
+                # Calcular tempo restante
+                exp = payload.get("exp", 0)
+                now = datetime.utcnow().timestamp()
+                expires_in = max(0, int(exp - now))
+                
+                return {
+                    "status": "valid",
+                    "message": "Token válido",
+                    "user": user.email,
+                    "name": user.name,
+                    "is_admin": user.is_admin,
+                    "credits": user.credits,
+                    "credits_display": "∞" if user.is_admin else str(user.credits),
+                    "expires_in": expires_in,
+                    "action": "continue"
+                }
+    
+    # ❌ CASO 3: TOKEN EXPIRADO (>15 minutos) - TENTAR REFRESH
+    if refresh_token:
+        logger.info("🔄 Token expirado (>15min) - tentando refresh...")
+        
+        try:
+            # Tentar gerar novo access token
+            new_tokens = await jwt_manager.refresh_access_token(refresh_token, db)
+            
+            if new_tokens:
+                # ✅ REFRESH BEM-SUCEDIDO - Novo token gerado
+                logger.info("✅ Refresh bem-sucedido - novo token de 15min gerado")
+                
+                # Decodificar para pegar dados do usuário
+                payload = jwt_manager.decode_token(new_tokens["access_token"])
+                email = payload.get("sub") or payload.get("email")
+                user = crud.get_user_by_email(db, email)
+                
+                # Criar resposta com novos tokens
+                response_data = {
+                    "status": "refreshed",
+                    "message": "Token renovado",
+                    "access_token": new_tokens["access_token"],
+                    "refresh_token": new_tokens["refresh_token"],
+                    "expires_in": new_tokens["expires_in"],
+                    "user": user.email,
+                    "name": user.name,
+                    "is_admin": user.is_admin,
+                    "credits": user.credits,
+                    "credits_display": "∞" if user.is_admin else str(user.credits),
+                    "action": "update_tokens"
+                }
+                
+                response = JSONResponse(content=response_data)
+                
+                # Atualizar cookies
+                response = set_auth_cookies(
+                    response=response,
+                    access_token=new_tokens["access_token"],
+                    refresh_token=new_tokens["refresh_token"],
+                    expires_in=new_tokens["expires_in"]
+                )
+                
+                return response
+                
+        except Exception as e:
+            logger.error(f"❌ Erro no refresh: {e}")
+    
+    # ❌ CASO 4: REFRESH INVÁLIDO - LIMPAR TUDO
+    logger.warning("❌ Refresh inválido - limpando tokens...")
+    
+    # Invalidar refresh token no banco se existir
+    if refresh_token:
+        try:
+            await jwt_manager.logout(refresh_token, db)
+        except:
+            pass
+    
+    response = JSONResponse(
+        status_code=401,
+        content={
+            "status": "invalid",
+            "message": "Sessão expirada. Faça login novamente.",
+            "action": "clear_storage_and_redirect"  # 🔥 FRONTEND DEVE LIMPAR LOCALSTORAGE
+        }
+    )
+    
+    # Limpar cookies
+    response = clear_auth_cookies(response)
+    
+    return response
+
+# ==============================================
+# REFRESH MANUAL (SE PRECISAR)
+# ==============================================
 
 @router.post("/refresh")
 async def refresh_token(
     refresh_data: schemas.TokenRefresh,
     db: Session = Depends(get_db)
 ):
-    """Renova access token usando refresh token e atualiza cookies"""
+    """Renova access token manualmente"""
     
-    new_tokens = await jwt_manager.refresh_access_token(
-        refresh_data.refresh_token, 
-        db
-    )
+    new_tokens = await jwt_manager.refresh_access_token(refresh_data.refresh_token, db)
     
     if not new_tokens:
-        raise HTTPException(
-            status_code=401,
-            detail="Refresh token inválido ou expirado"
-        )
+        raise HTTPException(status_code=401, detail="Refresh token inválido")
     
-    # Criar resposta com novos tokens
     response_data = {
         "access_token": new_tokens["access_token"],
         "refresh_token": new_tokens["refresh_token"],
         "token_type": "bearer",
         "expires_in": new_tokens["expires_in"],
-        "message": "Token renovado com sucesso"
+        "message": "Token renovado"
     }
     
     response = JSONResponse(content=response_data)
     
-    # Atualizar os cookies com os novos tokens
+    # Atualizar cookies
     response = set_auth_cookies(
         response=response,
         access_token=new_tokens["access_token"],
@@ -275,78 +362,52 @@ async def refresh_token(
         expires_in=new_tokens["expires_in"]
     )
     
-    print(f"✅ Token renovado - Cookies atualizados")
+    logger.info("✅ Token renovado manualmente")
     
     return response
+
+# ==============================================
+# LOGOUT - LIMPAR TUDO
+# ==============================================
 
 @router.post("/logout")
 async def logout(
-    refresh_data: schemas.TokenRefresh,
+    refresh_data: Optional[schemas.TokenRefresh] = None,
     db: Session = Depends(get_db)
 ):
-    """Faz logout invalidando o refresh token no banco e removendo cookies"""
+    """Logout - invalida tokens e limpa cookies"""
     
-    success = await jwt_manager.logout(refresh_data.refresh_token, db)
+    if refresh_data and refresh_data.refresh_token:
+        await jwt_manager.logout(refresh_data.refresh_token, db)
     
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="Erro ao fazer logout"
-        )
-    
-    # Criar resposta e remover cookies
     response = JSONResponse(content={
-        "message": "Logout realizado com sucesso"
+        "status": "logged_out",
+        "message": "Logout realizado",
+        "action": "clear_storage"  # 🔥 FRONTEND DEVE LIMPAR LOCALSTORAGE
     })
     
-    # Remover os cookies
+    # Limpar cookies
     response = clear_auth_cookies(response)
     
-    print(f"✅ Logout realizado - Cookies removidos")
+    logger.info("✅ Logout - tokens invalidados e cookies limpos")
     
     return response
-
-# ==============================================
-# ROTA DE VALIDAÇÃO DE TOKEN (NOVA)
-# ==============================================
-
-@router.get("/check-token")
-async def check_token(
-    current_user: schemas.UserResponse = Depends(get_current_active_user)
-):
-    """
-    Verifica se o token atual é válido.
-    Se o token for inválido, o 'get_current_active_user' vai lançar 401 automaticamente.
-    Se for válido, entra aqui e confirmamos ao frontend.
-    """
-    print(f"✅ Token válido para usuário: {current_user.email}")
-    
-    return {
-        "status": "ok",
-        "message": "Token válido",
-        "user": current_user.email,
-        "name": current_user.name,
-        "is_admin": current_user.is_admin,  # ✅ ADICIONADO
-        "credits": current_user.credits,
-        "credits_display": "∞" if current_user.is_admin else str(current_user.credits),
-        "expires_in": jwt_manager.access_expire_minutes * 60
-    }
 
 # ==============================================
 # ROTAS PROTEGIDAS
 # ==============================================
 
 @router.get("/me", response_model=schemas.UserResponse)
-async def get_my_profile(
-    current_user: schemas.UserResponse = Depends(get_current_active_user)
+async def get_me(
+    current_user = Depends(get_current_active_user)
 ):
-    """Retorna perfil do usuário logado"""
+    """Retorna perfil do usuário atual"""
     return current_user
 
 @router.put("/me", response_model=schemas.UserResponse)
-async def update_my_profile(
+async def update_me(
     user_update: schemas.UserUpdate,
-    current_user: schemas.UserResponse = Depends(get_current_active_user),
+    current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Atualiza perfil do usuário"""
@@ -362,18 +423,20 @@ async def update_my_profile(
 @router.post("/change-password")
 async def change_password(
     password_data: schemas.PasswordChange,
-    current_user: schemas.UserResponse = Depends(get_current_active_user),
+    current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Troca de senha com verificação da atual"""
+    """Troca de senha"""
     
-    if not hasher.verify_password(password_data.current_password, 
-                                  current_user.hashed_password):
+    if not hasher.verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(400, "Senha atual incorreta")
     
     new_hashed = hasher.hash_password(password_data.new_password)
-    
     crud.update_user(db, current_user.id, {"hashed_password": new_hashed})
+    
+    # Invalidar refresh tokens por segurança
+    current_user.revoke_refresh_token()
+    db.commit()
     
     return {"message": "Senha alterada com sucesso"}
 
@@ -382,75 +445,60 @@ async def change_password(
 # ==============================================
 
 @router.get("/admin/users", response_model=List[schemas.UserResponse])
-async def get_all_users_admin(
-    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+async def get_all_users(
+    current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100
 ):
-    """Lista todos os usuários (somente admin)"""
-    users = crud.get_all_users(db, skip=skip, limit=limit)
-    return users
+    """Lista todos os usuários (admin)"""
+    return crud.get_all_users(db, skip=skip, limit=limit)
 
 @router.get("/admin/stats")
-async def get_user_stats_admin(
-    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+async def get_stats(
+    current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Estatísticas do sistema (somente admin)"""
+    """Estatísticas do sistema (admin)"""
     return crud.get_user_stats(db)
 
-# ✅ NOVA ROTA: Tornar usuário admin (somente admin)
 @router.post("/admin/make-admin")
-async def make_user_admin(
+async def make_admin(
     email: str,
-    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+    current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Torna um usuário administrador (somente admin)"""
+    """Torna um usuário admin"""
     user = crud.get_user_by_email(db, email)
-    
     if not user:
         raise HTTPException(404, "Usuário não encontrado")
-    
-    if user.is_admin:
-        return {"message": f"{email} já é administrador"}
     
     user.is_admin = True
     db.commit()
     
-    print(f"👑 Admin {current_user.email} tornou {email} administrador")
-    return {"message": f"{email} agora é administrador"}
+    logger.info(f"👑 Admin {current_user.email} tornou {email} admin")
+    return {"message": f"{email} agora é admin"}
 
-# ✅ NOVA ROTA: Remover admin (somente admin)
 @router.post("/admin/remove-admin")
-async def remove_user_admin(
+async def remove_admin(
     email: str,
-    current_user: schemas.UserResponse = Depends(get_current_admin_user),
+    current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Remove privilégios de admin (somente admin)"""
+    """Remove privilégios de admin"""
     user = crud.get_user_by_email(db, email)
-    
     if not user:
         raise HTTPException(404, "Usuário não encontrado")
-    
-    if not user.is_admin:
-        return {"message": f"{email} não é administrador"}
     
     user.is_admin = False
     db.commit()
     
-    print(f"👑 Admin {current_user.email} removeu admin de {email}")
-    return {"message": f"Privilégios de admin removidos de {email}"}
-
-# ==============================================
-# ROTA DE ADMIN PARA VER CAPTCHAS ATIVOS (DEBUG)
-# ==============================================
+    logger.info(f"👑 Admin {current_user.email} removeu admin de {email}")
+    return {"message": f"Admin removido de {email}"}
 
 @router.get("/admin/captcha-stats")
 async def get_captcha_stats(
-    current_user: schemas.UserResponse = Depends(get_current_admin_user)
+    current_user = Depends(get_current_admin_user)
 ):
-    """Retorna estatísticas dos CAPTCHAS ativos (somente admin)"""
+    """Estatísticas de CAPTCHA (admin)"""
     return captcha_manager.get_stats()

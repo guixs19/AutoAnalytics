@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM ARQUITETURA SAAS E CAPTCHA PRÓPRIO
+# main.py (na raiz) - VERSÃO CORRIGIDA COM CORS EXPOSURE E CAPTCHA PRÓPRIO
 import sys
 import os
 from pathlib import Path
@@ -81,7 +81,7 @@ class Settings:
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     
     # CORS
-    CORS_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
+    CORS_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:5500", "http://127.0.0.1:5500"]
     
     # Headers de segurança
     SECURITY_HEADERS = {
@@ -173,13 +173,18 @@ app = FastAPI(
 # MIDDLEWARE DE SEGURANÇA
 # ==============================================
 
-# CORS configurado
+# CORS configurado com expose_headers para CAPTCHA
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Captcha-ID",           # 🔥 ESSENCIAL para o frontend ler o ID
+        "X-Captcha-Expires",      # Opcional: tempo de expiração
+        "Content-Disposition"      # Para downloads
+    ]
 )
 
 # Middleware para headers de segurança
@@ -601,6 +606,7 @@ async def startup_event():
           • Uso único: Sim
           • Validação de IP: Sim
        ⏱️ Rate Limiting: ✅ ATIVO
+       📤 CORS expose_headers: X-Captcha-ID ✅
     
     💰 PAGAMENTOS: {'✅ Configurado' if settings.MP_ACCESS_TOKEN else '❌ Não configurado'}
     💎 CRÉDITOS: 1 crédito por dia via upload

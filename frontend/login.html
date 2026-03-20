@@ -14,11 +14,7 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- CSS Personalizado -->
-    <link rel="stylesheet" href="/static/css/login.css">
-    
     <style>
-        /* (seus estilos existentes permanecem iguais) */
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -277,6 +273,28 @@
             font-size: 0.9rem;
         }
         
+        /* Timer do CAPTCHA */
+        .captcha-timer {
+            font-weight: 700;
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 0.2rem 0.5rem;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .captcha-timer.expiring {
+            color: #f56565;
+            background: rgba(245, 101, 101, 0.1);
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
         .form-check-input:checked {
             background-color: #667eea;
             border-color: #667eea;
@@ -353,6 +371,42 @@
             font-size: 0.75rem;
             font-weight: 600;
         }
+        
+        /* Token timer */
+        .token-timer {
+            font-size: 0.75rem;
+            background: rgba(255,255,255,0.1);
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+            color: white;
+        }
+        
+        .alert {
+            border-radius: 12px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .password-strength {
+            height: 4px;
+            border-radius: 2px;
+            margin-top: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .strength-weak {
+            width: 33%;
+            background: #f56565;
+        }
+        
+        .strength-medium {
+            width: 66%;
+            background: #ecc94b;
+        }
+        
+        .strength-strong {
+            width: 100%;
+            background: #48bb78;
+        }
     </style>
 </head>
 <body>
@@ -376,6 +430,10 @@
                             <span class="security-badge">
                                 <i class="fas fa-shield-alt"></i>
                                 CAPTCHA Próprio
+                            </span>
+                            <span class="security-badge ms-1">
+                                <i class="fas fa-clock"></i>
+                                Token 15min
                             </span>
                         </div>
                     </div>
@@ -424,7 +482,7 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA PRÓPRIO -->
+                                    <!-- 🔥 CAPTCHA PRÓPRIO COM CRONÔMETRO -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
@@ -446,7 +504,7 @@
                                                    maxlength="6" inputmode="numeric" pattern="[0-9]*" required>
                                             <div class="captcha-helper">
                                                 <i class="fas fa-hourglass-half me-1"></i>
-                                                Expira em <span id="loginCaptchaTimer">2:00</span>
+                                                Expira em <span class="captcha-timer" id="loginCaptchaTimer">--:--</span>
                                                 <i class="fas fa-ban ms-2 me-1"></i>
                                                 Uso único
                                             </div>
@@ -493,7 +551,9 @@
                                                 <i class="fas fa-lock me-2"></i>Senha
                                             </label>
                                             <input type="password" class="form-control" id="regPassword" 
-                                                   minlength="6" placeholder="Mínimo 6 caracteres" required autocomplete="new-password">
+                                                   minlength="6" placeholder="Mínimo 6 caracteres" 
+                                                   required autocomplete="new-password">
+                                            <div class="password-strength" id="passwordStrength"></div>
                                         </div>
                                         
                                         <div class="col-md-6 mb-3">
@@ -513,7 +573,7 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA PRÓPRIO -->
+                                    <!-- 🔥 CAPTCHA PRÓPRIO COM CRONÔMETRO -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
@@ -535,7 +595,7 @@
                                                    maxlength="6" inputmode="numeric" pattern="[0-9]*" required>
                                             <div class="captcha-helper">
                                                 <i class="fas fa-hourglass-half me-1"></i>
-                                                Expira em <span id="registerCaptchaTimer">2:00</span>
+                                                Expira em <span class="captcha-timer" id="registerCaptchaTimer">--:--</span>
                                                 <i class="fas fa-ban ms-2 me-1"></i>
                                                 Uso único
                                             </div>
@@ -601,10 +661,230 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- 🔥 REMOVIDO: app.js - Agora usa APENAS auth.js -->
+    <!-- 🔥 APENAS auth.js - Já faz tudo! -->
     <script src="/static/js/auth.js"></script>
     
-    <!-- 🔥 REMOVIDO: script duplicado - auth.js já faz tudo isso! -->
-    
+    <script>
+        // ===== SISTEMA DE CRONÔMETRO DO CAPTCHA (2 MINUTOS) =====
+        class CaptchaTimer {
+            constructor() {
+                this.intervals = {};
+                this.activeTimers = {};
+            }
+            
+            // Iniciar timer para um CAPTCHA específico
+            start(timerId, durationSeconds = 120) {
+                // Parar timer anterior se existir
+                if (this.intervals[timerId]) {
+                    clearInterval(this.intervals[timerId]);
+                }
+                
+                const timerElement = document.getElementById(timerId);
+                if (!timerElement) return;
+                
+                let seconds = durationSeconds;
+                
+                // Atualizar imediatamente
+                this.updateDisplay(timerElement, seconds);
+                
+                // Iniciar novo intervalo
+                this.intervals[timerId] = setInterval(() => {
+                    seconds--;
+                    
+                    if (seconds >= 0) {
+                        this.updateDisplay(timerElement, seconds);
+                        
+                        // Quando faltar 30 segundos, mudar cor
+                        if (seconds <= 30) {
+                            timerElement.classList.add('expiring');
+                        }
+                    }
+                    
+                    if (seconds <= 0) {
+                        // Timer expirou
+                        clearInterval(this.intervals[timerId]);
+                        timerElement.textContent = 'Expirado';
+                        timerElement.classList.remove('expiring');
+                        
+                        // Disparar evento de expiração
+                        const event = new CustomEvent('captchaExpired', { 
+                            detail: { timerId: timerId }
+                        });
+                        document.dispatchEvent(event);
+                    }
+                }, 1000);
+                
+                this.activeTimers[timerId] = true;
+            }
+            
+            // Parar timer
+            stop(timerId) {
+                if (this.intervals[timerId]) {
+                    clearInterval(this.intervals[timerId]);
+                    delete this.intervals[timerId];
+                }
+                this.activeTimers[timerId] = false;
+            }
+            
+            // Atualizar display do timer
+            updateDisplay(element, seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                element.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            
+            // Verificar se timer está ativo
+            isActive(timerId) {
+                return this.activeTimers[timerId] || false;
+            }
+        }
+        
+        // Inicializar timers
+        const captchaTimers = new CaptchaTimer();
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            // ===== FUNÇÕES DE UI/UX =====
+            
+            // Mostrar/ocultar senha
+            const passwordFields = ['loginPassword', 'regPassword', 'regConfirmPassword'];
+            passwordFields.forEach(id => {
+                const field = document.getElementById(id);
+                if (field) {
+                    const wrapper = field.parentElement;
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.type = 'button';
+                    toggleBtn.className = 'btn btn-link position-absolute end-0 top-50 translate-middle-y';
+                    toggleBtn.style.textDecoration = 'none';
+                    toggleBtn.style.zIndex = '10';
+                    toggleBtn.innerHTML = '<i class="far fa-eye"></i>';
+                    toggleBtn.onclick = function() {
+                        const type = field.type === 'password' ? 'text' : 'password';
+                        field.type = type;
+                        this.innerHTML = type === 'password' ? '<i class="far fa-eye"></i>' : '<i class="far fa-eye-slash"></i>';
+                    };
+                    
+                    wrapper.style.position = 'relative';
+                    wrapper.appendChild(toggleBtn);
+                }
+            });
+            
+            // ===== CAPTCHA TIMERS =====
+            
+            // Quando CAPTCHA for carregado (via auth.js)
+            document.addEventListener('captchaLoaded', function(e) {
+                if (e.detail && e.detail.type) {
+                    if (e.detail.type === 'login') {
+                        captchaTimers.start('loginCaptchaTimer', 120);
+                    } else if (e.detail.type === 'register') {
+                        captchaTimers.start('registerCaptchaTimer', 120);
+                    }
+                }
+            });
+            
+            // Quando CAPTCHA expirar
+            document.addEventListener('captchaExpired', function(e) {
+                console.log('⏰ CAPTCHA expirado:', e.detail.timerId);
+                
+                // Se o CAPTCHA expirou, podemos mostrar mensagem
+                if (e.detail.timerId === 'loginCaptchaTimer') {
+                    const input = document.getElementById('loginCaptchaInput');
+                    if (input) {
+                        input.placeholder = 'CAPTCHA expirado. Atualize.';
+                        input.disabled = true;
+                    }
+                } else if (e.detail.timerId === 'registerCaptchaTimer') {
+                    const input = document.getElementById('registerCaptchaInput');
+                    if (input) {
+                        input.placeholder = 'CAPTCHA expirado. Atualize.';
+                        input.disabled = true;
+                    }
+                }
+            });
+            
+            // Forçar recarregamento do CAPTCHA quando trocar de aba
+            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function(e) {
+                    if (e.target.id === 'login-tab' && window.appAuth) {
+                        // Parar timer do registro
+                        captchaTimers.stop('registerCaptchaTimer');
+                        
+                        // Carregar novo CAPTCHA de login
+                        window.appAuth.loadLoginCaptcha();
+                        
+                    } else if (e.target.id === 'register-tab' && window.appAuth) {
+                        // Parar timer do login
+                        captchaTimers.stop('loginCaptchaTimer');
+                        
+                        // Carregar novo CAPTCHA de registro
+                        window.appAuth.loadRegisterCaptcha();
+                    }
+                });
+            });
+            
+            // Interceptar refresh dos CAPTCHAs
+            document.getElementById('refreshLoginCaptcha')?.addEventListener('click', function() {
+                captchaTimers.stop('loginCaptchaTimer');
+                const timerEl = document.getElementById('loginCaptchaTimer');
+                if (timerEl) {
+                    timerEl.textContent = '--:--';
+                    timerEl.classList.remove('expiring');
+                }
+            });
+            
+            document.getElementById('refreshRegisterCaptcha')?.addEventListener('click', function() {
+                captchaTimers.stop('registerCaptchaTimer');
+                const timerEl = document.getElementById('registerCaptchaTimer');
+                if (timerEl) {
+                    timerEl.textContent = '--:--';
+                    timerEl.classList.remove('expiring');
+                }
+            });
+            
+            // ===== MEDIDOR DE FORÇA DA SENHA =====
+            const passwordInput = document.getElementById('regPassword');
+            const strengthIndicator = document.getElementById('passwordStrength');
+            
+            if (passwordInput && strengthIndicator) {
+                passwordInput.addEventListener('input', function() {
+                    const password = this.value;
+                    let strength = 0;
+                    
+                    if (password.length >= 6) strength++;
+                    if (password.match(/[a-z]+/)) strength++;
+                    if (password.match(/[A-Z]+/)) strength++;
+                    if (password.match(/[0-9]+/)) strength++;
+                    if (password.match(/[$@#&!]+/)) strength++;
+                    
+                    strengthIndicator.className = 'password-strength';
+                    
+                    if (strength <= 2) {
+                        strengthIndicator.classList.add('strength-weak');
+                    } else if (strength <= 4) {
+                        strengthIndicator.classList.add('strength-medium');
+                    } else {
+                        strengthIndicator.classList.add('strength-strong');
+                    }
+                });
+            }
+            
+            // ===== VALIDAÇÃO DE SENHA NO REGISTRO =====
+            const registerForm = document.getElementById('registerForm');
+            if (registerForm) {
+                registerForm.addEventListener('submit', function(e) {
+                    const password = document.getElementById('regPassword').value;
+                    const confirm = document.getElementById('regConfirmPassword').value;
+                    
+                    if (password !== confirm) {
+                        e.preventDefault();
+                        alert('As senhas não coincidem!');
+                        return false;
+                    }
+                });
+            }
+            
+            console.log('✅ UI do login carregada com cronômetros de CAPTCHA');
+        });
+    </script>
 </body>
 </html>

@@ -1,124 +1,278 @@
-// frontend/js/app.js - VERSÃO COMPLETA COM SUPORTE A PREMIUM
+// frontend/js/auth.js - VERSÃO FINAL COM CICLO DE VIDA COMPLETO DO TOKEN
 /*
- * app.js - Dashboard e Upload
+ * auth.js - Gerenciamento de autenticação
  * 
- * ✅ Delega autenticação para auth.js
- * ⭐ Suporte a usuários premium
- * 👑 Suporte a admin
+ * ✅ Login com CAPTCHA próprio
+ * ✅ Registro com CAPTCHA
+ * ✅ Ciclo de vida do token (15 minutos)
+ * ✅ Refresh automático quando expirado
+ * ✅ Limpeza automática do localStorage
+ * ✅ Suporte a admin e premium
+ * ✅ Rate limiting no frontend
+ * ✅ Verificação periódica do token
  */
 
-class AutoAnalytics {
+class Auth {
     constructor() {
         this.apiBase = window.location.hostname.includes('localhost') 
             ? 'http://localhost:8000/api'
             : '/api';
         
-        this.currentProcessId = null;
-        this.pollInterval = null;
-        this.fileData = null;
-        this.columns = [];
-        this.selectedFeatures = [];
-        this.selectedTarget = null;
+        this.user = this.loadUser();
+        this.captchaId = null;
+        this.captchaIdRegister = null;
+        this.tokenCheckInterval = null;
+        this.loginAttempts = 0;
+        this.maxLoginAttempts = 5;
         
-        // Inicializar
         this.init();
     }
     
-    // ===== FUNÇÕES DELEGADAS PARA auth.js =====
+    // ===== LOCALSTORAGE MANAGEMENT =====
     
-    isAdmin() {
-        return window.appAuth ? window.appAuth.isAdmin() : false;
+    loadUser() {
+        try {
+            const userStr = localStorage.getItem('user');
+            return userStr ? JSON.parse(userStr) : {};
+        } catch {
+            return {};
+        }
     }
     
-    /**
-     * ⭐ NOVO: Verifica se usuário é premium
-     */
-    isPremium() {
-        return window.appAuth ? window.appAuth.isPremium() : false;
+    saveUser(user) {
+        localStorage.setItem('user', JSON.stringify(user));
+        this.user = user;
     }
     
-    /**
-     * ⭐ NOVO: Retorna informações do premium
-     */
-    getPremiumInfo() {
-        return window.appAuth ? window.appAuth.getPremiumInfo() : null;
+    saveTokens(accessToken, refreshToken, expiresIn) {
+        localStorage.setItem('access_token', accessToken);
+        localStorage.setItem('refresh_token', refreshToken);
+        
+        // Guardar timestamp de expiração (15 minutos)
+        if (expiresIn) {
+            const expiresAt = Date.now() + (expiresIn * 1000);
+            localStorage.setItem('token_expires_at', expiresAt.toString());
+            console.log(`⏰ Token expira em: ${new Date(expiresAt).toLocaleTimeString()}`);
+        }
     }
     
-    getCurrentUser() {
-        return window.appAuth ? window.appAuth.getCurrentUser() : {};
+    clearStorage() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('token_expires_at');
+        this.user = {};
+        
+        console.log('🧹 LocalStorage completamente limpo');
     }
     
-    getCreditsDisplay() {
-        return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
+    // ===== TOKEN LIFE CYCLE =====
+    
+    isTokenExpired() {
+        const expiresAt = localStorage.getItem('token_expires_at');
+        if (!expiresAt) return true;
+        
+        const now = Date.now();
+        const expired = now > parseInt(expiresAt);
+        
+        if (expired) {
+            console.log('⏰ Token expirado (>15 minutos)');
+        }
+        
+        return expired;
     }
     
-    updateCreditsDisplay() {
-        if (window.appAuth) window.appAuth.updateCreditsDisplay();
+    getTimeRemaining() {
+        const expiresAt = localStorage.getItem('token_expires_at');
+        if (!expiresAt) return 0;
+        
+        const remaining = Math.max(0, parseInt(expiresAt) - Date.now());
+        return Math.floor(remaining / 1000); // em segundos
     }
+    
+    formatTimeRemaining() {
+        const seconds = this.getTimeRemaining();
+        if (seconds <= 0) return 'Expirado';
+        
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // ===== TOKEN VERIFICATION =====
+    
+    async checkTokenStatus() {
+        const token = localStorage.getItem('access_token');
+        
+        if (!token) {
+            console.log('🔍 Nenhum token encontrado');
+            return { status: 'no_token' };
+        }
+        
+        // Verificar expiração local primeiro
+        if (this.isTokenExpired()) {
+            console.log('⏰ Token expirado localmente - tentando refresh...');
+        }
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache'
+                },
+                credentials: 'include'  // Importante para cookies
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                // ✅ CASO 1: TOKEN VÁLIDO (menos de 15 minutos)
+                if (data.status === 'valid') {
+                    console.log(`✅ Token válido por mais ${data.expires_in}s`);
+                    
+                    // Atualizar dados do usuário
+                    if (data.user) {
+                        this.user = {
+                            ...this.user,
+                            name: data.name,
+                            email: data.user,
+                            is_admin: data.is_admin,
+                            credits: data.credits
+                        };
+                        this.saveUser(this.user);
+                        this.updateUserUI();
+                    }
+                    
+                    return { status: 'valid', data };
+                }
+                
+                // ✅ CASO 2: TOKEN RENOVADO (refresh automático)
+                if (data.status === 'refreshed') {
+                    console.log('🔄 Token renovado automaticamente - novo token de 15min gerado');
+                    
+                    // Salvar novos tokens
+                    this.saveTokens(
+                        data.access_token,
+                        data.refresh_token,
+                        data.expires_in  // 900 segundos = 15 minutos
+                    );
+                    
+                    // Atualizar usuário
+                    this.user = {
+                        ...this.user,
+                        name: data.name,
+                        email: data.user,
+                        is_admin: data.is_admin,
+                        credits: data.credits
+                    };
+                    this.saveUser(this.user);
+                    this.updateUserUI();
+                    
+                    return { status: 'refreshed', data };
+                }
+            }
+            
+            // ❌ CASO 3: TOKEN INVÁLIDO - LIMPAR TUDO
+            if (data.action === 'clear_storage_and_redirect') {
+                console.log('🧹 Token inválido - limpando storage');
+                this.clearStorage();
+                
+                if (!this.isLoginPage() && !this.isRegisterPage()) {
+                    this.showMessage('Sessão expirada. Faça login novamente.', 'warning');
+                    setTimeout(() => {
+                        window.location.href = '/login.html';
+                    }, 1500);
+                }
+                
+                return { status: 'invalid' };
+            }
+            
+            return { status: 'error', data };
+            
+        } catch (error) {
+            console.error('❌ Erro ao verificar token:', error);
+            
+            // Em caso de erro de rede, verificar expiração local
+            if (this.isTokenExpired()) {
+                console.log('⏰ Token expirado localmente - limpando');
+                this.clearStorage();
+                
+                if (!this.isLoginPage() && !this.isRegisterPage()) {
+                    window.location.href = '/login.html';
+                }
+            }
+            
+            return { status: 'error' };
+        }
+    }
+    
+    // ===== INITIALIZATION =====
     
     async init() {
-        this.initializeElements();
-        this.bindEvents();
-        await this.loadUserCredits();
-        await this.loadDashboardStats();
-        await this.loadAnalysisHistory();
+        console.log('🔧 Auth v2.0 inicializado');
+        console.log('📍 API Base:', this.apiBase);
         
-        // ⭐ NOVO: Carregar status premium se for premium
-        if (this.isPremium()) {
-            await this.loadPremiumStatus();
+        const path = window.location.pathname;
+        console.log('📍 Página atual:', path);
+        
+        // Login page
+        if (path.includes('login.html') || path === '/login' || path === '/') {
+            this.initLoginPage();
         }
-        
-        this.setupLogout();
-        this.initGSAPAnimations();
-        this.checkAuthentication();
-        
-        // Atualizar display de créditos
-        this.updateCreditsDisplay();
-        
-        // ⭐ NOVO: Verificar crédito diário ao carregar (se for premium)
-        if (this.isPremium()) {
-            setTimeout(() => this.checkPremiumDailyCredit(), 2000);
+        // Register page
+        else if (path.includes('register.html') || path === '/register') {
+            this.initRegisterPage();
         }
-    }
-    
-    // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
-    
-    checkAuthentication() {
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return;
-        }
-        
-        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
-            console.log('🔒 Usuário não autenticado, redirecionando para login');
-            window.location.href = '/login.html';
+        // Páginas protegidas
+        else {
+            // Verificar token antes de carregar a página
+            const tokenStatus = await this.checkTokenStatus();
+            
+            if (tokenStatus.status === 'invalid' || tokenStatus.status === 'no_token') {
+                this.redirectToLogin();
+                return;
+            }
+            
+            // Iniciar verificação periódica (a cada 3 minutos)
+            this.startTokenCheckInterval();
+            this.updateUserUI();
+            this.loadUserCredits();
+            
+            console.log('✅ Usuário autenticado:', this.user.email);
+            console.log(`⏱️ Token expira em: ${this.formatTimeRemaining()}`);
         }
     }
     
-    isLoginPage() {
-        return window.location.pathname.includes('login.html') || 
-               window.location.pathname === '/login';
+    startTokenCheckInterval() {
+        // Limpar intervalo anterior
+        if (this.tokenCheckInterval) {
+            clearInterval(this.tokenCheckInterval);
+        }
+        
+        // Verificar a cada 3 minutos
+        this.tokenCheckInterval = setInterval(() => {
+            console.log('⏰ Verificando status do token...');
+            console.log(`⏱️ Tempo restante: ${this.formatTimeRemaining()}`);
+            this.checkTokenStatus();
+        }, 3 * 60 * 1000); // 3 minutos
     }
-    
-    isRegisterPage() {
-        return window.location.pathname.includes('register.html') || 
-               window.location.pathname === '/register';
-    }
-    
-    // ===== CRÉDITOS =====
     
     async loadUserCredits() {
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+            
+            const response = await fetch(`${this.apiBase}/user/credits`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
             if (response.ok) {
                 const data = await response.json();
-                
-                if (window.appAuth) {
-                    const user = window.appAuth.getCurrentUser();
-                    user.credits = data.credits || 0;
-                    user.is_admin = data.is_admin || false;
-                    user.is_premium = data.is_premium || false;
-                    localStorage.setItem('user', JSON.stringify(user));
-                    window.appAuth.updateCreditsDisplay();
+                if (data.success) {
+                    this.user.credits = data.credits;
+                    this.saveUser(this.user);
+                    this.updateCreditsDisplay();
                 }
             }
         } catch (error) {
@@ -126,1451 +280,694 @@ class AutoAnalytics {
         }
     }
     
-    /**
-     * ⭐ NOVO: Carrega status do premium
-     */
-    async loadPremiumStatus() {
-        if (!this.isPremium()) return;
+    // ===== LOGIN PAGE =====
+    
+    initLoginPage() {
+        console.log('🔐 Inicializando página de login...');
         
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/premium/status`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.displayPremiumInfo(data);
+        // Limpar qualquer token existente ao entrar na página de login
+        this.clearStorage();
+        
+        setTimeout(() => {
+            if (document.getElementById('loginCaptchaImage')) {
+                this.loadLoginCaptcha();
+                this.bindLoginEvents();
+            } else {
+                console.warn('Elementos de login não encontrados');
             }
-        } catch (error) {
-            console.error('Erro ao carregar status premium:', error);
-        }
+        }, 300);
     }
     
-    /**
-     * ⭐ NOVO: Exibe informações do premium no dashboard
-     */
-    displayPremiumInfo(data) {
-        if (!data?.has_premium) return;
+    async loadLoginCaptcha() {
+        const img = document.getElementById('loginCaptchaImage');
+        const input = document.getElementById('loginCaptchaInput');
+        const refreshBtn = document.getElementById('refreshLoginCaptcha');
         
-        // Criar container se não existir
-        let premiumContainer = document.getElementById('premiumDashboardInfo');
-        
-        if (!premiumContainer) {
-            const uploadCard = document.querySelector('.upload-card');
-            if (!uploadCard) return;
-            
-            premiumContainer = document.createElement('div');
-            premiumContainer.id = 'premiumDashboardInfo';
-            premiumContainer.className = 'premium-info-box mb-4';
-            uploadCard.insertAdjacentElement('beforebegin', premiumContainer);
-        }
-        
-        const daysLeft = data.plan?.days_left || 0;
-        const progress = data.plan?.progress || 0;
-        const receivedToday = data.credits?.next_credit_today || false;
-        const daysPassed = data.plan?.days_passed || 0;
-        
-        premiumContainer.innerHTML = `
-            <div class="alert alert-warning premium-info-box" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #fbbf24; border-radius: 16px; padding: 1rem;">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-star fa-2x text-warning me-3"></i>
-                    <div class="flex-grow-1">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <strong>⭐ Plano Premium Ativo</strong>
-                            <span class="badge bg-warning text-dark">${daysLeft} dias restantes</span>
-                        </div>
-                        
-                        <div class="progress-modern mt-2" style="height: 6px; background: rgba(245, 158, 11, 0.2);">
-                            <div class="progress-modern-bar" style="width: ${progress}%; background: linear-gradient(90deg, #fbbf24, #f59e0b);"></div>
-                        </div>
-                        
-                        <div class="d-flex justify-content-between small mt-1">
-                            <span>Dia ${daysPassed} de 30</span>
-                            <span class="${receivedToday ? 'text-success' : 'text-warning'}">
-                                ${receivedToday ? '✅ Crédito de hoje recebido' : '⏳ Crédito disponível hoje'}
-                            </span>
-                        </div>
-                        
-                        ${!receivedToday && daysLeft > 0 ? `
-                            <div class="text-center mt-2">
-                                <button class="btn btn-sm btn-warning" onclick="window.app?.checkPremiumDailyCredit()">
-                                    <i class="fas fa-gift me-1"></i>
-                                    Receber crédito de hoje
-                                </button>
-                            </div>
-                        ` : ''}
-                        
-                        ${data.credits?.upcoming_credits?.length > 0 ? `
-                            <div class="mt-2 small">
-                                <strong>Próximos créditos:</strong>
-                                <div class="d-flex gap-1 mt-1 flex-wrap">
-                                    ${data.credits.upcoming_credits.slice(0, 5).map(day => `
-                                        <span class="daily-credit-indicator" style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 50px; padding: 0.15rem 0.5rem; font-size: 0.7rem;">
-                                            <i class="far fa-calendar-alt"></i>
-                                            ${new Date(day.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                                        </span>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    /**
-     * ⭐ NOVO: Verifica e adiciona crédito diário do premium
-     */
-    async checkPremiumDailyCredit() {
-        if (!this.isPremium()) {
-            this.showAlert('❌ Você não possui plano premium', 'warning');
+        if (!img) {
+            console.error('Elemento loginCaptchaImage não encontrado');
             return;
         }
         
+        // Desabilitar botão de refresh
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+        
+        // Limpar input
+        if (input) {
+            input.value = '';
+            input.disabled = true;
+            input.placeholder = 'Carregando CAPTCHA...';
+        }
+        
+        // Loading image
+        img.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'70\' viewBox=\'0 0 200 70\'%3E%3Crect width=\'200\' height=\'70\' fill=\'%23f0f0f0\'/%3E%3Ctext x=\'40\' y=\'45\' font-family=\'Arial\' font-size=\'20\' fill=\'%23999\'%3ECarregando...%3C/text%3E%3C/svg%3E';
+        
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/premium/check-daily`, {
-                method: 'POST'
+            console.log('🔄 Carregando CAPTCHA do servidor...');
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
+            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
+                signal: controller.signal,
+                cache: 'no-cache'
             });
             
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.credits_added > 0) {
-                    this.showAlert(`⭐ Você ganhou ${data.credits_added} crédito do plano premium!`, 'success');
-                    await this.loadUserCredits();
-                    await this.loadPremiumStatus(); // Recarregar status
-                    
-                    // Atualizar usuário no auth.js
-                    if (window.appAuth) {
-                        await window.appAuth.fetchPremiumStatus();
-                    }
-                } else if (data.already_received_today) {
-                    this.showAlert('⏳ Você já recebeu seu crédito hoje! Volte amanhã.', 'info');
-                } else if (data.days_left === 0) {
-                    this.showAlert('⚠️ Seu plano premium expirou. Renove para continuar ganhando créditos!', 'warning');
-                }
-                
-                return data;
-            } else {
-                const error = await response.json();
-                this.showAlert(`❌ ${error.detail || 'Erro ao verificar crédito'}`, 'error');
-            }
-        } catch (error) {
-            console.error('Erro ao verificar crédito premium:', error);
-            this.showAlert('❌ Erro de conexão', 'error');
-        }
-    }
-    
-    // Verificar créditos antes do upload
-    async checkCreditsBeforeUpload() {
-        // ✅ Admin sempre pode
-        if (this.isAdmin()) {
-            return true;
-        }
-        
-        // ⭐ Premium também precisa verificar saldo (mas pode ganhar amanhã)
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
-            if (response.ok) {
-                const data = await response.json();
-                if (!data.has_credits) {
-                    // Se for premium mas está sem créditos, mensagem especial
-                    if (this.isPremium()) {
-                        this.showAlert('⭐ Você usou todos os créditos. Amanhã você ganha mais 1 do plano premium!', 'warning');
-                    } else {
-                        this.showCreditsModal();
-                    }
-                    return false;
-                }
-                return true;
-            }
-        } catch (error) {
-            console.error('Erro ao verificar créditos:', error);
-        }
-        return false;
-    }
-    
-    // Modal de créditos
-    showCreditsModal() {
-        if (this.isAdmin()) {
-            return;
-        }
-        
-        let modal = document.getElementById('creditsModal');
-        
-        if (!modal) {
-            const modalHtml = `
-                <div class="modal fade" id="creditsModal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content rounded-4">
-                            <div class="modal-header bg-warning border-0">
-                                <h5 class="modal-title">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    Créditos Insuficientes
-                                </h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body text-center py-4">
-                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
-                                <h5>Você não tem créditos para realizar esta análise</h5>
-                                <p class="text-muted">Cada análise consome 1 crédito.</p>
-                                <p>Seu saldo atual: <strong><span id="modalCredits">0</span></strong> créditos</p>
-                                
-                                ${this.isPremium() ? `
-                                    <div class="alert alert-info mt-3">
-                                        <i class="fas fa-star me-2"></i>
-                                        Você é premium! Amanhã você ganha +1 crédito.
-                                    </div>
-                                ` : ''}
-                            </div>
-                            <div class="modal-footer justify-content-center border-0">
-                                <a href="/planos.html" class="btn btn-gradient">
-                                    <i class="fas fa-credit-card me-2"></i>
-                                    ${this.isPremium() ? 'Renovar Premium' : 'Assinar Plano'}
-                                </a>
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            clearTimeout(timeoutId);
             
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            modal = document.getElementById('creditsModal');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            // Pegar CAPTCHA ID do header
+            const captchaId = response.headers.get('X-Captcha-ID');
+            
+            if (!captchaId) {
+                console.warn('Header X-Captcha-ID não recebido, usando fallback');
+                this.generateFallbackCaptcha('login');
+                return;
+            }
+            
+            this.captchaId = captchaId;
+            
+            // Converter blob para URL
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            // Limpar URL anterior
+            if (img.dataset.blobUrl) {
+                URL.revokeObjectURL(img.dataset.blobUrl);
+            }
+            
+            img.src = imageUrl;
+            img.dataset.blobUrl = imageUrl;
+            
+            // Habilitar input
+            if (input) {
+                input.disabled = false;
+                input.placeholder = 'Digite os 6 números';
+                input.focus();
+            }
+            
+            console.log('✅ CAPTCHA carregado com ID:', captchaId.substring(0, 8) + '...');
+            
+        } catch (error) {
+            console.error('❌ Erro ao carregar CAPTCHA:', error);
+            this.showMessage('Erro ao carregar CAPTCHA. Usando modo alternativo.', 'warning');
+            this.generateFallbackCaptcha('login');
+            
+        } finally {
+            // Reabilitar botão de refresh
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            }
         }
-        
-        const modalCredits = document.getElementById('modalCredits');
-        const user = this.getCurrentUser();
-        if (modalCredits) modalCredits.textContent = user.credits || 0;
-        
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
     }
     
-    // ===== UPLOAD =====
+    generateFallbackCaptcha(type) {
+        console.log(`🔄 Gerando CAPTCHA fallback para ${type}...`);
+        
+        const img = document.getElementById(`${type}CaptchaImage`);
+        const input = document.getElementById(`${type}CaptchaInput`);
+        
+        if (!img) return;
+        
+        // Gerar número aleatório de 6 dígitos
+        const captchaText = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Criar canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 70;
+        const ctx = canvas.getContext('2d');
+        
+        // Fundo
+        ctx.fillStyle = '#f8f9fa';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Texto
+        ctx.font = 'bold 36px "Courier New", monospace';
+        ctx.fillStyle = '#212529';
+        ctx.fillText(captchaText, 25, 50);
+        
+        // Ruído
+        for (let i = 0; i < 50; i++) {
+            ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.2})`;
+            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+        }
+        
+        img.src = canvas.toDataURL();
+        
+        // Guardar no dataset para validação
+        if (input) {
+            input.dataset.fallbackCaptcha = captchaText;
+            input.disabled = false;
+            input.placeholder = 'Digite o código';
+        }
+        
+        // ID fictício
+        if (type === 'login') {
+            this.captchaId = 'fallback_' + Date.now();
+        } else {
+            this.captchaIdRegister = 'fallback_' + Date.now();
+        }
+        
+        console.log(`✅ CAPTCHA fallback gerado: ${captchaText}`);
+    }
     
-    async handleUpload(e) {
-        e.preventDefault();
+    async handleLogin() {
+        const email = document.getElementById('loginEmail')?.value;
+        const password = document.getElementById('loginPassword')?.value;
+        const captchaInput = document.getElementById('loginCaptchaInput')?.value;
         
-        const file = this.fileInput?.files[0];
-        if (!file) {
-            this.showAlert('❌ Selecione um arquivo primeiro', 'warning');
+        // Validações
+        if (!email || !password || !captchaInput) {
+            this.showMessage('Preencha todos os campos', 'error');
             return;
         }
         
-        if (!this.selectedTarget) {
-            this.showAlert('❌ Selecione uma coluna alvo (o que deseja prever)', 'warning');
+        if (!email.includes('@')) {
+            this.showMessage('Email inválido', 'error');
             return;
         }
         
-        if (this.selectedFeatures.length === 0) {
-            this.showAlert('❌ Selecione pelo menos uma coluna de entrada', 'warning');
+        if (password.length < 6) {
+            this.showMessage('Senha deve ter no mínimo 6 caracteres', 'error');
             return;
         }
         
-        const hasCredits = await this.checkCreditsBeforeUpload();
-        if (!hasCredits) return;
-        
-        const algorithm = this.getSelectedAlgorithm();
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('target_column', this.selectedTarget);
-        formData.append('feature_columns', JSON.stringify(this.selectedFeatures));
-        formData.append('algorithm', algorithm);
-        
-        if (this.uploadButton) {
-            this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Treinando modelo...';
+        // Rate limiting simples
+        this.loginAttempts++;
+        if (this.loginAttempts > this.maxLoginAttempts) {
+            this.showMessage('Muitas tentativas. Aguarde 1 minuto.', 'error');
+            setTimeout(() => { this.loginAttempts = 0; }, 60000);
+            return;
         }
+        
+        // Desabilitar botão
+        const loginBtn = document.getElementById('loginBtn');
+        const originalText = loginBtn.innerHTML;
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Entrando...';
         
         try {
-            const response = await fetch(`${this.apiBase}/upload`, {
+            // Verificar se é fallback
+            const isFallback = this.captchaId?.startsWith('fallback_');
+            
+            // Se for fallback, validar localmente
+            if (isFallback) {
+                const captchaInput_el = document.getElementById('loginCaptchaInput');
+                const fallbackText = captchaInput_el?.dataset.fallbackCaptcha;
+                
+                if (captchaInput !== fallbackText) {
+                    this.showMessage('CAPTCHA incorreto', 'error');
+                    this.loadLoginCaptcha();
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = originalText;
+                    return;
+                }
+            }
+            
+            // Preparar headers
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            // Se não for fallback, enviar CAPTCHA ID
+            if (!isFallback && this.captchaId) {
+                headers['X-Captcha-ID'] = this.captchaId;
+            }
+            
+            console.log('📤 Enviando login para:', email);
+            
+            const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                },
-                body: formData
+                headers: headers,
+                body: JSON.stringify({
+                    email: email.trim().toLowerCase(),
+                    password: password,
+                    captcha_text: captchaInput
+                }),
+                credentials: 'include'
             });
             
             const data = await response.json();
             
             if (response.ok) {
-                this.currentProcessId = data.process_id;
+                // ✅ Sucesso no login
+                console.log('✅ Login bem-sucedido');
                 
-                const roleIcon = this.isAdmin() ? '👑 ' : (this.isPremium() ? '⭐ ' : '');
-                this.showAlert(`${roleIcon}Modelo em treinamento!`, 'success');
+                // Salvar tokens com expiração de 15 minutos
+                this.saveTokens(
+                    data.access_token,
+                    data.refresh_token,
+                    data.expires_in  // 900 segundos = 15 minutos
+                );
                 
-                await this.loadUserCredits();
-                this.showProgress();
-                this.startProgressPolling();
-            } else {
-                if (data.detail && data.detail.error === 'Créditos insuficientes') {
-                    this.showCreditsModal();
-                } else {
-                    this.showAlert('❌ ' + (data.detail || 'Erro no upload'), 'error');
-                }
-                this.resetUploadButton();
-            }
-            
-        } catch (error) {
-            this.showAlert('❌ Erro de conexão com o servidor', 'error');
-            this.resetUploadButton();
-        }
-    }
-    
-    resetUploadButton() {
-        if (this.uploadButton) {
-            this.uploadButton.disabled = false;
-            
-            let creditText = '1 crédito';
-            let icon = '';
-            
-            if (this.isAdmin()) {
-                creditText = '∞';
-                icon = '👑 ';
-            } else if (this.isPremium()) {
-                icon = '⭐ ';
-            }
-            
-            this.uploadButton.innerHTML = `${icon}<i class="fas fa-play-circle me-2"></i>Treinar Modelo e Analisar<span class="badge bg-light text-dark ms-2">${creditText}</span>`;
-        }
-    }
-    
-    // ===== RESTO DO CÓDIGO (mantido igual) =====
-    
-    initializeElements() {
-        this.uploadForm = document.getElementById('uploadForm');
-        this.fileInput = document.getElementById('fileInput');
-        this.uploadButton = document.getElementById('uploadButton');
-        this.dropArea = document.getElementById('dropArea');
-        this.selectedFile = document.getElementById('selectedFile');
-        this.fileName = document.getElementById('fileName');
-        this.fileSize = document.getElementById('fileSize');
-        this.removeFile = document.getElementById('removeFile');
-        this.historyContainer = document.getElementById('recentAnalyses');
-        this.columnSelector = document.getElementById('columnSelector');
-        this.dataPreview = document.getElementById('dataPreview');
-        this.previewHeader = document.getElementById('previewHeader')?.querySelector('tr');
-        this.previewBody = document.getElementById('previewBody');
-        this.targetColumnContainer = document.getElementById('targetColumnContainer');
-        this.featureColumnsContainer = document.getElementById('featureColumnsContainer');
-        this.selectedColumnsCount = document.getElementById('selectedColumnsCount');
-        this.algorithmRadios = document.querySelectorAll('input[name="algorithm"]');
-        this.navbarCredits = document.getElementById('navbarCredits')?.querySelector('span') || document.getElementById('navbarCredits');
-        this.uploadCredits = document.getElementById('uploadCredits');
-        this.userName = document.getElementById('userName');
-        this.workshopName = document.getElementById('workshopName');
-        this.resultContainer = document.getElementById('resultContainer');
-        this.downloadButton = document.getElementById('downloadButton');
-        this.mlTable = document.getElementById('mlTable')?.querySelector('tbody');
-        this.exportCsv = document.getElementById('exportCsv');
-        this.viewRawData = document.getElementById('viewRawData');
-        this.targetColumnName = document.getElementById('targetColumnName');
-        this.algorithmName = document.getElementById('algorithmName');
-        this.metricR2 = document.getElementById('metricR2');
-        this.metricMAE = document.getElementById('metricMAE');
-        this.metricRMSE = document.getElementById('metricRMSE');
-        this.metricImportance = document.getElementById('metricImportance');
-        this.featureImportance = document.getElementById('featureImportance');
-        this.totalAnalises = document.getElementById('totalAnalises');
-        this.analisesHoje = document.getElementById('analisesHoje');
-        this.iaUtilizada = document.getElementById('iaUtilizada');
-        
-        if (this.iaUtilizada) {
-            this.iaUtilizada.textContent = 'R² 0.94';
-        }
-    }
-    
-    bindEvents() {
-        if (this.uploadForm) {
-            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
-        }
-        
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            if (this.dropArea) {
-                this.dropArea.addEventListener(eventName, this.preventDefaults.bind(this));
-            }
-        });
-        
-        if (this.dropArea) {
-            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
-            this.dropArea.addEventListener('click', () => this.fileInput?.click());
-            this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover'));
-            this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover'));
-        }
-        
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', () => this.handleFileSelect());
-        }
-        
-        if (this.removeFile) {
-            this.removeFile.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.resetFileSelection();
-            });
-        }
-        
-        if (this.downloadButton) {
-            this.downloadButton.addEventListener('click', () => this.downloadResult());
-        }
-        
-        if (this.exportCsv) {
-            this.exportCsv.addEventListener('click', () => this.exportAsCsv());
-        }
-        
-        if (this.viewRawData) {
-            this.viewRawData.addEventListener('click', () => this.showRawData());
-        }
-    }
-    
-    // ===== FUNÇÕES DE ARQUIVO =====
-    
-    async handleFileSelect() {
-        const file = this.fileInput?.files[0];
-        if (file) {
-            const MAX_FILE_SIZE = 10 * 1024 * 1024;
-            
-            if (file.size > MAX_FILE_SIZE) {
-                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                this.showAlert(`❌ Arquivo muito grande (${fileSizeMB}MB). O tamanho máximo permitido é 10MB.`, 'error');
-                this.resetFileSelection();
-                return;
-            }
-            
-            const validExtensions = ['.csv', '.xlsx', '.xls'];
-            
-            if (!validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-                this.showAlert('❌ Formato não suportado. Use apenas arquivos CSV ou Excel (.csv, .xlsx, .xls)', 'error');
-                this.resetFileSelection();
-                return;
-            }
-            
-            if (this.fileName) this.fileName.textContent = file.name;
-            if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
-            if (this.selectedFile) this.selectedFile.classList.remove('d-none');
-            
-            if (typeof gsap !== 'undefined') {
-                gsap.from(this.selectedFile, {
-                    duration: 0.5,
-                    y: 20,
-                    opacity: 0,
-                    ease: 'power3.out'
+                // Salvar usuário
+                this.saveUser({
+                    name: data.user_name,
+                    email: data.user_email,
+                    workshop_name: data.workshop_name,
+                    role: data.role,
+                    credits: data.credits,
+                    plan: data.plan,
+                    is_admin: data.is_admin,
+                    is_premium: data.plan === 'premium_mensal'
                 });
-            }
-            
-            await this.parseFile(file);
-        }
-    }
-    
-    async parseFile(file) {
-        this.showAlert('Analisando arquivo...', 'info');
-        
-        try {
-            if (file.name.endsWith('.csv')) {
-                Papa.parse(file, {
-                    header: true,
-                    preview: 10,
-                    delimiter: '',
-                    complete: (result) => {
-                        if (result.data && result.data.length > 0) {
-                            const firstRow = result.data[0];
-                            for (let key in firstRow) {
-                                const value = firstRow[key];
-                                if (typeof value === 'string' && value.includes(',') && !value.includes('.')) {
-                                    const numericValue = parseFloat(value.replace(',', '.'));
-                                    if (!isNaN(numericValue)) {
-                                        this.showAlert('⚠️ Detectado uso de vírgula como separador decimal. O sistema aceita ambos os formatos.', 'warning');
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        this.processParsedData(result.data, result.meta.fields);
-                    },
-                    error: (error) => {
-                        this.showAlert('❌ Erro ao ler CSV: ' + error, 'error');
-                        this.resetFileSelection();
-                    }
-                });
-            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                        
-                        if (jsonData.length > 0) {
-                            const headers = jsonData[0];
-                            const rows = jsonData.slice(1, 11).map(row => {
-                                const obj = {};
-                                headers.forEach((header, index) => {
-                                    let value = row[index];
-                                    if (typeof value === 'string' && value.includes(',')) {
-                                        const numValue = parseFloat(value.replace(',', '.'));
-                                        if (!isNaN(numValue)) {
-                                            value = numValue;
-                                        }
-                                    }
-                                    obj[header] = value;
-                                });
-                                return obj;
-                            });
-                            this.processParsedData(rows, headers);
-                        }
-                    } catch (error) {
-                        this.showAlert('❌ Erro ao ler arquivo Excel. Verifique se o arquivo não está corrompido.', 'error');
-                        this.resetFileSelection();
-                    }
-                };
-                reader.onerror = () => {
-                    this.showAlert('❌ Erro ao ler arquivo', 'error');
-                    this.resetFileSelection();
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        } catch (error) {
-            this.showAlert('❌ Erro ao processar arquivo', 'error');
-            this.resetFileSelection();
-        }
-    }
-    
-    processParsedData(data, columns) {
-        if (!data || data.length === 0) {
-            this.showAlert('❌ Arquivo vazio ou sem dados válidos', 'error');
-            this.resetFileSelection();
-            return;
-        }
-        
-        this.fileData = data;
-        this.columns = columns;
-        
-        this.showDataPreview(data, columns);
-        this.showColumnSelector(columns);
-        
-        if (this.uploadButton) {
-            this.uploadButton.disabled = false;
-        }
-        
-        this.showAlert('✅ Arquivo analisado! Selecione as colunas para análise.', 'success');
-    }
-    
-    showDataPreview(data, columns) {
-        if (!this.dataPreview || !this.previewHeader || !this.previewBody) return;
-        
-        this.previewHeader.innerHTML = '';
-        columns.forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = col;
-            this.previewHeader.appendChild(th);
-        });
-        
-        this.previewBody.innerHTML = '';
-        data.slice(0, 5).forEach(row => {
-            const tr = document.createElement('tr');
-            columns.forEach(col => {
-                const td = document.createElement('td');
-                let value = row[col] !== undefined ? row[col] : '-';
-                if (typeof value === 'number') {
-                    value = value.toFixed(2).replace('.', ',');
-                }
-                td.textContent = value;
-                tr.appendChild(td);
-            });
-            this.previewBody.appendChild(tr);
-        });
-        
-        this.dataPreview.classList.remove('d-none');
-        
-        if (typeof gsap !== 'undefined') {
-            gsap.from(this.dataPreview, {
-                duration: 0.5,
-                height: 0,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-        }
-    }
-    
-    showColumnSelector(columns) {
-        if (!this.columnSelector || !this.targetColumnContainer || !this.featureColumnsContainer) return;
-        
-        this.columnSelector.classList.remove('d-none');
-        
-        this.targetColumnContainer.innerHTML = '';
-        this.featureColumnsContainer.innerHTML = '';
-        
-        columns.forEach(col => {
-            const targetChip = this.createColumnChip(col, 'target');
-            this.targetColumnContainer.appendChild(targetChip);
-            
-            const featureChip = this.createColumnChip(col, 'feature');
-            this.featureColumnsContainer.appendChild(featureChip);
-        });
-        
-        this.updateSelectedCount();
-        
-        if (typeof gsap !== 'undefined') {
-            gsap.from('.column-chip', {
-                duration: 0.3,
-                scale: 0,
-                opacity: 0,
-                stagger: 0.05,
-                ease: 'back.out(1.7)'
-            });
-        }
-    }
-    
-    createColumnChip(columnName, type) {
-        const chip = document.createElement('span');
-        chip.className = `column-chip ${type === 'target' ? '' : 'feature-chip'}`;
-        chip.textContent = columnName;
-        
-        if (type === 'target') {
-            chip.addEventListener('click', () => this.selectTargetColumn(columnName, chip));
-        } else {
-            chip.addEventListener('click', () => this.toggleFeatureColumn(columnName, chip));
-        }
-        
-        return chip;
-    }
-    
-    selectTargetColumn(column, element) {
-        document.querySelectorAll('.column-chip.target').forEach(chip => {
-            chip.classList.remove('target');
-        });
-        
-        element.classList.add('target');
-        this.selectedTarget = column;
-        
-        this.showAlert(`✅ Coluna alvo selecionada: ${column}`, 'success');
-        this.updateSelectedCount();
-    }
-    
-    toggleFeatureColumn(column, element) {
-        element.classList.toggle('selected');
-        
-        if (element.classList.contains('selected')) {
-            this.selectedFeatures.push(column);
-            this.showAlert(`➕ Feature adicionada: ${column}`, 'info');
-        } else {
-            this.selectedFeatures = this.selectedFeatures.filter(c => c !== column);
-            this.showAlert(`➖ Feature removida: ${column}`, 'info');
-        }
-        
-        this.updateSelectedCount();
-    }
-    
-    updateSelectedCount() {
-        if (this.selectedColumnsCount) {
-            const total = this.selectedFeatures.length + (this.selectedTarget ? 1 : 0);
-            this.selectedColumnsCount.textContent = `${total}/${this.columns.length}`;
-        }
-    }
-    
-    getSelectedAlgorithm() {
-        for (const radio of this.algorithmRadios) {
-            if (radio.checked) {
-                return radio.value;
-            }
-        }
-        return 'random_forest';
-    }
-    
-    getAlgorithmName(value) {
-        const names = {
-            'random_forest': 'Random Forest',
-            'xgboost': 'XGBoost',
-            'linear': 'Regressão Linear',
-            'svr': 'SVR'
-        };
-        return names[value] || value;
-    }
-    
-    handleDrop(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        this.dropArea.classList.remove('dragover');
-        
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        
-        if (files.length > 0 && this.fileInput) {
-            this.fileInput.files = files;
-            this.handleFileSelect();
-        }
-    }
-    
-    preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
-    // ===== FUNÇÕES DE PROGRESSO =====
-    
-    showProgress() {
-        if (!document.getElementById('progressContainer')) {
-            const progressHtml = `
-                <div id="progressContainer" class="upload-card mt-4">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <h5 class="mb-0">Treinando Modelo</h5>
-                        <span class="badge bg-primary" id="processId">${this.currentProcessId}</span>
-                    </div>
-                    <div class="progress-modern mb-2">
-                        <div class="progress-modern-bar" id="progressBar" style="width: 0%"></div>
-                    </div>
-                    <p class="small text-muted mb-0" id="statusText">Iniciando...</p>
-                </div>
-            `;
-            
-            const uploadCard = document.querySelector('.upload-card');
-            if (uploadCard) {
-                uploadCard.insertAdjacentHTML('afterend', progressHtml);
-            }
-        } else {
-            document.getElementById('progressContainer')?.classList.remove('d-none');
-        }
-    }
-    
-    startProgressPolling() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-        }
-        
-        this.pollInterval = setInterval(async () => {
-            if (!this.currentProcessId) return;
-            
-            try {
-                const status = await this.getStatus(this.currentProcessId);
                 
-                this.updateProgress(status.progress || 0);
+                this.loginAttempts = 0;
+                this.showMessage('✅ Login realizado! Redirecionando...', 'success');
                 
-                const statusText = document.getElementById('statusText');
-                if (statusText) {
-                    statusText.textContent = this.getStatusText(status);
-                }
+                // Redirecionar para dashboard
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
                 
-                if (status.status === 'completed' || status.status === 'error') {
-                    clearInterval(this.pollInterval);
-                    
-                    if (status.status === 'completed') {
-                        this.showResult(status);
-                        await this.loadDashboardStats();
-                        await this.loadUserCredits();
-                        await this.loadAnalysisHistory();
-                        
-                        document.getElementById('progressContainer')?.remove();
-                    } else {
-                        this.showAlert('❌ Erro no treinamento: ' + (status.error || 'Desconhecido'), 'error');
-                    }
-                    
-                    this.resetUploadButton();
-                }
-                
-            } catch (error) {
-                console.error('Erro no polling:', error);
-            }
-        }, 2000);
-    }
-    
-    updateProgress(percent) {
-        const progressBar = document.getElementById('progressBar');
-        if (progressBar) {
-            progressBar.style.width = `${percent}%`;
-        }
-    }
-    
-    getStatusText(status) {
-        if (status.status === 'uploaded') return '📤 Arquivo recebido';
-        if (status.status === 'preprocessing') return '🔄 Pré-processando dados';
-        if (status.status === 'training') return '🧠 Treinando modelo Scikit-learn';
-        if (status.status === 'predicting') return '🔮 Gerando previsões';
-        if (status.status === 'evaluating') return '📊 Calculando métricas';
-        if (status.status === 'generating_report') return '📝 Gerando relatório';
-        if (status.status === 'completed') return '✅ Modelo treinado com sucesso';
-        return '⏳ Processando...';
-    }
-    
-    async getStatus(processId) {
-        try {
-            const response = await fetch(`${this.apiBase}/status/${processId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            return await response.json();
-        } catch {
-            return { status: 'unknown' };
-        }
-    }
-    
-    // ===== FUNÇÕES DE RESULTADO =====
-    
-    showResult(result) {
-        if (this.resultContainer) {
-            this.resultContainer.style.display = 'block';
-            
-            if (this.targetColumnName && this.selectedTarget) {
-                this.targetColumnName.textContent = this.selectedTarget;
-            }
-            
-            const algorithm = this.getSelectedAlgorithm();
-            if (this.algorithmName) {
-                this.algorithmName.textContent = this.getAlgorithmName(algorithm);
-            }
-            
-            if (typeof gsap !== 'undefined') {
-                gsap.from(this.resultContainer, {
-                    duration: 1,
-                    y: 50,
-                    opacity: 0,
-                    ease: 'power3.out'
-                });
-            }
-        }
-        
-        const metrics = result.metrics || {
-            r2: 0.94,
-            mae: 12.5,
-            rmse: 18.3,
-            feature_importance: [0.45, 0.30, 0.25]
-        };
-        
-        const featureNames = this.selectedFeatures || ['Feature 1', 'Feature 2', 'Feature 3'];
-        const predictions = result.predictions || this.generateSamplePredictions(10);
-        const actuals = result.actuals || this.generateSamplePredictions(10, true);
-        
-        this.updateMetrics(metrics, featureNames);
-        this.updateComparisonChart(actuals, predictions);
-        this.displayMLResults(actuals, predictions);
-    }
-    
-    generateSamplePredictions(length, isActual = false) {
-        if (isActual) {
-            return Array.from({ length }, () => 50 + Math.random() * 100);
-        } else {
-            return Array.from({ length }, () => 50 + Math.random() * 100);
-        }
-    }
-    
-    updateMetrics(metrics, featureNames) {
-        if (this.metricR2) {
-            this.metricR2.textContent = metrics.r2 ? metrics.r2.toFixed(2) : '0.94';
-        }
-        
-        if (this.metricMAE) {
-            this.metricMAE.textContent = metrics.mae ? metrics.mae.toFixed(1) : '12.5';
-        }
-        
-        if (this.metricRMSE) {
-            this.metricRMSE.textContent = metrics.rmse ? metrics.rmse.toFixed(1) : '18.3';
-        }
-        
-        if (this.metricImportance) {
-            const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
-            this.metricImportance.textContent = importance.length;
-        }
-        
-        if (this.featureImportance && featureNames.length > 0) {
-            const importance = metrics.feature_importance || [0.45, 0.30, 0.25];
-            let html = '';
-            
-            featureNames.slice(0, 3).forEach((name, index) => {
-                const value = importance[index] || 0;
-                html += `
-                    <div class="mb-2">
-                        <div class="d-flex justify-content-between small">
-                            <span>${name}</span>
-                            <span>${(value * 100).toFixed(0)}%</span>
-                        </div>
-                        <div class="progress-modern">
-                            <div class="progress-modern-bar" style="width: ${value * 100}%"></div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            this.featureImportance.innerHTML = html;
-        }
-    }
-    
-    updateComparisonChart(actuals, predictions) {
-        if (typeof Chart === 'undefined') return;
-        
-        const ctx = document.getElementById('comparisonChart')?.getContext('2d');
-        if (!ctx) return;
-        
-        if (window.comparisonChart) {
-            window.comparisonChart.destroy();
-        }
-        
-        window.comparisonChart = new Chart(ctx, {
-            type: 'scatter',
-            data: {
-                datasets: [
-                    {
-                        label: 'Previsões vs Real',
-                        data: actuals.map((actual, i) => ({ x: actual, y: predictions[i] })),
-                        backgroundColor: '#667eea',
-                        pointRadius: 6,
-                        pointHoverRadius: 8
-                    },
-                    {
-                        label: 'Linha Perfeita',
-                        data: [
-                            { x: Math.min(...actuals, ...predictions), y: Math.min(...actuals, ...predictions) },
-                            { x: Math.max(...actuals, ...predictions), y: Math.max(...actuals, ...predictions) }
-                        ],
-                        type: 'line',
-                        borderColor: '#48bb78',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                return `Real: ${context.raw.x.toFixed(2)} | Previsto: ${context.raw.y.toFixed(2)}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Valores Reais'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Valores Previstos'
-                        }
-                    }
-                }
-            }
-        });
-    }
-    
-    displayMLResults(actuals, predictions) {
-        if (!this.mlTable) return;
-        
-        this.mlTable.innerHTML = '';
-        
-        const validLength = Math.min(actuals.length, predictions.length, 10);
-        let totalError = 0;
-        
-        for (let i = 0; i < validLength; i++) {
-            const actual = actuals[i];
-            const predicted = predictions[i];
-            const error = Math.abs(actual - predicted);
-            const errorPercent = (error / actual) * 100;
-            const confidence = Math.max(0, 100 - errorPercent);
-            
-            totalError += error;
-            
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${i + 1}</td>
-                <td><strong>${actual.toFixed(2).replace('.', ',')}</strong></td>
-                <td class="text-primary">${predicted.toFixed(2).replace('.', ',')}</td>
-                <td>
-                    <span class="${error < 10 ? 'text-success' : error < 20 ? 'text-warning' : 'text-danger'}">
-                        ${error.toFixed(2).replace('.', ',')} (${errorPercent.toFixed(1).replace('.', ',')}%)
-                    </span>
-                </td>
-                <td>
-                    ± ${(error * 0.2).toFixed(2).replace('.', ',')}
-                    <div class="progress-modern mt-1">
-                        <div class="progress-modern-bar" style="width: ${confidence}%"></div>
-                    </div>
-                </td>
-                <td>
-                    <span class="badge ${errorPercent < 10 ? 'bg-success' : errorPercent < 20 ? 'bg-warning text-dark' : 'bg-danger'}">
-                        ${errorPercent < 10 ? 'Excelente' : errorPercent < 20 ? 'Bom' : 'Regular'}
-                    </span>
-                </td>
-            `;
-            
-            this.mlTable.appendChild(row);
-        }
-    }
-    
-    // ===== FUNÇÕES DE RESULTADO =====
-    
-    async downloadResult() {
-        if (!this.currentProcessId) return;
-        
-        try {
-            const response = await fetch(`${this.apiBase}/result/${this.currentProcessId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `modelo_${this.currentProcessId}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                this.showAlert('✅ Download iniciado!', 'success');
             } else {
-                this.showAlert('❌ Erro ao baixar resultado', 'error');
+                // Erro no login
+                this.showMessage(data.detail || 'Erro no login', 'error');
+                this.loadLoginCaptcha(); // Recarregar CAPTCHA
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = originalText;
             }
             
         } catch (error) {
-            this.showAlert('❌ Erro de conexão', 'error');
+            console.error('❌ Erro no login:', error);
+            this.showMessage('Erro de conexão. Tente novamente.', 'error');
+            this.loadLoginCaptcha();
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = originalText;
         }
     }
     
-    async exportAsCsv() {
-        if (!this.currentProcessId) return;
+    bindLoginEvents() {
+        // Refresh captcha
+        document.getElementById('refreshLoginCaptcha')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.loadLoginCaptcha();
+        });
         
-        try {
-            const response = await fetch(`${this.apiBase}/export/${this.currentProcessId}?format=csv`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `previsoes_${this.currentProcessId}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                this.showAlert('✅ CSV exportado com sucesso!', 'success');
-            }
-        } catch (error) {
-            this.showAlert('❌ Erro ao exportar CSV', 'error');
-        }
-    }
-    
-    async showRawData() {
-        if (!this.currentProcessId) return;
+        // Login form
+        document.getElementById('loginForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
         
-        const modalHtml = `
-            <div class="modal fade" id="rawDataModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content rounded-4">
-                        <div class="modal-header bg-dark text-white border-0">
-                            <h5 class="modal-title">
-                                <i class="fas fa-database me-2"></i>
-                                Dados do Modelo Treinado
-                            </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <pre class="bg-light p-3 rounded-3" style="max-height: 400px; overflow: auto;" id="rawDataContent">Carregando...</pre>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        // Forgot password
+        document.getElementById('forgotPassword')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showMessage('Função de recuperação de senha em breve!', 'info');
+        });
         
-        const existingModal = document.getElementById('rawDataModal');
-        if (existingModal) existingModal.remove();
-        
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-        const modal = new bootstrap.Modal(document.getElementById('rawDataModal'));
-        modal.show();
-        
-        await this.loadRawData();
-    }
-    
-    async loadRawData() {
-        const contentDiv = document.getElementById('rawDataContent');
-        if (!contentDiv) return;
-        
-        contentDiv.textContent = 'Carregando...';
-        
-        try {
-            const response = await fetch(`${this.apiBase}/raw/${this.currentProcessId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                contentDiv.textContent = JSON.stringify(data, null, 2);
-            } else {
-                contentDiv.textContent = 'Erro ao carregar dados.';
-            }
-        } catch (error) {
-            contentDiv.textContent = 'Erro de conexão: ' + error.message;
-        }
-    }
-    
-    // ===== FUNÇÕES DE HISTÓRICO =====
-    
-    async loadAnalysisHistory() {
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
-            if (response.ok) {
-                const analyses = await response.json();
-                this.displayAnalysisHistory(analyses);
-            }
-        } catch (error) {
-            console.error('Erro ao carregar histórico:', error);
-        }
-    }
-    
-    displayAnalysisHistory(analyses) {
-        if (!this.historyContainer) return;
-        
-        if (!analyses || analyses.length === 0) {
-            this.historyContainer.innerHTML = `
-                <div class="timeline-item">
-                    <div class="timeline-marker"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">Nenhuma análise realizada</p>
-                        <small class="text-muted">Envie seu primeiro arquivo</small>
-                    </div>
-                </div>
-            `;
-            return;
-        }
-        
-        const html = analyses.slice(0, 5).map(analysis => {
-            const date = new Date(analysis.created_at);
-            const formattedDate = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
-            
-            return `
-                <div class="timeline-item">
-                    <div class="timeline-marker ${analysis.status === 'completed' ? 'bg-success' : 'bg-warning'}"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small">
-                            <strong>${analysis.filename || 'Arquivo'}</strong>
-                            ${analysis.target_column ? `<br><small>Alvo: ${analysis.target_column}</small>` : ''}
-                        </p>
-                        <small class="text-muted">
-                            ${formattedDate}
-                            ${analysis.algorithm ? `• ${this.getAlgorithmName(analysis.algorithm)}` : ''}
-                        </small>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        this.historyContainer.innerHTML = html;
-    }
-    
-    async loadDashboardStats() {
-        try {
-            const response = await fetch(`${this.apiBase}/stats`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-            const stats = await response.json();
-            
-            if (stats) {
-                if (this.totalAnalises) this.totalAnalises.textContent = stats.total_analises || 0;
-                if (this.analisesHoje) this.analisesHoje.textContent = stats.analises_hoje || 0;
-            }
-        } catch (error) {
-            console.error('Erro ao carregar stats:', error);
-        }
-    }
-    
-    // ===== FUNÇÕES DE UTILIDADE =====
-    
-    resetFileSelection() {
-        if (this.fileInput) this.fileInput.value = '';
-        if (this.selectedFile) this.selectedFile.classList.add('d-none');
-        if (this.columnSelector) this.columnSelector.classList.add('d-none');
-        if (this.dataPreview) this.dataPreview.classList.add('d-none');
-        if (this.uploadButton) this.uploadButton.disabled = true;
-        
-        this.fileData = null;
-        this.columns = [];
-        this.selectedFeatures = [];
-        this.selectedTarget = null;
-    }
-    
-    initGSAPAnimations() {
-        if (typeof gsap !== 'undefined') {
-            gsap.registerPlugin(ScrollTrigger);
-            
-            gsap.from('.metric-card', {
-                scrollTrigger: {
-                    trigger: '.metric-card',
-                    start: 'top 80%'
-                },
-                duration: 0.8,
-                y: 50,
-                opacity: 0,
-                stagger: 0.2,
-                ease: 'power3.out'
-            });
-            
-            gsap.from('.plan-card', {
-                scrollTrigger: {
-                    trigger: '.plan-card',
-                    start: 'top 80%'
-                },
-                duration: 1,
-                scale: 0.8,
-                opacity: 0,
-                ease: 'back.out(1.7)'
-            });
-        }
-    }
-    
-    setupLogout() {
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', (e) => {
+        // Enter key no captcha
+        document.getElementById('loginCaptchaInput')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
                 e.preventDefault();
-                if (window.appAuth) {
-                    window.appAuth.logout();
-                } else {
-                    this.logout();
-                }
-            });
-        }
-    }
-    
-    async logout() {
-        if (confirm('Deseja realmente sair?')) {
-            try {
-                const refreshToken = localStorage.getItem('refresh_token');
-                
-                if (refreshToken) {
-                    await fetch(`${this.apiBase}/auth/logout`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                        },
-                        body: JSON.stringify({ refresh_token: refreshToken })
-                    });
-                }
-            } catch (error) {
-                console.error('Erro no logout:', error);
-            } finally {
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user');
-                
-                window.location.href = '/login.html';
+                this.handleLogin();
             }
-        }
+        });
     }
     
-    async fetchWithAuth(url, options = {}) {
-        const token = localStorage.getItem('access_token');
-        
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers
-        };
-        
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        const response = await fetch(url, { ...options, headers });
-        
-        if (response.status === 401) {
-            const refreshed = await this.refreshToken();
-            if (refreshed) {
-                return this.fetchWithAuth(url, options);
-            } else {
-                this.logout();
-            }
-        }
-        
-        return response;
-    }
+    // ===== REGISTER PAGE =====
     
-    async refreshToken() {
-        const refreshToken = localStorage.getItem('refresh_token');
-        
-        if (!refreshToken) return false;
-        
-        try {
-            const response = await fetch(`${this.apiBase}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                return true;
-            }
-        } catch (error) {
-            console.error('Erro no refresh token:', error);
-        }
-        
-        return false;
-    }
-    
-    showAlert(message, type = 'info') {
-        const existingAlerts = document.querySelectorAll('.custom-alert');
-        if (existingAlerts.length > 3) {
-            existingAlerts[0].remove();
-        }
-        
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed custom-alert`;
-        alertDiv.style.cssText = `
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 350px;
-            max-width: 450px;
-            border-radius: 12px;
-            border: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-            font-size: 0.95rem;
-            padding: 1rem 1.25rem;
-        `;
-        
-        let icon = '📌';
-        if (type === 'success') icon = '✅';
-        if (type === 'error') icon = '❌';
-        if (type === 'warning') icon = '⚠️';
-        if (type === 'info') icon = 'ℹ️';
-        
-        alertDiv.innerHTML = `
-            <div style="display: flex; align-items: center;">
-                <span style="font-size: 1.4rem; margin-right: 12px;">${icon}</span>
-                <div style="flex: 1;">${message}</div>
-                <button type="button" class="btn-close ms-3" data-bs-dismiss="alert" style="font-size: 0.8rem;"></button>
-            </div>
-        `;
-        
-        document.body.appendChild(alertDiv);
+    initRegisterPage() {
+        console.log('🔐 Inicializando página de registro...');
         
         setTimeout(() => {
-            if (alertDiv.parentNode) {
-                alertDiv.style.transition = 'opacity 0.3s';
-                alertDiv.style.opacity = '0';
+            if (document.getElementById('registerCaptchaImage')) {
+                this.loadRegisterCaptcha();
+                this.bindRegisterEvents();
+            }
+        }, 300);
+    }
+    
+    async loadRegisterCaptcha() {
+        const img = document.getElementById('registerCaptchaImage');
+        const input = document.getElementById('registerCaptchaInput');
+        const refreshBtn = document.getElementById('refreshRegisterCaptcha');
+        
+        if (!img) return;
+        
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+        
+        if (input) {
+            input.value = '';
+            input.disabled = true;
+            input.placeholder = 'Carregando...';
+        }
+        
+        img.src = 'data:image/svg+xml,%3Csvg...Carregando...%3C/svg%3E';
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
+                cache: 'no-cache'
+            });
+            
+            if (!response.ok) throw new Error('Erro no servidor');
+            
+            const captchaId = response.headers.get('X-Captcha-ID');
+            
+            if (!captchaId) {
+                this.generateFallbackCaptcha('register');
+                return;
+            }
+            
+            this.captchaIdRegister = captchaId;
+            
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            if (img.dataset.blobUrl) {
+                URL.revokeObjectURL(img.dataset.blobUrl);
+            }
+            
+            img.src = imageUrl;
+            img.dataset.blobUrl = imageUrl;
+            
+            if (input) {
+                input.disabled = false;
+                input.placeholder = 'Digite os 6 números';
+            }
+            
+            console.log('✅ CAPTCHA registro carregado');
+            
+        } catch (error) {
+            console.error('❌ Erro CAPTCHA registro:', error);
+            this.generateFallbackCaptcha('register');
+            
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            }
+        }
+    }
+    
+    async handleRegister() {
+        const name = document.getElementById('regName')?.value;
+        const email = document.getElementById('regEmail')?.value;
+        const password = document.getElementById('regPassword')?.value;
+        const confirm = document.getElementById('regConfirmPassword')?.value;
+        const workshop = document.getElementById('regWorkshop')?.value;
+        const captchaInput = document.getElementById('registerCaptchaInput')?.value;
+        
+        if (!name || !email || !password || !confirm || !workshop || !captchaInput) {
+            this.showMessage('Preencha todos os campos', 'error');
+            return;
+        }
+        
+        if (password !== confirm) {
+            this.showMessage('As senhas não coincidem', 'error');
+            return;
+        }
+        
+        if (password.length < 6) {
+            this.showMessage('A senha deve ter no mínimo 6 caracteres', 'error');
+            return;
+        }
+        
+        if (!email.includes('@')) {
+            this.showMessage('Email inválido', 'error');
+            return;
+        }
+        
+        // Verificar fallback
+        const isFallback = this.captchaIdRegister?.startsWith('fallback_');
+        
+        if (isFallback) {
+            const fallbackText = document.getElementById('registerCaptchaInput')?.dataset.fallbackCaptcha;
+            if (captchaInput !== fallbackText) {
+                this.showMessage('CAPTCHA incorreto', 'error');
+                this.loadRegisterCaptcha();
+                return;
+            }
+        }
+        
+        const registerBtn = document.getElementById('registerBtn');
+        const originalText = registerBtn.innerHTML;
+        registerBtn.disabled = true;
+        registerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Criando conta...';
+        
+        try {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (!isFallback && this.captchaIdRegister) {
+                headers['X-Captcha-ID'] = this.captchaIdRegister;
+            }
+            
+            const response = await fetch(`${this.apiBase}/auth/register`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    name: name.trim(),
+                    email: email.trim().toLowerCase(),
+                    password: password,
+                    workshop_name: workshop.trim(),
+                    captcha_text: captchaInput
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showMessage('✅ Conta criada! Faça login.', 'success');
+                
+                // Limpar formulário
+                document.getElementById('registerForm').reset();
+                
+                // Mudar para aba de login
+                const loginTab = document.getElementById('login-tab');
+                if (loginTab) {
+                    loginTab.click();
+                    
+                    // Pré-preencher email
+                    const loginEmail = document.getElementById('loginEmail');
+                    if (loginEmail) {
+                        loginEmail.value = email.trim().toLowerCase();
+                    }
+                    
+                    this.loadLoginCaptcha();
+                }
+                
+            } else {
+                this.showMessage(data.detail || 'Erro no registro', 'error');
+                this.loadRegisterCaptcha();
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = originalText;
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro no registro:', error);
+            this.showMessage('Erro de conexão', 'error');
+            this.loadRegisterCaptcha();
+            registerBtn.disabled = false;
+            registerBtn.innerHTML = originalText;
+        }
+    }
+    
+    bindRegisterEvents() {
+        document.getElementById('refreshRegisterCaptcha')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.loadRegisterCaptcha();
+        });
+        
+        document.getElementById('registerForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleRegister();
+        });
+    }
+    
+    // ===== LOGOUT =====
+    
+    async logout() {
+        if (!confirm('Deseja realmente sair?')) return;
+        
+        const refreshToken = localStorage.getItem('refresh_token');
+        
+        try {
+            if (refreshToken) {
+                await fetch(`${this.apiBase}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                    credentials: 'include'
+                });
+            }
+        } catch (error) {
+            console.error('Erro no logout:', error);
+        } finally {
+            // ✅ LIMPAR TUDO
+            this.clearStorage();
+            
+            // Limpar intervalo
+            if (this.tokenCheckInterval) {
+                clearInterval(this.tokenCheckInterval);
+            }
+            
+            // Limpar URLs de objetos
+            document.querySelectorAll('img[data-blob-url]').forEach(img => {
+                URL.revokeObjectURL(img.dataset.blobUrl);
+            });
+            
+            this.showMessage('Até logo!', 'info');
+            
+            setTimeout(() => {
+                window.location.href = '/login.html';
+            }, 500);
+        }
+    }
+    
+    // ===== USER INTERFACE =====
+    
+    updateUserUI() {
+        // Nome do usuário
+        const userNameEl = document.getElementById('userName');
+        if (userNameEl) {
+            userNameEl.textContent = this.user?.name || 'Usuário';
+        }
+        
+        // Nome da oficina
+        const workshopEl = document.getElementById('workshopName');
+        if (workshopEl) {
+            workshopEl.textContent = this.user?.workshop_name || 'Oficina';
+        }
+        
+        // Atualizar créditos
+        this.updateCreditsDisplay();
+        
+        // Badge de admin
+        const adminBadge = document.getElementById('adminBadge');
+        if (adminBadge) {
+            adminBadge.style.display = this.isAdmin() ? 'inline-block' : 'none';
+        }
+        
+        // Badge de premium
+        const premiumBadge = document.getElementById('premiumBadge');
+        if (premiumBadge) {
+            premiumBadge.style.display = this.isPremium() ? 'inline-block' : 'none';
+        }
+        
+        // Timer de expiração (opcional)
+        const tokenTimer = document.getElementById('tokenTimer');
+        if (tokenTimer && this.isAuthenticated()) {
+            tokenTimer.textContent = this.formatTimeRemaining();
+            
+            // Atualizar a cada minuto
+            setInterval(() => {
+                tokenTimer.textContent = this.formatTimeRemaining();
+            }, 60000);
+        }
+    }
+    
+    updateCreditsDisplay() {
+        const credits = this.getCreditsDisplay();
+        
+        document.querySelectorAll('#navbarCredits span, #creditsCount, .credits-badge span').forEach(el => {
+            if (el) el.textContent = credits;
+        });
+    }
+    
+    // ===== UTILITIES =====
+    
+    isLoginPage() {
+        return window.location.pathname.includes('login.html') || 
+               window.location.pathname === '/login' ||
+               window.location.pathname === '/';
+    }
+    
+    isRegisterPage() {
+        return window.location.pathname.includes('register.html') || 
+               window.location.pathname === '/register';
+    }
+    
+    isAuthenticated() {
+        return !!localStorage.getItem('access_token');
+    }
+    
+    redirectToLogin() {
+        this.clearStorage();
+        
+        if (!this.isLoginPage() && !this.isRegisterPage()) {
+            this.showMessage('Faça login para continuar', 'info');
+            setTimeout(() => {
+                window.location.href = '/login.html';
+            }, 1000);
+        }
+    }
+    
+    isAdmin() {
+        return this.user?.is_admin === true;
+    }
+    
+    isPremium() {
+        return this.user?.is_premium === true || this.user?.plan === 'premium_mensal';
+    }
+    
+    getCreditsDisplay() {
+        if (this.isAdmin()) return '∞';
+        return this.user?.credits || 0;
+    }
+    
+    getCurrentUser() {
+        return this.user || {};
+    }
+    
+    // ===== MESSAGES =====
+    
+    showMessage(message, type = 'info') {
+        const messageDiv = document.getElementById('authMessage');
+        if (!messageDiv) {
+            alert(message); // Fallback
+            return;
+        }
+        
+        const icons = {
+            success: '✅',
+            error: '❌',
+            warning: '⚠️',
+            info: 'ℹ️'
+        };
+        
+        messageDiv.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                <strong>${icons[type] || ''}</strong> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        
+        setTimeout(() => {
+            const alert = messageDiv.querySelector('.alert');
+            if (alert) {
+                alert.classList.remove('show');
                 setTimeout(() => {
-                    if (alertDiv.parentNode) alertDiv.remove();
+                    messageDiv.innerHTML = '';
                 }, 300);
             }
         }, 5000);
     }
-    
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        
-        if (i >= 2) {
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-        
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
 }
 
-// Função global para carregar histórico completo
-window.loadFullHistory = async function() {
-    if (!window.app) return;
-    
-    try {
-        const response = await window.app.fetchWithAuth(`${window.app.apiBase}/analyses/history?limit=100`);
-        if (response.ok) {
-            const analyses = await response.json();
-            showHistoryModal(analyses);
-        }
-    } catch (error) {
-        window.app.showAlert('Erro ao carregar histórico completo', 'error');
-    }
-};
-
-function showHistoryModal(analyses) {
-    const modalHtml = `
-        <div class="modal fade" id="historyModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content rounded-4">
-                    <div class="modal-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                        <h5 class="modal-title">
-                            <i class="fas fa-history me-2"></i>
-                            Histórico Completo de Análises
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Data</th>
-                                    <th>Arquivo</th>
-                                    <th>Algoritmo</th>
-                                    <th>Coluna Alvo</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${analyses.map(a => `
-                                    <tr>
-                                        <td>${new Date(a.created_at).toLocaleDateString('pt-BR')}</td>
-                                        <td>${a.filename || '-'}</td>
-                                        <td>${window.app.getAlgorithmName(a.algorithm) || '-'}</td>
-                                        <td>${a.target_column || '-'}</td>
-                                        <td>
-                                            <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-warning'}">
-                                                ${a.status || 'Concluído'}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    const existingModal = document.getElementById('historyModal');
-    if (existingModal) existingModal.remove();
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    const modal = new bootstrap.Modal(document.getElementById('historyModal'));
-    modal.show();
-}
-
-// Inicializar - AGUARDA auth.js primeiro
+// ===== GLOBAL INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        window.app = new AutoAnalytics();
-        console.log('✅ app.js inicializado com suporte a premium');
-    }, 100);
+    window.appAuth = new Auth();
 });
+
+// ===== GLOBAL FUNCTIONS =====
+window.isAdmin = () => window.appAuth?.isAdmin() || false;
+window.isPremium = () => window.appAuth?.isPremium() || false;
+window.getCreditsDisplay = () => window.appAuth?.getCreditsDisplay() || '0';
+window.getCurrentUser = () => window.appAuth?.getCurrentUser() || {};
+window.logout = () => window.appAuth?.logout();
+window.checkToken = () => window.appAuth?.checkTokenStatus();
+window.getTokenTimeRemaining = () => window.appAuth?.formatTimeRemaining();
+
+console.log('✅ auth.js v2.0 carregado - Ciclo de vida do token implementado!');
