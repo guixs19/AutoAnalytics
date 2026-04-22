@@ -15,12 +15,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             font-family: 'Inter', 'Segoe UI', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
+            padding: 1rem;
         }
         
         .card {
@@ -184,7 +191,7 @@
             color: #667eea;
         }
         
-        /* 🔥 ESTILO DO CAPTCHA PRÓPRIO */
+        /* CAPTCHA ESTYLES */
         .captcha-container {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             border-radius: 16px;
@@ -238,12 +245,10 @@
             transform: rotate(180deg);
         }
         
-        .captcha-refresh i {
-            transition: transform 0.5s ease;
-        }
-        
-        .captcha-refresh:hover i {
-            transform: rotate(180deg);
+        .captcha-refresh:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
         
         .captcha-input {
@@ -273,7 +278,6 @@
             font-size: 0.9rem;
         }
         
-        /* Timer do CAPTCHA */
         .captcha-timer {
             font-weight: 700;
             color: #667eea;
@@ -318,14 +322,12 @@
             text-decoration: underline;
         }
         
-        /* Loading spinner */
         .btn .spinner-border {
             width: 1.2rem;
             height: 1.2rem;
             margin-right: 0.5rem;
         }
         
-        /* Animações */
         .fade-in {
             animation: fadeIn 0.5s ease-out;
         }
@@ -339,10 +341,9 @@
             }
         }
         
-        /* Responsividade */
         @media (max-width: 768px) {
             .card {
-                margin: 1rem;
+                margin: 0;
             }
             
             .card-header {
@@ -359,7 +360,6 @@
             }
         }
         
-        /* Badge de segurança */
         .security-badge {
             display: inline-flex;
             align-items: center;
@@ -370,15 +370,6 @@
             border-radius: 20px;
             font-size: 0.75rem;
             font-weight: 600;
-        }
-        
-        /* Token timer */
-        .token-timer {
-            font-size: 0.75rem;
-            background: rgba(255,255,255,0.1);
-            padding: 0.25rem 0.5rem;
-            border-radius: 20px;
-            color: white;
         }
         
         .alert {
@@ -407,13 +398,32 @@
             width: 100%;
             background: #48bb78;
         }
+        
+        .position-relative {
+            position: relative;
+        }
+        
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            z-index: 10;
+        }
+        
+        .password-toggle:hover {
+            color: #764ba2;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="row justify-content-center">
             <div class="col-md-8 col-lg-6 col-xl-5">
-                <!-- Card de Login -->
                 <div class="card shadow-lg border-0">
                     <div class="card-header text-white text-center">
                         <div class="mb-3">
@@ -439,7 +449,6 @@
                     </div>
                     
                     <div class="card-body p-4">
-                        <!-- Tabs Login/Registro -->
                         <ul class="nav nav-tabs nav-justified mb-4" id="authTabs" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active" id="login-tab" data-bs-toggle="tab" 
@@ -455,9 +464,8 @@
                             </li>
                         </ul>
                         
-                        <!-- Conteúdo das Tabs -->
                         <div class="tab-content">
-                            <!-- TAB LOGIN -->
+                            <!-- LOGIN TAB -->
                             <div class="tab-pane fade show active" id="login" role="tabpanel">
                                 <form id="loginForm">
                                     <div class="mb-3">
@@ -468,12 +476,15 @@
                                                placeholder="seu@email.com" required autocomplete="email">
                                     </div>
                                     
-                                    <div class="mb-3">
+                                    <div class="mb-3 position-relative">
                                         <label for="loginPassword" class="form-label">
                                             <i class="fas fa-lock me-2"></i>Senha
                                         </label>
                                         <input type="password" class="form-control" id="loginPassword" 
                                                placeholder="Sua senha" required autocomplete="current-password">
+                                        <button type="button" class="password-toggle" onclick="togglePassword('loginPassword')">
+                                            <i class="far fa-eye"></i>
+                                        </button>
                                     </div>
                                     
                                     <div class="d-flex justify-content-end mb-3">
@@ -482,7 +493,7 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA PRÓPRIO COM CRONÔMETRO -->
+                                    <!-- CAPTCHA -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
@@ -526,7 +537,7 @@
                                 </form>
                             </div>
                             
-                            <!-- TAB REGISTRO -->
+                            <!-- REGISTER TAB -->
                             <div class="tab-pane fade" id="register" role="tabpanel">
                                 <form id="registerForm">
                                     <div class="mb-3">
@@ -546,22 +557,28 @@
                                     </div>
                                     
                                     <div class="row">
-                                        <div class="col-md-6 mb-3">
+                                        <div class="col-md-6 mb-3 position-relative">
                                             <label for="regPassword" class="form-label">
                                                 <i class="fas fa-lock me-2"></i>Senha
                                             </label>
                                             <input type="password" class="form-control" id="regPassword" 
                                                    minlength="6" placeholder="Mínimo 6 caracteres" 
                                                    required autocomplete="new-password">
+                                            <button type="button" class="password-toggle" onclick="togglePassword('regPassword')">
+                                                <i class="far fa-eye"></i>
+                                            </button>
                                             <div class="password-strength" id="passwordStrength"></div>
                                         </div>
                                         
-                                        <div class="col-md-6 mb-3">
+                                        <div class="col-md-6 mb-3 position-relative">
                                             <label for="regConfirmPassword" class="form-label">
                                                 <i class="fas fa-lock me-2"></i>Confirmar
                                             </label>
                                             <input type="password" class="form-control" id="regConfirmPassword" 
                                                    placeholder="Digite novamente" required autocomplete="new-password">
+                                            <button type="button" class="password-toggle" onclick="togglePassword('regConfirmPassword')">
+                                                <i class="far fa-eye"></i>
+                                            </button>
                                         </div>
                                     </div>
                                     
@@ -573,7 +590,7 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA PRÓPRIO COM CRONÔMETRO -->
+                                    <!-- CAPTCHA REGISTER -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
@@ -619,10 +636,8 @@
                             </div>
                         </div>
                         
-                        <!-- Área de Mensagens -->
                         <div id="authMessage" class="mt-3"></div>
                         
-                        <!-- Links Rápidos -->
                         <div class="text-center mt-3">
                             <small class="text-muted">
                                 <i class="fas fa-shield-alt me-1"></i>
@@ -633,258 +648,26 @@
                     
                     <div class="card-footer text-center">
                         <div class="d-flex justify-content-center gap-3 mb-2">
-                            <small>
-                                <a href="#" class="text-decoration-none">
-                                    <i class="fas fa-question-circle me-1"></i>Ajuda
-                                </a>
-                            </small>
-                            <small>
-                                <a href="#" class="text-decoration-none">
-                                    <i class="fas fa-shield-alt me-1"></i>Privacidade
-                                </a>
-                            </small>
-                            <small>
-                                <a href="#" class="text-decoration-none">
-                                    <i class="fas fa-file-alt me-1"></i>Termos
-                                </a>
-                            </small>
+                            <small><a href="#" class="text-decoration-none"><i class="fas fa-question-circle me-1"></i>Ajuda</a></small>
+                            <small><a href="#" class="text-decoration-none"><i class="fas fa-shield-alt me-1"></i>Privacidade</a></small>
+                            <small><a href="#" class="text-decoration-none"><i class="fas fa-file-alt me-1"></i>Termos</a></small>
                         </div>
-                        <small class="text-muted">
-                            © 2024 AutoAnalytics. Todos os direitos reservados.
-                        </small>
+                        <small class="text-muted">© 2024 AutoAnalytics. Todos os direitos reservados.</small>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- 🔥 APENAS auth.js - Já faz tudo! -->
     <script src="/static/js/auth.js"></script>
     
     <script>
-        // ===== SISTEMA DE CRONÔMETRO DO CAPTCHA (2 MINUTOS) =====
-        class CaptchaTimer {
-            constructor() {
-                this.intervals = {};
-                this.activeTimers = {};
-            }
+        // Timer do CAPTCHA
+      
             
-            // Iniciar timer para um CAPTCHA específico
-            start(timerId, durationSeconds = 120) {
-                // Parar timer anterior se existir
-                if (this.intervals[timerId]) {
-                    clearInterval(this.intervals[timerId]);
-                }
-                
-                const timerElement = document.getElementById(timerId);
-                if (!timerElement) return;
-                
-                let seconds = durationSeconds;
-                
-                // Atualizar imediatamente
-                this.updateDisplay(timerElement, seconds);
-                
-                // Iniciar novo intervalo
-                this.intervals[timerId] = setInterval(() => {
-                    seconds--;
-                    
-                    if (seconds >= 0) {
-                        this.updateDisplay(timerElement, seconds);
-                        
-                        // Quando faltar 30 segundos, mudar cor
-                        if (seconds <= 30) {
-                            timerElement.classList.add('expiring');
-                        }
-                    }
-                    
-                    if (seconds <= 0) {
-                        // Timer expirou
-                        clearInterval(this.intervals[timerId]);
-                        timerElement.textContent = 'Expirado';
-                        timerElement.classList.remove('expiring');
-                        
-                        // Disparar evento de expiração
-                        const event = new CustomEvent('captchaExpired', { 
-                            detail: { timerId: timerId }
-                        });
-                        document.dispatchEvent(event);
-                    }
-                }, 1000);
-                
-                this.activeTimers[timerId] = true;
-            }
-            
-            // Parar timer
-            stop(timerId) {
-                if (this.intervals[timerId]) {
-                    clearInterval(this.intervals[timerId]);
-                    delete this.intervals[timerId];
-                }
-                this.activeTimers[timerId] = false;
-            }
-            
-            // Atualizar display do timer
-            updateDisplay(element, seconds) {
-                const mins = Math.floor(seconds / 60);
-                const secs = seconds % 60;
-                element.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-            }
-            
-            // Verificar se timer está ativo
-            isActive(timerId) {
-                return this.activeTimers[timerId] || false;
-            }
-        }
-        
-        // Inicializar timers
-        const captchaTimers = new CaptchaTimer();
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            
-            // ===== FUNÇÕES DE UI/UX =====
-            
-            // Mostrar/ocultar senha
-            const passwordFields = ['loginPassword', 'regPassword', 'regConfirmPassword'];
-            passwordFields.forEach(id => {
-                const field = document.getElementById(id);
-                if (field) {
-                    const wrapper = field.parentElement;
-                    const toggleBtn = document.createElement('button');
-                    toggleBtn.type = 'button';
-                    toggleBtn.className = 'btn btn-link position-absolute end-0 top-50 translate-middle-y';
-                    toggleBtn.style.textDecoration = 'none';
-                    toggleBtn.style.zIndex = '10';
-                    toggleBtn.innerHTML = '<i class="far fa-eye"></i>';
-                    toggleBtn.onclick = function() {
-                        const type = field.type === 'password' ? 'text' : 'password';
-                        field.type = type;
-                        this.innerHTML = type === 'password' ? '<i class="far fa-eye"></i>' : '<i class="far fa-eye-slash"></i>';
-                    };
-                    
-                    wrapper.style.position = 'relative';
-                    wrapper.appendChild(toggleBtn);
-                }
-            });
-            
-            // ===== CAPTCHA TIMERS =====
-            
-            // Quando CAPTCHA for carregado (via auth.js)
-            document.addEventListener('captchaLoaded', function(e) {
-                if (e.detail && e.detail.type) {
-                    if (e.detail.type === 'login') {
-                        captchaTimers.start('loginCaptchaTimer', 120);
-                    } else if (e.detail.type === 'register') {
-                        captchaTimers.start('registerCaptchaTimer', 120);
-                    }
-                }
-            });
-            
-            // Quando CAPTCHA expirar
-            document.addEventListener('captchaExpired', function(e) {
-                console.log('⏰ CAPTCHA expirado:', e.detail.timerId);
-                
-                // Se o CAPTCHA expirou, podemos mostrar mensagem
-                if (e.detail.timerId === 'loginCaptchaTimer') {
-                    const input = document.getElementById('loginCaptchaInput');
-                    if (input) {
-                        input.placeholder = 'CAPTCHA expirado. Atualize.';
-                        input.disabled = true;
-                    }
-                } else if (e.detail.timerId === 'registerCaptchaTimer') {
-                    const input = document.getElementById('registerCaptchaInput');
-                    if (input) {
-                        input.placeholder = 'CAPTCHA expirado. Atualize.';
-                        input.disabled = true;
-                    }
-                }
-            });
-            
-            // Forçar recarregamento do CAPTCHA quando trocar de aba
-            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
-                tab.addEventListener('shown.bs.tab', function(e) {
-                    if (e.target.id === 'login-tab' && window.appAuth) {
-                        // Parar timer do registro
-                        captchaTimers.stop('registerCaptchaTimer');
-                        
-                        // Carregar novo CAPTCHA de login
-                        window.appAuth.loadLoginCaptcha();
-                        
-                    } else if (e.target.id === 'register-tab' && window.appAuth) {
-                        // Parar timer do login
-                        captchaTimers.stop('loginCaptchaTimer');
-                        
-                        // Carregar novo CAPTCHA de registro
-                        window.appAuth.loadRegisterCaptcha();
-                    }
-                });
-            });
-            
-            // Interceptar refresh dos CAPTCHAs
-            document.getElementById('refreshLoginCaptcha')?.addEventListener('click', function() {
-                captchaTimers.stop('loginCaptchaTimer');
-                const timerEl = document.getElementById('loginCaptchaTimer');
-                if (timerEl) {
-                    timerEl.textContent = '--:--';
-                    timerEl.classList.remove('expiring');
-                }
-            });
-            
-            document.getElementById('refreshRegisterCaptcha')?.addEventListener('click', function() {
-                captchaTimers.stop('registerCaptchaTimer');
-                const timerEl = document.getElementById('registerCaptchaTimer');
-                if (timerEl) {
-                    timerEl.textContent = '--:--';
-                    timerEl.classList.remove('expiring');
-                }
-            });
-            
-            // ===== MEDIDOR DE FORÇA DA SENHA =====
-            const passwordInput = document.getElementById('regPassword');
-            const strengthIndicator = document.getElementById('passwordStrength');
-            
-            if (passwordInput && strengthIndicator) {
-                passwordInput.addEventListener('input', function() {
-                    const password = this.value;
-                    let strength = 0;
-                    
-                    if (password.length >= 6) strength++;
-                    if (password.match(/[a-z]+/)) strength++;
-                    if (password.match(/[A-Z]+/)) strength++;
-                    if (password.match(/[0-9]+/)) strength++;
-                    if (password.match(/[$@#&!]+/)) strength++;
-                    
-                    strengthIndicator.className = 'password-strength';
-                    
-                    if (strength <= 2) {
-                        strengthIndicator.classList.add('strength-weak');
-                    } else if (strength <= 4) {
-                        strengthIndicator.classList.add('strength-medium');
-                    } else {
-                        strengthIndicator.classList.add('strength-strong');
-                    }
-                });
-            }
-            
-            // ===== VALIDAÇÃO DE SENHA NO REGISTRO =====
-            const registerForm = document.getElementById('registerForm');
-            if (registerForm) {
-                registerForm.addEventListener('submit', function(e) {
-                    const password = document.getElementById('regPassword').value;
-                    const confirm = document.getElementById('regConfirmPassword').value;
-                    
-                    if (password !== confirm) {
-                        e.preventDefault();
-                        alert('As senhas não coincidem!');
-                        return false;
-                    }
-                });
-            }
-            
-            console.log('✅ UI do login carregada com cronômetros de CAPTCHA');
-        });
+            console.log('✅ UI do login carregada');
+        ;
     </script>
 </body>
 </html>

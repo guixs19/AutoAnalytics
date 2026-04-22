@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO FINAL COM CICLO DE VIDA COMPLETO
+# backend/api/auth_routes.py - VERSÃO COMPLETA CORRIGIDA
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response, JSONResponse
@@ -21,7 +21,6 @@ from backend.security import (
     oauth2_scheme
 )
 
-# Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ router = APIRouter(tags=["authentication"])
 
 @router.get("/captcha/generate")
 async def generate_captcha(request: Request):
-    """Gera CAPTCHA próprio"""
+    """Gera CAPTCHA próprio - Retorna imagem e ID no header"""
     client_ip = request.client.host if request.client else "unknown"
     
     try:
@@ -47,80 +46,51 @@ async def generate_captcha(request: Request):
         media_type="image/png",
         headers={
             "X-Captcha-ID": captcha_id,
+            "X-Captcha-Expires": "120",
             "Cache-Control": "no-cache, no-store, must-revalidate"
         }
     )
 
-@router.post("/register", response_model=schemas.UserResponse)
-async def register(
-    request: Request,
-    user_data: schemas.UserCreate,
-    db: Session = Depends(get_db)
-):
-    """Registro com CAPTCHA"""
-    
-    # Rate limiting
-    client_ip = request.client.host
-    allowed = await rate_limiter.check_rate_limit(
-        f"register:{client_ip}", 
-        max_requests=3,
-        window=3600
-    )
-    
-    if not allowed:
-        raise HTTPException(status_code=429, detail="Muitas tentativas")
-    
-    # Validar CAPTCHA
-    captcha_id = request.headers.get("X-Captcha-ID")
-    if not captcha_id or not user_data.captcha_text:
-        raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
-    
-    if not captcha_manager.validate_captcha(captcha_id, user_data.captcha_text, client_ip):
-        raise HTTPException(status_code=400, detail="CAPTCHA inválido")
-    
-    # Verificar email
-    if crud.get_user_by_email(db, user_data.email):
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    
-    # Criar usuário
-    user = crud.create_user(db=db, user=user_data)
-    logger.info(f"✅ Usuário registrado: {user.email}")
-    
-    return user
 
 # ==============================================
-# LOGIN - GERAÇÃO DO TOKEN
+# LOGIN - USANDO SCHEMA.UserLogin
 # ==============================================
 
 @router.post("/login")
 async def login(
+    login_data: schemas.UserLogin,  # ✅ USA O SCHEMA EXISTENTE
     request: Request,
-    login_data: schemas.UserLogin,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """
-    🔐 LOGIN - Gera token com vida de 15 minutos
-    ✅ CAPTCHA validado
-    ✅ Rate limiting por IP/email
-    ✅ Cookies HTTP-only
-    ✅ is_admin no payload
+    🔐 LOGIN - Aceita JSON com email, password, captcha_text
+    ✅ Usa schema UserLogin do schemas.py
+    ✅ CAPTCHA ID vem do HEADER (X-Captcha-ID)
+    ✅ CAPTCHA TEXT vem do BODY (captcha_text)
+    ✅ Rate limiting
     """
     
-    # Rate limiting
     client_ip = request.client.host
+    
+    # Rate limiting
     ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
     email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
     if not ip_allowed or not email_allowed:
-        raise HTTPException(status_code=429, detail="Muitas tentativas")
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 15 minutos.")
     
-    # Validar CAPTCHA
+    # ✅ VALIDAR CAPTCHA - ID vem do HEADER, TEXT vem do BODY
     captcha_id = request.headers.get("X-Captcha-ID")
-    if not captcha_id or not login_data.captcha_text:
-        raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
+    
+    if not captcha_id:
+        raise HTTPException(status_code=400, detail="CAPTCHA ID não fornecido. Recarregue o CAPTCHA.")
+    
+    if not login_data.captcha_text:
+        raise HTTPException(status_code=400, detail="CAPTCHA é obrigatório")
     
     if not captcha_manager.validate_captcha(captcha_id, login_data.captcha_text, client_ip):
-        raise HTTPException(status_code=400, detail="CAPTCHA inválido")
+        raise HTTPException(status_code=400, detail="CAPTCHA inválido ou expirado")
     
     # Buscar usuário
     user = crud.get_user_by_email(db, login_data.email)
@@ -133,77 +103,151 @@ async def login(
     # Atualizar último login
     crud.update_last_login(db, user.id)
     
-    # ✅ Dados para o token (com is_admin)
+    # Dados para o token
     user_data = {
         "sub": user.email,
         "email": user.email,
         "name": user.name,
-        "role": user.role.value if hasattr(user.role, 'value') else user.role,
-        "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
+        "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+        "plan": user.plan.value if hasattr(user.plan, 'value') else str(user.plan),
         "credits": user.credits,
-        "is_admin": user.is_admin  # 🔥 ESSENCIAL
+        "is_admin": user.is_admin
     }
     
-    # 🎫 CRIAR PAR DE TOKENS
-    # access_token: 15 minutos
-    # refresh_token: 7 dias (armazenado no banco)
+    # Criar par de tokens
     tokens = jwt_manager.create_token_pair(user_data)
     
     # Salvar refresh token no banco
     user.set_refresh_token(
         tokens["refresh_token"],
         tokens["refresh_jti"],
-        7  # 7 dias
+        7
     )
     db.commit()
     
-    # 📦 Dados para o frontend (incluindo is_admin)
+    # Dados para o frontend
     response_data = {
+        "success": True,
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
         "token_type": "bearer",
-        "expires_in": tokens["expires_in"],  # 900 segundos = 15 minutos
+        "expires_in": tokens["expires_in"],
         "user_name": user.name,
         "user_email": user.email,
         "workshop_name": user.workshop_name,
         "role": str(user.role),
         "plan": str(user.plan),
         "credits": user.credits,
-        "is_admin": user.is_admin,  # ✅ PARA O FRONTEND
+        "is_admin": user.is_admin,
         "credits_display": "∞" if user.is_admin else str(user.credits),
         "message": "Login realizado com sucesso"
     }
     
-    # Criar resposta
-    response = JSONResponse(content=response_data)
+    api_response = JSONResponse(content=response_data)
     
-    # 🍪 Definir cookies HTTP-only
-    response = set_auth_cookies(
-        response=response,
+    # Setar cookies
+    api_response = set_auth_cookies(
+        response=api_response,
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
-        expires_in=tokens["expires_in"]  # 15 minutos
+        expires_in=tokens["expires_in"]
     )
     
     admin_tag = "👑 " if user.is_admin else ""
-    logger.info(f"✅ {admin_tag}Login: {user.email} - Token válido por 15min")
+    logger.info(f"✅ {admin_tag}Login: {user.email}")
     
-    return response
+    return api_response
+
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN (USADA PELO FRONTEND)
+# REGISTER - CORRIGIDO
+# ==============================================
+
+@router.post("/register")
+async def register(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Registro com CAPTCHA - Aceita JSON"""
+    
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Corpo da requisição inválido")
+    
+    name = body.get("name", "")
+    email = body.get("email", "")
+    password = body.get("password", "")
+    workshop_name = body.get("workshop_name", "")
+    captcha_text = body.get("captcha_text", "")
+    
+    # Validações
+    if not all([name, email, password, workshop_name, captcha_text]):
+        raise HTTPException(status_code=400, detail="Todos os campos são obrigatórios")
+    
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
+    
+    # Rate limiting
+    client_ip = request.client.host
+    allowed = await rate_limiter.check_rate_limit(
+        f"register:{client_ip}", 
+        max_requests=3,
+        window=3600
+    )
+    
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 hora.")
+    
+    # Validar CAPTCHA
+    captcha_id = request.headers.get("X-Captcha-ID")
+    
+    if not captcha_id:
+        raise HTTPException(status_code=400, detail="CAPTCHA ID não fornecido. Recarregue o CAPTCHA.")
+    
+    if not captcha_text:
+        raise HTTPException(status_code=400, detail="CAPTCHA é obrigatório")
+    
+    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
+        raise HTTPException(status_code=400, detail="CAPTCHA inválido ou expirado")
+    
+    # Verificar email
+    if crud.get_user_by_email(db, email):
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+    
+    # Criar usuário usando o schema UserCreate
+    user_data = schemas.UserCreate(
+        name=name,
+        email=email,
+        password=password,
+        workshop_name=workshop_name
+    )
+    
+    user = crud.create_user(db=db, user=user_data)
+    logger.info(f"✅ Usuário registrado: {user.email}")
+    
+    return {
+        "success": True,
+        "message": "Conta criada com sucesso",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "workshop_name": user.workshop_name
+        }
+    }
+
+
+# ==============================================
+# VERIFICAÇÃO DE TOKEN
 # ==============================================
 
 @router.get("/check-token")
 async def check_token(request: Request, db: Session = Depends(get_db)):
     """
-    🔍 VERIFICAÇÃO DE TOKEN - CORAÇÃO DO SISTEMA
-    ✅ Se token válido (<15min) → retorna OK
-    ✅ Se token expirado (>15min) → tenta refresh
-    ✅ Se refresh inválido → limpa tudo (força novo login)
+    🔍 VERIFICAÇÃO DE TOKEN
     """
     
-    # Tentar pegar token do cookie ou header
     access_token = request.cookies.get("access_token")
     if access_token and access_token.startswith("Bearer "):
         access_token = access_token.replace("Bearer ", "")
@@ -215,9 +259,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     
     refresh_token = request.cookies.get("refresh_token")
     
-    # CASO 1: SEM TOKEN ALGUM
     if not access_token and not refresh_token:
-        logger.info("🔍 Check-token: Sem tokens - redirecionar para login")
         return JSONResponse(
             status_code=401,
             content={
@@ -227,20 +269,14 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             }
         )
     
-    # Verificar access token atual
     if access_token:
         payload = await jwt_manager.verify_token_async(access_token, "access")
         
-        # ✅ CASO 2: TOKEN VÁLIDO (menos de 15 minutos)
         if payload:
-            # Buscar usuário para dados atualizados
             email = payload.get("sub") or payload.get("email")
             user = crud.get_user_by_email(db, email)
             
             if user and user.is_active:
-                logger.info(f"✅ Token válido para {email} - ainda dentro dos 15min")
-                
-                # Calcular tempo restante
                 exp = payload.get("exp", 0)
                 now = datetime.utcnow().timestamp()
                 expires_in = max(0, int(exp - now))
@@ -257,24 +293,17 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     "action": "continue"
                 }
     
-    # ❌ CASO 3: TOKEN EXPIRADO (>15 minutos) - TENTAR REFRESH
     if refresh_token:
-        logger.info("🔄 Token expirado (>15min) - tentando refresh...")
+        logger.info("🔄 Token expirado - tentando refresh...")
         
         try:
-            # Tentar gerar novo access token
             new_tokens = await jwt_manager.refresh_access_token(refresh_token, db)
             
             if new_tokens:
-                # ✅ REFRESH BEM-SUCEDIDO - Novo token gerado
-                logger.info("✅ Refresh bem-sucedido - novo token de 15min gerado")
-                
-                # Decodificar para pegar dados do usuário
                 payload = jwt_manager.decode_token(new_tokens["access_token"])
                 email = payload.get("sub") or payload.get("email")
                 user = crud.get_user_by_email(db, email)
                 
-                # Criar resposta com novos tokens
                 response_data = {
                     "status": "refreshed",
                     "message": "Token renovado",
@@ -291,7 +320,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                 
                 response = JSONResponse(content=response_data)
                 
-                # Atualizar cookies
                 response = set_auth_cookies(
                     response=response,
                     access_token=new_tokens["access_token"],
@@ -304,10 +332,8 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"❌ Erro no refresh: {e}")
     
-    # ❌ CASO 4: REFRESH INVÁLIDO - LIMPAR TUDO
     logger.warning("❌ Refresh inválido - limpando tokens...")
     
-    # Invalidar refresh token no banco se existir
     if refresh_token:
         try:
             await jwt_manager.logout(refresh_token, db)
@@ -319,27 +345,36 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         content={
             "status": "invalid",
             "message": "Sessão expirada. Faça login novamente.",
-            "action": "clear_storage_and_redirect"  # 🔥 FRONTEND DEVE LIMPAR LOCALSTORAGE
+            "action": "clear_storage_and_redirect"
         }
     )
     
-    # Limpar cookies
     response = clear_auth_cookies(response)
     
     return response
 
+
 # ==============================================
-# REFRESH MANUAL (SE PRECISAR)
+# REFRESH MANUAL
 # ==============================================
 
 @router.post("/refresh")
 async def refresh_token(
-    refresh_data: schemas.TokenRefresh,
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    """Renova access token manualmente"""
+    """Renova access token manualmente - Aceita JSON"""
     
-    new_tokens = await jwt_manager.refresh_access_token(refresh_data.refresh_token, db)
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+    except:
+        raise HTTPException(status_code=400, detail="Corpo inválido")
+    
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Refresh token obrigatório")
+    
+    new_tokens = await jwt_manager.refresh_access_token(refresh_token, db)
     
     if not new_tokens:
         raise HTTPException(status_code=401, detail="Refresh token inválido")
@@ -354,7 +389,6 @@ async def refresh_token(
     
     response = JSONResponse(content=response_data)
     
-    # Atualizar cookies
     response = set_auth_cookies(
         response=response,
         access_token=new_tokens["access_token"],
@@ -362,113 +396,144 @@ async def refresh_token(
         expires_in=new_tokens["expires_in"]
     )
     
-    logger.info("✅ Token renovado manualmente")
-    
     return response
 
+
 # ==============================================
-# LOGOUT - LIMPAR TUDO
+# LOGOUT
 # ==============================================
 
 @router.post("/logout")
 async def logout(
-    refresh_data: Optional[schemas.TokenRefresh] = None,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Logout - invalida tokens e limpa cookies"""
     
-    if refresh_data and refresh_data.refresh_token:
-        await jwt_manager.logout(refresh_data.refresh_token, db)
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+    except:
+        refresh_token = None
+    
+    if refresh_token:
+        await jwt_manager.logout(refresh_token, db)
     
     response = JSONResponse(content={
         "status": "logged_out",
         "message": "Logout realizado",
-        "action": "clear_storage"  # 🔥 FRONTEND DEVE LIMPAR LOCALSTORAGE
+        "action": "clear_storage"
     })
     
-    # Limpar cookies
     response = clear_auth_cookies(response)
     
-    logger.info("✅ Logout - tokens invalidados e cookies limpos")
-    
     return response
+
 
 # ==============================================
 # ROTAS PROTEGIDAS
 # ==============================================
 
-@router.get("/me", response_model=schemas.UserResponse)
+@router.get("/me")
 async def get_me(
     current_user = Depends(get_current_active_user)
 ):
-    """Retorna perfil do usuário atual"""
-    return current_user
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "workshop_name": current_user.workshop_name,
+        "role": str(current_user.role),
+        "plan": str(current_user.plan),
+        "credits": current_user.credits,
+        "is_admin": current_user.is_admin,
+        "is_active": current_user.is_active
+    }
 
-@router.put("/me", response_model=schemas.UserResponse)
-async def update_me(
-    user_update: schemas.UserUpdate,
-    current_user = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Atualiza perfil do usuário"""
-    
-    update_data = user_update.dict(exclude_unset=True)
-    
-    if "password" in update_data:
-        update_data["hashed_password"] = hasher.hash_password(update_data.pop("password"))
-    
-    updated = crud.update_user(db, current_user.id, update_data)
-    return updated
 
 @router.post("/change-password")
 async def change_password(
-    password_data: schemas.PasswordChange,
+    request: Request,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Troca de senha"""
+    """Troca de senha - Aceita JSON"""
     
-    if not hasher.verify_password(password_data.current_password, current_user.hashed_password):
+    try:
+        body = await request.json()
+    except:
+        raise HTTPException(status_code=400, detail="Corpo inválido")
+    
+    current_password = body.get("current_password")
+    new_password = body.get("new_password")
+    
+    if not current_password or not new_password:
+        raise HTTPException(400, "Senha atual e nova senha são obrigatórias")
+    
+    if not hasher.verify_password(current_password, current_user.hashed_password):
         raise HTTPException(400, "Senha atual incorreta")
     
-    new_hashed = hasher.hash_password(password_data.new_password)
+    if len(new_password) < 6:
+        raise HTTPException(400, "Nova senha deve ter no mínimo 6 caracteres")
+    
+    new_hashed = hasher.hash_password(new_password)
     crud.update_user(db, current_user.id, {"hashed_password": new_hashed})
     
-    # Invalidar refresh tokens por segurança
     current_user.revoke_refresh_token()
     db.commit()
     
     return {"message": "Senha alterada com sucesso"}
 
+
 # ==============================================
 # ROTAS DE ADMIN
 # ==============================================
 
-@router.get("/admin/users", response_model=List[schemas.UserResponse])
+@router.get("/admin/users")
 async def get_all_users(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100
 ):
-    """Lista todos os usuários (admin)"""
-    return crud.get_all_users(db, skip=skip, limit=limit)
+    users = crud.get_all_users(db, skip=skip, limit=limit)
+    return [
+        {
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "workshop_name": u.workshop_name,
+            "role": str(u.role),
+            "plan": str(u.plan),
+            "credits": u.credits,
+            "is_admin": u.is_admin,
+            "is_active": u.is_active,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in users
+    ]
+
 
 @router.get("/admin/stats")
 async def get_stats(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Estatísticas do sistema (admin)"""
     return crud.get_user_stats(db)
+
 
 @router.post("/admin/make-admin")
 async def make_admin(
-    email: str,
+    request: Request,
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Torna um usuário admin"""
+    try:
+        body = await request.json()
+        email = body.get("email")
+    except:
+        raise HTTPException(400, "Corpo inválido")
+    
     user = crud.get_user_by_email(db, email)
     if not user:
         raise HTTPException(404, "Usuário não encontrado")
@@ -476,16 +541,21 @@ async def make_admin(
     user.is_admin = True
     db.commit()
     
-    logger.info(f"👑 Admin {current_user.email} tornou {email} admin")
     return {"message": f"{email} agora é admin"}
+
 
 @router.post("/admin/remove-admin")
 async def remove_admin(
-    email: str,
+    request: Request,
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Remove privilégios de admin"""
+    try:
+        body = await request.json()
+        email = body.get("email")
+    except:
+        raise HTTPException(400, "Corpo inválido")
+    
     user = crud.get_user_by_email(db, email)
     if not user:
         raise HTTPException(404, "Usuário não encontrado")
@@ -493,12 +563,11 @@ async def remove_admin(
     user.is_admin = False
     db.commit()
     
-    logger.info(f"👑 Admin {current_user.email} removeu admin de {email}")
     return {"message": f"Admin removido de {email}"}
+
 
 @router.get("/admin/captcha-stats")
 async def get_captcha_stats(
     current_user = Depends(get_current_admin_user)
 ):
-    """Estatísticas de CAPTCHA (admin)"""
     return captcha_manager.get_stats()

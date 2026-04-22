@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM CORS EXPOSURE E CAPTCHA PRÓPRIO
+# main.py (na raiz) - VERSÃO COMPLETA ATUALIZADA
 import sys
 import os
 from pathlib import Path
@@ -6,99 +6,98 @@ from datetime import datetime
 import secrets
 import string
 from sqlalchemy.orm import Session
+import time
+import asyncio
 
 print("=" * 60)
-print("🚀 AUTOANALYTICS v2.0 - SERVIDOR COMPLETO COM JWT E CAPTCHA PRÓPRIO")
+print("🚀 AUTOANALYTICS v3.0 - COM GOOGLE GEMINI E CAPTCHA PRÓPRIO")
 print("=" * 60)
 
 # Configurar paths
 PROJECT_ROOT = Path(__file__).parent.absolute()
 BACKEND_DIR = PROJECT_ROOT / "backend"
-FRONTEND_DIR = PROJECT_ROOT / "frontend"  # ou "front" se preferir
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 print(f"📂 Raiz do projeto: {PROJECT_ROOT}")
 print(f"📂 Pasta backend: {BACKEND_DIR}")
 print(f"🌐 Pasta frontend: {FRONTEND_DIR}")
 
-# Verificar se backend existe
 if not BACKEND_DIR.exists():
     print(f"❌ ERRO: Pasta 'backend' não encontrada!")
-    print(f"📍 Procurando em: {BACKEND_DIR}")
     sys.exit(1)
 
-# Adicionar ao sys.path
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print(f"🔧 Python path configurado")
-for i, p in enumerate(sys.path[:3], 1):
-    print(f"  {i}. {p}")
 
 # ==============================================
-# CONFIGURAÇÕES COM SEGURANÇA
+# CONFIGURAÇÕES
 # ==============================================
 class Settings:
-    # App
     APP_NAME = "AutoAnalytics"
     DEBUG = True
     PORT = 8000
     BASE_DIR = str(BACKEND_DIR)
     
-    # Paths
     TEMP_DIR = str(BACKEND_DIR / "temp")
     OUTPUT_DIR = str(BACKEND_DIR / "outputs")
     MODELS_DIR = str(BACKEND_DIR / "models")
     DATA_DIR = str(BACKEND_DIR / "data")
     
-    # File limits
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    MAX_FILE_SIZE = 100 * 1024 * 1024
     ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
-    # Flowise / IA
-    FLOWISE_API_KEY = os.getenv("FLOWISE_API_KEY", "")
-    FLOWISE_URL = os.getenv("FLOWISE_URL", "https://cloud.flowiseai.com/api/v1/prediction/07284d0d-4185-425a-b1e3-3ee3f187ab32")
+    # Google Gemini
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     
-    # ========== 🔐 SEGURANÇA ==========
     # JWT
     SECRET_KEY = os.getenv("SECRET_KEY", "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64)))
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
     # Argon2
     ARGON2_TIME_COST = 3
-    ARGON2_MEMORY_COST = 65536  # 64 MB
+    ARGON2_MEMORY_COST = 65536
     ARGON2_PARALLELISM = 4
     
-    # 🔥 CAPTCHA PRÓPRIO (NÃO USA MAIS GOOGLE)
-    CAPTCHA_TYPE = "custom"  # Sempre custom agora
-    CAPTCHA_SITE_KEY = ""    # Não usado mais
-    CAPTCHA_SECRET_KEY = ""  # Não usado mais
-    
-    # Rate Limiting
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+    # CAPTCHA próprio
+    CAPTCHA_TYPE = "custom"
+    CAPTCHA_SITE_KEY = ""
+    CAPTCHA_SECRET_KEY = ""
+    CAPTCHA_EXPIRATION_SECONDS = 120
     
     # CORS
-    CORS_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:5500", "http://127.0.0.1:5500"]
+    CORS_ORIGINS = [
+        "http://localhost:8000", 
+        "http://127.0.0.1:8000", 
+        "http://localhost:5500", 
+        "http://127.0.0.1:5500",
+        "http://localhost:3000"
+    ]
     
-    # Headers de segurança
     SECURITY_HEADERS = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
-        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
     
-    # ========== 💰 MERCADO PAGO ==========
+    # Mercado Pago
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")
     MP_PUBLIC_KEY = os.getenv("MP_PUBLIC_KEY", "")
-    MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
-    WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
     
-    # ========== 💎 DISCORD WEBHOOK ==========
+    # Discord
     DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+    
+    # Ambiente
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+    
+    # Redis
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 
 settings = Settings()
 
@@ -115,144 +114,124 @@ dashboard_available = False
 if FRONTEND_DIR.exists():
     print(f"\n✅ FRONTEND ENCONTRADO!")
     
-    index_path = FRONTEND_DIR / "index.html"
-    login_path = FRONTEND_DIR / "login.html"
-    planos_path = FRONTEND_DIR / "planos.html"
-    checkout_path = FRONTEND_DIR / "checkout.html"
-    
-    if index_path.exists():
-        print(f"✅ index.html (dashboard) encontrado!")
+    if (FRONTEND_DIR / "index.html").exists():
         dashboard_available = True
         frontend_available = True
+        print(f"✅ index.html (dashboard) encontrado!")
     
-    if login_path.exists():
-        print(f"✅ login.html encontrado!")
+    if (FRONTEND_DIR / "login.html").exists():
         login_available = True
         frontend_available = True
+        print(f"✅ login.html encontrado!")
     
-    if planos_path.exists():
+    if (FRONTEND_DIR / "planos.html").exists():
         print(f"✅ planos.html encontrado!")
     
-    if checkout_path.exists():
+    if (FRONTEND_DIR / "checkout.html").exists():
         print(f"✅ checkout.html encontrado!")
     
-    if not frontend_available:
-        print(f"❌ Nenhum HTML encontrado no frontend!")
+    js_dir = FRONTEND_DIR / "js"
+    if js_dir.exists():
+        if (js_dir / "auth.js").exists():
+            print(f"✅ auth.js encontrado!")
+        else:
+            print(f"⚠️ auth.js não encontrado em {js_dir}")
 else:
     print(f"\n❌ Frontend não encontrado em: {FRONTEND_DIR}")
 
-# Agora importar FastAPI
+# Importar FastAPI
 print("\n🔧 Importando FastAPI e dependências...")
 
 try:
-    from fastapi import FastAPI, APIRouter, Request, Depends, HTTPException, status
+    from fastapi import FastAPI, Request, Depends, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
-    from fastapi.security import OAuth2PasswordBearer
+    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
     import uvicorn
-    
-    print("✅ FastAPI importado com sucesso!")
-    
+    print("✅ FastAPI importado")
 except ImportError as e:
-    print(f"❌ Erro importando FastAPI: {e}")
-    print("📦 Instale as dependências: pip install fastapi uvicorn")
+    print(f"❌ Erro: {e}")
     sys.exit(1)
 
 # Inicializar app
 app = FastAPI(
     title=settings.APP_NAME,
-    version="2.0.0",
-    description="Sistema inteligente para oficinas mecânicas com autenticação JWT, sistema de créditos e CAPTCHA próprio",
+    version="3.0.0",
+    description="Sistema com Google Gemini para oficinas mecânicas - CAPTCHA próprio com ciclo de vida",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
 
 # ==============================================
-# MIDDLEWARE DE SEGURANÇA
+# MIDDLEWARE - CORS ATUALIZADO
 # ==============================================
 
-# CORS configurado com expose_headers para CAPTCHA
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=[
-        "X-Captcha-ID",           # 🔥 ESSENCIAL para o frontend ler o ID
-        "X-Captcha-Expires",      # Opcional: tempo de expiração
-        "Content-Disposition"      # Para downloads
-    ]
+    expose_headers=["X-Captcha-ID", "X-Captcha-Expires"]  # ✅ ADICIONADO
 )
 
-# Middleware para headers de segurança
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    
-    # Adicionar headers de segurança
     for header, value in settings.SECURITY_HEADERS.items():
         response.headers[header] = value
-    
+    return response
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = datetime.now()
+    if not request.url.path.startswith('/static'):
+        print(f"🌐 [{datetime.now().strftime('%H:%M:%S')}] {request.method} {request.url.path}")
+    response = await call_next(request)
+    if response.status_code >= 400 and not request.url.path.startswith('/static'):
+        process_time = (datetime.now() - start_time).total_seconds() * 1000
+        print(f"   ⚠️ Status: {response.status_code} | Tempo: {process_time:.2f}ms")
     return response
 
 # ==============================================
-# ARQUITETURA CORRETA DE ARQUIVOS ESTÁTICOS
+# ARQUIVOS ESTÁTICOS
 # ==============================================
 if frontend_available:
     print("\n🌐 CONFIGURANDO ARQUIVOS ESTÁTICOS...")
     
-    # 1️⃣ CORRETO: Montar arquivos estáticos com StaticFiles
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
     print("✅ Arquivos estáticos montados em /static")
-    print("   📁 Servindo: JS, CSS, imagens e HTMLs")
-    
-    # 2️⃣ Rotas específicas para páginas HTML (SEM conflito com API)
     
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
-        """Página inicial - redireciona baseado em autenticação"""
-        token = request.cookies.get("access_token") or \
-                request.headers.get("Authorization", "").replace("Bearer ", "")
-        
+        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
         if token and dashboard_available:
             return FileResponse(str(FRONTEND_DIR / "index.html"))
         elif login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
-        else:
-            return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+        return JSONResponse({"message": "AutoAnalytics API com Gemini", "docs": "/api/docs"})
     
     @app.get("/login", include_in_schema=False)
     async def login_page():
-        """Página de login"""
         if login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
         return RedirectResponse(url="/")
     
     @app.get("/dashboard", include_in_schema=False)
     async def dashboard_page(request: Request):
-        """Dashboard protegido"""
-        token = request.cookies.get("access_token") or \
-                request.headers.get("Authorization", "").replace("Bearer ", "")
-        
+        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
             return RedirectResponse(url="/login")
-        
         if dashboard_available:
             return FileResponse(str(FRONTEND_DIR / "index.html"))
         raise HTTPException(status_code=404, detail="Dashboard não encontrado")
     
     @app.get("/planos", include_in_schema=False)
     async def planos_page(request: Request):
-        """Página de planos protegida"""
-        token = request.cookies.get("access_token") or \
-                request.headers.get("Authorization", "").replace("Bearer ", "")
-        
+        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
             return RedirectResponse(url="/login")
-        
         planos_path = FRONTEND_DIR / "planos.html"
         if planos_path.exists():
             return FileResponse(planos_path)
@@ -260,135 +239,81 @@ if frontend_available:
     
     @app.get("/checkout", include_in_schema=False)
     async def checkout_page(request: Request):
-        """Página de checkout protegida"""
-        token = request.cookies.get("access_token") or \
-                request.headers.get("Authorization", "").replace("Bearer ", "")
-        
+        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
             return RedirectResponse(url="/login")
-        
         checkout_path = FRONTEND_DIR / "checkout.html"
         if checkout_path.exists():
             return FileResponse(checkout_path)
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
-    print("✅ Rotas HTML configuradas sem conflito com API")
+    @app.get("/static/js/auth.js", include_in_schema=False)
+    async def serve_auth_js():
+        auth_js_path = FRONTEND_DIR / "js" / "auth.js"
+        if auth_js_path.exists():
+            return FileResponse(auth_js_path, media_type="application/javascript")
+        raise HTTPException(status_code=404, detail="auth.js não encontrado")
+    
+    print("✅ Rotas HTML configuradas")
 
 # ==============================================
-# API FALLBACK (se frontend não disponível)
+# CARREGAR MÓDULOS
 # ==============================================
-if not frontend_available:
-    @app.get("/", response_class=JSONResponse)
-    async def root():
-        return {
-            "app": settings.APP_NAME,
-            "version": "2.0.0",
-            "status": "online",
-            "message": "Frontend não encontrado. Servindo apenas API.",
-            "endpoints": {
-                "api_docs": "/api/docs",
-                "auth_login": "/api/auth/login",
-                "auth_register": "/api/auth/register",
-                "payments_plans": "/api/payments/plans",
-                "credits_status": "/api/user/credits"
-            }
-        }
+print("\n📦 Carregando módulos...")
 
-# ==============================================
-# CARREGAR MÓDULOS DE SEGURANÇA E AUTENTICAÇÃO
-# ==============================================
-print("\n📦 Carregando módulos de segurança e autenticação...")
+if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY in ["", "opcional", "sua_chave_aqui"]:
+    print("⚠️ ALERTA: GEMINI_API_KEY não configurada!")
+else:
+    print(f"✅ Gemini API Key configurada (modelo: {settings.GEMINI_MODEL})")
 
-# Inicializar banco de dados
 db_path = PROJECT_ROOT / "autoanalytics.db"
-print(f"🗄️  Banco de dados: {db_path}")
+print(f"🗄️ Banco de dados: {db_path}")
 
 try:
-    # Importar settings do backend.config primeiro
     from backend.config import settings as backend_settings
-    
-    # Atualizar settings do backend com nossas configurações
     for key, value in settings.__dict__.items():
         if not key.startswith('_'):
             setattr(backend_settings, key, value)
     
-    print("✅ Configurações sincronizadas")
-    
-    # Importar database
     from backend.database import engine, Base, create_tables, SessionLocal, get_db
-    
-    # Criar tabelas
     create_tables()
     print("✅ Tabelas criadas/verificadas")
     
-    # Importar security
     from backend.security import (
-        hasher,
-        jwt_manager,
-        captcha_manager,  # ✅ NOVO: CAPTCHA próprio
-        rate_limiter,
-        get_current_user,
-        get_current_active_user,
-        get_current_admin_user
+        hasher, jwt_manager, captcha_manager, rate_limiter,
+        get_current_user, get_current_active_user, get_current_admin_user,
+        set_auth_cookies, clear_auth_cookies
     )
     print("✅ Módulos de segurança carregados")
-    print(f"   🔐 Argon2: OK")
-    print(f"   🎫 JWT: OK")
-    print(f"   🖼️ CAPTCHA próprio: OK (expiração: 2min, uso único)")
-    print(f"   ⏱️ Rate Limiting: OK")
     
-    # Importar serviços
     from backend.services.daily_credits_service import DailyCreditsService
     print("✅ Módulo de créditos diários carregado")
-    
-    # Importar observability (opcional)
-    try:
-        from backend.observability.sentinel import (
-            alert_system_startup,
-            alert_system_error,
-            alert_new_user,
-            alert_payment_approved,
-            alert_daily_credits_distributed
-        )
-        print("✅ Módulo de observability (Discord) carregado")
-        DISCORD_ENABLED = bool(settings.DISCORD_WEBHOOK)
-    except ImportError as e:
-        print(f"⚠️  Módulo observability não encontrado: {e}")
-        DISCORD_ENABLED = False
-        
-        # Funções dummy
-        def alert_system_startup(**kwargs): pass
-        def alert_system_error(**kwargs): pass
-        def alert_new_user(**kwargs): pass
-        def alert_payment_approved(**kwargs): pass
-        def alert_daily_credits_distributed(**kwargs): pass
     
     AUTH_ENABLED = True
     
 except Exception as e:
-    print(f"❌ Erro CRÍTICO carregando módulos de segurança: {e}")
-    print("🚨 Sistema não pode iniciar sem segurança!")
+    print(f"❌ Erro ao carregar módulos: {e}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
 
+time.sleep(2)
+
 # ==============================================
-# REGISTRO DE ROTAS DA API COM PREFIXO
+# REGISTRO DE ROTAS
 # ==============================================
 print("\n📦 Registrando rotas da API...")
 
 try:
-    # Importar rotas
     from backend.api import auth_routes
     from backend.api import routes
     from backend.api import payment_routes
     
-    # Incluir rotas com prefixo /api
+    if hasattr(auth_routes, 'captcha_manager'):
+        auth_routes.captcha_manager = captcha_manager
+    
     app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
     print("✅ Rotas de autenticação: /api/auth/*")
-    print("   🔑 Login (com CAPTCHA próprio)")
-    print("   📝 Registro (com CAPTCHA próprio)")
-    print("   🖼️ /captcha/generate - Gera imagem CAPTCHA")
     
     app.include_router(routes.router, prefix="/api", tags=["api"])
     print("✅ Rotas da API: /api/*")
@@ -399,35 +324,9 @@ try:
     print("✅ Sistema de rotas configurado")
     
 except Exception as e:
-    print(f"❌ Erro carregando rotas: {e}")
-
-# ==============================================
-# MIDDLEWARE PARA LOG DE REQUESTS
-# ==============================================
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = datetime.now()
-    
-    # Log apenas de rotas não-estáticas
-    if not request.url.path.startswith('/static'):
-        print(f"🌐 [{datetime.now().strftime('%H:%M:%S')}] {request.method} {request.url.path}")
-    
-    response = await call_next(request)
-    
-    # Log de respostas com erro
-    if response.status_code >= 400 and not request.url.path.startswith('/static'):
-        process_time = (datetime.now() - start_time).total_seconds() * 1000
-        print(f"   ⚠️  Status: {response.status_code} | Tempo: {process_time:.2f}ms")
-        
-        # Alertar erros no Discord
-        if response.status_code >= 500 and DISCORD_ENABLED:
-            alert_system_error(
-                error=Exception(f"HTTP {response.status_code}"),
-                endpoint=request.url.path,
-                user="sistema"
-            )
-    
-    return response
+    print(f"❌ Erro ao registrar rotas: {e}")
+    import traceback
+    traceback.print_exc()
 
 # ==============================================
 # ROTAS DA API
@@ -438,7 +337,6 @@ async def get_user_credits(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna os créditos do usuário atual"""
     try:
         service = DailyCreditsService()
         credit_status = service.get_user_credit_status(db, current_user.id)
@@ -452,42 +350,34 @@ async def get_user_credits(
             "total_earned": credit_status["total_earned_all_time"]
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
+time.sleep(0.5)
 
 @app.get("/api/health", tags=["system"])
 async def health_check():
-    """Verifica saúde do sistema"""
-    db_status = "connected" if db_path.exists() else "disconnected"
-    
-    # 🔥 Estatísticas do CAPTCHA
-    captcha_stats = captcha_manager.get_stats() if hasattr(captcha_manager, 'get_stats') else {"total_active": 0}
-    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.0.0",
+        "version": "3.0.0",
+        "ai_provider": "Google Gemini",
+        "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
+        "gemini_model": settings.GEMINI_MODEL if settings.GEMINI_API_KEY else None,
         "security": {
             "enabled": True,
             "argon2": True,
-            "jwt": True,
-            "captcha": "CUSTOM (próprio)",
-            "captcha_active": captcha_stats["total_active"],
-            "rate_limiting": True
+            "jwt": {
+                "access_expiry": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes",
+                "refresh_expiry": f"{settings.REFRESH_TOKEN_EXPIRE_DAYS} days"
+            },
+            "captcha": {
+                "type": "CUSTOM",
+                "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
+                "single_use": True,
+                "auto_invalidate": True
+            }
         },
-        "database": db_status,
-        "payments": {
-            "enabled": bool(settings.MP_ACCESS_TOKEN)
-        },
-        "credits_system": {
-            "enabled": True,
-            "credits_per_day": 1
-        },
-        "discord": {
-            "enabled": DISCORD_ENABLED
-        },
+        "database": "connected" if db_path.exists() else "disconnected",
         "frontend": {
             "available": frontend_available,
             "login": login_available,
@@ -497,194 +387,156 @@ async def health_check():
 
 @app.get("/api/security/info", tags=["security"])
 async def security_info():
-    """Retorna informações sobre as camadas de segurança"""
     return {
         "security_layers": {
             "password_hashing": {
                 "algorithm": "Argon2id",
-                "time_cost": settings.ARGON2_TIME_COST
+                "time_cost": settings.ARGON2_TIME_COST,
+                "memory_cost": settings.ARGON2_MEMORY_COST
             },
             "jwt": {
                 "algorithm": settings.ALGORITHM,
-                "access_token_expire": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes"
+                "access_expiry_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+                "refresh_expiry_days": settings.REFRESH_TOKEN_EXPIRE_DAYS
             },
             "captcha": {
                 "type": "CUSTOM",
-                "description": "CAPTCHA próprio com números",
-                "expiration": "2 minutos",
-                "usage": "Uso único",
-                "ip_validation": True
-            },
-            "rate_limiting": {
-                "login_per_ip": "10/15min",
-                "login_per_email": "5/15min",
-                "register_per_ip": "3/hora"
+                "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
+                "expiration_minutes": 2,
+                "single_use": True,
+                "auto_invalidate_on_refresh": True
             }
         },
+        "ai_provider": "Google Gemini",
         "status": "active"
     }
 
-@app.get("/api/captcha/stats", tags=["admin"])
-async def get_captcha_stats(
-    current_user = Depends(get_current_admin_user)
-):
-    """ADMIN: Retorna estatísticas dos CAPTCHAS ativos"""
-    try:
-        stats = captcha_manager.get_stats()
-        return {
-            "success": True,
-            "stats": stats
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-# ==============================================
-# ROTAS ADMIN (protegidas)
-# ==============================================
-
-@app.get("/api/admin/check-credits", tags=["admin"])
-async def check_all_users_credits(
-    current_user = Depends(get_current_admin_user),
-    db: Session = Depends(get_db)
-):
-    """ADMIN: Verifica créditos de todos os usuários"""
-    try:
-        from backend.models import User
-        
-        service = DailyCreditsService()
-        users = db.query(User).filter(User.is_active == True).all()
-        
-        results = []
-        for user in users:
-            status = service.get_user_credit_status(db, user.id)
-            results.append({
-                "user_id": user.id,
-                "email": user.email,
-                "credits": status["current_credits"],
-                "streak": status["streak_days"]
-            })
-        
-        return {
-            "success": True,
-            "total_users": len(results),
-            "users": results[:50]
-        }
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+@app.get("/api/captcha/stats", tags=["security"])
+async def captcha_stats(current_user = Depends(get_current_admin_user)):
+    stats = captcha_manager.get_stats()
+    return {"success": True, "stats": stats}
 
 # ==============================================
 # EVENTO DE INICIALIZAÇÃO
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
-    """Inicializa o sistema"""
+    print("\n🚀 Inicializando sistema...")
     
-    if DISCORD_ENABLED:
-        try:
-            alert_system_startup()
-            print("✅ Alerta de startup enviado para o Discord")
-        except Exception as e:
-            print(f"⚠️  Erro ao enviar alerta: {e}")
+    try:
+        asyncio.create_task(captcha_manager.store.start_cleanup_loop())
+        print("✅ Cleanup loop do CAPTCHA iniciado")
+    except Exception as e:
+        print(f"⚠️ Erro ao iniciar cleanup do CAPTCHA: {e}")
     
-    # 🔥 Verificar CAPTCHA manager
-    captcha_status = "✅ ATIVO" if captcha_manager else "❌ FALHA"
+    try:
+        await jwt_manager.init_redis()
+        print("✅ Redis (JWT) inicializado")
+    except Exception as e:
+        print(f"⚠️ Redis (JWT) não disponível: {e}")
+    
+    try:
+        await rate_limiter.init_redis()
+        print("✅ Redis (Rate Limiting) inicializado")
+    except Exception as e:
+        print(f"⚠️ Redis (Rate Limiting) não disponível: {e}")
+    
+    print("🧠 Inicializando modelos de Machine Learning...")
+    try:
+        from backend.ml.predict import predictor
+        await predictor.load_or_train_models()
+        print("✅ Modelos de ML carregados com sucesso!")
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar modelos: {e}")
+    
+    try:
+        from backend.GeminiService import gemini_service
+        if gemini_service.api_key:
+            print(f"✅ Google Gemini pronto para uso (modelo: {gemini_service.MODEL_NAME})")
+        else:
+            print("⚠️ Google Gemini não configurado")
+    except Exception as e:
+        print(f"⚠️ Erro ao verificar Gemini: {e}")
+    
+    captcha_stats = captcha_manager.get_stats()
+    print(f"📊 CAPTCHA Store: {captcha_stats['total_active']} ativos, {captcha_stats['total_sessions']} sessões")
+    
+    gemini_status = "✅ CONFIGURADO" if (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]) else "❌ NÃO CONFIGURADO"
     
     print(f"""
-    🎉 {settings.APP_NAME} v2.0 INICIADO!
-    
-    📍 Diretório: {PROJECT_ROOT}
-    🌐 Frontend: {'✅ Disponível' if frontend_available else '❌ Não disponível'}
-    
-    🔐 SEGURANÇA:
-       🔑 Argon2: ✅ ATIVO
-       🎫 JWT: ✅ ATIVO
-       🖼️ CAPTCHA PRÓPRIO: {captcha_status}
-          • Expiração: 2 minutos
-          • Uso único: Sim
-          • Validação de IP: Sim
-       ⏱️ Rate Limiting: ✅ ATIVO
-       📤 CORS expose_headers: X-Captcha-ID ✅
-    
-    💰 PAGAMENTOS: {'✅ Configurado' if settings.MP_ACCESS_TOKEN else '❌ Não configurado'}
-    💎 CRÉDITOS: 1 crédito por dia via upload
-    💬 DISCORD: {'✅ Ativos' if DISCORD_ENABLED else '❌ Desativados'}
-    
-    🔗 URLs:
-       {'🌐 Login: http://localhost:' + str(settings.PORT) + '/login' if login_available else ''}
-       {'📊 Dashboard: http://localhost:' + str(settings.PORT) + '/dashboard' if dashboard_available else ''}
-       📚 API Docs: http://localhost:{settings.PORT}/api/docs
-       💎 Créditos API: http://localhost:{settings.PORT}/api/user/credits
-       🖼️ CAPTCHA: http://localhost:{settings.PORT}/api/auth/captcha/generate
-       
-    📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                    🎉 {settings.APP_NAME} v3.0 INICIADO!                    ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  🤖 GOOGLE GEMINI: {gemini_status:<47} ║
+    ║     Modelo: {settings.GEMINI_MODEL if settings.GEMINI_API_KEY else 'N/A':<47} ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  🔐 SEGURANÇA:                                                   ║
+    ║     🔑 Argon2: ✅                                                ║
+    ║     🎫 JWT: ✅ (15min access, 7d refresh)                        ║
+    ║     🖼️ CAPTCHA próprio: ✅                                       ║
+    ║        └─ 2 minutos de validade                                  ║
+    ║        └─ Uso único                                              ║
+    ║        └─ Expiração automática                                   ║
+    ║     ⏱️ Rate Limiting: ✅                                         ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  🔗 URLs:                                                        ║
+    ║     🌐 Login: http://localhost:{settings.PORT}/login             ║
+    ║     📊 Dashboard: http://localhost:{settings.PORT}/dashboard     ║
+    ║     📚 API Docs: http://localhost:{settings.PORT}/api/docs       ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S'):<63} ║
+    ╚══════════════════════════════════════════════════════════════════╝
     """)
 
-# ==============================================
-# MANIPULADOR DE ERROS
-# ==============================================
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("\n🛑 Desligando sistema...")
+    
+    try:
+        await captcha_manager.store.stop_cleanup_loop()
+        print("✅ Cleanup loop do CAPTCHA parado")
+    except Exception as e:
+        print(f"⚠️ Erro ao parar cleanup: {e}")
+    
+    try:
+        if jwt_manager.redis_client:
+            await jwt_manager.redis_client.close()
+            print("✅ Conexão Redis fechada")
+    except Exception as e:
+        print(f"⚠️ Erro ao fechar Redis: {e}")
+    
+    print("👋 Sistema desligado com sucesso!")
+
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, exc):
-    """Manipula erros 404"""
     if request.url.path.startswith('/api/'):
         return JSONResponse(
             status_code=404,
             content={
                 "error": "Endpoint não encontrado",
                 "path": request.url.path,
-                "suggestions": [
-                    "/api/docs",
-                    "/api/health",
-                    "/api/auth/login",
-                    "/api/auth/captcha/generate",
-                    "/api/user/credits"
-                ]
+                "suggestions": ["/api/docs", "/api/health", "/api/auth/login", "/api/security/info"]
             }
         )
-    
-    # Se for página não encontrada, redirecionar para login
     if login_available and not request.url.path.startswith('/static'):
         return RedirectResponse(url="/login")
-    
     return JSONResponse(status_code=404, content={"error": "Página não encontrada"})
 
-@app.exception_handler(500)
-async def server_error_exception_handler(request: Request, exc):
-    """Manipula erros 500"""
-    print(f"❌ Erro 500 em {request.url.path}: {exc}")
-    import traceback
-    traceback.print_exc()
-    
-    if DISCORD_ENABLED:
-        try:
-            alert_system_error(error=exc, endpoint=request.url.path, user="sistema")
-        except:
-            pass
-    
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401:
+        if not request.url.path.startswith(('/api', '/static')):
+            return RedirectResponse(url="/login")
     return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Erro interno do servidor",
-            "timestamp": datetime.now().isoformat()
-        }
+        status_code=exc.status_code,
+        content={"error": exc.detail}
     )
 
-# ==============================================
-# MAIN EXECUTION
-# ==============================================
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
-    print(f"📍 Trabalhando de: {PROJECT_ROOT}")
+    print(f"🤖 IA: Google Gemini")
+    print(f"🔐 CAPTCHA: Próprio (2min validade, uso único)")
     print("🛑 Pressione CTRL+C para parar\n")
-    
-    print("🔒 MODO SEGURO: Todas as camadas de segurança ativas")
-    print("   🔑 Argon2 | 🎫 JWT | 🖼️ CAPTCHA próprio | ⏱️ Rate Limiting")
-    print("📁 ARQUIVOS ESTÁTICOS: /static/*")
-    print("🌐 ROTAS HTML: /, /login, /dashboard, /planos, /checkout")
-    print("🔌 API ROTAS: /api/*")
-    print("🖼️ CAPTCHA: /api/auth/captcha/generate\n")
     
     uvicorn.run(
         "main:app",

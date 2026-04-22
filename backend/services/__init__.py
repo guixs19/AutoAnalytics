@@ -1,6 +1,5 @@
-# services/__init__.py
+from backend.GeminiService import GeminiService # Mudou de FlowiseService para GeminiService
 from backend.config.file_manager import FileManager
 from backend.preprocessing import DataPreprocessor
-from backend.gemini import FlowiseService
 
-__all__ = ['FileManager', 'DataPreprocessor', 'FlowiseService']
+__all__ = ['FileManager', 'DataPreprocessor', 'GeminiService']
