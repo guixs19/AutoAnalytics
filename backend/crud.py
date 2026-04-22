@@ -207,6 +207,12 @@ def get_all_admins(db: Session) -> List[models.User]:
 # CRÉDITOS - OPERAÇÕES (ATUALIZADO)
 # ==============================================
 
+# backend/crud.py - CORREÇÃO DAS FUNÇÕES DE CRÉDITO PARA ADMIN
+
+# ==============================================
+# CRÉDITOS - OPERAÇÕES CORRIGIDAS (ADMIN NUNCA PERDE CRÉDITOS)
+# ==============================================
+
 def get_user_credits(db: Session, user_id: int) -> int:
     """Retorna saldo de créditos do usuário"""
     user = get_user_by_id(db, user_id)
@@ -225,13 +231,24 @@ def get_credits_display(user: models.User) -> str:
         return "∞"
     return str(user.credits or 0)
 
+def check_credits(user: models.User, required: int = 1) -> bool:
+    """
+    ✅ Verifica se usuário tem créditos suficientes
+    👑 Admin: sempre retorna True (créditos ilimitados)
+    """
+    if user.is_admin:
+        logger.info(f"👑 Admin {user.email} - créditos ilimitados (check_credits = True)")
+        return True
+    
+    return user.credits >= required
+
 def add_credits(db: Session, user_id: int, amount: int, description: str = "") -> bool:
     """Adiciona créditos ao usuário com log"""
     user = get_user_by_id(db, user_id)
     if not user or amount <= 0:
         return False
     
-    # ✅ Admin não precisa ganhar créditos
+    # ✅ Admin não precisa ganhar créditos (já tem infinitos)
     if user.is_admin:
         logger.info(f"👑 Admin {user.email} - créditos ilimitados (add_credits ignorado)")
         return True
@@ -242,38 +259,42 @@ def add_credits(db: Session, user_id: int, amount: int, description: str = "") -
     logger.info(f"💰 {amount} créditos adicionados ao usuário {user_id}")
     return True
 
-def deduct_credits(db: Session, user_id: int, amount: int = 1, description: str = "") -> bool:
-    """Deduz créditos do usuário com log"""
-    user = get_user_by_id(db, user_id)
+def deduct_credits(db: Session, user: models.User, amount: int = 1, description: str = "") -> bool:
+    """
+    ✅ Deduz créditos do usuário com log
+    👑 ADMIN: NUNCA DEDUZ CRÉDITOS (retorna True sem alterar nada)
+    """
     if not user or amount <= 0:
         return False
     
-    # ✅ ADMIN NUNCA DEDUZ CRÉDITOS
+    # 🔥 CORREÇÃO CRÍTICA: Admin NUNCA perde créditos
     if user.is_admin:
-        logger.info(f"👑 Admin {user.email} - operação sem consumo de créditos")
+        logger.info(f"👑 Admin {user.email} - operação sem consumo de créditos (deduct ignorado)")
         return True
     
     if not user.has_credits(amount):
-        logger.warning(f"⚠️ Créditos insuficientes para usuário {user_id}")
+        logger.warning(f"⚠️ Créditos insuficientes para usuário {user.email} (tem: {user.credits}, precisa: {amount})")
         return False
     
     user.deduct_credit(amount)
     
     safe_commit(db, "Erro ao deduzir créditos")
-    logger.info(f"💰 {amount} créditos deduzidos do usuário {user_id}")
+    logger.info(f"💰 {amount} créditos deduzidos do usuário {user.email} (saldo: {user.credits})")
     return True
 
-def check_credits(db: Session, user_id: int, required: int = 1) -> bool:
-    """Verifica se usuário tem créditos suficientes"""
+def check_credits_db(db: Session, user_id: int, required: int = 1) -> bool:
+    """
+    ✅ Verifica se usuário tem créditos suficientes (versão com db)
+    👑 Admin: sempre retorna True
+    """
     user = get_user_by_id(db, user_id)
     if not user:
         return False
     
-    # ✅ ADMIN SEMPRE TEM CRÉDITOS
     if user.is_admin:
         return True
     
-    return user.has_credits(required)
+    return user.credits >= required
 
 def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: int) -> bool:
     """Transfere créditos entre usuários"""
@@ -288,7 +309,6 @@ def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: in
     
     # ✅ Admin que está transferindo não tem limite
     if from_user.is_admin:
-        # Admin pode transferir sem ter créditos
         to_user.add_credits(amount)
         safe_commit(db, "Erro ao transferir créditos")
         logger.info(f"👑 Admin {from_user.email} transferiu {amount} créditos para {to_user.email}")

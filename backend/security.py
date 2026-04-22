@@ -1,11 +1,8 @@
-# backend/security.py - VERSÃO CORRIGIDA (SEM LOOP INFINITO NO INIT)
+# backend/security.py - VERSÃO CORRIGIDA (Refresh Token Fix)
 """
 MÓDULO CENTRAL DE SEGURANÇA
-Ciclo de vida do CAPTCHA:
-1. Geração → 2 minutos de validade
-2. Se usuário gerar novo → anterior é desativado automaticamente
-3. Expiração automática após 2 minutos
-4. Uso único (valida e remove)
+Ciclo de vida do CAPTCHA: 2 minutos, uso único
+Refresh Token: Sistema completo de blacklist e invalidação
 """
 
 from datetime import datetime, timedelta
@@ -113,7 +110,7 @@ class Argon2Hasher:
 # ==============================================
 
 class JWTManager:
-    """Gerenciador de JWT com Redis opcional"""
+    """Gerenciador de JWT com Redis e blacklist completa"""
     
     def __init__(self):
         self.secret_key = settings.SECRET_KEY
@@ -123,7 +120,11 @@ class JWTManager:
         
         self.redis_client = None
         self.memory_blacklist = set()
-        self._redis_initialized = False  # ✅ Flag para evitar múltiplas tentativas
+        self._redis_initialized = False
+        
+        # ✅ Cache de tokens recentemente blacklistados (evita race conditions)
+        self._pending_blacklist = {}
+        self._blacklist_lock = asyncio.Lock()
     
     async def init_redis(self):
         """✅ Inicializa Redis de forma assíncrona (chamar no startup)"""
@@ -137,7 +138,6 @@ class JWTManager:
                 socket_connect_timeout=2,
                 retry_on_timeout=True
             )
-            # Testar conexão
             await self.redis_client.ping()
             self._redis_initialized = True
             logger.info("✅ Redis configurado para blacklist JWT")
@@ -244,21 +244,29 @@ class JWTManager:
         
         jti = payload.get("jti")
         if jti and await self.is_token_blacklisted(jti):
-            logger.warning(f"Token {jti} está na blacklist")
+            logger.warning(f"🔴 Token {jti[:8]}... está na blacklist")
             return None
         
         return payload
     
-    async def refresh_access_token(self, refresh_token: str, db) -> Optional[Dict[str, str]]:
+    async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
+        """
+        ✅ REFRESH TOKEN CORRIGIDO
+        - Valida refresh token
+        - Blacklista o refresh token antigo
+        - Gera novo par de tokens
+        - Atualiza no banco de dados
+        """
         from backend import crud
         
-        payload = await self.verify_token_async(refresh_token, "refresh")
+        # ✅ Verificar se refresh token já está na blacklist
+        old_payload = await self.verify_token_async(refresh_token, "refresh")
         
-        if not payload:
+        if not old_payload:
             logger.warning("Refresh token inválido ou expirado")
             return None
         
-        email = payload.get("sub") or payload.get("email")
+        email = old_payload.get("sub") or old_payload.get("email")
         if not email:
             logger.warning("Refresh token sem email")
             return None
@@ -273,6 +281,25 @@ class JWTManager:
             logger.warning(f"Refresh token não corresponde ao banco para {email}")
             return None
         
+        # ✅ Blacklist do refresh token antigo
+        old_jti = old_payload.get("jti")
+        if old_jti:
+            exp = old_payload.get("exp", 0)
+            remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
+            await self.blacklist_token(old_jti, remaining)
+            logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
+        
+        # ✅ Se fornecido, blacklist do access token antigo também
+        if old_access_token:
+            old_access_payload = self.verify_token(old_access_token, "access")
+            if old_access_payload:
+                old_access_jti = old_access_payload.get("jti")
+                if old_access_jti:
+                    remaining = max(int(old_access_payload.get("exp", 0) - datetime.utcnow().timestamp()), 300)
+                    await self.blacklist_token(old_access_jti, remaining)
+                    logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
+        
+        # ✅ Gerar novos tokens
         user_data = {
             "sub": user.email,
             "email": user.email,
@@ -283,10 +310,12 @@ class JWTManager:
             "is_admin": user.is_admin
         }
         
-        user.revoke_refresh_token()
-        
         new_tokens = self.create_token_pair(user_data)
         
+        # ✅ Revogar token antigo no banco
+        user.revoke_refresh_token()
+        
+        # ✅ Salvar novo refresh token
         user.set_refresh_token(
             new_tokens["refresh_token"], 
             new_tokens["refresh_jti"],
@@ -295,7 +324,7 @@ class JWTManager:
         
         db.commit()
         
-        logger.info(f"✅ Tokens renovados para {email}")
+        logger.info(f"✅ Tokens renovados para {email} (old_jti: {old_jti[:8] if old_jti else 'N/A'}...)")
         
         return {
             "access_token": new_tokens["access_token"],
@@ -304,59 +333,89 @@ class JWTManager:
             "expires_in": new_tokens["expires_in"]
         }
     
-    async def logout(self, refresh_token: str, db) -> bool:
+    async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
+        """
+        ✅ LOGOUT CORRIGIDO
+        - Blacklista refresh token
+        - Blacklista access token
+        - Revoga no banco
+        """
         from backend import crud
         
-        payload = await self.verify_token_async(refresh_token, "refresh")
-        if not payload:
-            return False
+        # ✅ Blacklist do refresh token
+        refresh_payload = await self.verify_token_async(refresh_token, "refresh")
         
-        email = payload.get("sub") or payload.get("email")
-        if not email:
-            return False
-        
-        user = crud.get_user_by_email(db, email)
-        
-        if user and user.validate_refresh_token(refresh_token):
-            user.revoke_refresh_token()
+        if refresh_payload:
+            email = refresh_payload.get("sub") or refresh_payload.get("email")
+            if email:
+                user = crud.get_user_by_email(db, email)
+                if user and user.validate_refresh_token(refresh_token):
+                    user.revoke_refresh_token()
             
-            jti = payload.get("jti")
+            jti = refresh_payload.get("jti")
             if jti:
-                exp = payload.get("exp", 0)
-                now = datetime.utcnow().timestamp()
-                remaining = max(int(exp - now), 3600)
+                exp = refresh_payload.get("exp", 0)
+                remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
                 await self.blacklist_token(jti, remaining)
-            
-            db.commit()
-            logger.info(f"✅ Logout realizado para {email}")
-            return True
+                logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
         
-        return False
+        # ✅ Blacklist do access token
+        if access_token:
+            access_payload = self.verify_token(access_token, "access")
+            if access_payload:
+                access_jti = access_payload.get("jti")
+                if access_jti:
+                    exp = access_payload.get("exp", 0)
+                    remaining = max(int(exp - datetime.utcnow().timestamp()), 300)
+                    await self.blacklist_token(access_jti, remaining)
+                    logger.info(f"🔴 Access token {access_jti[:8]}... blacklistado no logout")
+        
+        if db:
+            db.commit()
+        
+        return True
     
     async def blacklist_token(self, jti: str, expire_in: int):
+        """Adiciona token à blacklist com prevenção de race condition"""
         if not jti:
             return
         
-        if self.redis_client:
-            try:
-                await self.redis_client.setex(f"blacklist:{jti}", expire_in, "1")
-                logger.info(f"🔴 Token {jti} adicionado à blacklist Redis")
-            except Exception as e:
-                logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
+        async with self._blacklist_lock:
+            # ✅ Verificar se já está na blacklist pendente
+            if jti in self._pending_blacklist:
+                return
+            
+            self._pending_blacklist[jti] = time.time()
+        
+        try:
+            if self.redis_client:
+                try:
+                    await self.redis_client.setex(f"blacklist:{jti}", expire_in, "1")
+                    logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist Redis (expira em {expire_in}s)")
+                except Exception as e:
+                    logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
+                    self.memory_blacklist.add(jti)
+            else:
                 self.memory_blacklist.add(jti)
-        else:
-            self.memory_blacklist.add(jti)
-            logger.info(f"🔴 Token {jti} adicionado à blacklist em memória")
+                logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist em memória")
+        finally:
+            async with self._blacklist_lock:
+                self._pending_blacklist.pop(jti, None)
     
     async def is_token_blacklisted(self, jti: str) -> bool:
+        """Verifica se token está na blacklist"""
         if not jti:
             return False
+        
+        # ✅ Verificar cache pendente
+        if jti in self._pending_blacklist:
+            return True
         
         if self.redis_client:
             try:
                 exists = await self.redis_client.exists(f"blacklist:{jti}") > 0
                 if exists:
-                    logger.info(f"🔴 Token {jti} encontrado na blacklist Redis")
+                    logger.debug(f"🔴 Token {jti[:8]}... encontrado na blacklist Redis")
                 return exists
             except Exception as e:
                 logger.error(f"Erro ao verificar blacklist Redis: {e}")
@@ -377,7 +436,7 @@ class JWTManager:
         return auth_header.strip()
 
 # ==============================================
-# 3. CAPTCHA MANAGER - CICLO DE VIDA COMPLETO (VERSÃO CORRIGIDA)
+# 3. CAPTCHA MANAGER (mantido igual, já estava correto)
 # ==============================================
 
 class CaptchaSession:
@@ -406,25 +465,17 @@ class CaptchaSession:
 
 class CaptchaStore:
     """
-    Armazenamento de CAPTCHAs com ciclo de vida completo:
-    ✅ Geração com expiração de 2 minutos
-    ✅ Se usuário gerar novo, o anterior é desativado automaticamente
-    ✅ Timer automático para expiração
-    ✅ Uso único (valida e remove)
-    
-    🔥 CORRIGIDO: NÃO inicia loop infinito no __init__
+    Armazenamento de CAPTCHAs com ciclo de vida completo
     """
     
     def __init__(self):
-        self._store = {}  # {captcha_id: CaptchaSession}
-        self._user_sessions = {}  # {user_key: captcha_id} - Para rastrear sessão ativa do usuário
+        self._store = {}
+        self._user_sessions = {}
         self._cleanup_interval = 60
         self._last_cleanup = time.time()
-        self._cleanup_task = None  # ✅ Referência para a task de cleanup
-        # ❌ NÃO inicia loop aqui - será iniciado no startup do FastAPI
+        self._cleanup_task = None
     
     async def start_cleanup_loop(self):
-        """✅ Inicia loop de limpeza - DEVE SER CHAMADO NO STARTUP DO FASTAPI"""
         if self._cleanup_task is not None:
             logger.warning("Cleanup loop já está rodando")
             return
@@ -439,18 +490,15 @@ class CaptchaStore:
         logger.info("✅ Cleanup loop do CAPTCHA agendado")
     
     async def stop_cleanup_loop(self):
-        """Para o loop de limpeza (para shutdown graceful)"""
         if self._cleanup_task:
             self._cleanup_task.cancel()
             self._cleanup_task = None
             logger.info("🛑 Cleanup loop do CAPTCHA parado")
     
     def _get_user_key(self, ip: str, session_type: str = "login") -> str:
-        """Gera chave única para o usuário"""
         return f"{session_type}:{ip}"
     
     def _cleanup(self):
-        """Remove CAPTCHAS expirados"""
         now = time.time()
         expired = []
         
@@ -460,7 +508,6 @@ class CaptchaStore:
                 session.cancel_timer()
         
         for cid in expired:
-            # Remover referência da sessão do usuário
             for user_key, session_cid in list(self._user_sessions.items()):
                 if session_cid == cid:
                     del self._user_sessions[user_key]
@@ -472,13 +519,11 @@ class CaptchaStore:
         self._last_cleanup = now
     
     def _schedule_expiration(self, captcha_id: str, seconds: int):
-        """Agenda expiração automática do CAPTCHA"""
         def expire_captcha():
             if captcha_id in self._store:
                 session = self._store[captcha_id]
                 if not session.used:
                     logger.info(f"⏰ CAPTCHA {captcha_id[:8]}... expirou automaticamente após {seconds}s")
-                    # Remover referência da sessão do usuário
                     for user_key, session_cid in list(self._user_sessions.items()):
                         if session_cid == captcha_id:
                             del self._user_sessions[user_key]
@@ -492,92 +537,66 @@ class CaptchaStore:
             self._store[captcha_id].timer = timer
     
     def add(self, captcha_id: str, text: str, ip: str, session_type: str = "login") -> str:
-        """
-        Adiciona novo CAPTCHA
-        Se já existir um CAPTCHA ativo para este usuário, ele é DESATIVADO automaticamente
-        Retorna o ID do novo CAPTCHA
-        """
-        # Limpar antes de adicionar
         if time.time() - self._last_cleanup > self._cleanup_interval:
             self._cleanup()
         
         user_key = self._get_user_key(ip, session_type)
         
-        # 🔥 SE JÁ EXISTE UM CAPTCHA ATIVO PARA ESTE USUÁRIO, DESATIVAR
         if user_key in self._user_sessions:
             old_captcha_id = self._user_sessions[user_key]
             if old_captcha_id in self._store:
                 old_session = self._store[old_captcha_id]
                 old_session.cancel_timer()
                 del self._store[old_captcha_id]
-                logger.info(f"🔄 CAPTCHA anterior {old_captcha_id[:8]}... desativado (novo CAPTCHA gerado para IP {ip})")
+                logger.info(f"🔄 CAPTCHA anterior {old_captcha_id[:8]}... desativado")
         
-        # Criar nova sessão
-        expires_at = time.time() + 120  # 2 MINUTOS EXATOS
+        expires_at = time.time() + 120
         session = CaptchaSession(captcha_id, text, ip, expires_at)
         
         self._store[captcha_id] = session
         self._user_sessions[user_key] = captcha_id
         
-        # Agendar expiração automática
         self._schedule_expiration(captcha_id, 120)
         
         logger.info(f"✅ CAPTCHA criado para IP {ip}: {captcha_id[:8]}... (expira em 2min)")
-        logger.info(f"   Sessão ativa do usuário: {user_key} -> {captcha_id[:8]}...")
         
         return captcha_id
     
     def get_and_validate(self, captcha_id: str, user_input: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
-        """
-        Valida CAPTCHA com todas as regras:
-        ✅ Expiração de 2 minutos
-        ✅ Uso único
-        ✅ Mesmo IP (opcional, mais flexível)
-        """
-        # Limpar antes de validar
         if time.time() - self._last_cleanup > self._cleanup_interval:
             self._cleanup()
         
-        # Verificar se existe
         if captcha_id not in self._store:
             return False, "CAPTCHA não encontrado ou já expirou"
         
         session = self._store[captcha_id]
         user_key = self._get_user_key(ip, session_type)
         
-        # VERIFICAÇÃO 1: EXPIRAÇÃO (2 minutos)
         if session.is_expired():
-            # Remover da sessão do usuário
             if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
                 del self._user_sessions[user_key]
             del self._store[captcha_id]
             return False, "CAPTCHA expirado (2 minutos)"
         
-        # VERIFICAÇÃO 2: USO ÚNICO
         if session.used:
             if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
                 del self._user_sessions[user_key]
             del self._store[captcha_id]
             return False, "CAPTCHA já foi utilizado"
         
-        # VERIFICAÇÃO 3: MESMA SESSÃO (o CAPTCHA pertence a este usuário/IP)
         if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
             logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
             return False, "CAPTCHA não pertence à sua sessão atual"
         
-        # VERIFICAÇÃO 4: TEXTO CORRETO (case insensitive)
         if session.text.lower() != user_input.lower().strip():
             return False, "Texto incorreto"
         
-        # ✅ TUDO VÁLIDO! Marcar como usado e remover
         session.used = True
         session.cancel_timer()
         
-        # Remover da sessão do usuário
         if user_key in self._user_sessions:
             del self._user_sessions[user_key]
         
-        # Remover do store
         del self._store[captcha_id]
         
         logger.info(f"✅ CAPTCHA {captcha_id[:8]}... validado com sucesso e removido")
@@ -585,7 +604,6 @@ class CaptchaStore:
         return True, "CAPTCHA válido"
     
     def get_active_captcha_for_user(self, ip: str, session_type: str = "login") -> Optional[str]:
-        """Retorna o CAPTCHA ativo para um usuário, se existir"""
         user_key = self._get_user_key(ip, session_type)
         captcha_id = self._user_sessions.get(user_key)
         
@@ -597,7 +615,6 @@ class CaptchaStore:
         return None
     
     def get_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas do store (para debug/admin)"""
         self._cleanup()
         return {
             "total_active": len(self._store),
@@ -616,66 +633,36 @@ class CaptchaStore:
 
 
 class CaptchaManager:
-    """
-    Gerenciador de CAPTCHA próprio - CICLO DE VIDA COMPLETO
-    
-    Ciclo de vida:
-    1. Usuário solicita CAPTCHA → Gera imagem e texto, armazena por 2 minutos
-    2. Se usuário solicitar NOVO CAPTCHA → Anterior é DESATIVADO automaticamente
-    3. Após 2 minutos → CAPTCHA expira e é removido automaticamente
-    4. Usuário envia formulário → CAPTCHA é validado e removido (uso único)
-    """
+    """Gerenciador de CAPTCHA"""
     
     def __init__(self):
         self.store = CaptchaStore()
         self._dev_mode = settings.DEBUG
-        logger.info("✅ CAPTCHA Manager inicializado - Ciclo de vida: 2 minutos, uso único")
-        logger.info("   🔄 Novo CAPTCHA desativa automaticamente o anterior")
+        logger.info("✅ CAPTCHA Manager inicializado")
         if self._dev_mode:
             logger.info("   🔧 Modo DEV: Verificação de IP desabilitada")
     
     def _get_client_ip(self, request: Request) -> str:
-        """
-        Obtém IP do cliente de forma robusta
-        Suporta proxies, localhost, IPv4, IPv6
-        """
-        # Tentar headers de proxy primeiro
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             ip = forwarded.split(",")[0].strip()
-            logger.debug(f"IP via X-Forwarded-For: {ip}")
             return ip
         
-        # Tentar header Real-IP
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
-            logger.debug(f"IP via X-Real-IP: {real_ip}")
             return real_ip
         
-        # Fallback para client.host
         client_ip = request.client.host if request.client else "127.0.0.1"
         
-        # Normalizar localhost
         if client_ip in ["localhost", "::1", "::ffff:127.0.0.1"]:
             client_ip = "127.0.0.1"
         
-        logger.debug(f"IP via client.host: {client_ip}")
         return client_ip
     
     def generate_captcha_image(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """
-        Gera imagem CAPTCHA e retorna (bytes_imagem, captcha_id)
-        
-        🔥 CICLO DE VIDA:
-        - Gera novo CAPTCHA
-        - Se já existia um CAPTCHA ativo para este usuário, ele é DESATIVADO
-        - O novo CAPTCHA será válido por 2 minutos
-        """
-        # Extrair IP do cliente
         client_ip = self._get_client_ip(request)
         
         try:
-            # Tentar importar PIL (Pillow)
             try:
                 from PIL import Image, ImageDraw, ImageFont, ImageFilter
                 PIL_AVAILABLE = True
@@ -693,10 +680,8 @@ class CaptchaManager:
             return self._generate_simple_image(client_ip, session_type)
     
     def _generate_image_with_pillow(self, ip: str, session_type: str) -> Tuple[bytes, str]:
-        """Gera imagem CAPTCHA usando Pillow"""
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
         
-        # Gerar texto aleatório (6 dígitos)
         captcha_text = ''.join(random.choices(string.digits, k=6))
         
         width, height = 200, 70
@@ -704,14 +689,12 @@ class CaptchaManager:
         image = Image.new('RGB', (width, height), color=(255, 255, 255))
         draw = ImageDraw.Draw(image)
         
-        # Ruído de fundo
         for _ in range(200):
             x = random.randint(0, width)
             y = random.randint(0, height)
             color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))
             draw.point((x, y), fill=color)
         
-        # Linhas onduladas
         for i in range(3):
             x1 = random.randint(0, width // 3)
             y1 = random.randint(0, height)
@@ -719,7 +702,6 @@ class CaptchaManager:
             y2 = random.randint(0, height)
             draw.line([(x1, y1), (x2, y2)], fill=(random.randint(100, 200), random.randint(100, 200), random.randint(100, 200)), width=1)
         
-        # Desenhar texto
         try:
             font = ImageFont.load_default()
         except:
@@ -735,24 +717,20 @@ class CaptchaManager:
             else:
                 draw.text((x, y), char, fill=color)
         
-        # Aplicar blur
         image = image.filter(ImageFilter.GaussianBlur(radius=0.5))
         
-        # Converter para bytes
         img_bytes = io.BytesIO()
         image.save(img_bytes, format='PNG')
         img_bytes = img_bytes.getvalue()
         
-        # Gerar ID único e armazenar (isso DESATIVA o CAPTCHA anterior)
         captcha_id = secrets.token_urlsafe(16)
         self.store.add(captcha_id, captcha_text, ip, session_type)
         
-        logger.info(f"📸 CAPTCHA gerado com Pillow para IP {ip}: {captcha_text}")
+        logger.info(f"📸 CAPTCHA gerado para IP {ip}: {captcha_text}")
         
         return img_bytes, captcha_id
     
     def _generate_simple_image(self, ip: str, session_type: str) -> Tuple[bytes, str]:
-        """Gera imagem CAPTCHA simples sem Pillow (fallback)"""
         captcha_text = ''.join(random.choices(string.digits, k=6))
         
         svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="70">
@@ -772,19 +750,10 @@ class CaptchaManager:
         return img_bytes, captcha_id
     
     def validate_captcha(self, captcha_id: str, captcha_text: str, request: Request, session_type: str = "login") -> bool:
-        """
-        Valida CAPTCHA com todas as regras do ciclo de vida:
-        ✅ Expiração de 2 minutos
-        ✅ Uso único
-        ✅ Sessão ativa do usuário
-        """
-        # Extrair IP do cliente
         client_ip = self._get_client_ip(request)
         
-        # 🔍 DEBUG: Log detalhado
-        logger.info(f"🔍 Validando CAPTCHA - ID: {captcha_id[:8] if captcha_id else 'None'}..., IP: {client_ip}, Texto: {captcha_text}")
+        logger.info(f"🔍 Validando CAPTCHA - ID: {captcha_id[:8] if captcha_id else 'None'}..., IP: {client_ip}")
         
-        # Se estiver em modo desenvolvimento e captcha for 123456, aceitar automaticamente
         if self._dev_mode and captcha_text == "123456":
             logger.warning("🔧 Modo DEV: CAPTCHA 123456 aceito automaticamente")
             return True
@@ -799,16 +768,14 @@ class CaptchaManager:
         return valid
     
     def get_active_captcha(self, request: Request, session_type: str = "login") -> Optional[str]:
-        """Retorna o CAPTCHA ativo para o usuário, se existir"""
         client_ip = self._get_client_ip(request)
         return self.store.get_active_captcha_for_user(client_ip, session_type)
     
     def get_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas (para admin)"""
         return self.store.get_stats()
 
 # ==============================================
-# 4. RATE LIMITER (VERSÃO CORRIGIDA)
+# 4. RATE LIMITER (mantido igual)
 # ==============================================
 
 class RateLimiter:
@@ -821,7 +788,6 @@ class RateLimiter:
         self._redis_initialized = False
     
     async def init_redis(self):
-        """✅ Inicializa Redis de forma assíncrona"""
         if self._redis_initialized:
             return
         
@@ -860,7 +826,6 @@ class RateLimiter:
             except Exception as e:
                 logger.error(f"Erro no Redis rate limit: {e}")
         
-        # Fallback em memória
         if now - self._last_cleanup > 60:
             self._cleanup_memory_cache()
             self._last_cleanup = now
@@ -989,20 +954,13 @@ async def get_current_manager_user(
     return current_user
 
 async def check_captcha(request: Request, session_type: str = "login") -> bool:
-    """
-    Dependência para verificar CAPTCHA
-    Uso: captcha_valid: bool = Depends(check_captcha)
-    """
-    # Modo desenvolvimento
     if captcha_manager._dev_mode:
         logger.debug("🔧 Modo DEV: CAPTCHA ignorado")
         return True
     
-    # Pegar ID e texto do header/body
     captcha_id = request.headers.get("X-Captcha-ID")
     captcha_text = request.headers.get("X-Captcha-Text")
     
-    # Tentar pegar do body
     if not captcha_id or not captcha_text:
         try:
             body = await request.json()
@@ -1018,7 +976,6 @@ async def check_captcha(request: Request, session_type: str = "login") -> bool:
             detail="CAPTCHA ID e texto são obrigatórios"
         )
     
-    # Validar CAPTCHA
     valid = captcha_manager.validate_captcha(captcha_id, captcha_text, request, session_type)
     
     if not valid:
@@ -1117,7 +1074,33 @@ def clear_auth_cookies(response: Response):
         max_age=0,
         path="/"
     )
+    # Adicione este método à classe CaptchaManager (em security.py)
+
+def validate_captcha_only(self, captcha_id: str, captcha_text: str, request: Request, session_type: str = "login") -> bool:
+    """
+    🔍 Valida CAPTCHA sem consumir (apenas verifica se é válido)
+    Útil para pré-validação antes de operações custosas
+    """
+    client_ip = self._get_client_ip(request)
     
+    if self._dev_mode and captcha_text == "123456":
+        return True
+    
+    if captcha_id not in self.store._store:
+        return False
+    
+    session = self.store._store[captcha_id]
+    
+    if session.is_expired():
+        return False
+    
+    if session.used:
+        return False
+    
+    if session.text.lower() != captcha_text.lower().strip():
+        return False
+    
+    return True
     logger.info("🍪 Cookies de autenticação removidos")
     return response
 

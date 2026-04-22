@@ -450,7 +450,7 @@ async def startup_event():
         print(f"⚠️ Erro ao carregar modelos: {e}")
     
     try:
-        from backend.GeminiService import gemini_service
+        from backend.gemini import gemini_service
         if gemini_service.api_key:
             print(f"✅ Google Gemini pronto para uso (modelo: {gemini_service.MODEL_NAME})")
         else:

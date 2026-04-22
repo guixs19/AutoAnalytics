@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO COMPLETA CORRIGIDA
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA (CAPTCHA PRIMEIRO + CORS HEADERS)
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response, JSONResponse
@@ -32,75 +32,112 @@ router = APIRouter(tags=["authentication"])
 
 @router.get("/captcha/generate")
 async def generate_captcha(request: Request):
-    """Gera CAPTCHA próprio - Retorna imagem e ID no header"""
-    client_ip = request.client.host if request.client else "unknown"
-    
+    """
+    Gera CAPTCHA próprio - Retorna imagem e ID no header
+    🔥 IMPORTANTE: Access-Control-Expose-Headers permite o frontend ler X-Captcha-ID
+    """
     try:
-        img_bytes, captcha_id = captcha_manager.generate_captcha_image(client_ip)
+        img_bytes, captcha_id = captcha_manager.generate_captcha_image(request)
     except Exception as e:
         logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
         raise HTTPException(status_code=500, detail="Erro ao gerar CAPTCHA")
     
+    # 🔥 CRÍTICO: Adicionar Access-Control-Expose-Headers para permitir leitura do header
     return Response(
         content=img_bytes,
         media_type="image/png",
         headers={
             "X-Captcha-ID": captcha_id,
             "X-Captcha-Expires": "120",
-            "Cache-Control": "no-cache, no-store, must-revalidate"
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"  # 🔥 OBRIGATÓRIO!
         }
     )
 
 
 # ==============================================
-# LOGIN - USANDO SCHEMA.UserLogin
+# LOGIN - CORRIGIDO (CAPTCHA PRIMEIRO)
 # ==============================================
 
 @router.post("/login")
 async def login(
-    login_data: schemas.UserLogin,  # ✅ USA O SCHEMA EXISTENTE
+    login_data: schemas.UserLogin,
     request: Request,
     response: Response,
     db: Session = Depends(get_db)
 ):
     """
-    🔐 LOGIN - Aceita JSON com email, password, captcha_text
-    ✅ Usa schema UserLogin do schemas.py
-    ✅ CAPTCHA ID vem do HEADER (X-Captcha-ID)
-    ✅ CAPTCHA TEXT vem do BODY (captcha_text)
-    ✅ Rate limiting
+    🔐 LOGIN - CORRIGIDO PARA SEGURANÇA
+    ✅ PRIMEIRO: Valida CAPTCHA (rápido, sem acesso ao banco)
+    ✅ SEGUNDO: Rate limiting por IP (bloqueia antes de processar)
+    ✅ TERCEIRO: Só então verifica usuário e senha (operação pesada)
     """
     
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "unknown"
     
-    # Rate limiting
+    # 🔥 VALIDAÇÃO 1: CAPTCHA É O PORTEIRO PRINCIPAL
+    captcha_id = request.headers.get("X-Captcha-ID")
+    captcha_text = login_data.captcha_text
+    
+    if not captcha_id:
+        logger.warning(f"❌ CAPTCHA ID não fornecido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="CAPTCHA ID não fornecido. Recarregue a página e tente novamente."
+        )
+    
+    if not captcha_text:
+        logger.warning(f"❌ CAPTCHA texto não fornecido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="Código CAPTCHA é obrigatório. Digite os números da imagem."
+        )
+    
+    # 🔥 VALIDAÇÃO RÁPIDA DO CAPTCHA (sem banco de dados, sem hash)
+    if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
+        logger.warning(f"❌ CAPTCHA inválido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="CAPTCHA inválido ou expirado. Clique no ícone de atualização e tente novamente."
+        )
+    
+    logger.info(f"✅ CAPTCHA validado para IP: {client_ip}")
+    
+    # 🔥 VALIDAÇÃO 2: Rate limiting (agora que CAPTCHA está ok)
     ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
     email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
     if not ip_allowed or not email_allowed:
-        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 15 minutos.")
+        logger.warning(f"⚠️ Rate limit excedido - IP: {client_ip}, Email: {login_data.email}")
+        raise HTTPException(
+            status_code=429, 
+            detail="Muitas tentativas de login. Aguarde 15 minutos antes de tentar novamente."
+        )
     
-    # ✅ VALIDAR CAPTCHA - ID vem do HEADER, TEXT vem do BODY
-    captcha_id = request.headers.get("X-Captcha-ID")
-    
-    if not captcha_id:
-        raise HTTPException(status_code=400, detail="CAPTCHA ID não fornecido. Recarregue o CAPTCHA.")
-    
-    if not login_data.captcha_text:
-        raise HTTPException(status_code=400, detail="CAPTCHA é obrigatório")
-    
-    if not captcha_manager.validate_captcha(captcha_id, login_data.captcha_text, client_ip):
-        raise HTTPException(status_code=400, detail="CAPTCHA inválido ou expirado")
-    
-    # Buscar usuário
+    # 🔥 VALIDAÇÃO 3: Agora sim, verificar usuário (operação pesada)
     user = crud.get_user_by_email(db, login_data.email)
+    
     if not user or not user.verify_password(login_data.password):
-        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+        logger.warning(f"❌ Falha de login (senha/email inválido) para IP {client_ip} - Email: {login_data.email}")
+        
+        # Aumentar contador de tentativas
+        await rate_limiter.increment(f"login_ip:{client_ip}")
+        await rate_limiter.increment(f"login_email:{login_data.email}")
+        
+        raise HTTPException(
+            status_code=401, 
+            detail="Email ou senha incorretos"
+        )
     
+    # Verificar se conta está ativa
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Conta desativada")
+        logger.warning(f"⚠️ Tentativa de login em conta desativada: {user.email}")
+        raise HTTPException(
+            status_code=403, 
+            detail="Conta desativada. Entre em contato com o suporte."
+        )
     
-    # Atualizar último login
+    # ✅ Tudo validado! Atualizar último login
     crud.update_last_login(db, user.id)
     
     # Dados para o token
@@ -154,13 +191,13 @@ async def login(
     )
     
     admin_tag = "👑 " if user.is_admin else ""
-    logger.info(f"✅ {admin_tag}Login: {user.email}")
+    logger.info(f"✅ {admin_tag}Login bem-sucedido: {user.email} - IP: {client_ip}")
     
     return api_response
 
 
 # ==============================================
-# REGISTER - CORRIGIDO
+# REGISTER - CORRIGIDO (CAPTCHA PRIMEIRO)
 # ==============================================
 
 @router.post("/register")
@@ -168,11 +205,29 @@ async def register(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Registro com CAPTCHA - Aceita JSON"""
+    """
+    📝 REGISTRO - CORRIGIDO
+    ✅ PRIMEIRO: Valida CAPTCHA (rápido)
+    ✅ SEGUNDO: Rate limiting
+    ✅ TERCEIRO: Só então verifica email e cria usuário
+    """
+    
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # 🔥 VALIDAÇÃO 1: CAPTCHA É O PORTEIRO PRINCIPAL
+    captcha_id = request.headers.get("X-Captcha-ID")
+    
+    if not captcha_id:
+        logger.warning(f"❌ Registro - CAPTCHA ID não fornecido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="CAPTCHA ID não fornecido. Recarregue a página e tente novamente."
+        )
     
     try:
         body = await request.json()
     except Exception as e:
+        logger.error(f"❌ Registro - corpo inválido: {e}")
         raise HTTPException(status_code=400, detail="Corpo da requisição inválido")
     
     name = body.get("name", "")
@@ -181,15 +236,24 @@ async def register(
     workshop_name = body.get("workshop_name", "")
     captcha_text = body.get("captcha_text", "")
     
-    # Validações
-    if not all([name, email, password, workshop_name, captcha_text]):
-        raise HTTPException(status_code=400, detail="Todos os campos são obrigatórios")
+    if not captcha_text:
+        logger.warning(f"❌ Registro - CAPTCHA texto não fornecido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="Código CAPTCHA é obrigatório. Digite os números da imagem."
+        )
     
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
+    # 🔥 VALIDAÇÃO RÁPIDA DO CAPTCHA
+    if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
+        logger.warning(f"❌ Registro - CAPTCHA inválido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="CAPTCHA inválido ou expirado. Clique no ícone de atualização e tente novamente."
+        )
     
-    # Rate limiting
-    client_ip = request.client.host
+    logger.info(f"✅ Registro - CAPTCHA validado para IP: {client_ip}")
+    
+    # 🔥 VALIDAÇÃO 2: Rate limiting (agora que CAPTCHA está ok)
     allowed = await rate_limiter.check_rate_limit(
         f"register:{client_ip}", 
         max_requests=3,
@@ -197,25 +261,28 @@ async def register(
     )
     
     if not allowed:
-        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 hora.")
+        logger.warning(f"⚠️ Registro - Rate limit excedido - IP: {client_ip}")
+        raise HTTPException(
+            status_code=429, 
+            detail="Muitas tentativas de registro. Aguarde 1 hora antes de tentar novamente."
+        )
     
-    # Validar CAPTCHA
-    captcha_id = request.headers.get("X-Captcha-ID")
+    # 🔥 VALIDAÇÃO 3: Validações de negócio
+    if not all([name, email, password, workshop_name]):
+        raise HTTPException(status_code=400, detail="Todos os campos são obrigatórios")
     
-    if not captcha_id:
-        raise HTTPException(status_code=400, detail="CAPTCHA ID não fornecido. Recarregue o CAPTCHA.")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
     
-    if not captcha_text:
-        raise HTTPException(status_code=400, detail="CAPTCHA é obrigatório")
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Email inválido")
     
-    if not captcha_manager.validate_captcha(captcha_id, captcha_text, client_ip):
-        raise HTTPException(status_code=400, detail="CAPTCHA inválido ou expirado")
-    
-    # Verificar email
+    # Verificar email já existe
     if crud.get_user_by_email(db, email):
+        logger.warning(f"⚠️ Registro - Email já cadastrado: {email}")
         raise HTTPException(status_code=400, detail="Email já cadastrado")
     
-    # Criar usuário usando o schema UserCreate
+    # Criar usuário
     user_data = schemas.UserCreate(
         name=name,
         email=email,
@@ -224,11 +291,12 @@ async def register(
     )
     
     user = crud.create_user(db=db, user=user_data)
-    logger.info(f"✅ Usuário registrado: {user.email}")
+    
+    logger.info(f"✅ Usuário registrado com sucesso: {user.email} - IP: {client_ip}")
     
     return {
         "success": True,
-        "message": "Conta criada com sucesso",
+        "message": "Conta criada com sucesso! Faça login para continuar.",
         "user": {
             "id": user.id,
             "name": user.name,
@@ -244,9 +312,7 @@ async def register(
 
 @router.get("/check-token")
 async def check_token(request: Request, db: Session = Depends(get_db)):
-    """
-    🔍 VERIFICAÇÃO DE TOKEN
-    """
+    """Verifica status do token"""
     
     access_token = request.cookies.get("access_token")
     if access_token and access_token.startswith("Bearer "):
@@ -297,7 +363,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         logger.info("🔄 Token expirado - tentando refresh...")
         
         try:
-            new_tokens = await jwt_manager.refresh_access_token(refresh_token, db)
+            new_tokens = await jwt_manager.refresh_access_token(refresh_token, db, access_token)
             
             if new_tokens:
                 payload = jwt_manager.decode_token(new_tokens["access_token"])
@@ -336,7 +402,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     
     if refresh_token:
         try:
-            await jwt_manager.logout(refresh_token, db)
+            await jwt_manager.logout(refresh_token, db, access_token)
         except:
             pass
     
@@ -363,18 +429,19 @@ async def refresh_token(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Renova access token manualmente - Aceita JSON"""
+    """Renova access token manualmente"""
     
     try:
         body = await request.json()
         refresh_token = body.get("refresh_token")
+        old_access_token = body.get("old_access_token")
     except:
         raise HTTPException(status_code=400, detail="Corpo inválido")
     
     if not refresh_token:
         raise HTTPException(status_code=400, detail="Refresh token obrigatório")
     
-    new_tokens = await jwt_manager.refresh_access_token(refresh_token, db)
+    new_tokens = await jwt_manager.refresh_access_token(refresh_token, db, old_access_token)
     
     if not new_tokens:
         raise HTTPException(status_code=401, detail="Refresh token inválido")
@@ -416,8 +483,13 @@ async def logout(
     except:
         refresh_token = None
     
+    access_token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        access_token = auth_header.replace("Bearer ", "")
+    
     if refresh_token:
-        await jwt_manager.logout(refresh_token, db)
+        await jwt_manager.logout(refresh_token, db, access_token)
     
     response = JSONResponse(content={
         "status": "logged_out",
@@ -457,7 +529,7 @@ async def change_password(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Troca de senha - Aceita JSON"""
+    """Troca de senha"""
     
     try:
         body = await request.json()

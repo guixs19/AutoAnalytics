@@ -1,4 +1,4 @@
-# backend/api/routes.py - VERSÃO COMPLETA COM GEMINI
+# backend/api/routes.py - VERSÃO COMPLETA CORRIGIDA
 """
 ROUTES.PY - VERSÃO COM GEMINI
 ----------------------
@@ -11,6 +11,7 @@ ROUTES.PY - VERSÃO COM GEMINI
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, Form
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi import Request
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 import uuid
@@ -21,7 +22,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-print("🔧 Iniciando routes.py v6.0 - Com Google Gemini")
+print("🔧 Iniciando routes.py v7.0 - Com Google Gemini (Créditos corrigidos)")
 
 # ==============================================
 # IMPORTS OBRIGATÓRIOS
@@ -111,15 +112,15 @@ except ImportError:
 # 3. GeminiService (substituiu Flowise)
 GeminiService = None
 try:
-    from backend.services.gemini_service import GeminiService
+    from backend.gemini import GeminiService
     print("✅ GeminiService importado")
 except ImportError:
     try:
-        from backend.GeminiService import GeminiService
+        from backend.gemini import GeminiService
         print("✅ GeminiService importado de gemini.py")
     except ImportError:
         try:
-            from backend.GeminiService import GeminiService
+            from backend.gemini import GeminiService
             print("✅ GeminiService importado (caminho alternativo)")
         except ImportError:
             print("⚠️ GeminiService não encontrado, criando classe dummy...")
@@ -216,6 +217,7 @@ processing_cache = {}
 # ==============================================
 # FUNÇÕES AUXILIARES
 # ==============================================
+
 def normalize_predictions(predictions):
     """Normaliza previsões para formato serializável"""
     if predictions is None:
@@ -302,15 +304,27 @@ async def auto_detect_target(df):
     
     return numeric_cols[-1], "regression", "Última coluna numérica (padrão)"
 
+
+# ==============================================
+# FUNÇÕES DE CRÉDITO CORRIGIDAS (ADMIN)
+# ==============================================
+
 def check_user_credits_before_upload(user: User, db: Session) -> Dict:
-    """Verifica créditos antes do upload"""
+    """
+    ✅ Verifica créditos antes do upload
+    👑 ADMIN: sempre pode prosseguir (créditos ilimitados)
+    """
+    # 🔥 CORREÇÃO CRÍTICA: Admin SEMPRE pode prosseguir
     if user.is_admin:
         return {
             "can_proceed": True,
             "credits_display": "∞",
-            "message": "Admin - créditos ilimitados"
+            "credits_remaining": "∞",
+            "message": "👑 Admin - créditos ilimitados",
+            "is_admin": True
         }
     
+    # Usuários comuns e premium
     if user.credits <= 0:
         is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
         
@@ -318,27 +332,75 @@ def check_user_credits_before_upload(user: User, db: Session) -> Dict:
             return {
                 "can_proceed": False,
                 "credits_display": "0",
+                "credits_remaining": 0,
                 "message": "Você usou todos seus créditos. Amanhã você ganha mais 1 do plano premium!",
-                "suggestion": "Volte amanhã ou compre mais créditos"
+                "suggestion": "Volte amanhã ou compre mais créditos",
+                "is_premium": True
             }
         else:
             return {
                 "can_proceed": False,
                 "credits_display": "0",
+                "credits_remaining": 0,
                 "message": "Você não tem créditos suficientes",
-                "suggestion": "Compre créditos na página de planos"
+                "suggestion": "Compre créditos na página de planos",
+                "is_premium": False
             }
     
     return {
         "can_proceed": True,
         "credits_display": str(user.credits),
         "credits_remaining": user.credits - 1,
+        "credits_before": user.credits,
         "message": f"Você tem {user.credits} créditos. Esta análise consumirá 1 crédito."
     }
+
+
+def update_user_credits_after_upload(db: Session, user: User, filename: str, is_admin: bool = False) -> Dict:
+    """
+    ✅ Atualiza créditos após upload (ou não, se for admin)
+    Retorna dicionário com informações atualizadas
+    """
+    if is_admin or user.is_admin:
+        return {
+            "success": True,
+            "credits_before": "∞",
+            "credits_after": "∞",
+            "credits_display": "∞",
+            "message": "👑 Admin - créditos ilimitados, nenhum crédito foi consumido",
+            "credits_consumed": 0
+        }
+    
+    credits_before = user.credits
+    
+    # Usa a função corrigida que verifica se é admin internamente
+    success = deduct_credits(db, user, 1, f"Análise Gemini: {filename}")
+    
+    if success:
+        db.refresh(user)
+        return {
+            "success": True,
+            "credits_before": credits_before,
+            "credits_after": user.credits,
+            "credits_display": str(user.credits),
+            "message": f"1 crédito consumido. Saldo restante: {user.credits}",
+            "credits_consumed": 1
+        }
+    else:
+        return {
+            "success": False,
+            "credits_before": credits_before,
+            "credits_after": credits_before,
+            "credits_display": str(credits_before),
+            "message": "Erro ao consumir crédito",
+            "credits_consumed": 0
+        }
+
 
 # ==============================================
 # ENDPOINTS PÚBLICOS
 # ==============================================
+
 @router.get("/test")
 async def test_endpoint():
     """Endpoint de teste público"""
@@ -377,8 +439,9 @@ async def health_check():
         }
     }
 
+
 # ==============================================
-# ENDPOINTS PROTEGIDOS
+# ENDPOINT DE UPLOAD CORRIGIDO
 # ==============================================
 
 @router.post("/upload")
@@ -386,20 +449,21 @@ async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     analysis_type: str = Query("clientes"),
-    ai_model: str = Query("gemini"),  # Agora padrão é gemini
+    ai_model: str = Query("gemini"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Upload de arquivo para análise com Google Gemini
-    ✅ Admin: não consome créditos
-    ⭐ Premium: consome 1 crédito
-    👤 Comum: consome 1 crédito
+    ✅ Admin: NÃO consome créditos (retorna True sempre)
+    ⭐ Premium: consome 1 crédito se tiver
+    👤 Comum: consome 1 crédito se tiver
     🤖 IA: Google Gemini
     """
     try:
-        print(f"📥 Upload: {file.filename}, Usuário: {current_user.email}, IA: Gemini")
+        print(f"📥 Upload: {file.filename}, Usuário: {current_user.email} (Admin: {current_user.is_admin}), IA: Gemini")
         
+        # 🔥 Usa a função corrigida que trata admin corretamente
         credit_check = check_user_credits_before_upload(current_user, db)
         
         if not credit_check["can_proceed"]:
@@ -458,6 +522,8 @@ async def upload_file(
         }
         
         async def process_file_background():
+            credits_update_result = None
+            
             try:
                 update_status(process_id, "processing", 10, "Iniciando processamento...")
                 
@@ -472,6 +538,7 @@ async def upload_file(
                 
                 predictions = []
                 prediction_stats = {}
+                ml_insights = {}
                 
                 if predictor and result.get("dataframe_numeric") is not None:
                     df_numeric = result["dataframe_numeric"]
@@ -480,7 +547,6 @@ async def upload_file(
                         predictions = await predictor.predict_for_office(df_numeric)
                         prediction_stats = calculate_prediction_stats(predictions)
                         
-                        # Extrair insights do ML para o Gemini
                         ml_insights = predictor.get_ml_insights_for_gemini(df_numeric, predictions)
                 
                 update_status(process_id, "processing", 70, "Analisando com Google Gemini...")
@@ -491,7 +557,7 @@ async def upload_file(
                         {
                             "data_summary": result.get("metadata", {}),
                             "prediction_stats": prediction_stats,
-                            "ml_insights": ml_insights if 'ml_insights' in dir() else {},
+                            "ml_insights": ml_insights,
                             "filename": file.filename,
                             "workshop": current_user.workshop_name,
                             "total_records": len(result.get("dataframe", [])),
@@ -501,18 +567,13 @@ async def upload_file(
                 
                 update_status(process_id, "processing", 90, "Gerando relatório...")
                 
+                # 🔥 ATUALIZA CRÉDITOS APÓS PROCESSAMENTO (usando função corrigida)
+                credits_update_result = update_user_credits_after_upload(
+                    db, current_user, file.filename, current_user.is_admin
+                )
+                
                 admin_tag = " [ADMIN]" if current_user.is_admin else ""
                 premium_tag = " ⭐[PREMIUM]" if (current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()) else ""
-                
-                credits_before = current_user.credits
-                credits_after = credits_before
-                
-                if not current_user.is_admin:
-                    success = deduct_credits(db, current_user.id, 1, f"Análise Gemini: {file.filename}")
-                    if success:
-                        db.refresh(current_user)
-                        credits_after = current_user.credits
-                        print(f"💰 Crédito deduzido: {credits_before} → {credits_after}")
                 
                 premium_info = None
                 if daily_credits_service and current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium():
@@ -529,7 +590,7 @@ ID da Análise: {db_analysis.id}
 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 Usuário: {current_user.name} ({current_user.email})
 Oficina: {current_user.workshop_name or 'Não informada'}
-Tipo: {'👑 ADMIN' if current_user.is_admin else '⭐ PREMIUM' if (current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()) else '👤 USUÁRIO COMUM'}
+Tipo: {'👑 ADMIN (créditos ilimitados)' if current_user.is_admin else '⭐ PREMIUM' if (current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium()) else '👤 USUÁRIO COMUM'}
 IA Utilizada: 🤖 Google Gemini
 
 📁 ARQUIVO
@@ -583,12 +644,11 @@ Nenhuma previsão gerada"""
 
 💰 CRÉDITOS
 ──────────────────────────────
-Créditos antes: {'∞' if current_user.is_admin else credits_before}
-Créditos depois: {'∞' if current_user.is_admin else credits_after}
-Status: {'👑 ADMIN (não consome)' if current_user.is_admin else '✅ 1 crédito consumido'}
-
+Créditos antes: {'∞' if current_user.is_admin else credits_update_result.get('credits_before', 0)}
+Créditos depois: {'∞' if current_user.is_admin else credits_update_result.get('credits_after', 0)}
+Status: {'👑 ADMIN (não consome créditos)' if current_user.is_admin else '✅ 1 crédito consumido'}
 """
-                
+
                 if premium_info and premium_info.get('is_premium'):
                     report += f"""
 ⭐ PLANO PREMIUM
@@ -624,14 +684,19 @@ Relatório gerado automaticamente pelo AutoAnalytics com Google Gemini
                     "result_file": result_file,
                     "predictions": normalize_predictions(predictions),
                     "prediction_stats": prediction_stats,
-                    "credits_before": credits_before,
-                    "credits_after": credits_after,
-                    "credits_display": "∞" if current_user.is_admin else str(credits_after),
+                    "credits_before": "∞" if current_user.is_admin else credits_update_result.get('credits_before', 0),
+                    "credits_after": "∞" if current_user.is_admin else credits_update_result.get('credits_after', 0),
+                    "credits_display": "∞" if current_user.is_admin else str(credits_update_result.get('credits_after', 0)),
+                    "credits_consumed": 0 if current_user.is_admin else 1,
                     "premium_info": premium_info,
                     "ai_provider": "gemini"
                 })
                 
                 print(f"✅ Processamento concluído com Gemini: {process_id}")
+                if current_user.is_admin:
+                    print(f"   👑 Admin {current_user.email} - nenhum crédito consumido")
+                else:
+                    print(f"   💰 Créditos: {credits_update_result.get('credits_before')} → {credits_update_result.get('credits_after')}")
                 
             except Exception as e:
                 print(f"❌ Erro: {e}")
@@ -658,18 +723,23 @@ Relatório gerado automaticamente pelo AutoAnalytics com Google Gemini
         
         background_tasks.add_task(process_file_background)
         
+        # 🔥 Resposta imediata com informações de créditos
+        credits_display = "∞" if current_user.is_admin else str(current_user.credits)
+        credits_after_display = "∞" if current_user.is_admin else str(current_user.credits - 1 if current_user.credits > 0 else 0)
+        
         return {
             "message": "Arquivo recebido para processamento com Google Gemini",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_before": current_user.credits,
-            "credits_after": current_user.credits - 1 if not current_user.is_admin and current_user.credits > 0 else current_user.credits,
-            "credits_display": get_credits_display(current_user),
+            "credits_before": "∞" if current_user.is_admin else current_user.credits,
+            "credits_after": "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits > 0 else 0),
+            "credits_display": credits_display,
+            "credits_after_display": credits_after_display,
             "is_admin": current_user.is_admin,
             "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium(),
             "status": "processing",
             "ai_provider": "gemini",
-            "note": "Esta análise consumirá 1 crédito e usará Google Gemini" if not current_user.is_admin else "Admin não consome créditos"
+            "note": "Esta análise consumirá 1 crédito e usará Google Gemini" if not current_user.is_admin else "👑 Admin não consome créditos (créditos ilimitados)"
         }
         
     except HTTPException:
@@ -677,6 +747,7 @@ Relatório gerado automaticamente pelo AutoAnalytics com Google Gemini
     except Exception as e:
         print(f"❌ Erro: {e}")
         raise HTTPException(500, f"Erro interno: {str(e)}")
+
 
 # ==============================================
 # UPLOAD AUTOMÁTICO
@@ -751,6 +822,8 @@ async def upload_auto(
         }
         
         async def process_auto_background():
+            credits_update_result = None
+            
             try:
                 update_status(process_id, "detecting", 10, "Detectando padrões nos dados...")
                 
@@ -826,6 +899,13 @@ async def upload_auto(
                         }
                     )
                 
+                update_status(process_id, "finalizing", 90, "Finalizando análise...")
+                
+                # 🔥 ATUALIZA CRÉDITOS APÓS PROCESSAMENTO
+                credits_update_result = update_user_credits_after_upload(
+                    db, current_user, file.filename, current_user.is_admin
+                )
+                
                 analysis_info = {
                     "detected_columns": len(df.columns),
                     "numeric_columns": len(df_numeric.columns),
@@ -837,15 +917,6 @@ async def upload_auto(
                     "accuracy": model_info.get("accuracy", 0.85),
                     "ai_analysis": ai_analysis.get('full_analysis', '')[:500] if ai_analysis else ''
                 }
-                
-                credits_before = current_user.credits
-                credits_after = credits_before
-                
-                if not current_user.is_admin:
-                    success = deduct_credits(db, current_user.id, 1, f"Auto análise Gemini: {file.filename}")
-                    if success:
-                        db.refresh(current_user)
-                        credits_after = current_user.credits
                 
                 premium_info = None
                 if daily_credits_service and current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium():
@@ -862,9 +933,10 @@ async def upload_auto(
                     "analysis_info": analysis_info,
                     "ai_analysis": ai_analysis,
                     "rows_processed": len(df),
-                    "credits_before": credits_before,
-                    "credits_after": credits_after,
-                    "credits_display": "∞" if current_user.is_admin else str(credits_after),
+                    "credits_before": "∞" if current_user.is_admin else credits_update_result.get('credits_before', 0),
+                    "credits_after": "∞" if current_user.is_admin else credits_update_result.get('credits_after', 0),
+                    "credits_display": "∞" if current_user.is_admin else str(credits_update_result.get('credits_after', 0)),
+                    "credits_consumed": 0 if current_user.is_admin else 1,
                     "premium_info": premium_info,
                     "ai_provider": "gemini"
                 })
@@ -879,6 +951,10 @@ async def upload_auto(
                 })
                 
                 print(f"✅ Análise automática com Gemini concluída: {process_id}")
+                if current_user.is_admin:
+                    print(f"   👑 Admin {current_user.email} - nenhum crédito consumido")
+                else:
+                    print(f"   💰 Créditos: {credits_update_result.get('credits_before')} → {credits_update_result.get('credits_after')}")
                 
             except Exception as e:
                 print(f"❌ Erro na análise automática: {e}")
@@ -904,13 +980,17 @@ async def upload_auto(
         
         background_tasks.add_task(process_auto_background)
         
+        credits_display = "∞" if current_user.is_admin else str(current_user.credits)
+        credits_after_display = "∞" if current_user.is_admin else str(current_user.credits - 1 if current_user.credits > 0 else 0)
+        
         return {
             "message": "Análise automática com Google Gemini iniciada com sucesso!",
             "process_id": process_id,
             "analysis_id": db_analysis.id,
-            "credits_before": current_user.credits,
-            "credits_after": current_user.credits - 1 if not current_user.is_admin and current_user.credits > 0 else current_user.credits,
-            "credits_display": get_credits_display(current_user),
+            "credits_before": "∞" if current_user.is_admin else current_user.credits,
+            "credits_after": "∞" if current_user.is_admin else (current_user.credits - 1 if current_user.credits > 0 else 0),
+            "credits_display": credits_display,
+            "credits_after_display": credits_after_display,
             "is_admin": current_user.is_admin,
             "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and current_user.is_premium(),
             "status": "processing",
@@ -924,6 +1004,7 @@ async def upload_auto(
         print(f"❌ Erro no upload automático: {e}")
         raise HTTPException(500, f"Erro interno: {str(e)}")
 
+
 # ==============================================
 # ROTAS DE STATUS E RESULTADO
 # ==============================================
@@ -931,7 +1012,7 @@ async def upload_auto(
 @router.get("/status/{process_id}")
 async def get_status(
     process_id: str,
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Verifica status do processamento"""
     if process_id not in processing_cache:
@@ -946,7 +1027,7 @@ async def get_status(
 @router.get("/result/{process_id}")
 async def get_result(
     process_id: str,
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Obtém resultado do processamento"""
     if process_id not in processing_cache:
@@ -990,13 +1071,14 @@ async def get_result(
         "ai_provider": data.get("ai_provider", "gemini")
     })
 
+
 # ==============================================
 # ROTAS DE USUÁRIO
 # ==============================================
 
 @router.get("/user/profile")
 async def get_user_profile(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna perfil do usuário"""
@@ -1009,7 +1091,7 @@ async def get_user_profile(
         "name": current_user.name,
         "email": current_user.email,
         "workshop_name": current_user.workshop_name,
-        "credits": current_user.credits,
+        "credits": "∞" if current_user.is_admin else current_user.credits,
         "credits_display": get_credits_display(current_user),
         "total_purchased": current_user.total_purchased,
         "is_admin": current_user.is_admin,
@@ -1022,7 +1104,7 @@ async def get_user_profile(
 
 @router.get("/stats")
 async def get_stats(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna estatísticas do dashboard"""
@@ -1073,13 +1155,14 @@ async def get_stats(
             "mensagem": "Erro ao carregar estatísticas completas"
         }
 
+
 # ==============================================
 # HISTÓRICO DE ANÁLISES
 # ==============================================
 
 @router.get("/analyses/history")
 async def get_analysis_history(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     limit: int = 10
 ):
@@ -1107,13 +1190,14 @@ async def get_analysis_history(
         print(f"❌ Erro ao buscar histórico: {e}")
         return []
 
+
 # ==============================================
 # ROTAS DE CRÉDITOS E PREMIUM
 # ==============================================
 
 @router.get("/credits/status")
 async def get_credits_status(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna status detalhado dos créditos do usuário"""
@@ -1152,7 +1236,7 @@ async def get_credits_status(
 
 @router.get("/premium/status")
 async def get_premium_status(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna status específico do plano premium"""
@@ -1163,7 +1247,7 @@ async def get_premium_status(
 
 @router.post("/premium/check-daily")
 async def check_premium_daily(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """⭐ Verifica e adiciona crédito diário do premium"""
@@ -1179,6 +1263,7 @@ async def check_premium_daily(
     
     return result
 
+
 # ==============================================
 # DASHBOARD
 # ==============================================
@@ -1186,7 +1271,7 @@ async def check_premium_daily(
 @router.get("/dashboard")
 async def dashboard(
     request: Request,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Rota do dashboard"""
@@ -1211,13 +1296,14 @@ async def dashboard(
         }
     )
 
+
 # ==============================================
 # ROTAS DE ADMIN
 # ==============================================
 
 @router.get("/admin/check")
 async def check_admin_status(
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Verifica se usuário é admin"""
     return {
