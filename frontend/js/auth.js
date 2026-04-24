@@ -1,16 +1,4 @@
-// frontend/js/auth.js - VERSÃO COMPLETA CORRIGIDA (COM FETCH PARA CAPTCHA)
-/*
- * auth.js - Sistema de Autenticação
- * 
- * CORREÇÕES REALIZADAS:
- * - Uso de fetch() para ler o header X-Captcha-ID do CAPTCHA
- * - Reset completo do estado do CAPTCHA antes de cada requisição
- * - Limpeza de timers e IDs antigos
- * - Evita envio de CAPTCHA ID antigo em novas tentativas
- * - Ordem de validação do login (CAPTCHA primeiro, depois senha)
- * - Tratamento específico para erro 401 (senha errada)
- * - Refresh token com queue system e rate limiting
- */
+// frontend/js/auth.js - VERSÃO COM CAPTCHA MATEMÁTICO (SOMA SIMPLES)
 
 class Auth {
     constructor() {
@@ -24,14 +12,6 @@ class Auth {
         this.tokenCheckInterval = null;
         this.loginAttempts = 0;
         this.maxLoginAttempts = 5;
-        this.isRefreshingCaptcha = false;
-        
-        // Propriedades para refresh token
-        this.isRefreshingToken = false;
-        this.tokenRefreshQueue = [];
-        this.tokenRefreshTimeout = null;
-        this.lastRefreshAttempt = 0;
-        this.minRefreshInterval = 5000;
         
         // Timer properties
         this.captchaTimer = null;
@@ -39,13 +19,9 @@ class Auth {
         this.registerCaptchaTimer = null;
         this.registerCaptchaTimeLeft = 120;
         
-        // Flag para saber se já usou o pré-carregamento
-        this.hasUsedPreloadedCaptcha = false;
-        
-        // Propriedades para controle de estado do CAPTCHA
-        this.lastCaptchaRequestTime = 0;
-        this.minCaptchaInterval = 1000; // 1 segundo mínimo entre requisições
+        // Flag para evitar múltiplas requisições
         this.isLoadingCaptcha = false;
+        this.isLoadingRegisterCaptcha = false;
         
         this.init();
     }
@@ -76,10 +52,7 @@ class Auth {
         if (expiresIn) {
             const expiresAt = Date.now() + (expiresIn * 1000);
             localStorage.setItem('token_expires_at', expiresAt.toString());
-            console.log(`⏰ Token expira em: ${new Date(expiresAt).toLocaleTimeString()}`);
         }
-        
-        this.isRefreshingToken = false;
     }
     
     clearStorage() {
@@ -88,213 +61,104 @@ class Auth {
         localStorage.removeItem('user');
         localStorage.removeItem('token_expires_at');
         this.user = {};
-        console.log('🧹 LocalStorage limpo');
     }
     
-    // ==================== TOKEN ====================
+    // ==================== CAPTCHA MATEMÁTICO ====================
     
-    isTokenExpired() {
-        const expiresAt = localStorage.getItem('token_expires_at');
-        if (!expiresAt) return true;
-        return Date.now() > parseInt(expiresAt);
-    }
-    
-    getTokenTimeLeft() {
-        const expiresAt = localStorage.getItem('token_expires_at');
-        if (!expiresAt) return 0;
-        const timeLeft = parseInt(expiresAt) - Date.now();
-        return Math.max(0, timeLeft);
-    }
-    
-    async refreshToken(force = false) {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-            console.log('❌ Refresh token não encontrado');
-            return false;
+    async loadLoginCaptcha() {
+        if (this.isLoadingCaptcha) {
+            console.log('⏳ CAPTCHA já está carregando...');
+            return;
         }
         
-        const now = Date.now();
-        if (!force && (now - this.lastRefreshAttempt) < this.minRefreshInterval) {
-            console.log('⏳ Aguardando rate limit do refresh token');
-            return this.queueTokenRefresh();
+        this.isLoadingCaptcha = true;
+        
+        const img = document.getElementById('loginCaptchaImage');
+        const input = document.getElementById('loginCaptchaInput');
+        const refreshBtn = document.getElementById('refreshLoginCaptcha');
+        const timerEl = document.getElementById('loginCaptchaTimer');
+        
+        if (!img) {
+            this.isLoadingCaptcha = false;
+            return;
         }
         
-        if (this.isRefreshingToken) {
-            console.log('⏳ Refresh token em andamento, aguardando...');
-            return this.queueTokenRefresh();
+        // Reset UI
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         }
         
-        this.isRefreshingToken = true;
-        this.lastRefreshAttempt = now;
+        if (input) {
+            input.disabled = true;
+            input.value = '';
+            input.placeholder = '🔄 Carregando desafio matemático...';
+        }
+        
+        if (timerEl) {
+            timerEl.textContent = '--:--';
+            timerEl.classList.remove('expiring', 'expired');
+        }
+        
+        // Limpar timer anterior
+        if (this.captchaTimer) {
+            clearInterval(this.captchaTimer);
+            this.captchaTimer = null;
+        }
+        
+        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="240" height="80"%3E%3Crect width="240" height="80" fill="%23667eea"/%3E%3Ctext x="120" y="45" font-family="Arial" font-size="24" fill="white" text-anchor="middle"%3E🔢 Carregando...%3C/text%3E%3C/svg%3E';
         
         try {
-            console.log('🔄 Tentando renovar token...');
+            const startTime = Date.now();
+            console.log('🧮 Gerando desafio matemático...');
             
-            const response = await fetch(`${this.apiBase}/auth/refresh`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-Refresh-Attempt': now.toString()
-                },
-                body: JSON.stringify({ 
-                    refresh_token: refreshToken,
-                    old_access_token: localStorage.getItem('access_token')
-                }),
-                credentials: 'include'
+            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
+                cache: 'no-cache',
+                headers: { 'Cache-Control': 'no-cache' }
             });
             
-            const data = await response.json();
-            
-            if (response.ok && data.access_token) {
-                console.log('✅ Token renovado com sucesso');
-                
-                this.saveTokens(
-                    data.access_token, 
-                    data.refresh_token || refreshToken,
-                    data.expires_in || 3600
-                );
-                
-                this.processTokenRefreshQueue(true);
-                
-                return true;
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
             }
             
-            console.log('❌ Falha ao renovar token:', data.detail || 'Erro desconhecido');
-            this.processTokenRefreshQueue(false);
-            return false;
+            this.captchaId = response.headers.get('X-Captcha-ID');
+            
+            if (!this.captchaId) {
+                throw new Error('X-Captcha-ID não recebido');
+            }
+            
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            if (img.dataset.blobUrl) {
+                URL.revokeObjectURL(img.dataset.blobUrl);
+            }
+            
+            img.src = imageUrl;
+            img.dataset.blobUrl = imageUrl;
+            
+            const elapsed = Date.now() - startTime;
+            console.log(`✅ Desafio matemático gerado em ${elapsed}ms - ID: ${this.captchaId.substring(0, 8)}...`);
+            
+            if (input) {
+                input.disabled = false;
+                input.placeholder = 'Ex: 8 (resultado da soma)';
+                input.focus();
+            }
+            
+            this.startCaptchaTimer('login');
             
         } catch (error) {
-            console.error('❌ Erro ao renovar token:', error);
-            this.processTokenRefreshQueue(false);
-            return false;
+            console.error('❌ Erro ao carregar CAPTCHA:', error);
+            this.generateFallbackCaptcha('login');
         } finally {
-            this.isRefreshingToken = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            }
+            this.isLoadingCaptcha = false;
         }
     }
-    
-    queueTokenRefresh() {
-        return new Promise((resolve) => {
-            this.tokenRefreshQueue.push(resolve);
-            
-            setTimeout(() => {
-                const index = this.tokenRefreshQueue.indexOf(resolve);
-                if (index !== -1) {
-                    this.tokenRefreshQueue.splice(index, 1);
-                    resolve(false);
-                }
-            }, 10000);
-        });
-    }
-    
-    processTokenRefreshQueue(success) {
-        console.log(`📋 Processando ${this.tokenRefreshQueue.length} requisições enfileiradas`);
-        
-        while (this.tokenRefreshQueue.length > 0) {
-            const callback = this.tokenRefreshQueue.shift();
-            if (callback) callback(success);
-        }
-    }
-    
-    async ensureValidToken() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return false;
-        
-        const timeLeft = this.getTokenTimeLeft();
-        
-        if (timeLeft <= 120000) {
-            console.log(`⏰ Token com ${Math.round(timeLeft / 1000)}s restantes, renovando...`);
-            return await this.refreshToken();
-        }
-        
-        return true;
-    }
-    
-    async checkTokenStatus() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return { status: 'no_token' };
-        
-        try {
-            const response = await fetch(`${this.apiBase}/auth/check-token`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` },
-                credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.status === 'valid') {
-                if (data.user) {
-                    this.user = { ...this.user, ...data };
-                    this.saveUser(this.user);
-                }
-                return { status: 'valid', data };
-            }
-            
-            if (data.status === 'refreshed' && data.access_token) {
-                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
-                return { status: 'valid', data };
-            }
-            
-            if (data.action === 'clear_storage_and_redirect') {
-                this.clearStorage();
-                if (!this.isLoginPage()) {
-                    window.location.href = '/login.html';
-                }
-                return { status: 'invalid' };
-            }
-            
-            if (await this.refreshToken()) {
-                return { status: 'valid' };
-            }
-            
-            return { status: 'error' };
-            
-        } catch (error) {
-            console.error('Erro ao verificar token:', error);
-            return { status: 'error' };
-        }
-    }
-    
-    // ==================== INIT ====================
-    
-    async init() {
-        console.log('🔧 Auth inicializado - Sistema com gerenciamento de estado corrigido');
-        
-        const path = window.location.pathname;
-        
-        if (path.includes('login.html') || path === '/login' || path === '/') {
-            this.initLoginPage();
-        } else if (path.includes('register.html') || path === '/register') {
-            this.initRegisterPage();
-        } else {
-            const tokenStatus = await this.checkTokenStatus();
-            if (tokenStatus.status === 'invalid' || tokenStatus.status === 'no_token') {
-                this.redirectToLogin();
-            } else {
-                this.updateUserUI();
-                this.startTokenAutoRefresh();
-            }
-        }
-        
-        window.dispatchEvent(new Event('authReady'));
-    }
-    
-    startTokenAutoRefresh() {
-        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
-        
-        this.tokenCheckInterval = setInterval(async () => {
-            if (this.isLoginPage() || this.isRegisterPage()) return;
-            
-            const timeLeft = this.getTokenTimeLeft();
-            
-            if (timeLeft > 0 && timeLeft < 300000) {
-                console.log(`🔄 Token expira em ${Math.round(timeLeft / 60000)}min, renovando...`);
-                await this.refreshToken();
-            }
-        }, 60000);
-    }
-    
-    // ==================== TIMER FUNCTIONS ====================
     
     startCaptchaTimer(type = 'login') {
         const timerId = type === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
@@ -302,7 +166,6 @@ class Auth {
         
         if (!timerElement) return;
         
-        // Limpar timer existente
         if (type === 'login') {
             if (this.captchaTimer) {
                 clearInterval(this.captchaTimer);
@@ -329,27 +192,18 @@ class Auth {
                 if (type === 'login') {
                     if (this.captchaTimer) clearInterval(this.captchaTimer);
                     this.captchaTimer = null;
-                    timerElement.textContent = '00:00';
-                    timerElement.classList.add('expired');
-                    
-                    const input = document.getElementById(`${type}CaptchaInput`);
-                    if (input) {
-                        input.disabled = true;
-                        input.placeholder = '⏰ CAPTCHA expirado! Clique em atualizar';
-                    }
-                    
-                    console.log('⏰ CAPTCHA expirado após 2 minutos');
                 } else {
                     if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
                     this.registerCaptchaTimer = null;
-                    timerElement.textContent = '00:00';
-                    timerElement.classList.add('expired');
-                    
-                    const input = document.getElementById(`${type}CaptchaInput`);
-                    if (input) {
-                        input.disabled = true;
-                        input.placeholder = '⏰ CAPTCHA expirado! Clique em atualizar';
-                    }
+                }
+                
+                timerElement.textContent = '00:00';
+                timerElement.classList.add('expired');
+                
+                const input = document.getElementById(`${type}CaptchaInput`);
+                if (input) {
+                    input.disabled = true;
+                    input.placeholder = '⏰ Desafio expirado! Clique em atualizar';
                 }
                 return;
             }
@@ -378,104 +232,99 @@ class Auth {
         } else {
             this.registerCaptchaTimer = setInterval(updateTimer, 1000);
         }
+    }
+    
+    generateFallbackCaptcha(type) {
+        console.log(`🔄 Gerando desafio matemático fallback para ${type}`);
         
-        console.log(`⏰ Cronômetro do CAPTCHA ${type} iniciado: 2 minutos`);
-    }
-    
-    stopCaptchaTimer(type = 'login') {
-        if (type === 'login' && this.captchaTimer) {
-            clearInterval(this.captchaTimer);
-            this.captchaTimer = null;
-        } else if (type === 'register' && this.registerCaptchaTimer) {
-            clearInterval(this.registerCaptchaTimer);
-            this.registerCaptchaTimer = null;
-        }
-    }
-    
-    resetCaptchaUI(type = 'login') {
+        const img = document.getElementById(`${type}CaptchaImage`);
         const input = document.getElementById(`${type}CaptchaInput`);
-        const timerEl = document.getElementById(`${type}CaptchaTimer`);
         
-        if (input) {
-            input.disabled = false;
-            input.value = '';
-            input.placeholder = 'Digite os 6 números';
-        }
-        
-        if (timerEl) {
-            timerEl.classList.remove('expired', 'expiring');
-        }
-    }
-    
-    // Reset completo do estado do CAPTCHA
-    resetCaptchaState(type = 'login') {
-        console.log(`🔄 Resetando estado do CAPTCHA ${type}`);
+        if (!img) return;
         
         if (type === 'login') {
-            // Limpar ID antigo
-            this.captchaId = null;
-            // Parar timer
-            this.stopCaptchaTimer('login');
-            // Resetar flag de pré-carregamento para permitir novo uso
-            this.hasUsedPreloadedCaptcha = false;
-            // Resetar tempo restante
-            this.captchaTimeLeft = 120;
+            if (this.captchaTimer) clearInterval(this.captchaTimer);
         } else {
-            this.captchaIdRegister = null;
-            this.stopCaptchaTimer('register');
-            this.registerCaptchaTimeLeft = 120;
+            if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
         }
         
-        // Resetar UI
-        this.resetCaptchaUI(type);
+        // Gerar números aleatórios para soma
+        const n1 = Math.floor(Math.random() * 9) + 1;
+        const n2 = Math.floor(Math.random() * 9) + 1;
+        const resultado = n1 + n2;
+        const pergunta = `${n1} + ${n2} = ?`;
         
-        console.log(`✅ Estado do CAPTCHA ${type} resetado`);
+        const canvas = document.createElement('canvas');
+        canvas.width = 240;
+        canvas.height = 80;
+        const ctx = canvas.getContext('2d');
+        
+        // Fundo gradiente
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, '#667eea');
+        gradient.addColorStop(1, '#764ba2');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Ruído visual
+        for (let i = 0; i < 150; i++) {
+            ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.15})`;
+            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+        }
+        
+        // Linhas decorativas
+        for (let i = 0; i < 8; i++) {
+            ctx.beginPath();
+            ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+            ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+            ctx.strokeStyle = `rgba(255,255,255,${Math.random() * 0.2})`;
+            ctx.stroke();
+        }
+        
+        // Texto do desafio
+        ctx.font = 'bold 34px "Courier New", monospace';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pergunta, canvas.width / 2, canvas.height / 2);
+        
+        img.src = canvas.toDataURL();
+        
+        if (input) {
+            input.dataset.fallbackCaptcha = resultado.toString();
+            input.disabled = false;
+            input.placeholder = 'Ex: resultado da soma';
+        }
+        
+        if (type === 'login') {
+            this.captchaId = 'fallback_' + Date.now();
+            console.log(`✅ Desafio fallback: ${pergunta} = ${resultado}`);
+        } else {
+            this.captchaIdRegister = 'fallback_' + Date.now();
+            console.log(`✅ Desafio fallback register: ${pergunta} = ${resultado}`);
+        }
+        
+        this.startCaptchaTimer(type);
     }
     
-    // ==================== LOGIN CAPTCHA (COM FETCH CORRETO) ====================
-    
-    async loadLoginCaptcha() {
-        // Prevenir múltiplas requisições simultâneas
-        if (this.isLoadingCaptcha) {
-            console.log('⏳ CAPTCHA já está carregando, aguardando...');
-            let waitCount = 0;
-            while (this.isLoadingCaptcha && waitCount < 30) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                waitCount++;
-            }
-            if (this.isLoadingCaptcha) {
-                console.warn('⚠️ Timeout esperando CAPTCHA, forçando reset');
-                this.isLoadingCaptcha = false;
-            } else {
-                return;
-            }
-        }
-        
-        // Rate limiting: evitar requisições muito frequentes
-        const now = Date.now();
-        if (now - this.lastCaptchaRequestTime < this.minCaptchaInterval) {
-            console.log('⏳ Aguardando rate limit do CAPTCHA...');
-            await new Promise(resolve => setTimeout(resolve, this.minCaptchaInterval));
-        }
-        
-        this.isLoadingCaptcha = true;
-        this.lastCaptchaRequestTime = Date.now();
-        
-        const img = document.getElementById('loginCaptchaImage');
-        const input = document.getElementById('loginCaptchaInput');
-        const refreshBtn = document.getElementById('refreshLoginCaptcha');
-        const timerEl = document.getElementById('loginCaptchaTimer');
-        
-        if (!img) {
-            console.error('❌ Elemento loginCaptchaImage não encontrado');
-            this.isLoadingCaptcha = false;
+    async loadRegisterCaptcha() {
+        if (this.isLoadingRegisterCaptcha) {
+            console.log('⏳ CAPTCHA register já está carregando...');
             return;
         }
         
-        // Reset completo do estado antes de carregar novo CAPTCHA
-        this.resetCaptchaState('login');
+        this.isLoadingRegisterCaptcha = true;
         
-        // Atualizar UI para estado de carregamento
+        const img = document.getElementById('registerCaptchaImage');
+        const input = document.getElementById('registerCaptchaInput');
+        const refreshBtn = document.getElementById('refreshRegisterCaptcha');
+        const timerEl = document.getElementById('registerCaptchaTimer');
+        
+        if (!img) {
+            this.isLoadingRegisterCaptcha = false;
+            return;
+        }
+        
         if (refreshBtn) {
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -484,51 +333,36 @@ class Auth {
         if (input) {
             input.disabled = true;
             input.value = '';
-            input.placeholder = '🔄 Carregando CAPTCHA...';
+            input.placeholder = '🔄 Carregando desafio matemático...';
         }
         
         if (timerEl) {
             timerEl.textContent = '--:--';
-            timerEl.classList.remove('expiring', 'expired');
         }
         
-        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="70"%3E%3Crect width="200" height="70" fill="%23f0f0f0"/%3E%3Ctext x="35" y="45" font-family="Arial" font-size="18" fill="%23999"%3E🔄 Carregando...%3C/text%3E%3C/svg%3E';
+        if (this.registerCaptchaTimer) {
+            clearInterval(this.registerCaptchaTimer);
+            this.registerCaptchaTimer = null;
+        }
+        
+        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="240" height="80"%3E%3Crect width="240" height="80" fill="%23667eea"/%3E%3Ctext x="120" y="45" font-family="Arial" font-size="24" fill="white" text-anchor="middle"%3E🔢 Carregando...%3C/text%3E%3C/svg%3E';
         
         try {
-            console.log('🔄 Solicitando CAPTCHA via fetch...');
-            
-            // 🔥 IMPORTANTE: Usar fetch para ler o header X-Captcha-ID
             const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
-                cache: 'no-cache',
-                headers: { 'Cache-Control': 'no-cache' }
+                cache: 'no-cache'
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) throw new Error('Erro no servidor');
+            
+            this.captchaIdRegister = response.headers.get('X-Captcha-ID');
+            
+            if (!this.captchaIdRegister) {
+                throw new Error('X-Captcha-ID não recebido');
             }
             
-            // 🔥 LER O ID DO HEADER (agora funciona com Access-Control-Expose-Headers)
-            const captchaId = response.headers.get('X-Captcha-ID');
-            
-            if (!captchaId) {
-                console.warn('❌ Header X-Captcha-ID não recebido - verifique CORS no servidor');
-                this.generateFallbackCaptcha('login');
-                return;
-            }
-            
-            console.log('✅ CAPTCHA ID recebido do header:', captchaId.substring(0, 8) + '...');
-            
-            // 🔥 CONVERTER RESPOSTA PARA BLOB E CRIAR URL PARA A IMAGEM
             const blob = await response.blob();
-            
-            // Garantir que o ID antigo foi substituído
-            this.captchaId = captchaId;
-            console.log('✅ CAPTCHA carregado - NOVO ID:', captchaId.substring(0, 8) + '...');
-            
-            // Criar URL do blob e atribuir à imagem
             const imageUrl = URL.createObjectURL(blob);
             
-            // Limpar URL anterior para evitar memory leak
             if (img.dataset.blobUrl) {
                 URL.revokeObjectURL(img.dataset.blobUrl);
             }
@@ -538,93 +372,21 @@ class Auth {
             
             if (input) {
                 input.disabled = false;
-                input.placeholder = 'Digite os 6 números';
-                input.focus();
+                input.placeholder = 'Ex: 8 (resultado da soma)';
             }
             
-            this.startCaptchaTimer('login');
+            this.startCaptchaTimer('register');
             
         } catch (error) {
-            console.error('❌ Erro ao carregar CAPTCHA:', error);
-            this.generateFallbackCaptcha('login');
+            console.error('❌ Erro CAPTCHA registro:', error);
+            this.generateFallbackCaptcha('register');
         } finally {
             if (refreshBtn) {
                 refreshBtn.disabled = false;
                 refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
             }
-            this.isLoadingCaptcha = false;
+            this.isLoadingRegisterCaptcha = false;
         }
-    }
-    
-    generateFallbackCaptcha(type) {
-        console.log(`🔄 Gerando CAPTCHA fallback para ${type} (modo offline)`);
-        
-        const img = document.getElementById(`${type}CaptchaImage`);
-        const input = document.getElementById(`${type}CaptchaInput`);
-        
-        if (!img) return;
-        
-        this.stopCaptchaTimer(type);
-        
-        const captchaText = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = 200;
-        canvas.height = 70;
-        const ctx = canvas.getContext('2d');
-        
-        // Fundo
-        ctx.fillStyle = '#f8f9fa';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Ruído de fundo
-        for (let i = 0; i < 100; i++) {
-            ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.1})`;
-            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
-        }
-        
-        // Linhas de distorção
-        for (let i = 0; i < 5; i++) {
-            ctx.beginPath();
-            ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-            ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-            ctx.strokeStyle = `rgba(102, 126, 234, ${Math.random() * 0.5})`;
-            ctx.stroke();
-        }
-        
-        // Texto do CAPTCHA com distorção
-        ctx.font = 'bold 36px "Courier New", monospace';
-        ctx.fillStyle = '#212529';
-        
-        const chars = captchaText.split('');
-        let x = 25;
-        chars.forEach((char, idx) => {
-            ctx.save();
-            ctx.translate(x + (idx * 25), 50);
-            ctx.rotate((Math.random() - 0.5) * 0.3);
-            ctx.fillText(char, 0, 0);
-            ctx.restore();
-        });
-        
-        img.src = canvas.toDataURL();
-        
-        if (input) {
-            input.dataset.fallbackCaptcha = captchaText;
-            input.disabled = false;
-            input.placeholder = 'Digite o código';
-        }
-        
-        if (type === 'login') {
-            this.captchaId = 'fallback_' + Date.now();
-            console.log(`✅ CAPTCHA fallback gerado - ID: ${this.captchaId}`);
-            console.log(`   📝 Código (apenas para teste): ${captchaText}`);
-        } else {
-            this.captchaIdRegister = 'fallback_' + Date.now();
-            console.log(`✅ CAPTCHA fallback register gerado - ID: ${this.captchaIdRegister}`);
-            console.log(`   📝 Código (apenas para teste): ${captchaText}`);
-        }
-        
-        this.startCaptchaTimer(type);
     }
     
     // ==================== LOGIN ====================
@@ -634,15 +396,14 @@ class Auth {
         const password = document.getElementById('loginPassword')?.value;
         const captchaInput = document.getElementById('loginCaptchaInput')?.value;
         
-        // Verificar se tem CAPTCHA válido
         if (!this.captchaId) {
-            this.showMessage('🔄 CAPTCHA não carregado. Aguarde...', 'warning');
+            this.showMessage('🧮 CAPTCHA não carregado. Aguarde...', 'warning');
             await this.loadLoginCaptcha();
             return;
         }
         
         if (this.captchaTimeLeft <= 0 && !this.captchaId?.startsWith('fallback_')) {
-            this.showMessage('⏰ CAPTCHA expirou! Clique em atualizar.', 'warning');
+            this.showMessage('⏰ Desafio matemático expirou! Clique em atualizar.', 'warning');
             await this.loadLoginCaptcha();
             return;
         }
@@ -662,6 +423,12 @@ class Auth {
             return;
         }
         
+        // Validar se resposta é número
+        if (isNaN(parseInt(captchaInput))) {
+            this.showMessage('🧮 Digite apenas o NÚMERO do resultado da soma', 'warning');
+            return;
+        }
+        
         this.loginAttempts++;
         if (this.loginAttempts > this.maxLoginAttempts) {
             this.showMessage('⏳ Muitas tentativas. Aguarde 1 minuto.', 'error');
@@ -674,9 +441,7 @@ class Auth {
         loginBtn.disabled = true;
         loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verificando...';
         
-        // Salvar o ID atual antes de enviar
         const currentCaptchaId = this.captchaId;
-        console.log('📤 Enviando login com CAPTCHA ID:', currentCaptchaId.substring(0, 8) + '...');
         
         try {
             const isFallback = currentCaptchaId?.startsWith('fallback_');
@@ -704,7 +469,8 @@ class Auth {
             
             if (response.ok && data.success !== false) {
                 console.log('✅ Login bem-sucedido');
-                this.stopCaptchaTimer('login');
+                
+                if (this.captchaTimer) clearInterval(this.captchaTimer);
                 
                 this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
                 
@@ -726,26 +492,17 @@ class Auth {
                 }, 1000);
                 
             } else if (response.status === 401) {
-                // Senha errada - resetar estado completo
                 this.showMessage('❌ Email ou senha incorretos', 'error');
-                console.log('🔄 Senha incorreta - resetando estado do CAPTCHA');
-                
-                // Reset completo do estado antes de carregar novo CAPTCHA
-                this.resetCaptchaState('login');
+                this.captchaId = null;
                 await this.loadLoginCaptcha();
-                
                 loginBtn.disabled = false;
                 loginBtn.innerHTML = originalText;
                 
             } else if (response.status === 400 && data.detail && 
-                       (data.detail.includes('CAPTCHA') || data.detail.includes('captcha'))) {
-                // CAPTCHA inválido - resetar estado completo
-                this.showMessage('❌ CAPTCHA inválido ou expirado', 'error');
-                console.log('🔄 CAPTCHA inválido - resetando estado');
-                
-                this.resetCaptchaState('login');
+                       (data.detail.includes('CAPTCHA') || data.detail.includes('captcha') || data.detail.includes('som'))) {
+                this.showMessage('🧮 Resposta incorreta! Calcule a soma corretamente.', 'error');
+                this.captchaId = null;
                 await this.loadLoginCaptcha();
-                
                 loginBtn.disabled = false;
                 loginBtn.innerHTML = originalText;
                 
@@ -765,157 +522,6 @@ class Auth {
         }
     }
     
-    initLoginPage() {
-        console.log('🔐 Inicializando página de login...');
-        this.clearStorage();
-        
-        // Resetar estado antes de carregar
-        this.resetCaptchaState('login');
-        
-        // Carregar CAPTCHA
-        setTimeout(() => {
-            if (document.getElementById('loginCaptchaImage')) {
-                this.loadLoginCaptcha();
-                this.bindLoginEvents();
-            }
-        }, 50);
-    }
-    
-    bindLoginEvents() {
-        const refreshBtn = document.getElementById('refreshLoginCaptcha');
-        if (refreshBtn) {
-            const newRefreshBtn = refreshBtn.cloneNode(true);
-            refreshBtn.parentNode.replaceChild(newRefreshBtn, refreshBtn);
-            
-            newRefreshBtn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                console.log('🔄 Usuário solicitou novo CAPTCHA');
-                
-                // Reset completo do estado no refresh manual
-                this.resetCaptchaState('login');
-                await this.loadLoginCaptcha();
-            });
-        }
-        
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) {
-            const newLoginForm = loginForm.cloneNode(true);
-            loginForm.parentNode.replaceChild(newLoginForm, loginForm);
-            
-            newLoginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                this.handleLogin();
-            });
-        }
-        
-        const forgotBtn = document.getElementById('forgotPassword');
-        if (forgotBtn) {
-            forgotBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showMessage('📧 Função de recuperação de senha em breve!', 'info');
-            });
-        }
-        
-        const captchaInput = document.getElementById('loginCaptchaInput');
-        if (captchaInput) {
-            captchaInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this.handleLogin();
-                }
-            });
-        }
-    }
-    
-    // ==================== REGISTER CAPTCHA ====================
-    
-    async loadRegisterCaptcha() {
-        if (this.isRefreshingCaptcha) {
-            console.log('⏳ CAPTCHA já está sendo carregado...');
-            return;
-        }
-        
-        this.isRefreshingCaptcha = true;
-        
-        const img = document.getElementById('registerCaptchaImage');
-        const input = document.getElementById('registerCaptchaInput');
-        const refreshBtn = document.getElementById('refreshRegisterCaptcha');
-        const timerEl = document.getElementById('registerCaptchaTimer');
-        
-        if (!img) {
-            this.isRefreshingCaptcha = false;
-            return;
-        }
-        
-        this.stopCaptchaTimer('register');
-        this.resetCaptchaUI('register');
-        
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        }
-        
-        if (input) {
-            input.disabled = true;
-            input.value = '';
-            input.placeholder = '🔄 Carregando...';
-        }
-        
-        if (timerEl) {
-            timerEl.textContent = '--:--';
-            timerEl.classList.remove('expiring', 'expired');
-        }
-        
-        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="70"%3E%3Crect width="200" height="70" fill="%23f0f0f0"/%3E%3Ctext x="35" y="45" font-family="Arial" font-size="18" fill="%23999"%3E🔄 Carregando...%3C/text%3E%3C/svg%3E';
-        
-        try {
-            console.log('🔄 Solicitando CAPTCHA para registro via fetch...');
-            
-            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
-                cache: 'no-cache'
-            });
-            
-            if (!response.ok) throw new Error('Erro no servidor');
-            
-            const captchaId = response.headers.get('X-Captcha-ID');
-            
-            if (!captchaId) {
-                this.generateFallbackCaptcha('register');
-                return;
-            }
-            
-            this.captchaIdRegister = captchaId;
-            console.log('✅ CAPTCHA Register ID recebido:', captchaId.substring(0, 8) + '...');
-            
-            const blob = await response.blob();
-            const imageUrl = URL.createObjectURL(blob);
-            
-            if (img.dataset.blobUrl) {
-                URL.revokeObjectURL(img.dataset.blobUrl);
-            }
-            
-            img.src = imageUrl;
-            img.dataset.blobUrl = imageUrl;
-            
-            if (input) {
-                input.disabled = false;
-                input.placeholder = 'Digite os 6 números';
-            }
-            
-            this.startCaptchaTimer('register');
-            
-        } catch (error) {
-            console.error('❌ Erro CAPTCHA registro:', error);
-            this.generateFallbackCaptcha('register');
-        } finally {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
-            }
-            this.isRefreshingCaptcha = false;
-        }
-    }
-    
     async handleRegister() {
         const name = document.getElementById('regName')?.value;
         const email = document.getElementById('regEmail')?.value;
@@ -925,7 +531,7 @@ class Auth {
         const captchaInput = document.getElementById('registerCaptchaInput')?.value;
         
         if (this.registerCaptchaTimeLeft <= 0 && !this.captchaIdRegister?.startsWith('fallback_')) {
-            this.showMessage('⏰ CAPTCHA expirou! Clique em atualizar.', 'warning');
+            this.showMessage('⏰ Desafio matemático expirou! Clique em atualizar.', 'warning');
             this.loadRegisterCaptcha();
             return;
         }
@@ -947,6 +553,12 @@ class Auth {
         
         if (!email.includes('@')) {
             this.showMessage('❌ Email inválido', 'error');
+            return;
+        }
+        
+        // Validar se resposta é número
+        if (isNaN(parseInt(captchaInput))) {
+            this.showMessage('🧮 Digite apenas o NÚMERO do resultado da soma', 'warning');
             return;
         }
         
@@ -981,7 +593,7 @@ class Auth {
             const data = await response.json();
             
             if (response.ok) {
-                this.stopCaptchaTimer('register');
+                if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
                 
                 this.showMessage('✅ Conta criada com sucesso! Faça login.', 'success');
                 document.getElementById('registerForm').reset();
@@ -1011,14 +623,204 @@ class Auth {
         }
     }
     
+    // ==================== TOKEN ====================
+    
+    isTokenExpired() {
+        const expiresAt = localStorage.getItem('token_expires_at');
+        if (!expiresAt) return true;
+        return Date.now() > parseInt(expiresAt);
+    }
+    
+    getTokenTimeLeft() {
+        const expiresAt = localStorage.getItem('token_expires_at');
+        if (!expiresAt) return 0;
+        const timeLeft = parseInt(expiresAt) - Date.now();
+        return Math.max(0, timeLeft);
+    }
+    
+    async refreshToken() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) return false;
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.access_token) {
+                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
+                return true;
+            }
+            
+            return false;
+            
+        } catch (error) {
+            console.error('❌ Erro ao renovar token:', error);
+            return false;
+        }
+    }
+    
+    async ensureValidToken() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return false;
+        
+        const timeLeft = this.getTokenTimeLeft();
+        
+        if (timeLeft <= 120000) {
+            return await this.refreshToken();
+        }
+        
+        return true;
+    }
+    
+    async checkTokenStatus() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return { status: 'no_token' };
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` },
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'valid') {
+                return { status: 'valid', data };
+            }
+            
+            if (data.status === 'refreshed' && data.access_token) {
+                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
+                return { status: 'valid', data };
+            }
+            
+            if (await this.refreshToken()) {
+                return { status: 'valid' };
+            }
+            
+            return { status: 'error' };
+            
+        } catch (error) {
+            console.error('Erro ao verificar token:', error);
+            return { status: 'error' };
+        }
+    }
+    
+    // ==================== INIT ====================
+    
+    async init() {
+        console.log('🔧 Auth inicializado - Versão com CAPTCHA Matemático');
+        console.log('🧮 Desafio: soma simples de 1+1 até 9+9');
+        console.log('📱 Otimizado para mobile com teclado numérico');
+        
+        const path = window.location.pathname;
+        
+        if (path.includes('login.html') || path === '/login' || path === '/') {
+            this.initLoginPage();
+        } else if (path.includes('register.html') || path === '/register') {
+            this.initRegisterPage();
+        } else {
+            const tokenStatus = await this.checkTokenStatus();
+            if (tokenStatus.status === 'invalid' || tokenStatus.status === 'no_token') {
+                this.redirectToLogin();
+            } else {
+                this.updateUserUI();
+                this.startTokenAutoRefresh();
+            }
+        }
+        
+        window.dispatchEvent(new Event('authReady'));
+    }
+    
+    startTokenAutoRefresh() {
+        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
+        
+        this.tokenCheckInterval = setInterval(async () => {
+            if (this.isLoginPage() || this.isRegisterPage()) return;
+            
+            const timeLeft = this.getTokenTimeLeft();
+            
+            if (timeLeft > 0 && timeLeft < 300000) {
+                await this.refreshToken();
+            }
+        }, 60000);
+    }
+    
+    initLoginPage() {
+        console.log('🔐 Inicializando página de login com desafio matemático...');
+        this.clearStorage();
+        
+        this.captchaId = null;
+        if (this.captchaTimer) clearInterval(this.captchaTimer);
+        this.captchaTimeLeft = 120;
+        
+        setTimeout(() => {
+            if (document.getElementById('loginCaptchaImage')) {
+                this.loadLoginCaptcha();
+                this.bindLoginEvents();
+            }
+        }, 100);
+    }
+    
     initRegisterPage() {
-        console.log('🔐 Inicializando página de registro...');
+        console.log('🔐 Inicializando página de registro com desafio matemático...');
+        
         setTimeout(() => {
             if (document.getElementById('registerCaptchaImage')) {
                 this.loadRegisterCaptcha();
                 this.bindRegisterEvents();
             }
         }, 100);
+    }
+    
+    bindLoginEvents() {
+        const refreshBtn = document.getElementById('refreshLoginCaptcha');
+        if (refreshBtn) {
+            const newRefreshBtn = refreshBtn.cloneNode(true);
+            refreshBtn.parentNode.replaceChild(newRefreshBtn, refreshBtn);
+            
+            newRefreshBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                console.log('🔄 Solicitando novo desafio matemático');
+                this.captchaId = null;
+                await this.loadLoginCaptcha();
+            });
+        }
+        
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            const newLoginForm = loginForm.cloneNode(true);
+            loginForm.parentNode.replaceChild(newLoginForm, loginForm);
+            
+            newLoginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleLogin();
+            });
+        }
+        
+        const forgotBtn = document.getElementById('forgotPassword');
+        if (forgotBtn) {
+            forgotBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showMessage('📧 Função de recuperação de senha em breve!', 'info');
+            });
+        }
+        
+        const captchaInput = document.getElementById('loginCaptchaInput');
+        if (captchaInput) {
+            captchaInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.handleLogin();
+                }
+            });
+        }
     }
     
     bindRegisterEvents() {
@@ -1029,7 +831,7 @@ class Auth {
             
             newRefreshBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🔄 Solicitado novo CAPTCHA para registro');
+                console.log('🔄 Solicitando novo desafio matemático para registro');
                 this.loadRegisterCaptcha();
             });
         }
@@ -1168,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.appAuth = new Auth();
 });
 
-// Funções globais para uso em outros scripts
+// Funções globais
 window.isAdmin = () => window.appAuth?.isAdmin() || false;
 window.isPremium = () => window.appAuth?.isPremium() || false;
 window.getCreditsDisplay = () => window.appAuth?.getCreditsDisplay() || '0';
@@ -1176,9 +978,7 @@ window.getCurrentUser = () => window.appAuth?.getCurrentUser() || {};
 window.logout = () => window.appAuth?.logout();
 window.refreshToken = () => window.appAuth?.refreshToken();
 
-console.log('✅ auth.js carregado - Versão com fetch() para CAPTCHA');
-console.log('   🔄 CAPTCHA: fetch() para ler header X-Captcha-ID');
-console.log('   🔄 Reset completo de estado antes de cada CAPTCHA');
-console.log('   🔄 Prevenção de múltiplas requisições simultâneas');
-console.log('   🔄 Rate limiting entre requisições de CAPTCHA');
-console.log('   🔄 Login: CAPTCHA primeiro, depois senha');
+console.log('✅ auth.js carregado - Versão com CAPTCHA Matemático');
+console.log('   🧮 Desafio: soma simples (ex: 5 + 3 = ?)');
+console.log('   📱 Otimizado para mobile com inputmode="numeric"');
+console.log('   ⚡ Geração ultrarrápida com SVG');

@@ -1,4 +1,4 @@
-// frontend/js/dashboard.js - Versão OTIMIZADA (usa auth.js)
+// frontend/js/dashboard.js - VERSÃO MODIFICADA (com suporte a PoW)
 
 const API_URL = 'http://localhost:8000/api';
 
@@ -16,13 +16,12 @@ function getCurrentUser() {
     return window.appAuth ? window.appAuth.getCurrentUser() : {};
 }
 
-// Função para verificar autenticação
 function checkAuth() {
     return window.appAuth ? window.appAuth.isAuthenticated() : !!localStorage.getItem('access_token');
 }
 
-// Função para fazer logout
 function logout() {
+    if (window.powClient) window.powClient.reset();
     if (window.appAuth) {
         window.appAuth.logout();
     } else {
@@ -35,14 +34,12 @@ function logout() {
 
 // ===== FUNÇÕES DE CRÉDITOS =====
 
-// Carregar créditos do usuário
 async function loadUserCredits() {
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/balance`);
-        if (response.ok) {
+        if (response && response.ok) {
             const data = await response.json();
             
-            // Atualizar via auth.js
             if (window.appAuth) {
                 const user = window.appAuth.getCurrentUser();
                 user.credits = data.credits || 0;
@@ -51,7 +48,6 @@ async function loadUserCredits() {
                 window.appAuth.updateCreditsDisplay();
             }
             
-            // Atualizar display local
             updateCreditsDisplay();
         }
     } catch (error) {
@@ -59,12 +55,10 @@ async function loadUserCredits() {
     }
 }
 
-// Atualizar display de créditos
 function updateCreditsDisplay() {
     const user = getCurrentUser();
     const creditsDisplay = getCreditsDisplay();
     
-    // Atualizar em todos os lugares que mostram créditos
     const creditElements = document.querySelectorAll('#navbarCredits, .user-credits, #creditsCount');
     creditElements.forEach(el => {
         if (el.tagName === 'SPAN' || el.tagName === 'DIV') {
@@ -75,7 +69,6 @@ function updateCreditsDisplay() {
         }
     });
     
-    // Mostrar badge de admin se necessário
     const adminBadges = document.querySelectorAll('.admin-badge');
     if (user.is_admin) {
         adminBadges.forEach(el => {
@@ -90,16 +83,12 @@ function updateCreditsDisplay() {
     }
 }
 
-// Verificar créditos antes do upload
 async function checkCreditsBeforeUpload() {
-    // ✅ Admin sempre pode
-    if (isAdmin()) {
-        return true;
-    }
+    if (isAdmin()) return true;
     
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/check-analysis`);
-        if (response.ok) {
+        if (response && response.ok) {
             const data = await response.json();
             
             if (!data.has_credits) {
@@ -114,14 +103,9 @@ async function checkCreditsBeforeUpload() {
     return false;
 }
 
-// Modal de créditos insuficientes
 function showCreditsModal() {
-    // Não mostrar modal para admin
-    if (isAdmin()) {
-        return;
-    }
+    if (isAdmin()) return;
     
-    // Verificar se modal já existe
     let modal = document.getElementById('creditsModal');
     
     if (!modal) {
@@ -160,7 +144,6 @@ function showCreditsModal() {
         modal = document.getElementById('creditsModal');
     }
     
-    // Atualizar saldo no modal
     const modalCredits = document.getElementById('modalCredits');
     const user = getCurrentUser();
     if (modalCredits) modalCredits.textContent = user.credits || 0;
@@ -169,13 +152,9 @@ function showCreditsModal() {
     bsModal.show();
 }
 
-// ===== FUNÇÕES EXISTENTES =====
-
-// Carregar informações do usuário
 async function loadUserInfo() {
     const user = getCurrentUser();
     
-    // Exibir no navbar ou sidebar
     const userElement = document.getElementById('userName');
     if (userElement) {
         userElement.textContent = user.name || 'Usuário';
@@ -186,17 +165,15 @@ async function loadUserInfo() {
         workshopElement.textContent = user.workshop || 'Oficina';
     }
     
-    // Carregar créditos e atualizar display
     await loadUserCredits();
     updateCreditsDisplay();
 }
 
-// Carregar histórico de análises
 async function loadHistory() {
     try {
         const response = await fetchWithAuth(`${API_URL}/analyses/history`);
         
-        if (response.ok) {
+        if (response && response.ok) {
             const data = await response.json();
             updateHistoryUI(data);
         }
@@ -205,7 +182,6 @@ async function loadHistory() {
     }
 }
 
-// Atualizar UI com histórico
 function updateHistoryUI(analyses) {
     const container = document.getElementById('recentAnalyses');
     
@@ -238,7 +214,6 @@ function updateHistoryUI(analyses) {
     container.innerHTML = html;
 }
 
-// Configurar botão de logout
 function setupLogout() {
     const logoutBtn = document.getElementById('logoutBtn');
     
@@ -247,13 +222,14 @@ function setupLogout() {
             e.preventDefault();
             
             if (confirm('Deseja realmente sair?')) {
+                if (window.powClient) window.powClient.reset();
                 logout();
             }
         });
     }
 }
 
-// ===== FUNÇÃO DE UPLOAD =====
+// ===== UPLOAD COM PoW =====
 async function handleUpload(e) {
     e.preventDefault();
     
@@ -263,38 +239,39 @@ async function handleUpload(e) {
         return;
     }
     
-    // Verificar créditos primeiro (admin sempre passa)
     const hasCredits = await checkCreditsBeforeUpload();
     if (!hasCredits) return;
     
-    // Continuar com o upload normal
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('analysis_type', document.getElementById('tipoAnalise').value);
-    formData.append('ai_model', document.getElementById('modeloIA').value);
-    
-    // Desabilitar botão
     const uploadBtn = document.getElementById('uploadButton');
     uploadBtn.disabled = true;
     uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Enviando...';
     
     try {
-        const response = await fetch(`${API_URL}/upload`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-            },
-            body: formData
-        });
+        // 🔐 UPLOAD COM PoW (usando powClient se disponível)
+        let response;
+        
+        if (window.powClient) {
+            response = await window.powClient.uploadWithPow(file, '/api/upload');
+        } else {
+            // Fallback (sem PoW)
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('analysis_type', document.getElementById('tipoAnalise')?.value || 'auto');
+            formData.append('ai_model', document.getElementById('modeloIA')?.value || 'auto');
+            
+            const token = localStorage.getItem('access_token');
+            response = await fetch(`${API_URL}/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+        }
         
         if (response.ok) {
             const data = await response.json();
             showAlert('Análise iniciada com sucesso!', 'success');
-            
-            // Atualizar créditos (admin não perde)
             await loadUserCredits();
             
-            // Iniciar processamento
             if (window.app) {
                 window.app.currentProcessId = data.process_id;
                 window.app.showProgress();
@@ -304,6 +281,8 @@ async function handleUpload(e) {
             const error = await response.json();
             if (error.detail && error.detail.error === 'Créditos insuficientes') {
                 showCreditsModal();
+            } else if (response.status === 428 || response.status === 401) {
+                showAlert('Desafio de segurança expirado. Tente novamente.', 'warning');
             } else {
                 showAlert(error.detail || 'Erro no upload', 'error');
             }
@@ -311,13 +290,14 @@ async function handleUpload(e) {
             uploadBtn.innerHTML = '<i class="fas fa-play-circle me-2"></i> Iniciar Análise Inteligente';
         }
     } catch (error) {
+        console.error('Erro no upload:', error);
         showAlert('Erro de conexão com o servidor', 'error');
         uploadBtn.disabled = false;
         uploadBtn.innerHTML = '<i class="fas fa-play-circle me-2"></i> Iniciar Análise Inteligente';
     }
 }
 
-// Função para fazer requisições com token
+// ===== FETCH COM AUTENTICAÇÃO (ATUALIZADO) =====
 async function fetchWithAuth(url, options = {}) {
     const token = localStorage.getItem('access_token');
     
@@ -330,22 +310,28 @@ async function fetchWithAuth(url, options = {}) {
         headers['Authorization'] = `Bearer ${token}`;
     }
     
-    const response = await fetch(url, { ...options, headers });
-    
-    if (response.status === 401) {
-        // Token expirado, tentar refresh
-        const refreshed = await refreshToken();
-        if (refreshed) {
-            return fetchWithAuth(url, options);
-        } else {
-            window.location.href = 'login.html';
+    try {
+        let response = await fetch(url, { ...options, headers });
+        
+        if (response.status === 401) {
+            const refreshed = await refreshToken();
+            if (refreshed) {
+                const newToken = localStorage.getItem('access_token');
+                headers['Authorization'] = `Bearer ${newToken}`;
+                return fetch(url, { ...options, headers });
+            } else {
+                window.location.href = 'login.html';
+                return null;
+            }
         }
+        
+        return response;
+    } catch (error) {
+        console.error('Erro no fetch:', error);
+        return null;
     }
-    
-    return response;
 }
 
-// Refresh token
 async function refreshToken() {
     const refreshToken = localStorage.getItem('refresh_token');
     
@@ -361,7 +347,9 @@ async function refreshToken() {
         if (response.ok) {
             const data = await response.json();
             localStorage.setItem('access_token', data.access_token);
-            localStorage.setItem('refresh_token', data.refresh_token);
+            if (data.refresh_token) {
+                localStorage.setItem('refresh_token', data.refresh_token);
+            }
             return true;
         }
     } catch (error) {
@@ -371,7 +359,6 @@ async function refreshToken() {
     return false;
 }
 
-// Mostrar alerta
 function showAlert(message, type = 'info') {
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
@@ -397,31 +384,22 @@ function showAlert(message, type = 'info') {
 
 // ===== INICIALIZAÇÃO =====
 document.addEventListener('DOMContentLoaded', async function() {
-    // Verificar autenticação
     if (!checkAuth()) {
         window.location.href = 'login.html';
         return;
     }
     
-    // Pequeno delay para garantir que auth.js carregou
     setTimeout(async () => {
-        // Carregar informações do usuário
         await loadUserInfo();
-        
-        // Carregar histórico
         await loadHistory();
-        
-        // Configurar logout
         setupLogout();
         
-        // Substituir o handler de upload do formulário
         const uploadForm = document.getElementById('uploadForm');
         if (uploadForm) {
             uploadForm.removeEventListener('submit', window.app?.handleUpload);
             uploadForm.addEventListener('submit', handleUpload);
         }
         
-        // Adicionar badge de admin no HTML se necessário
         const navbar = document.querySelector('.navbar-modern .container');
         if (navbar && isAdmin() && !document.querySelector('.admin-badge-nav')) {
             const adminBadge = document.createElement('span');
@@ -430,6 +408,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             navbar.appendChild(adminBadge);
         }
         
-        console.log('✅ dashboard.js inicializado');
+        console.log('✅ dashboard.js inicializado com suporte a PoW');
     }, 200);
 });

@@ -1,4 +1,5 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA (CAPTCHA PRIMEIRO + CORS HEADERS)
+# backend/api/auth_routes.py - VERSÃO ATUALIZADA COM CAPTCHA MATEMÁTICO
+
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import Response, JSONResponse
@@ -26,37 +27,94 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authentication"])
 
+
 # ==============================================
-# ROTAS PÚBLICAS COM CAPTCHA
+# CAPTCHA MATEMÁTICO - VERSÃO ULTRARRÁPIDA
 # ==============================================
 
 @router.get("/captcha/generate")
 async def generate_captcha(request: Request):
     """
-    Gera CAPTCHA próprio - Retorna imagem e ID no header
-    🔥 IMPORTANTE: Access-Control-Expose-Headers permite o frontend ler X-Captcha-ID
+    Gera CAPTCHA MATEMÁTICO (soma simples)
+    - Desafio: "5 + 3 = ?"
+    - Resposta: número (ex: 8)
+    - Tempo de resposta: < 2ms
+    - Otimizado para mobile com Connection: close
     """
     try:
+        # Gerar desafio matemático e obter imagem
         img_bytes, captcha_id = captcha_manager.generate_captcha_image(request)
+        
+        logger.info(f"📐 CAPTCHA Matemático gerado - ID: {captcha_id[:12]}... - Tamanho: {len(img_bytes)} bytes")
+        
+        return Response(
+            content=img_bytes,
+            media_type="image/svg+xml",
+            headers={
+                "X-Captcha-ID": captcha_id,
+                "X-Captcha-Expires": "120",
+                "Cache-Control": "no-store, no-cache, must-revalidate, private",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Connection": "close",  # Resolve atraso de rede
+                "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"
+            }
+        )
     except Exception as e:
         logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
-        raise HTTPException(status_code=500, detail="Erro ao gerar CAPTCHA")
+        raise HTTPException(
+            status_code=500, 
+            detail="Erro ao gerar desafio matemático. Tente novamente."
+        )
+
+
+@router.post("/captcha/validate")
+async def validate_captcha_endpoint(request: Request):
+    """
+    Valida resposta do CAPTCHA matemático (para teste)
+    """
+    try:
+        body = await request.json()
+    except:
+        raise HTTPException(status_code=400, detail="Corpo inválido")
     
-    # 🔥 CRÍTICO: Adicionar Access-Control-Expose-Headers para permitir leitura do header
-    return Response(
-        content=img_bytes,
-        media_type="image/png",
-        headers={
-            "X-Captcha-ID": captcha_id,
-            "X-Captcha-Expires": "120",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"  # 🔥 OBRIGATÓRIO!
-        }
-    )
+    captcha_id = body.get("captcha_id")
+    captcha_text = body.get("captcha_text")
+    
+    if not captcha_id or not captcha_text:
+        raise HTTPException(status_code=400, detail="CAPTCHA ID e resposta são obrigatórios")
+    
+    valid = captcha_manager.validate_captcha(captcha_id, captcha_text, request)
+    
+    return {
+        "valid": valid,
+        "message": "✅ Resposta correta!" if valid else "❌ Resposta incorreta. Tente novamente."
+    }
+
+
+@router.get("/captcha/status/{captcha_id}")
+async def get_captcha_status(captcha_id: str):
+    """Verifica status de um CAPTCHA (ativo, expirado, usado)"""
+    if captcha_id not in captcha_manager.store._store:
+        return {"status": "not_found", "message": "CAPTCHA não encontrado"}
+    
+    session = captcha_manager.store._store[captcha_id]
+    
+    if session.is_expired():
+        return {"status": "expired", "message": "CAPTCHA expirado. Atualize a imagem."}
+    
+    if session.used:
+        return {"status": "used", "message": "CAPTCHA já utilizado"}
+    
+    return {
+        "status": "active",
+        "expires_in": session.time_remaining(),
+        "message": f"Desafio matemático válido por {session.time_remaining()} segundos"
+    }
 
 
 # ==============================================
-# LOGIN - CORRIGIDO (CAPTCHA PRIMEIRO)
+# LOGIN - OTIMIZADO COM CAPTCHA MATEMÁTICO
 # ==============================================
 
 @router.post("/login")
@@ -67,15 +125,14 @@ async def login(
     db: Session = Depends(get_db)
 ):
     """
-    🔐 LOGIN - CORRIGIDO PARA SEGURANÇA
-    ✅ PRIMEIRO: Valida CAPTCHA (rápido, sem acesso ao banco)
-    ✅ SEGUNDO: Rate limiting por IP (bloqueia antes de processar)
-    ✅ TERCEIRO: Só então verifica usuário e senha (operação pesada)
+    🔐 LOGIN COM CAPTCHA MATEMÁTICO
+    ✅ Primeiro: Valida resposta matemática (rápido)
+    ✅ Depois: Verifica usuário
     """
     
     client_ip = request.client.host if request.client else "unknown"
     
-    # 🔥 VALIDAÇÃO 1: CAPTCHA É O PORTEIRO PRINCIPAL
+    # 🔥 VALIDAÇÃO 1: CAPTCHA Matemático (rápido)
     captcha_id = request.headers.get("X-Captcha-ID")
     captcha_text = login_data.captcha_text
     
@@ -83,27 +140,27 @@ async def login(
         logger.warning(f"❌ CAPTCHA ID não fornecido - IP: {client_ip}")
         raise HTTPException(
             status_code=400, 
-            detail="CAPTCHA ID não fornecido. Recarregue a página e tente novamente."
+            detail="CAPTCHA não carregado. Recarregue a página e tente novamente."
         )
     
     if not captcha_text:
-        logger.warning(f"❌ CAPTCHA texto não fornecido - IP: {client_ip}")
+        logger.warning(f"❌ Resposta CAPTCHA não fornecida - IP: {client_ip}")
         raise HTTPException(
             status_code=400, 
-            detail="Código CAPTCHA é obrigatório. Digite os números da imagem."
+            detail="Responda o desafio matemático da imagem. Ex: Se aparecer '5 + 3 = ?', digite 8"
         )
     
-    # 🔥 VALIDAÇÃO RÁPIDA DO CAPTCHA (sem banco de dados, sem hash)
+    # Validar CAPTCHA matemático
     if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
-        logger.warning(f"❌ CAPTCHA inválido - IP: {client_ip}")
+        logger.warning(f"❌ CAPTCHA matemático incorreto - IP: {client_ip}, Resposta: {captcha_text}")
         raise HTTPException(
             status_code=400, 
-            detail="CAPTCHA inválido ou expirado. Clique no ícone de atualização e tente novamente."
+            detail="❌ Resposta incorreta! Calcule a soma corretamente e tente novamente."
         )
     
-    logger.info(f"✅ CAPTCHA validado para IP: {client_ip}")
+    logger.info(f"✅ CAPTCHA matemático validado para IP: {client_ip}")
     
-    # 🔥 VALIDAÇÃO 2: Rate limiting (agora que CAPTCHA está ok)
+    # 🔥 VALIDAÇÃO 2: Rate limiting
     ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
     email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
@@ -114,11 +171,11 @@ async def login(
             detail="Muitas tentativas de login. Aguarde 15 minutos antes de tentar novamente."
         )
     
-    # 🔥 VALIDAÇÃO 3: Agora sim, verificar usuário (operação pesada)
+    # 🔥 VALIDAÇÃO 3: Verificar usuário
     user = crud.get_user_by_email(db, login_data.email)
     
     if not user or not user.verify_password(login_data.password):
-        logger.warning(f"❌ Falha de login (senha/email inválido) para IP {client_ip} - Email: {login_data.email}")
+        logger.warning(f"❌ Falha de login - IP: {client_ip}, Email: {login_data.email}")
         
         # Aumentar contador de tentativas
         await rate_limiter.increment(f"login_ip:{client_ip}")
@@ -197,7 +254,7 @@ async def login(
 
 
 # ==============================================
-# REGISTER - CORRIGIDO (CAPTCHA PRIMEIRO)
+# REGISTER - COM CAPTCHA MATEMÁTICO
 # ==============================================
 
 @router.post("/register")
@@ -206,22 +263,21 @@ async def register(
     db: Session = Depends(get_db)
 ):
     """
-    📝 REGISTRO - CORRIGIDO
-    ✅ PRIMEIRO: Valida CAPTCHA (rápido)
-    ✅ SEGUNDO: Rate limiting
-    ✅ TERCEIRO: Só então verifica email e cria usuário
+    📝 REGISTRO COM CAPTCHA MATEMÁTICO
+    ✅ Primeiro: Valida resposta matemática
+    ✅ Depois: Cria usuário
     """
     
     client_ip = request.client.host if request.client else "unknown"
     
-    # 🔥 VALIDAÇÃO 1: CAPTCHA É O PORTEIRO PRINCIPAL
+    # 🔥 VALIDAÇÃO 1: CAPTCHA Matemático
     captcha_id = request.headers.get("X-Captcha-ID")
     
     if not captcha_id:
         logger.warning(f"❌ Registro - CAPTCHA ID não fornecido - IP: {client_ip}")
         raise HTTPException(
             status_code=400, 
-            detail="CAPTCHA ID não fornecido. Recarregue a página e tente novamente."
+            detail="CAPTCHA não carregado. Recarregue a página e tente novamente."
         )
     
     try:
@@ -237,23 +293,23 @@ async def register(
     captcha_text = body.get("captcha_text", "")
     
     if not captcha_text:
-        logger.warning(f"❌ Registro - CAPTCHA texto não fornecido - IP: {client_ip}")
+        logger.warning(f"❌ Registro - resposta CAPTCHA não fornecida - IP: {client_ip}")
         raise HTTPException(
             status_code=400, 
-            detail="Código CAPTCHA é obrigatório. Digite os números da imagem."
+            detail="Responda o desafio matemático da imagem antes de continuar."
         )
     
-    # 🔥 VALIDAÇÃO RÁPIDA DO CAPTCHA
+    # Validar CAPTCHA matemático
     if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
-        logger.warning(f"❌ Registro - CAPTCHA inválido - IP: {client_ip}")
+        logger.warning(f"❌ Registro - CAPTCHA matemático incorreto - IP: {client_ip}")
         raise HTTPException(
             status_code=400, 
-            detail="CAPTCHA inválido ou expirado. Clique no ícone de atualização e tente novamente."
+            detail="❌ Resposta incorreta! Calcule a soma corretamente e tente novamente."
         )
     
-    logger.info(f"✅ Registro - CAPTCHA validado para IP: {client_ip}")
+    logger.info(f"✅ Registro - CAPTCHA matemático validado para IP: {client_ip}")
     
-    # 🔥 VALIDAÇÃO 2: Rate limiting (agora que CAPTCHA está ok)
+    # 🔥 VALIDAÇÃO 2: Rate limiting
     allowed = await rate_limiter.check_rate_limit(
         f"register:{client_ip}", 
         max_requests=3,
@@ -296,7 +352,7 @@ async def register(
     
     return {
         "success": True,
-        "message": "Conta criada com sucesso! Faça login para continuar.",
+        "message": "✅ Conta criada com sucesso! Faça login para continuar.",
         "user": {
             "id": user.id,
             "name": user.name,
@@ -493,7 +549,7 @@ async def logout(
     
     response = JSONResponse(content={
         "status": "logged_out",
-        "message": "Logout realizado",
+        "message": "Logout realizado com sucesso",
         "action": "clear_storage"
     })
     
@@ -643,3 +699,6 @@ async def get_captcha_stats(
     current_user = Depends(get_current_admin_user)
 ):
     return captcha_manager.get_stats()
+
+
+print("✅ auth_routes.py carregado - Sistema de CAPTCHA Matemático ativo")

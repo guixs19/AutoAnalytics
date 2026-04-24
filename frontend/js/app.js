@@ -1,3 +1,4 @@
+// frontend/js/app.js - VERSÃO MODIFICADA COM PoW
 
 class AutoAnalytics {
     constructor() {
@@ -21,18 +22,15 @@ class AutoAnalytics {
     async waitForAuth() {
         console.log('⏳ Aguardando auth.js inicializar...');
         
-        // Tentar a cada 100ms até 5 segundos
         for (let i = 0; i < 50; i++) {
             if (window.appAuth) {
                 console.log('✅ auth.js encontrado!');
                 
-                // Verificar se está em página de login
                 if (this.isLoginPage() || this.isRegisterPage()) {
                     console.log('📝 Página de autenticação - app não será inicializado');
                     return;
                 }
                 
-                // Verificar autenticação
                 if (!window.appAuth.isAuthenticated()) {
                     console.log('❌ Usuário não autenticado');
                     this.redirectToLogin();
@@ -46,7 +44,6 @@ class AutoAnalytics {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         
-        // Timeout - verificar se está em página de login
         if (this.isLoginPage() || this.isRegisterPage()) {
             console.log('📝 Página de autenticação - app não será inicializado');
             return;
@@ -99,10 +96,6 @@ class AutoAnalytics {
         return window.appAuth ? window.appAuth.isPremium() : false;
     }
     
-    getPremiumInfo() {
-        return window.appAuth ? window.appAuth.getPremiumInfo() : null;
-    }
-    
     getCurrentUser() {
         return window.appAuth ? window.appAuth.getCurrentUser() : {};
     }
@@ -120,13 +113,11 @@ class AutoAnalytics {
     async init() {
         console.log('🚀 Inicializando AutoAnalytics App...');
         
-        // ✅ NÃO inicializar em páginas de autenticação
         if (this.isLoginPage() || this.isRegisterPage()) {
             console.log('🚫 App não inicializado em página de autenticação');
             return;
         }
         
-        // ✅ Verificar autenticação novamente
         if (!window.appAuth || !window.appAuth.isAuthenticated()) {
             console.log('❌ Não autenticado');
             this.redirectToLogin();
@@ -136,7 +127,6 @@ class AutoAnalytics {
         this.initializeElements();
         this.bindEvents();
         
-        // ⏳ Pequeno delay para garantir que tudo está pronto
         setTimeout(async () => {
             await this.loadUserCredits();
             await this.loadDashboardStats();
@@ -155,13 +145,11 @@ class AutoAnalytics {
             console.log(`👤 Usuário: ${this.getCurrentUser().email}`);
             console.log(`💰 Créditos: ${this.getCreditsDisplay()}`);
             
-            // Iniciar verificação periódica de autenticação
             this.startAuthCheck();
         }, 500);
     }
     
     startAuthCheck() {
-        // Verificar autenticação a cada 5 minutos
         this.authCheckInterval = setInterval(() => {
             if (!window.appAuth || !window.appAuth.isAuthenticated()) {
                 console.log('❌ Sessão expirada');
@@ -170,28 +158,11 @@ class AutoAnalytics {
         }, 5 * 60 * 1000);
     }
     
-    // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
-    
-    checkAuthentication() {
-        if (this.isLoginPage() || this.isRegisterPage()) return;
-        
-        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
-            this.redirectToLogin();
-        }
-    }
-    
     // ===== CRÉDITOS E PREMIUM =====
     
     async loadUserCredits() {
-        // ✅ NÃO carregar créditos em páginas de login
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return;
-        }
-        
-        // ✅ Verificar se está autenticado
-        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
-            return;
-        }
+        if (this.isLoginPage() || this.isRegisterPage()) return;
+        if (!window.appAuth || !window.appAuth.isAuthenticated()) return;
         
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
@@ -214,8 +185,6 @@ class AutoAnalytics {
     
     async loadPremiumStatus() {
         if (!this.isPremium()) return;
-        
-        // ✅ NÃO carregar status premium em páginas de login
         if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
@@ -284,8 +253,6 @@ class AutoAnalytics {
     
     async claimDailyCredit() {
         if (!this.isPremium()) return;
-        
-        // ✅ NÃO reivindicar crédito em páginas de login
         if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
@@ -307,7 +274,7 @@ class AutoAnalytics {
         }
     }
     
-    // ===== UPLOAD - NOVA VERSÃO SEM SELEÇÃO =====
+    // ===== UPLOAD COM PoW INTEGRADO =====
     
     async handleUpload(e) {
         e.preventDefault();
@@ -324,20 +291,11 @@ class AutoAnalytics {
             if (!creditsCheck) return;
         }
         
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('auto_detect', 'true');
-        
         this.setUploadLoading(true);
         
         try {
-            const response = await fetch(`${this.apiBase}/upload-auto`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                },
-                body: formData
-            });
+            // 🔐 UPLOAD COM PoW (silencioso)
+            const response = await window.powClient.uploadWithPow(file, '/api/upload-auto');
             
             const data = await response.json();
             
@@ -357,6 +315,7 @@ class AutoAnalytics {
             }
             
         } catch (error) {
+            console.error('Erro no upload:', error);
             this.showNotification('❌ Erro de conexão', 'error');
             this.setUploadLoading(false);
         }
@@ -395,19 +354,27 @@ class AutoAnalytics {
         return false;
     }
     
-    // ===== LEITURA DE ARQUIVO - NOVA VERSÃO COM VISUALIZAÇÃO TECNOLÓGICA =====
+    // ===== DRAG & DROP COM PoW (PRÉ-RESOLUÇÃO) =====
+    
+    handleDragEnter(e) {
+        e.preventDefault();
+        this.dropArea.classList.add('dragover-glow');
+        
+        // 🔐 PRÉ-RESOLVE PoW EM BACKGROUND durante o drag
+        if (window.powClient && window.powClient.preSolveOnDrag) {
+            window.powClient.prepareForUpload();
+        }
+    }
+    
+    // ===== LEITURA DE ARQUIVO =====
     
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (!file) return;
         
-        // Validar arquivo
         if (!this.validateFile(file)) return;
         
-        // Mostrar info do arquivo
         this.displayFileInfo(file);
-        
-        // Ler e analisar arquivo
         await this.analyzeFile(file);
     }
     
@@ -437,7 +404,6 @@ class AutoAnalytics {
         if (this.selectedFile) {
             this.selectedFile.classList.remove('d-none');
             
-            // Adicionar efeito glow
             this.selectedFile.innerHTML = `
                 <div class="file-info-glow">
                     <div class="file-icon">
@@ -456,14 +422,12 @@ class AutoAnalytics {
                 </div>
             `;
             
-            // Reattach remove event
             document.getElementById('removeFile')?.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.resetFileSelection();
             });
         }
         
-        // Animação
         if (typeof gsap !== 'undefined') {
             gsap.from(this.selectedFile, {
                 duration: 0.5,
@@ -496,10 +460,8 @@ class AutoAnalytics {
             this.columns = columns;
             this.dataTypes = types;
             
-            // Mostrar preview tecnológico
             this.showTechPreview(data, columns, types);
             
-            // Habilitar botão de upload
             this.uploadButton.disabled = false;
             this.uploadButton.innerHTML = `🚀 Iniciar Análise Automática <span class="credit-badge">${this.getCreditsDisplay()} créditos</span>`;
             
@@ -523,7 +485,6 @@ class AutoAnalytics {
                         const columns = result.meta.fields || [];
                         const types = {};
                         
-                        // Detectar tipos de dados
                         columns.forEach(col => {
                             const values = result.data.map(row => row[col]).filter(v => v !== null && v !== undefined);
                             if (values.length === 0) {
@@ -572,7 +533,6 @@ class AutoAnalytics {
                             return obj;
                         });
                         
-                        // Detectar tipos
                         const types = {};
                         headers.forEach(col => {
                             const values = rows.map(row => row[col]).filter(v => v !== undefined && v !== null);
@@ -605,13 +565,10 @@ class AutoAnalytics {
         });
     }
     
-    // ===== VISUALIZAÇÃO TECNOLÓGICA =====
-    
     showTechPreview(data, columns, types) {
         const previewSection = document.getElementById('dataPreview');
         if (!previewSection) return;
         
-        // Criar estrutura moderna
         let html = `
             <div class="tech-preview-container">
                 <div class="preview-header">
@@ -628,7 +585,6 @@ class AutoAnalytics {
                 <div class="columns-showcase">
         `;
         
-        // Mostrar colunas como cards tecnológicos
         columns.forEach(col => {
             const type = types[col] || 'unknown';
             const typeIcon = {
@@ -704,7 +660,6 @@ class AutoAnalytics {
         previewSection.innerHTML = html;
         previewSection.classList.remove('d-none');
         
-        // Animação
         if (typeof gsap !== 'undefined') {
             gsap.from('.column-card', {
                 duration: 0.4,
@@ -811,15 +766,12 @@ class AutoAnalytics {
         return messages[status.status] || '⏳ Processando...';
     }
     
-    // ===== RESULTADO =====
-    
     showResult(result) {
         const resultContainer = document.getElementById('resultContainer');
         if (!resultContainer) return;
         
         resultContainer.style.display = 'block';
         
-        // Mostrar resultados de forma moderna
         const analysisInfo = result.analysis_info || {};
         const stats = result.prediction_stats || {};
         
@@ -864,13 +816,8 @@ class AutoAnalytics {
         }
     }
     
-    // ===== HISTÓRICO =====
-    
     async loadAnalysisHistory() {
-        // ✅ NÃO carregar histórico em páginas de login
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return;
-        }
+        if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
@@ -920,10 +867,7 @@ class AutoAnalytics {
     }
     
     async loadDashboardStats() {
-        // ✅ NÃO carregar stats em páginas de login
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return;
-        }
+        if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/stats`);
@@ -957,7 +901,6 @@ class AutoAnalytics {
         this.totalAnalises = document.getElementById('totalAnalises');
         this.analisesHoje = document.getElementById('analisesHoje');
         
-        // Inicializar com botão desabilitado
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
             this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
@@ -969,7 +912,6 @@ class AutoAnalytics {
             this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
         }
         
-        // Drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
             if (this.dropArea) {
                 this.dropArea.addEventListener(event, this.preventDefaults.bind(this));
@@ -979,6 +921,7 @@ class AutoAnalytics {
         if (this.dropArea) {
             this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
             this.dropArea.addEventListener('click', () => this.fileInput?.click());
+            this.dropArea.addEventListener('dragenter', (e) => this.handleDragEnter(e));
             this.dropArea.addEventListener('dragover', () => this.dropArea.classList.add('dragover-glow'));
             this.dropArea.addEventListener('dragleave', () => this.dropArea.classList.remove('dragover-glow'));
         }
@@ -1012,7 +955,6 @@ class AutoAnalytics {
             this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
         }
         
-        // Esconder preview
         const preview = document.getElementById('dataPreview');
         if (preview) preview.classList.add('d-none');
         
@@ -1025,6 +967,7 @@ class AutoAnalytics {
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
                 e.preventDefault();
+                if (window.powClient) window.powClient.reset();
                 window.appAuth?.logout();
             });
         }
@@ -1045,21 +988,17 @@ class AutoAnalytics {
     // ===== FETCH COM AUTENTICAÇÃO (VERSÃO CORRIGIDA) =====
     
     async fetchWithAuth(url, options = {}) {
-        // ✅ Se estiver na página de login, não faz requisições
         if (this.isLoginPage() || this.isRegisterPage()) {
             console.log('🚫 Requisição bloqueada - página de autenticação');
             return null;
         }
         
-        // ✅ Aguardar auth.js estar pronto
         if (!window.appAuth) {
-            console.log('⏳ Aguardando auth.js...');
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         
         const token = localStorage.getItem('access_token');
         
-        // ✅ Se não tem token, redirecionar
         if (!token) {
             console.log('❌ Sem token - redirecionando');
             this.redirectToLogin();
@@ -1071,30 +1010,23 @@ class AutoAnalytics {
             ...options.headers
         };
         
-        // ✅ FORMATO CORRETO: Bearer + token
         headers['Authorization'] = `Bearer ${token}`;
         
         try {
             let response = await fetch(url, { ...options, headers });
             
-            // Se for 401, tentar refresh
             if (response.status === 401) {
                 console.log('🔄 Token 401 - tentando refresh...');
                 
-                // Usar refresh do auth.js
                 if (window.appAuth) {
                     const refreshed = await window.appAuth.refreshToken();
                     
                     if (refreshed) {
-                        // Pegar novo token
                         const newToken = localStorage.getItem('access_token');
                         headers['Authorization'] = `Bearer ${newToken}`;
-                        
-                        // Tentar novamente
                         response = await fetch(url, { ...options, headers });
                         console.log('✅ Requisição retentada com novo token');
                     } else {
-                        // Refresh falhou
                         console.log('❌ Refresh falhou - redirecionando');
                         this.redirectToLogin();
                         return null;
@@ -1110,7 +1042,6 @@ class AutoAnalytics {
         } catch (error) {
             console.error('❌ Erro na requisição:', error);
             
-            // Se for erro de rede, não redirecionar imediatamente
             if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
                 console.log('🔌 Erro de conexão com o servidor');
                 this.showNotification('Erro de conexão com o servidor', 'error');
@@ -1121,26 +1052,14 @@ class AutoAnalytics {
         }
     }
     
-    // ===== REFRESH TOKEN (DELEGADO PARA AUTH.JS) =====
-    
-    async refreshToken() {
-        if (window.appAuth) {
-            const success = await window.appAuth.refreshToken();
-            return success ? localStorage.getItem('access_token') : null;
-        }
-        return null;
-    }
-    
     // ===== NOTIFICAÇÕES =====
     
     showNotification(message, type = 'info') {
-        // Usar toastr se disponível
         if (window.toastr) {
             toastr[type](message);
             return;
         }
         
-        // Fallback para alert personalizado
         const notification = document.createElement('div');
         notification.className = `notification-glow ${type}`;
         notification.innerHTML = `
@@ -1215,13 +1134,11 @@ class AutoAnalytics {
 
 // ===== INICIALIZAÇÃO SEGURA =====
 document.addEventListener('DOMContentLoaded', () => {
-    // Pequeno delay para garantir que auth.js carregou primeiro
     setTimeout(() => {
         window.app = new AutoAnalytics();
     }, 200);
 });
 
-// ===== EXPOR FUNÇÕES GLOBAIS PARA ACESSO =====
 window.getApp = () => window.app;
 window.claimDailyCredit = () => window.app?.claimDailyCredit();
 window.showCreditsModal = () => window.app?.showCreditsModal();
