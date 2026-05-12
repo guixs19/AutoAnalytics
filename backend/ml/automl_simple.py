@@ -1,4 +1,4 @@
-# backend/ml/automl_simple.py - VERSÃO COM INTEGRAÇÃO AUTOMÁTICA
+# backend/ml/automl_simple.py - VERSÃO CORRIGIDA (SEM IMPORT CIRCULAR)
 """
 AutoML simplificado com integração automática ao predictor
 """
@@ -18,8 +18,10 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, f1_score
 
-# Importar predictor para integração
-from ml.predict import predictor
+# ❌ REMOVIDO: from ml.predict import predictor
+# (causava import circular)
+
+print("🔧 Carregando automl_simple.py...")
 
 
 class AutoMLOffice:
@@ -37,7 +39,7 @@ class AutoMLOffice:
         self.scaler = None
         self.integrated = False
         
-        print("✅ AutoMLOffice inicializado (com integração automática)")
+        print("✅ AutoMLOffice inicializado (sem import circular)")
     
     def comparar_modelos_classificacao(
         self,
@@ -46,7 +48,7 @@ class AutoMLOffice:
         n_folds: int = 10,
         test_size: float = 0.2,
         verbose: bool = True,
-        integrar_apos_treino: bool = True  # NOVO: integrar automaticamente
+        integrar_apos_treino: bool = True
     ) -> pd.DataFrame:
         """
         Compara modelos e integra automaticamente com o predictor
@@ -159,7 +161,7 @@ class AutoMLOffice:
         # Salvar resultados
         self._salvar_resultados(ranking_df, melhor)
         
-        # NOVO: Integrar automaticamente se solicitado
+        # Integrar automaticamente se solicitado
         if integrar_apos_treino:
             print("\n🔄 Integrando automaticamente com o predictor...")
             self.integrar_com_predictor()
@@ -266,6 +268,7 @@ class AutoMLOffice:
     def integrar_com_predictor(self):
         """
         Integra o melhor modelo com o predictor existente
+        ✅ NÃO importa predictor diretamente - apenas salva o arquivo
         """
         if self.best_pipeline is None:
             print("❌ Nenhum modelo treinado para integrar")
@@ -289,20 +292,9 @@ class AutoMLOffice:
             model_path = os.path.join("backend", "ml", "models", "office_model.pkl")
             joblib.dump(model_data, model_path)
             
-            print(f"\n✅ Modelo integrado com predictor em: {model_path}")
+            print(f"\n✅ Modelo salvo em: {model_path}")
+            print("   O predictor carregará automaticamente na próxima inicialização")
             self.integrated = True
-            
-            # Forçar recarregamento do predictor
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(predictor.load_or_train_models())
-                else:
-                    loop.run_until_complete(predictor.load_or_train_models())
-                print("✅ Predictor recarregado com sucesso!")
-            except Exception as e:
-                print(f"⚠️ Predictor será recarregado na próxima chamada: {e}")
             
             return True
             
@@ -314,6 +306,5 @@ class AutoMLOffice:
 # Instância global
 automl_office = AutoMLOffice()
 
-print("\n✅ AutoMLOffice pronto com integração automática!")
-print("   Agora ao treinar um modelo, ele já integra com o predictor!")
+print("\n✅ AutoMLOffice pronto (sem dependência circular!)")
 print("   Exemplo: automl_office.comparar_modelos_classificacao(df, 'target')")

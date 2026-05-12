@@ -1,4 +1,8 @@
-// frontend/js/auth.js - VERSÃO COM CAPTCHA MATEMÁTICO (SOMA SIMPLES)
+// frontend/js/auth.js - VERSÃO CORRIGIDA COM CAPTCHA DE NÚMEROS RABISCADOS
+/**
+ * Sistema de Autenticação com CAPTCHA simples
+ * Usuário deve reescrever os números que aparecem na imagem
+ */
 
 class Auth {
     constructor() {
@@ -6,979 +10,748 @@ class Auth {
             ? 'http://localhost:8000/api'
             : '/api';
         
-        this.user = this.loadUser();
-        this.captchaId = null;
-        this.captchaIdRegister = null;
-        this.tokenCheckInterval = null;
-        this.loginAttempts = 0;
-        this.maxLoginAttempts = 5;
-        
-        // Timer properties
+        this.currentUser = null;
+        this.isAuthenticated = false;
+        this.userData = null;
+        this.currentCaptchaId = null;
         this.captchaTimer = null;
-        this.captchaTimeLeft = 120;
-        this.registerCaptchaTimer = null;
-        this.registerCaptchaTimeLeft = 120;
-        
-        // Flag para evitar múltiplas requisições
-        this.isLoadingCaptcha = false;
-        this.isLoadingRegisterCaptcha = false;
         
         this.init();
     }
     
-    // ==================== LOCALSTORAGE ====================
+    async init() {
+        console.log('🔐 Inicializando Auth Manager...');
+        await this.checkToken();
+        this.setupAuthPageListeners();
+        this.updateUI();
+        console.log(`✅ Auth Manager inicializado - Autenticado: ${this.isAuthenticated}`);
+    }
     
-    loadUser() {
+    // ==============================================
+    // CAPTCHA DE NÚMEROS RABISCADOS - CORRIGIDO
+    // ==============================================
+    
+    async loadCaptcha(sessionType = 'login') {
         try {
-            const userStr = localStorage.getItem('user');
-            return userStr ? JSON.parse(userStr) : {};
-        } catch {
-            return {};
-        }
-    }
-    
-    saveUser(user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        this.user = user;
-    }
-    
-    saveTokens(accessToken, refreshToken, expiresIn) {
-        localStorage.setItem('access_token', accessToken);
-        
-        if (refreshToken) {
-            localStorage.setItem('refresh_token', refreshToken);
-        }
-        
-        if (expiresIn) {
-            const expiresAt = Date.now() + (expiresIn * 1000);
-            localStorage.setItem('token_expires_at', expiresAt.toString());
-        }
-    }
-    
-    clearStorage() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('token_expires_at');
-        this.user = {};
-    }
-    
-    // ==================== CAPTCHA MATEMÁTICO ====================
-    
-    async loadLoginCaptcha() {
-        if (this.isLoadingCaptcha) {
-            console.log('⏳ CAPTCHA já está carregando...');
-            return;
-        }
-        
-        this.isLoadingCaptcha = true;
-        
-        const img = document.getElementById('loginCaptchaImage');
-        const input = document.getElementById('loginCaptchaInput');
-        const refreshBtn = document.getElementById('refreshLoginCaptcha');
-        const timerEl = document.getElementById('loginCaptchaTimer');
-        
-        if (!img) {
-            this.isLoadingCaptcha = false;
-            return;
-        }
-        
-        // Reset UI
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        }
-        
-        if (input) {
-            input.disabled = true;
-            input.value = '';
-            input.placeholder = '🔄 Carregando desafio matemático...';
-        }
-        
-        if (timerEl) {
-            timerEl.textContent = '--:--';
-            timerEl.classList.remove('expiring', 'expired');
-        }
-        
-        // Limpar timer anterior
-        if (this.captchaTimer) {
-            clearInterval(this.captchaTimer);
-            this.captchaTimer = null;
-        }
-        
-        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="240" height="80"%3E%3Crect width="240" height="80" fill="%23667eea"/%3E%3Ctext x="120" y="45" font-family="Arial" font-size="24" fill="white" text-anchor="middle"%3E🔢 Carregando...%3C/text%3E%3C/svg%3E';
-        
-        try {
-            const startTime = Date.now();
-            console.log('🧮 Gerando desafio matemático...');
+            // CORREÇÃO: Adicionado /auth/ antes de /captcha/generate
+            const url = `${this.apiBase}/auth/captcha/generate?session_type=${sessionType}&t=${Date.now()}`;
+            console.log(`🔄 Carregando CAPTCHA de: ${url}`);
             
-            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
-                cache: 'no-cache',
-                headers: { 'Cache-Control': 'no-cache' }
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
             });
             
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                const errorText = await response.text();
+                console.error(`❌ Erro HTTP ${response.status}: ${errorText}`);
+                throw new Error(`Erro ao carregar CAPTCHA: ${response.status}`);
             }
             
-            this.captchaId = response.headers.get('X-Captcha-ID');
+            // Verifica o tipo de conteúdo
+            const contentType = response.headers.get('Content-Type');
+            const captchaId = response.headers.get('X-Captcha-ID');
             
-            if (!this.captchaId) {
-                throw new Error('X-Captcha-ID não recebido');
+            if (!captchaId) {
+                console.error('❌ CAPTCHA ID não recebido nos headers');
+                throw new Error('CAPTCHA ID não recebido');
             }
             
+            console.log(`✅ CAPTCHA ID recebido: ${captchaId.substring(0, 8)}...`);
+            this.currentCaptchaId = captchaId;
+            
+            // Converte resposta para blob e cria URL
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            if (img.dataset.blobUrl) {
-                URL.revokeObjectURL(img.dataset.blobUrl);
+            // Atualiza imagem do CAPTCHA
+            const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
+            if (captchaImage) {
+                // Revoga URL antiga para evitar memory leak
+                if (captchaImage.src && captchaImage.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(captchaImage.src);
+                }
+                captchaImage.src = imageUrl;
+                console.log(`✅ Imagem CAPTCHA atualizada para ${sessionType}`);
+            } else {
+                console.error(`❌ Elemento ${sessionType}CaptchaImage não encontrado`);
             }
             
-            img.src = imageUrl;
-            img.dataset.blobUrl = imageUrl;
-            
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ Desafio matemático gerado em ${elapsed}ms - ID: ${this.captchaId.substring(0, 8)}...`);
-            
-            if (input) {
-                input.disabled = false;
-                input.placeholder = 'Ex: 8 (resultado da soma)';
-                input.focus();
+            // Atualiza hidden field com o ID
+            const captchaIdField = document.getElementById(`${sessionType}CaptchaId`);
+            if (captchaIdField) {
+                captchaIdField.value = captchaId;
             }
             
-            this.startCaptchaTimer('login');
+            // Inicia timer de 2 minutos
+            this.startCaptchaTimer(sessionType);
+            
+            // Limpa input anterior
+            const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
+            if (captchaInput) {
+                captchaInput.value = '';
+                captchaInput.disabled = false;
+                captchaInput.placeholder = 'Digite os números da imagem';
+            }
+            
+            return captchaId;
             
         } catch (error) {
             console.error('❌ Erro ao carregar CAPTCHA:', error);
-            this.generateFallbackCaptcha('login');
-        } finally {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
-            }
-            this.isLoadingCaptcha = false;
+            this.showCaptchaError(sessionType);
+            return null;
         }
     }
     
-    startCaptchaTimer(type = 'login') {
-        const timerId = type === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
-        const timerElement = document.getElementById(timerId);
-        
-        if (!timerElement) return;
-        
-        if (type === 'login') {
-            if (this.captchaTimer) {
-                clearInterval(this.captchaTimer);
-                this.captchaTimer = null;
-            }
-            this.captchaTimeLeft = 120;
-        } else {
-            if (this.registerCaptchaTimer) {
-                clearInterval(this.registerCaptchaTimer);
-                this.registerCaptchaTimer = null;
-            }
-            this.registerCaptchaTimeLeft = 120;
+    showCaptchaError(sessionType = 'login') {
+        const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
+        if (captchaImage) {
+            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="100" viewBox="0 0 280 100"%3E%3Crect width="280" height="100" fill="%23e53e3e"/%3E%3Ctext x="140" y="55" font-family="monospace" font-size="16" fill="white" text-anchor="middle"%3E⚠️ ERRO - Clique para recarregar%3C/text%3E%3C/svg%3E';
+        }
+    }
+    
+    startCaptchaTimer(sessionType) {
+        // Limpa timer anterior
+        if (this.captchaTimer) {
+            clearInterval(this.captchaTimer);
         }
         
-        const updateTimer = () => {
-            let timeLeft;
-            if (type === 'login') {
-                timeLeft = this.captchaTimeLeft;
-            } else {
-                timeLeft = this.registerCaptchaTimeLeft;
-            }
+        const expirySeconds = 120;
+        let remaining = expirySeconds;
+        
+        const timerElement = document.getElementById(`${sessionType}CaptchaTimer`);
+        
+        this.captchaTimer = setInterval(() => {
+            remaining--;
             
-            if (timeLeft <= 0) {
-                if (type === 'login') {
-                    if (this.captchaTimer) clearInterval(this.captchaTimer);
-                    this.captchaTimer = null;
+            if (timerElement) {
+                const minutes = Math.floor(remaining / 60);
+                const seconds = remaining % 60;
+                timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                if (remaining <= 10) {
+                    timerElement.classList.add('expiring');
                 } else {
-                    if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
-                    this.registerCaptchaTimer = null;
+                    timerElement.classList.remove('expiring');
+                }
+            }
+            
+            if (remaining <= 0) {
+                clearInterval(this.captchaTimer);
+                if (timerElement) {
+                    timerElement.textContent = '00:00';
+                    timerElement.classList.add('expired');
                 }
                 
-                timerElement.textContent = '00:00';
-                timerElement.classList.add('expired');
-                
-                const input = document.getElementById(`${type}CaptchaInput`);
-                if (input) {
-                    input.disabled = true;
-                    input.placeholder = '⏰ Desafio expirado! Clique em atualizar';
+                // Desabilita input
+                const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
+                if (captchaInput) {
+                    captchaInput.disabled = true;
+                    captchaInput.placeholder = 'EXPIRADO - Clique em ↻';
                 }
-                return;
             }
-            
-            const minutes = Math.floor(timeLeft / 60);
-            const seconds = timeLeft % 60;
-            timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            
-            if (timeLeft <= 30) {
-                timerElement.classList.add('expiring');
-            } else {
-                timerElement.classList.remove('expiring');
-            }
-            
-            if (type === 'login') {
-                this.captchaTimeLeft--;
-            } else {
-                this.registerCaptchaTimeLeft--;
-            }
-        };
-        
-        updateTimer();
-        
-        if (type === 'login') {
-            this.captchaTimer = setInterval(updateTimer, 1000);
-        } else {
-            this.registerCaptchaTimer = setInterval(updateTimer, 1000);
-        }
+        }, 1000);
     }
     
-    generateFallbackCaptcha(type) {
-        console.log(`🔄 Gerando desafio matemático fallback para ${type}`);
+    async refreshCaptcha(sessionType = 'login') {
+        console.log(`🔄 Atualizando CAPTCHA para ${sessionType}...`);
         
-        const img = document.getElementById(`${type}CaptchaImage`);
-        const input = document.getElementById(`${type}CaptchaInput`);
-        
-        if (!img) return;
-        
-        if (type === 'login') {
-            if (this.captchaTimer) clearInterval(this.captchaTimer);
-        } else {
-            if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
+        // Reseta timer
+        if (this.captchaTimer) {
+            clearInterval(this.captchaTimer);
         }
         
-        // Gerar números aleatórios para soma
-        const n1 = Math.floor(Math.random() * 9) + 1;
-        const n2 = Math.floor(Math.random() * 9) + 1;
-        const resultado = n1 + n2;
-        const pergunta = `${n1} + ${n2} = ?`;
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = 240;
-        canvas.height = 80;
-        const ctx = canvas.getContext('2d');
-        
-        // Fundo gradiente
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, '#667eea');
-        gradient.addColorStop(1, '#764ba2');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Ruído visual
-        for (let i = 0; i < 150; i++) {
-            ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.15})`;
-            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
-        }
-        
-        // Linhas decorativas
-        for (let i = 0; i < 8; i++) {
-            ctx.beginPath();
-            ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-            ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-            ctx.strokeStyle = `rgba(255,255,255,${Math.random() * 0.2})`;
-            ctx.stroke();
-        }
-        
-        // Texto do desafio
-        ctx.font = 'bold 34px "Courier New", monospace';
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(pergunta, canvas.width / 2, canvas.height / 2);
-        
-        img.src = canvas.toDataURL();
-        
-        if (input) {
-            input.dataset.fallbackCaptcha = resultado.toString();
-            input.disabled = false;
-            input.placeholder = 'Ex: resultado da soma';
-        }
-        
-        if (type === 'login') {
-            this.captchaId = 'fallback_' + Date.now();
-            console.log(`✅ Desafio fallback: ${pergunta} = ${resultado}`);
-        } else {
-            this.captchaIdRegister = 'fallback_' + Date.now();
-            console.log(`✅ Desafio fallback register: ${pergunta} = ${resultado}`);
-        }
-        
-        this.startCaptchaTimer(type);
+        // Recarrega
+        await this.loadCaptcha(sessionType);
     }
     
-    async loadRegisterCaptcha() {
-        if (this.isLoadingRegisterCaptcha) {
-            console.log('⏳ CAPTCHA register já está carregando...');
-            return;
+    // ==============================================
+    // LOGIN - CORRIGIDO COM HEADERS CAPTCHA
+    // ==============================================
+    
+    async login(email, password, captchaText, captchaId) {
+        if (!email || !password) {
+            this.showError('Preencha email e senha');
+            return false;
         }
         
-        this.isLoadingRegisterCaptcha = true;
-        
-        const img = document.getElementById('registerCaptchaImage');
-        const input = document.getElementById('registerCaptchaInput');
-        const refreshBtn = document.getElementById('refreshRegisterCaptcha');
-        const timerEl = document.getElementById('registerCaptchaTimer');
-        
-        if (!img) {
-            this.isLoadingRegisterCaptcha = false;
-            return;
+        if (!captchaText) {
+            this.showError('Digite os números que aparecem na imagem');
+            return false;
         }
         
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        if (!captchaId) {
+            this.showError('CAPTCHA não carregado. Recarregue a página.');
+            return false;
         }
         
-        if (input) {
-            input.disabled = true;
-            input.value = '';
-            input.placeholder = '🔄 Carregando desafio matemático...';
-        }
-        
-        if (timerEl) {
-            timerEl.textContent = '--:--';
-        }
-        
-        if (this.registerCaptchaTimer) {
-            clearInterval(this.registerCaptchaTimer);
-            this.registerCaptchaTimer = null;
-        }
-        
-        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="240" height="80"%3E%3Crect width="240" height="80" fill="%23667eea"/%3E%3Ctext x="120" y="45" font-family="Arial" font-size="24" fill="white" text-anchor="middle"%3E🔢 Carregando...%3C/text%3E%3C/svg%3E';
+        this.setLoading(true);
         
         try {
-            const response = await fetch(`${this.apiBase}/auth/captcha/generate?t=${Date.now()}`, {
-                cache: 'no-cache'
-            });
-            
-            if (!response.ok) throw new Error('Erro no servidor');
-            
-            this.captchaIdRegister = response.headers.get('X-Captcha-ID');
-            
-            if (!this.captchaIdRegister) {
-                throw new Error('X-Captcha-ID não recebido');
-            }
-            
-            const blob = await response.blob();
-            const imageUrl = URL.createObjectURL(blob);
-            
-            if (img.dataset.blobUrl) {
-                URL.revokeObjectURL(img.dataset.blobUrl);
-            }
-            
-            img.src = imageUrl;
-            img.dataset.blobUrl = imageUrl;
-            
-            if (input) {
-                input.disabled = false;
-                input.placeholder = 'Ex: 8 (resultado da soma)';
-            }
-            
-            this.startCaptchaTimer('register');
-            
-        } catch (error) {
-            console.error('❌ Erro CAPTCHA registro:', error);
-            this.generateFallbackCaptcha('register');
-        } finally {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
-            }
-            this.isLoadingRegisterCaptcha = false;
-        }
-    }
-    
-    // ==================== LOGIN ====================
-    
-    async handleLogin() {
-        const email = document.getElementById('loginEmail')?.value;
-        const password = document.getElementById('loginPassword')?.value;
-        const captchaInput = document.getElementById('loginCaptchaInput')?.value;
-        
-        if (!this.captchaId) {
-            this.showMessage('🧮 CAPTCHA não carregado. Aguarde...', 'warning');
-            await this.loadLoginCaptcha();
-            return;
-        }
-        
-        if (this.captchaTimeLeft <= 0 && !this.captchaId?.startsWith('fallback_')) {
-            this.showMessage('⏰ Desafio matemático expirou! Clique em atualizar.', 'warning');
-            await this.loadLoginCaptcha();
-            return;
-        }
-        
-        if (!email || !password || !captchaInput) {
-            this.showMessage('❌ Preencha todos os campos', 'error');
-            return;
-        }
-        
-        if (!email.includes('@')) {
-            this.showMessage('❌ Email inválido', 'error');
-            return;
-        }
-        
-        if (password.length < 6) {
-            this.showMessage('❌ Senha deve ter no mínimo 6 caracteres', 'error');
-            return;
-        }
-        
-        // Validar se resposta é número
-        if (isNaN(parseInt(captchaInput))) {
-            this.showMessage('🧮 Digite apenas o NÚMERO do resultado da soma', 'warning');
-            return;
-        }
-        
-        this.loginAttempts++;
-        if (this.loginAttempts > this.maxLoginAttempts) {
-            this.showMessage('⏳ Muitas tentativas. Aguarde 1 minuto.', 'error');
-            setTimeout(() => { this.loginAttempts = 0; }, 60000);
-            return;
-        }
-        
-        const loginBtn = document.getElementById('loginBtn');
-        const originalText = loginBtn.innerHTML;
-        loginBtn.disabled = true;
-        loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verificando...';
-        
-        const currentCaptchaId = this.captchaId;
-        
-        try {
-            const isFallback = currentCaptchaId?.startsWith('fallback_');
-            
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            
-            if (!isFallback && currentCaptchaId) {
-                headers['X-Captcha-ID'] = currentCaptchaId;
-            }
-            
             const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
-                headers: headers,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': captchaId,
+                    'X-Captcha-Text': captchaText
+                },
                 body: JSON.stringify({
-                    email: email.trim().toLowerCase(),
-                    password: password,
-                    captcha_text: captchaInput
-                }),
-                credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success !== false) {
-                console.log('✅ Login bem-sucedido');
-                
-                if (this.captchaTimer) clearInterval(this.captchaTimer);
-                
-                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
-                
-                this.saveUser({
-                    name: data.user_name,
-                    email: data.user_email,
-                    workshop_name: data.workshop_name,
-                    role: data.role,
-                    credits: data.credits,
-                    plan: data.plan,
-                    is_admin: data.is_admin
-                });
-                
-                this.loginAttempts = 0;
-                this.showMessage('✅ Login realizado! Redirecionando...', 'success');
-                
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 1000);
-                
-            } else if (response.status === 401) {
-                this.showMessage('❌ Email ou senha incorretos', 'error');
-                this.captchaId = null;
-                await this.loadLoginCaptcha();
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalText;
-                
-            } else if (response.status === 400 && data.detail && 
-                       (data.detail.includes('CAPTCHA') || data.detail.includes('captcha') || data.detail.includes('som'))) {
-                this.showMessage('🧮 Resposta incorreta! Calcule a soma corretamente.', 'error');
-                this.captchaId = null;
-                await this.loadLoginCaptcha();
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalText;
-                
-            } else {
-                this.showMessage(data.detail || data.message || '❌ Erro no login', 'error');
-                await this.loadLoginCaptcha();
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalText;
-            }
-            
-        } catch (error) {
-            console.error('❌ Erro no login:', error);
-            this.showMessage('❌ Erro de conexão. Tente novamente.', 'error');
-            await this.loadLoginCaptcha();
-            loginBtn.disabled = false;
-            loginBtn.innerHTML = originalText;
-        }
-    }
-    
-    async handleRegister() {
-        const name = document.getElementById('regName')?.value;
-        const email = document.getElementById('regEmail')?.value;
-        const password = document.getElementById('regPassword')?.value;
-        const confirm = document.getElementById('regConfirmPassword')?.value;
-        const workshop = document.getElementById('regWorkshop')?.value;
-        const captchaInput = document.getElementById('registerCaptchaInput')?.value;
-        
-        if (this.registerCaptchaTimeLeft <= 0 && !this.captchaIdRegister?.startsWith('fallback_')) {
-            this.showMessage('⏰ Desafio matemático expirou! Clique em atualizar.', 'warning');
-            this.loadRegisterCaptcha();
-            return;
-        }
-        
-        if (!name || !email || !password || !confirm || !workshop || !captchaInput) {
-            this.showMessage('❌ Preencha todos os campos', 'error');
-            return;
-        }
-        
-        if (password !== confirm) {
-            this.showMessage('❌ As senhas não coincidem', 'error');
-            return;
-        }
-        
-        if (password.length < 6) {
-            this.showMessage('❌ A senha deve ter no mínimo 6 caracteres', 'error');
-            return;
-        }
-        
-        if (!email.includes('@')) {
-            this.showMessage('❌ Email inválido', 'error');
-            return;
-        }
-        
-        // Validar se resposta é número
-        if (isNaN(parseInt(captchaInput))) {
-            this.showMessage('🧮 Digite apenas o NÚMERO do resultado da soma', 'warning');
-            return;
-        }
-        
-        const registerBtn = document.getElementById('registerBtn');
-        const originalText = registerBtn.innerHTML;
-        registerBtn.disabled = true;
-        registerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Criando conta...';
-        
-        try {
-            const isFallback = this.captchaIdRegister?.startsWith('fallback_');
-            
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            
-            if (!isFallback && this.captchaIdRegister) {
-                headers['X-Captcha-ID'] = this.captchaIdRegister;
-            }
-            
-            const response = await fetch(`${this.apiBase}/auth/register`, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    name: name.trim(),
-                    email: email.trim().toLowerCase(),
-                    password: password,
-                    workshop_name: workshop.trim(),
-                    captcha_text: captchaInput
+                    email,
+                    password,
+                    captcha_id: captchaId,
+                    captcha_text: captchaText
                 })
             });
             
             const data = await response.json();
             
-            if (response.ok) {
-                if (this.registerCaptchaTimer) clearInterval(this.registerCaptchaTimer);
-                
-                this.showMessage('✅ Conta criada com sucesso! Faça login.', 'success');
-                document.getElementById('registerForm').reset();
-                
-                const loginTab = document.getElementById('login-tab');
-                if (loginTab) {
-                    loginTab.click();
-                    const loginEmail = document.getElementById('loginEmail');
-                    if (loginEmail) {
-                        loginEmail.value = email.trim().toLowerCase();
-                    }
-                    this.loadLoginCaptcha();
-                }
-            } else {
-                this.showMessage(data.detail || '❌ Erro no registro', 'error');
-                this.loadRegisterCaptcha();
-                registerBtn.disabled = false;
-                registerBtn.innerHTML = originalText;
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || 'Falha no login');
             }
             
+            if (data.success || data.access_token) {
+                if (data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                }
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+                
+                this.isAuthenticated = true;
+                this.userData = {
+                    email: data.user_email,
+                    name: data.user_name,
+                    workshop_name: data.workshop_name,
+                    role: data.role,
+                    plan: data.plan,
+                    credits: data.credits,
+                    is_admin: data.is_admin,
+                    admin_level: data.admin_level
+                };
+                
+                this.currentUser = this.userData;
+                
+                console.log('✅ Login realizado com sucesso');
+                this.showSuccess('Login realizado! Redirecionando...');
+                
+                document.dispatchEvent(new CustomEvent('userAuthenticated', { detail: this.userData }));
+                
+                setTimeout(() => {
+                    window.location.href = '/dashboard.html';
+                }, 1000);
+                
+                return true;
+            }
+            
+            throw new Error(data.message || 'Erro no login');
+            
         } catch (error) {
-            console.error('❌ Erro no registro:', error);
-            this.showMessage('❌ Erro de conexão', 'error');
-            this.loadRegisterCaptcha();
-            registerBtn.disabled = false;
-            registerBtn.innerHTML = originalText;
+            console.error('❌ Login error:', error);
+            this.showError(error.message);
+            await this.refreshCaptcha('login');
+            return false;
+        } finally {
+            this.setLoading(false);
         }
     }
     
-    // ==================== TOKEN ====================
+    // ==============================================
+    // REGISTRO - CORRIGIDO COM HEADERS CAPTCHA
+    // ==============================================
     
-    isTokenExpired() {
-        const expiresAt = localStorage.getItem('token_expires_at');
-        if (!expiresAt) return true;
-        return Date.now() > parseInt(expiresAt);
+    async register(name, email, password, workshopName, captchaText, captchaId) {
+        if (!name || !email || !password || !workshopName) {
+            this.showError('Preencha todos os campos');
+            return false;
+        }
+        
+        if (password.length < 6) {
+            this.showError('Senha deve ter no mínimo 6 caracteres');
+            return false;
+        }
+        
+        if (!captchaText) {
+            this.showError('Digite os números que aparecem na imagem');
+            return false;
+        }
+        
+        if (!captchaId) {
+            this.showError('CAPTCHA não carregado. Recarregue a página.');
+            return false;
+        }
+        
+        this.setLoading(true);
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': captchaId,
+                    'X-Captcha-Text': captchaText
+                },
+                body: JSON.stringify({
+                    name,
+                    email,
+                    password,
+                    workshop_name: workshopName,
+                    captcha_text: captchaText,
+                    captcha_id: captchaId
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || 'Falha no registro');
+            }
+            
+            if (data.success) {
+                console.log('✅ Registro realizado com sucesso');
+                this.showSuccess('Conta criada! Faça login para continuar.');
+                
+                setTimeout(() => {
+                    window.location.href = '/login.html';
+                }, 2000);
+                
+                return true;
+            }
+            
+            throw new Error(data.message || 'Erro no registro');
+            
+        } catch (error) {
+            console.error('❌ Registration error:', error);
+            this.showError(error.message);
+            await this.refreshCaptcha('register');
+            return false;
+        } finally {
+            this.setLoading(false);
+        }
     }
     
-    getTokenTimeLeft() {
-        const expiresAt = localStorage.getItem('token_expires_at');
-        if (!expiresAt) return 0;
-        const timeLeft = parseInt(expiresAt) - Date.now();
-        return Math.max(0, timeLeft);
+    // ==============================================
+    // VERIFICAÇÃO DE TOKEN
+    // ==============================================
+    
+    async checkToken() {
+        const token = localStorage.getItem('access_token');
+        
+        if (!token) {
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            return false;
+        }
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && (data.status === 'valid' || data.status === 'refreshed')) {
+                this.isAuthenticated = true;
+                
+                if (data.access_token && data.access_token !== token) {
+                    localStorage.setItem('access_token', data.access_token);
+                }
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+                
+                this.userData = {
+                    email: data.user,
+                    name: data.name,
+                    is_admin: data.is_admin,
+                    admin_level: data.admin_level,
+                    credits: data.credits,
+                    credits_display: data.credits_display
+                };
+                
+                this.currentUser = this.userData;
+                
+                return true;
+            }
+            
+            this.clearTokens();
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            return false;
+            
+        } catch (error) {
+            console.error('Token check error:', error);
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            return false;
+        }
     }
     
     async refreshToken() {
         const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) return false;
+        
+        if (!refreshToken) {
+            return false;
+        }
         
         try {
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken }),
-                credentials: 'include'
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    refresh_token: refreshToken
+                })
             });
             
             const data = await response.json();
             
             if (response.ok && data.access_token) {
-                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
+                localStorage.setItem('access_token', data.access_token);
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
                 return true;
             }
             
             return false;
             
         } catch (error) {
-            console.error('❌ Erro ao renovar token:', error);
+            console.error('Token refresh error:', error);
             return false;
         }
     }
     
-    async ensureValidToken() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return false;
+    // ==============================================
+    // LOGOUT
+    // ==============================================
+    
+    async logout() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        const accessToken = localStorage.getItem('access_token');
         
-        const timeLeft = this.getTokenTimeLeft();
+        if (refreshToken) {
+            try {
+                await fetch(`${this.apiBase}/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken
+                    })
+                });
+            } catch (error) {
+                console.error('Logout API error:', error);
+            }
+        }
         
-        if (timeLeft <= 120000) {
-            return await this.refreshToken();
+        this.clearTokens();
+        this.isAuthenticated = false;
+        this.currentUser = null;
+        
+        document.dispatchEvent(new CustomEvent('userLoggedOut'));
+        
+        window.location.href = '/login.html';
+    }
+    
+    clearTokens() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+    }
+    
+    // ==============================================
+    // CRÉDITOS
+    // ==============================================
+    
+    async loadUserCredits() {
+        if (!this.isAuthenticated) return false;
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
+            
+            if (response && response.ok) {
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (this.userData) {
+                        this.userData.credits = data.credits;
+                        this.userData.credits_display = data.plan?.is_premium ? '∞' : String(data.credits);
+                    }
+                    
+                    this.updateCreditsDisplay();
+                    return true;
+                }
+            }
+            
+            return false;
+            
+        } catch (error) {
+            console.error('Erro ao carregar créditos:', error);
+            return false;
+        }
+    }
+    
+    getCredits() {
+        return this.userData?.credits || 0;
+    }
+    
+    getCreditsDisplay() {
+        if (this.isAdmin()) return '∞';
+        if (this.isPremium()) return '∞';
+        return String(this.getCredits());
+    }
+    
+    async checkCreditsForAnalysis() {
+        if (this.isAdmin()) return true;
+        
+        const credits = this.getCredits();
+        
+        if (credits <= 0) {
+            this.showCreditsModal();
+            return false;
         }
         
         return true;
     }
     
-    async checkTokenStatus() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return { status: 'no_token' };
-        
-        try {
-            const response = await fetch(`${this.apiBase}/auth/check-token`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` },
-                credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.status === 'valid') {
-                return { status: 'valid', data };
-            }
-            
-            if (data.status === 'refreshed' && data.access_token) {
-                this.saveTokens(data.access_token, data.refresh_token, data.expires_in);
-                return { status: 'valid', data };
-            }
-            
-            if (await this.refreshToken()) {
-                return { status: 'valid' };
-            }
-            
-            return { status: 'error' };
-            
-        } catch (error) {
-            console.error('Erro ao verificar token:', error);
-            return { status: 'error' };
+    showCreditsModal() {
+        if (window.toastr) {
+            toastr.warning('Créditos insuficientes! Adquira o plano premium.', 'Atenção');
         }
-    }
-    
-    // ==================== INIT ====================
-    
-    async init() {
-        console.log('🔧 Auth inicializado - Versão com CAPTCHA Matemático');
-        console.log('🧮 Desafio: soma simples de 1+1 até 9+9');
-        console.log('📱 Otimizado para mobile com teclado numérico');
-        
-        const path = window.location.pathname;
-        
-        if (path.includes('login.html') || path === '/login' || path === '/') {
-            this.initLoginPage();
-        } else if (path.includes('register.html') || path === '/register') {
-            this.initRegisterPage();
-        } else {
-            const tokenStatus = await this.checkTokenStatus();
-            if (tokenStatus.status === 'invalid' || tokenStatus.status === 'no_token') {
-                this.redirectToLogin();
-            } else {
-                this.updateUserUI();
-                this.startTokenAutoRefresh();
-            }
-        }
-        
-        window.dispatchEvent(new Event('authReady'));
-    }
-    
-    startTokenAutoRefresh() {
-        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
-        
-        this.tokenCheckInterval = setInterval(async () => {
-            if (this.isLoginPage() || this.isRegisterPage()) return;
-            
-            const timeLeft = this.getTokenTimeLeft();
-            
-            if (timeLeft > 0 && timeLeft < 300000) {
-                await this.refreshToken();
-            }
-        }, 60000);
-    }
-    
-    initLoginPage() {
-        console.log('🔐 Inicializando página de login com desafio matemático...');
-        this.clearStorage();
-        
-        this.captchaId = null;
-        if (this.captchaTimer) clearInterval(this.captchaTimer);
-        this.captchaTimeLeft = 120;
         
         setTimeout(() => {
-            if (document.getElementById('loginCaptchaImage')) {
-                this.loadLoginCaptcha();
-                this.bindLoginEvents();
+            if (window.location.pathname !== '/planos.html') {
+                window.location.href = '/planos.html';
             }
-        }, 100);
-    }
-    
-    initRegisterPage() {
-        console.log('🔐 Inicializando página de registro com desafio matemático...');
-        
-        setTimeout(() => {
-            if (document.getElementById('registerCaptchaImage')) {
-                this.loadRegisterCaptcha();
-                this.bindRegisterEvents();
-            }
-        }, 100);
-    }
-    
-    bindLoginEvents() {
-        const refreshBtn = document.getElementById('refreshLoginCaptcha');
-        if (refreshBtn) {
-            const newRefreshBtn = refreshBtn.cloneNode(true);
-            refreshBtn.parentNode.replaceChild(newRefreshBtn, refreshBtn);
-            
-            newRefreshBtn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                console.log('🔄 Solicitando novo desafio matemático');
-                this.captchaId = null;
-                await this.loadLoginCaptcha();
-            });
-        }
-        
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) {
-            const newLoginForm = loginForm.cloneNode(true);
-            loginForm.parentNode.replaceChild(newLoginForm, loginForm);
-            
-            newLoginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                this.handleLogin();
-            });
-        }
-        
-        const forgotBtn = document.getElementById('forgotPassword');
-        if (forgotBtn) {
-            forgotBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showMessage('📧 Função de recuperação de senha em breve!', 'info');
-            });
-        }
-        
-        const captchaInput = document.getElementById('loginCaptchaInput');
-        if (captchaInput) {
-            captchaInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this.handleLogin();
-                }
-            });
-        }
-    }
-    
-    bindRegisterEvents() {
-        const refreshBtn = document.getElementById('refreshRegisterCaptcha');
-        if (refreshBtn) {
-            const newRefreshBtn = refreshBtn.cloneNode(true);
-            refreshBtn.parentNode.replaceChild(newRefreshBtn, refreshBtn);
-            
-            newRefreshBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                console.log('🔄 Solicitando novo desafio matemático para registro');
-                this.loadRegisterCaptcha();
-            });
-        }
-        
-        const registerForm = document.getElementById('registerForm');
-        if (registerForm) {
-            const newRegisterForm = registerForm.cloneNode(true);
-            registerForm.parentNode.replaceChild(newRegisterForm, registerForm);
-            
-            newRegisterForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                this.handleRegister();
-            });
-        }
-    }
-    
-    // ==================== LOGOUT ====================
-    
-    async logout() {
-        if (!confirm('Deseja realmente sair?')) return;
-        
-        const refreshToken = localStorage.getItem('refresh_token');
-        const accessToken = localStorage.getItem('access_token');
-        
-        try {
-            if (refreshToken) {
-                await fetch(`${this.apiBase}/auth/logout`, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': accessToken ? `Bearer ${accessToken}` : ''
-                    },
-                    body: JSON.stringify({ refresh_token: refreshToken }),
-                    credentials: 'include'
-                });
-            }
-        } catch (error) {
-            console.error('Erro no logout:', error);
-        } finally {
-            this.clearStorage();
-            if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
-            window.location.href = '/login.html';
-        }
-    }
-    
-    // ==================== UI ====================
-    
-    updateUserUI() {
-        const userNameEl = document.getElementById('userName');
-        if (userNameEl) userNameEl.textContent = this.user?.name || 'Usuário';
-        
-        const workshopEl = document.getElementById('workshopName');
-        if (workshopEl) workshopEl.textContent = this.user?.workshop_name || 'Oficina';
-        
-        this.updateCreditsDisplay();
+        }, 2000);
     }
     
     updateCreditsDisplay() {
-        const credits = this.getCreditsDisplay();
-        document.querySelectorAll('#navbarCredits span, #creditsCount').forEach(el => {
-            if (el) el.textContent = credits;
+        const creditsElements = document.querySelectorAll('.credits-display, .user-credits');
+        const displayValue = this.getCreditsDisplay();
+        
+        creditsElements.forEach(el => {
+            el.textContent = displayValue;
         });
-    }
-    
-    // ==================== UTILITIES ====================
-    
-    isLoginPage() {
-        return window.location.pathname.includes('login.html') || 
-               window.location.pathname === '/login' ||
-               window.location.pathname === '/';
-    }
-    
-    isRegisterPage() {
-        return window.location.pathname.includes('register.html') || 
-               window.location.pathname === '/register';
-    }
-    
-    isAuthenticated() {
-        return !!localStorage.getItem('access_token');
-    }
-    
-    redirectToLogin() {
-        this.clearStorage();
-        if (!this.isLoginPage() && !this.isRegisterPage()) {
-            this.showMessage('🔐 Faça login para continuar', 'info');
-            setTimeout(() => window.location.href = '/login.html', 1000);
+        
+        const uploadBtn = document.getElementById('uploadButton');
+        if (uploadBtn && uploadBtn.innerHTML.includes('créditos')) {
+            const icon = this.isAdmin() ? '👑' : (this.isPremium() ? '⭐' : '🚀');
+            uploadBtn.innerHTML = `${icon} Iniciar Análise <span class="credit-badge">${displayValue} créditos</span>`;
         }
     }
     
+    // ==============================================
+    // UTILIDADES
+    // ==============================================
+    
     isAdmin() {
-        return this.user?.is_admin === true;
+        return this.userData?.is_admin === true;
     }
     
     isPremium() {
-        return this.user?.is_premium === true || this.user?.plan === 'premium_mensal';
-    }
-    
-    getCreditsDisplay() {
-        if (this.isAdmin()) return '∞';
-        return this.user?.credits || 0;
+        return this.userData?.plan === 'premium_mensal' || this.userData?.plan === 'PREMIUM_MENSAL';
     }
     
     getCurrentUser() {
-        return this.user || {};
+        return this.userData || {};
     }
     
-    showMessage(message, type = 'info') {
-        const messageDiv = document.getElementById('authMessage');
-        if (!messageDiv) {
-            alert(message);
-            return;
+    isAuthenticated() {
+        return this.isAuthenticated;
+    }
+    
+    async fetchWithAuth(url, options = {}) {
+        const token = localStorage.getItem('access_token');
+        
+        if (!token) {
+            console.log('❌ Sem token disponível');
+            return null;
         }
         
-        const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-        const alertClass = type === 'error' ? 'danger' : type;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
         
-        messageDiv.innerHTML = `
-            <div class="alert alert-${alertClass} alert-dismissible fade show" role="alert">
-                <strong>${icons[type] || ''}</strong> ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
+        headers['Authorization'] = `Bearer ${token}`;
         
-        setTimeout(() => {
-            const alert = messageDiv.querySelector('.alert');
-            if (alert) {
-                alert.classList.remove('show');
-                setTimeout(() => messageDiv.innerHTML = '', 300);
+        try {
+            let response = await fetch(url, { ...options, headers });
+            
+            if (response.status === 401) {
+                console.log('🔄 Token expirado, tentando refresh...');
+                
+                const refreshed = await this.refreshToken();
+                
+                if (refreshed) {
+                    const newToken = localStorage.getItem('access_token');
+                    headers['Authorization'] = `Bearer ${newToken}`;
+                    response = await fetch(url, { ...options, headers });
+                    console.log('✅ Requisição retentada com novo token');
+                } else {
+                    console.log('❌ Refresh falhou');
+                    this.clearTokens();
+                    this.isAuthenticated = false;
+                    return null;
+                }
             }
-        }, 5000);
+            
+            return response;
+            
+        } catch (error) {
+            console.error('❌ Erro na requisição:', error);
+            return null;
+        }
+    }
+    
+    // ==============================================
+    // UI HELPERS
+    // ==============================================
+    
+    setLoading(loading) {
+        const submitBtn = document.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = loading;
+            if (loading) {
+                submitBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Processando...';
+            } else {
+                const originalText = submitBtn.id === 'loginBtn' ? 'Entrar' : 'Criar Conta';
+                submitBtn.innerHTML = submitBtn.id === 'loginBtn' 
+                    ? '<i class="fas fa-sign-in-alt me-2"></i>Entrar'
+                    : '<i class="fas fa-user-plus me-2"></i>Criar Conta';
+            }
+        }
+    }
+    
+    showError(message) {
+        const errorDiv = document.getElementById('authMessage');
+        if (errorDiv) {
+            errorDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-circle me-2"></i>${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+            setTimeout(() => {
+                const alert = errorDiv.querySelector('.alert');
+                if (alert) alert.remove();
+            }, 5000);
+        }
+        
+        if (window.toastr) {
+            toastr.error(message);
+        }
+    }
+    
+    showSuccess(message) {
+        if (window.toastr) {
+            toastr.success(message);
+        }
+    }
+    
+    updateUI() {
+        const authRequiredElements = document.querySelectorAll('.auth-required');
+        const guestElements = document.querySelectorAll('.guest-only');
+        
+        if (this.isAuthenticated) {
+            authRequiredElements.forEach(el => el.classList.remove('d-none'));
+            guestElements.forEach(el => el.classList.add('d-none'));
+            
+            const userNameElements = document.querySelectorAll('.user-name');
+            userNameElements.forEach(el => {
+                el.textContent = this.userData?.name || 'Usuário';
+            });
+            
+            this.updateCreditsDisplay();
+        } else {
+            authRequiredElements.forEach(el => el.classList.add('d-none'));
+            guestElements.forEach(el => el.classList.remove('d-none'));
+        }
+    }
+    
+    setupAuthPageListeners() {
+        // Login form
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const email = document.getElementById('loginEmail')?.value;
+                const password = document.getElementById('loginPassword')?.value;
+                const captchaText = document.getElementById('loginCaptchaInput')?.value;
+                const captchaId = document.getElementById('loginCaptchaId')?.value;
+                
+                await this.login(email, password, captchaText, captchaId);
+            });
+            
+            // Carrega CAPTCHA do login
+            this.loadCaptcha('login');
+            
+            const refreshBtn = document.getElementById('refreshLoginCaptcha');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => this.refreshCaptcha('login'));
+            }
+        }
+        
+        // Register form
+        const registerForm = document.getElementById('registerForm');
+        if (registerForm) {
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const name = document.getElementById('regName')?.value;
+                const email = document.getElementById('regEmail')?.value;
+                const password = document.getElementById('regPassword')?.value;
+                const workshopName = document.getElementById('regWorkshop')?.value;
+                const captchaText = document.getElementById('registerCaptchaInput')?.value;
+                const captchaId = document.getElementById('registerCaptchaId')?.value;
+                
+                await this.register(name, email, password, workshopName, captchaText, captchaId);
+            });
+            
+            // Carrega CAPTCHA do registro
+            this.loadCaptcha('register');
+            
+            const refreshBtn = document.getElementById('refreshRegisterCaptcha');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => this.refreshCaptcha('register'));
+            }
+        }
+        
+        // Password visibility toggle
+        document.querySelectorAll('.password-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const fieldId = btn.getAttribute('data-field') || 
+                               (btn.previousElementSibling?.id) ||
+                               btn.parentElement?.querySelector('input')?.id;
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    const icon = btn.querySelector('i');
+                    if (field.type === 'password') {
+                        field.type = 'text';
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-eye-slash');
+                    } else {
+                        field.type = 'password';
+                        icon.classList.remove('fa-eye-slash');
+                        icon.classList.add('fa-eye');
+                    }
+                }
+            });
+        });
     }
 }
 
-// ==================== INICIALIZAÇÃO GLOBAL ====================
-document.addEventListener('DOMContentLoaded', () => {
-    window.appAuth = new Auth();
-});
+// Instância global
+window.appAuth = new Auth();
 
-// Funções globais
-window.isAdmin = () => window.appAuth?.isAdmin() || false;
-window.isPremium = () => window.appAuth?.isPremium() || false;
-window.getCreditsDisplay = () => window.appAuth?.getCreditsDisplay() || '0';
-window.getCurrentUser = () => window.appAuth?.getCurrentUser() || {};
-window.logout = () => window.appAuth?.logout();
-window.refreshToken = () => window.appAuth?.refreshToken();
+// Exporta funções úteis
+window.getAuth = () => window.appAuth;
+window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
 
-console.log('✅ auth.js carregado - Versão com CAPTCHA Matemático');
-console.log('   🧮 Desafio: soma simples (ex: 5 + 3 = ?)');
-console.log('   📱 Otimizado para mobile com inputmode="numeric"');
-console.log('   ⚡ Geração ultrarrápida com SVG');
+console.log('✅ auth.js carregado - CAPTCHA de números rabiscados ativo');

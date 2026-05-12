@@ -1,9 +1,11 @@
-# backend/security.py - VERSÃO COM CAPTCHA MATEMÁTICO (SOMA SIMPLES)
+# backend/security.py - VERSÃO COM CAPTCHA SIMPLES (REESCREVER NÚMEROS)
 """
-MÓDULO CENTRAL DE SEGURANÇA
-Ciclo de vida do CAPTCHA: 2 minutos, uso único
-Refresh Token: Sistema completo de blacklist e invalidação
-CAPTCHA: Desafio matemático de soma simples (ex: 5 + 3 = ?)
+MÓDULO CENTRAL DE SEGURANÇA - VERSÃO ATUALIZADA
+- PoW (Proof of Work) com Redis (apenas para upload)
+- CAPTCHA Simples de Números (reescrever o que aparece)
+- JWT com blacklist e refresh token
+- Rate limiting adaptativo
+- Argon2 para hash de senhas
 """
 
 from datetime import datetime, timedelta
@@ -18,7 +20,7 @@ import string
 import time
 import os
 import asyncio
-from threading import Timer
+from functools import lru_cache
 
 # Argon2
 from argon2 import PasswordHasher
@@ -34,6 +36,14 @@ from fastapi.responses import JSONResponse, Response
 
 # Redis
 import redis.asyncio as redis
+
+# PIL para geração de imagem com distorção
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logging.warning("⚠️ PIL não disponível. Instale: pip install Pillow")
 
 # Configurações
 from backend.config.settings import settings
@@ -52,12 +62,13 @@ oauth2_scheme = OAuth2PasswordBearer(
     scheme_name="JWT"
 )
 
+
 # ==============================================
 # 1. ARGON2 - HASH DE SENHA
 # ==============================================
 
 class Argon2Hasher:
-    """Hash de senha usando Argon2id"""
+    """Hash de senha usando Argon2id - VERSÃO SEGURA"""
     
     def __init__(self):
         self.ph = PasswordHasher(
@@ -67,7 +78,7 @@ class Argon2Hasher:
             hash_len=32,
             salt_len=16
         )
-        logger.info(f"✅ Argon2 inicializado (time_cost={settings.ARGON2_TIME_COST})")
+        logger.info(f"✅ Argon2 inicializado - time_cost={settings.ARGON2_TIME_COST}")
     
     def hash_password(self, password: str) -> str:
         if not password or len(password) < 6:
@@ -106,8 +117,9 @@ class Argon2Hasher:
         except:
             return False
 
+
 # ==============================================
-# 2. JWT COMPLETO COM REFRESH TOKEN
+# 2. JWT COMPLETO COM REDIS E BLACKLIST
 # ==============================================
 
 class JWTManager:
@@ -123,12 +135,17 @@ class JWTManager:
         self.memory_blacklist = set()
         self._redis_initialized = False
         
-        # Cache de tokens recentemente blacklistados
         self._pending_blacklist = {}
         self._blacklist_lock = asyncio.Lock()
+        
+        self._token_cache = {}
+        self._token_cache_ttl = 60
+        self._last_cache_cleanup = time.time()
+        self._cache_cleanup_interval = 300
+        
+        logger.info("✅ JWT Manager inicializado")
     
     async def init_redis(self):
-        """Inicializa Redis de forma assíncrona (chamar no startup)"""
         if self._redis_initialized:
             return
         
@@ -237,7 +254,34 @@ class JWTManager:
         
         return payload
     
+    def _cleanup_token_cache(self):
+        now = time.time()
+        
+        if now - self._last_cache_cleanup < self._cache_cleanup_interval:
+            return
+        
+        expired = [k for k, v in self._token_cache.items() if now - v["timestamp"] > self._token_cache_ttl]
+        for k in expired:
+            del self._token_cache[k]
+        
+        if len(self._token_cache) > 1000:
+            sorted_items = sorted(self._token_cache.items(), key=lambda x: x[1]["timestamp"])
+            to_remove = int(len(sorted_items) * 0.2)
+            for k, _ in sorted_items[:to_remove]:
+                del self._token_cache[k]
+            logger.info(f"🧹 Limpeza emergencial cache tokens: {to_remove} removidos")
+        
+        self._last_cache_cleanup = now
+    
     async def verify_token_async(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+        self._cleanup_token_cache()
+        
+        token_hash = hashlib.md5(token.encode()).hexdigest()
+        if token_hash in self._token_cache:
+            cached = self._token_cache[token_hash]
+            if time.time() - cached["timestamp"] < self._token_cache_ttl:
+                return cached["payload"]
+        
         payload = self.verify_token(token, token_type)
         
         if not payload:
@@ -248,10 +292,15 @@ class JWTManager:
             logger.warning(f"🔴 Token {jti[:8]}... está na blacklist")
             return None
         
+        if len(self._token_cache) < 2000:
+            self._token_cache[token_hash] = {
+                "payload": payload,
+                "timestamp": time.time()
+            }
+        
         return payload
     
     async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
-        """Refresh token com blacklist do token antigo"""
         from backend import crud
         
         old_payload = await self.verify_token_async(refresh_token, "refresh")
@@ -275,7 +324,6 @@ class JWTManager:
             logger.warning(f"Refresh token não corresponde ao banco para {email}")
             return None
         
-        # Blacklist do refresh token antigo
         old_jti = old_payload.get("jti")
         if old_jti:
             exp = old_payload.get("exp", 0)
@@ -283,7 +331,6 @@ class JWTManager:
             await self.blacklist_token(old_jti, remaining)
             logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
         
-        # Blacklist do access token antigo
         if old_access_token:
             old_access_payload = self.verify_token(old_access_token, "access")
             if old_access_payload:
@@ -293,7 +340,6 @@ class JWTManager:
                     await self.blacklist_token(old_access_jti, remaining)
                     logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
         
-        # Gerar novos tokens
         user_data = {
             "sub": user.email,
             "email": user.email,
@@ -306,10 +352,8 @@ class JWTManager:
         
         new_tokens = self.create_token_pair(user_data)
         
-        # Revogar token antigo no banco
         user.revoke_refresh_token()
         
-        # Salvar novo refresh token
         user.set_refresh_token(
             new_tokens["refresh_token"], 
             new_tokens["refresh_jti"],
@@ -328,10 +372,8 @@ class JWTManager:
         }
     
     async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
-        """Logout com blacklist de ambos tokens"""
         from backend import crud
         
-        # Blacklist do refresh token
         refresh_payload = await self.verify_token_async(refresh_token, "refresh")
         
         if refresh_payload:
@@ -348,7 +390,6 @@ class JWTManager:
                 await self.blacklist_token(jti, remaining)
                 logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
         
-        # Blacklist do access token
         if access_token:
             access_payload = self.verify_token(access_token, "access")
             if access_payload:
@@ -365,7 +406,6 @@ class JWTManager:
         return True
     
     async def blacklist_token(self, jti: str, expire_in: int):
-        """Adiciona token à blacklist"""
         if not jti:
             return
         
@@ -390,7 +430,6 @@ class JWTManager:
                 self._pending_blacklist.pop(jti, None)
     
     async def is_token_blacklisted(self, jti: str) -> bool:
-        """Verifica se token está na blacklist"""
         if not jti:
             return False
         
@@ -421,53 +460,297 @@ class JWTManager:
 
 
 # ==============================================
-# 3. CAPTCHA MANAGER - VERSÃO MATEMÁTICA (SOMA SIMPLES)
+# 3. PROOF OF WORK MANAGER (APENAS PARA UPLOAD)
+# ==============================================
+
+class PoWManager:
+    """Proof of Work Manager - Apenas para upload de arquivos"""
+    
+    def __init__(self):
+        self.default_complexity = 4
+        self.mobile_complexity = 3
+        
+        self.redis_client = None
+        self._redis_initialized = False
+        
+        self._memory_cache = {}
+        self._max_memory_cache = 1000
+        self._last_memory_cleanup = time.time()
+        
+        self._challenge_requests = {}
+        self._max_challenges_per_minute = 10
+        self._cache_lock = asyncio.Lock()
+        
+        logger.info("⚡ PoW Manager inicializado (apenas para upload)")
+    
+    async def init_redis(self):
+        if self._redis_initialized:
+            return
+        
+        try:
+            self.redis_client = redis.from_url(
+                f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                retry_on_timeout=True
+            )
+            await self.redis_client.ping()
+            self._redis_initialized = True
+            logger.info("✅ Redis configurado para PoW Manager")
+        except Exception as e:
+            logger.warning(f"⚠️ Redis não disponível para PoW: {e}")
+            self.redis_client = None
+            self._redis_initialized = True
+    
+    def _get_redis_key(self, prefix: str) -> str:
+        return f"pow:challenge:{prefix}"
+    
+    async def _check_rate_limit(self, client_ip: str) -> bool:
+        now = time.time()
+        
+        if client_ip in self._challenge_requests:
+            self._challenge_requests[client_ip] = [
+                t for t in self._challenge_requests[client_ip] if now - t < 60
+            ]
+        
+        current_count = len(self._challenge_requests.get(client_ip, []))
+        if current_count >= self._max_challenges_per_minute:
+            return False
+        
+        if client_ip not in self._challenge_requests:
+            self._challenge_requests[client_ip] = []
+        self._challenge_requests[client_ip].append(now)
+        
+        if len(self._challenge_requests) > 1000:
+            self._challenge_requests = {
+                ip: timestamps for ip, timestamps in self._challenge_requests.items()
+                if any(now - t < 300 for t in timestamps)
+            }
+        
+        return True
+    
+    async def get_challenge(self, client_ip: str, complexity: int = None) -> dict:
+        if complexity is None:
+            complexity = self.default_complexity
+        
+        if not await self._check_rate_limit(client_ip):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=429,
+                detail="Muitos desafios PoW solicitados. Aguarde um momento."
+            )
+        
+        prefix = secrets.token_hex(8)
+        expires_in = 120
+        created_at = time.time()
+        
+        if self.redis_client:
+            try:
+                redis_key = self._get_redis_key(prefix)
+                redis_value = f"{complexity}:{created_at + expires_in}:0:{created_at}"
+                await self.redis_client.setex(redis_key, expires_in, redis_value)
+                
+                return {
+                    "prefix": prefix,
+                    "complexity": complexity,
+                    "timestamp": int(created_at),
+                    "expires_in": expires_in
+                }
+            except Exception as e:
+                logger.error(f"Erro ao salvar PoW no Redis: {e}")
+        
+        async with self._cache_lock:
+            self._cleanup_memory_cache()
+            
+            if len(self._memory_cache) >= self._max_memory_cache:
+                logger.warning("⚠️ PoW cache em memória cheio")
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail="Servidor sobrecarregado. Tente novamente."
+                )
+            
+            self._memory_cache[prefix] = {
+                "complexity": complexity,
+                "expires_at": created_at + expires_in,
+                "created_at": created_at,
+                "used": False,
+                "ip": client_ip
+            }
+            
+            return {
+                "prefix": prefix,
+                "complexity": complexity,
+                "timestamp": int(created_at),
+                "expires_in": expires_in
+            }
+    
+    async def verify_solution(self, prefix: str, nonce: str, complexity: int, client_ip: str) -> bool:
+        challenge_data = None
+        used_redis = False
+        
+        if self.redis_client:
+            try:
+                redis_key = self._get_redis_key(prefix)
+                value = await self.redis_client.get(redis_key)
+                
+                if value:
+                    used_redis = True
+                    parts = value.split(":")
+                    if len(parts) >= 4:
+                        stored_complexity = int(parts[0])
+                        expires_at = float(parts[1])
+                        used = parts[2] == "1"
+                        
+                        if used:
+                            return False
+                        
+                        if time.time() > expires_at:
+                            await self.redis_client.delete(redis_key)
+                            return False
+                        
+                        if stored_complexity != complexity:
+                            return False
+                        
+                        challenge_data = {"complexity": stored_complexity}
+            except Exception as e:
+                logger.error(f"Erro ao verificar PoW no Redis: {e}")
+        
+        if not challenge_data:
+            async with self._cache_lock:
+                if prefix not in self._memory_cache:
+                    return False
+                
+                cached = self._memory_cache[prefix]
+                
+                if cached.get("used"):
+                    return False
+                
+                if time.time() > cached.get("expires_at", 0):
+                    del self._memory_cache[prefix]
+                    return False
+                
+                if cached.get("complexity") != complexity:
+                    return False
+                
+                challenge_data = cached
+        
+        is_valid = self._validate_pow(prefix, nonce, complexity)
+        
+        if is_valid:
+            if used_redis and self.redis_client:
+                try:
+                    redis_key = self._get_redis_key(prefix)
+                    current = await self.redis_client.get(redis_key)
+                    if current:
+                        parts = current.split(":")
+                        parts[2] = "1"
+                        ttl = await self.redis_client.ttl(redis_key)
+                        if ttl > 0:
+                            await self.redis_client.setex(redis_key, ttl, ":".join(parts))
+                except Exception as e:
+                    logger.error(f"Erro ao marcar PoW como usado: {e}")
+            else:
+                async with self._cache_lock:
+                    if prefix in self._memory_cache:
+                        self._memory_cache[prefix]["used"] = True
+            
+            logger.info(f"✅ PoW válido para {prefix[:8]}...")
+        else:
+            logger.warning(f"❌ PoW inválido para {prefix[:8]}...")
+        
+        return is_valid
+    
+    def _validate_pow(self, prefix: str, nonce: str, complexity: int) -> bool:
+        import hashlib
+        
+        data = f"{prefix}{nonce}".encode()
+        hash_result = hashlib.sha256(data).hexdigest()
+        
+        return hash_result.startswith('0')
+    
+    def _cleanup_memory_cache(self):
+        now = time.time()
+        
+        if now - self._last_memory_cleanup < 60:
+            return
+        
+        expired = [k for k, v in self._memory_cache.items() if now > v.get("expires_at", 0)]
+        for k in expired:
+            del self._memory_cache[k]
+        
+        if len(self._memory_cache) > self._max_memory_cache:
+            sorted_items = sorted(
+                self._memory_cache.items(),
+                key=lambda x: x[1].get("created_at", 0)
+            )
+            to_remove = len(self._memory_cache) - self._max_memory_cache
+            for k, _ in sorted_items[:to_remove]:
+                del self._memory_cache[k]
+            logger.warning(f"⚠️ PoW cache limpo: {to_remove} removidos")
+        
+        self._last_memory_cleanup = now
+    
+    async def cleanup_expired(self):
+        while True:
+            await asyncio.sleep(300)
+            now = time.time()
+            expired_ips = [
+                ip for ip, timestamps in self._challenge_requests.items()
+                if not any(now - t < 300 for t in timestamps)
+            ]
+            for ip in expired_ips:
+                del self._challenge_requests[ip]
+
+
+# ==============================================
+# 4. CAPTCHA SIMPLES - REESCREVA OS NÚMEROS
 # ==============================================
 
 class CaptchaSession:
-    """Representa uma sessão de CAPTCHA para um usuário/IP"""
+    """Sessão de CAPTCHA"""
     
-    def __init__(self, captcha_id: str, correct_answer: str, challenge_text: str, ip: str, expires_at: float):
+    __slots__ = ['captcha_id', 'correct_code', 'ip', 'expires_at', 'used', 'created_at']
+    
+    def __init__(self, captcha_id: str, correct_code: str, ip: str, expires_at: float):
         self.captcha_id = captcha_id
-        self.correct_answer = correct_answer  # Armazena o resultado correto (ex: "8")
-        self.challenge_text = challenge_text  # Armazena o desafio (ex: "5 + 3 = ?")
+        self.correct_code = correct_code
         self.ip = ip
         self.expires_at = expires_at
         self.used = False
         self.created_at = time.time()
-        self.timer = None
     
     def is_expired(self) -> bool:
         return time.time() > self.expires_at
     
     def time_remaining(self) -> int:
         return max(0, int(self.expires_at - time.time()))
-    
-    def cancel_timer(self):
-        if self.timer:
-            self.timer.cancel()
-            self.timer = None
 
 
 class CaptchaStore:
-    """Armazenamento de CAPTCHAs matemáticos com ciclo de vida completo"""
+    """Armazenamento de CAPTCHAs"""
     
     def __init__(self):
-        self._store = {}
-        self._user_sessions = {}
+        self._store: Dict[str, CaptchaSession] = {}
+        self._user_sessions: Dict[str, str] = {}
         self._cleanup_interval = 60
         self._last_cleanup = time.time()
-        self._cleanup_task = None
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._max_store_size = 5000
+        self._store_lock = asyncio.Lock()
+        
+        logger.info("✅ CaptchaStore inicializado")
     
     async def start_cleanup_loop(self):
         if self._cleanup_task is not None:
             return
         
         async def cleanup_loop():
-            logger.info("🧹 Loop de limpeza do CAPTCHA matemático iniciado")
+            logger.info("🧹 Loop de limpeza do CAPTCHA iniciado")
             while True:
                 await asyncio.sleep(self._cleanup_interval)
-                self._cleanup()
+                await self._cleanup_async()
         
         self._cleanup_task = asyncio.create_task(cleanup_loop())
         logger.info("✅ Cleanup loop do CAPTCHA agendado")
@@ -475,123 +758,111 @@ class CaptchaStore:
     async def stop_cleanup_loop(self):
         if self._cleanup_task:
             self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
             self._cleanup_task = None
             logger.info("🛑 Cleanup loop do CAPTCHA parado")
     
     def _get_user_key(self, ip: str, session_type: str = "login") -> str:
         return f"{session_type}:{ip}"
     
-    def _cleanup(self):
-        now = time.time()
-        expired = []
-        
-        for cid, session in self._store.items():
-            if session.is_expired():
-                expired.append(cid)
-                session.cancel_timer()
-        
-        for cid in expired:
-            for user_key, session_cid in list(self._user_sessions.items()):
-                if session_cid == cid:
-                    del self._user_sessions[user_key]
-            del self._store[cid]
-        
-        if expired:
-            logger.info(f"🧹 {len(expired)} CAPTCHAS matemáticos expirados removidos")
-        
-        self._last_cleanup = now
+    async def _cleanup_async(self):
+        async with self._store_lock:
+            now = time.time()
+            expired = [cid for cid, s in self._store.items() if s.is_expired()]
+            
+            for cid in expired:
+                for user_key, session_cid in list(self._user_sessions.items()):
+                    if session_cid == cid:
+                        del self._user_sessions[user_key]
+                del self._store[cid]
+            
+            if expired:
+                logger.info(f"🧹 {len(expired)} CAPTCHAs expirados removidos")
+            
+            self._last_cleanup = now
     
-    def _schedule_expiration(self, captcha_id: str, seconds: int):
-        def expire_captcha():
-            if captcha_id in self._store:
-                session = self._store[captcha_id]
-                if not session.used:
-                    logger.info(f"⏰ CAPTCHA matemático {captcha_id[:8]}... expirou automaticamente após {seconds}s")
+    async def add(self, captcha_id: str, correct_code: str, ip: str, session_type: str = "login") -> str:
+        async with self._store_lock:
+            now = time.time()
+            
+            if now - self._last_cleanup > self._cleanup_interval:
+                await self._cleanup_async()
+            
+            if len(self._store) >= self._max_store_size:
+                logger.warning(f"⚠️ CaptchaStore cheio ({len(self._store)} itens)")
+                sorted_items = sorted(self._store.items(), key=lambda x: x[1].created_at)
+                to_remove = int(len(sorted_items) * 0.1)
+                for cid, _ in sorted_items[:to_remove]:
                     for user_key, session_cid in list(self._user_sessions.items()):
-                        if session_cid == captcha_id:
+                        if session_cid == cid:
                             del self._user_sessions[user_key]
-                    del self._store[captcha_id]
-        
-        timer = Timer(seconds, expire_captcha)
-        timer.daemon = True
-        timer.start()
-        
-        if captcha_id in self._store:
-            self._store[captcha_id].timer = timer
-    
-    def add(self, captcha_id: str, challenge_text: str, correct_answer: str, ip: str, session_type: str = "login") -> str:
-        """Adiciona um novo desafio matemático"""
-        if time.time() - self._last_cleanup > self._cleanup_interval:
-            self._cleanup()
-        
-        user_key = self._get_user_key(ip, session_type)
-        
-        # Remove CAPTCHA anterior do mesmo usuário
-        if user_key in self._user_sessions:
-            old_captcha_id = self._user_sessions[user_key]
-            if old_captcha_id in self._store:
-                old_session = self._store[old_captcha_id]
-                old_session.cancel_timer()
-                del self._store[old_captcha_id]
-                logger.info(f"🔄 CAPTCHA anterior {old_captcha_id[:8]}... substituído")
-        
-        expires_at = time.time() + 120  # 2 minutos
-        session = CaptchaSession(captcha_id, correct_answer, challenge_text, ip, expires_at)
-        
-        self._store[captcha_id] = session
-        self._user_sessions[user_key] = captcha_id
-        
-        self._schedule_expiration(captcha_id, 120)
-        
-        logger.info(f"🧮 CAPTCHA matemático criado para IP {ip}: {challenge_text} = {correct_answer} (expira em 2min)")
-        
-        return captcha_id
-    
-    def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
-        """Valida a resposta do desafio matemático"""
-        if time.time() - self._last_cleanup > self._cleanup_interval:
-            self._cleanup()
-        
-        if captcha_id not in self._store:
-            return False, "CAPTCHA não encontrado ou já expirou"
-        
-        session = self._store[captcha_id]
-        user_key = self._get_user_key(ip, session_type)
-        
-        if session.is_expired():
-            if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
+                    del self._store[cid]
+                logger.info(f"🧹 Limpeza emergencial: {to_remove} CAPTCHAs removidos")
+            
+            user_key = self._get_user_key(ip, session_type)
+            
+            if user_key in self._user_sessions:
+                old_id = self._user_sessions[user_key]
+                if old_id in self._store:
+                    del self._store[old_id]
                 del self._user_sessions[user_key]
-            del self._store[captcha_id]
-            return False, "Desafio expirado (2 minutos)"
-        
-        if session.used:
-            if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
+                logger.info(f"🔄 CAPTCHA anterior {old_id[:8]}... substituído")
+            
+            expires_at = time.time() + 120
+            session = CaptchaSession(captcha_id, correct_code, ip, expires_at)
+            
+            self._store[captcha_id] = session
+            self._user_sessions[user_key] = captcha_id
+            
+            logger.info(f"🔢 CAPTCHA criado para IP {ip}: código = {correct_code}")
+            
+            return captcha_id
+    
+    async def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
+        async with self._store_lock:
+            if time.time() - self._last_cleanup > self._cleanup_interval:
+                await self._cleanup_async()
+            
+            if captcha_id not in self._store:
+                return False, "CAPTCHA não encontrado ou já expirou"
+            
+            session = self._store[captcha_id]
+            user_key = self._get_user_key(ip, session_type)
+            
+            if session.is_expired():
+                if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
+                    del self._user_sessions[user_key]
+                del self._store[captcha_id]
+                return False, "Desafio expirado (2 minutos)"
+            
+            if session.used:
+                if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
+                    del self._user_sessions[user_key]
+                del self._store[captcha_id]
+                return False, "Desafio já foi utilizado"
+            
+            if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
+                logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
+                return False, "Desafio não pertence à sua sessão atual"
+            
+            user_answer_clean = user_answer.strip().replace(" ", "")
+            
+            if user_answer_clean != session.correct_code:
+                return False, f"Resposta incorreta! O código correto é {session.correct_code}"
+            
+            session.used = True
+            
+            if user_key in self._user_sessions:
                 del self._user_sessions[user_key]
+            
             del self._store[captcha_id]
-            return False, "Desafio já foi utilizado"
-        
-        if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
-            logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
-            return False, "Desafio não pertence à sua sessão atual"
-        
-        # Validação da resposta matemática
-        user_answer_clean = user_answer.strip()
-        
-        if user_answer_clean != session.correct_answer:
-            return False, f"Resposta incorreta! {session.challenge_text} não é {user_answer_clean}"
-        
-        # Sucesso - marcar como usado e remover
-        session.used = True
-        session.cancel_timer()
-        
-        if user_key in self._user_sessions:
-            del self._user_sessions[user_key]
-        
-        del self._store[captcha_id]
-        
-        logger.info(f"✅ CAPTCHA matemático {captcha_id[:8]}... validado com sucesso! Resposta: {user_answer_clean}")
-        
-        return True, "Desafio resolvido corretamente"
+            
+            logger.info(f"✅ CAPTCHA {captcha_id[:8]}... validado com sucesso!")
+            
+            return True, "Código correto!"
     
     def get_active_captcha_for_user(self, ip: str, session_type: str = "login") -> Optional[str]:
         user_key = self._get_user_key(ip, session_type)
@@ -605,40 +876,37 @@ class CaptchaStore:
         return None
     
     def get_stats(self) -> Dict[str, Any]:
-        self._cleanup()
         return {
             "total_active": len(self._store),
             "total_sessions": len(self._user_sessions),
-            "captcha_type": "mathematical_sum",
-            "captchas": [
-                {
-                    "id": cid[:8] + "...",
-                    "challenge": session.challenge_text,
-                    "ip": session.ip,
-                    "expires_in": session.time_remaining(),
-                    "used": session.used,
-                    "created_at": datetime.fromtimestamp(session.created_at).isoformat()
-                }
-                for cid, session in self._store.items()
-            ]
+            "max_size": self._max_store_size,
+            "captcha_type": "simple_numbers"
         }
 
 
 class CaptchaManager:
-    """Gerenciador de CAPTCHA MATEMÁTICO - Desafio de soma simples (ex: 5 + 3 = ?)"""
+    """
+    Gerenciador de CAPTCHA SIMPLES - Reescreva os números
+    Gera imagem com números distorcidos/rabiscados
+    """
     
     def __init__(self):
         self.store = CaptchaStore()
-        self._dev_mode = settings.DEBUG
-        logger.info("🧮 CAPTCHA Manager MATEMÁTICO inicializado (soma simples de 1+1 até 9+9)")
+        self._dev_mode = getattr(settings, 'DEBUG', False)
+        
+        # Cache de imagens
+        self._image_cache: Dict[str, Tuple[float, bytes]] = {}
+        self._cache_ttl = 60
+        self._max_cache = 100
+        
+        logger.info("🔢 CAPTCHA Manager inicializado (números rabiscados)")
         if self._dev_mode:
-            logger.info("   🔧 Modo DEV: resposta '9' aceita automaticamente (para testes)")
+            logger.info("   🔧 Modo DEV: resposta '1234' aceita automaticamente")
     
     def _get_client_ip(self, request: Request) -> str:
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            ip = forwarded.split(",")[0].strip()
-            return ip
+            return forwarded.split(",")[0].strip()
         
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
@@ -651,225 +919,186 @@ class CaptchaManager:
         
         return client_ip
     
-    def generate_math_challenge(self) -> Tuple[str, str]:
-        """
-        Gera um desafio matemático de soma simples.
-        
-        Returns:
-            Tuple[str, str]: (pergunta, resposta_correta)
-            Exemplo: ("5 + 3 = ?", "8")
-        """
-        n1 = random.randint(1, 9)
-        n2 = random.randint(1, 9)
-        resultado = n1 + n2
-        pergunta = f"{n1} + {n2} = ?"
-        return pergunta, str(resultado)
+    def generate_number_code(self, length: int = 4) -> str:
+        """Gera código numérico aleatório"""
+        return ''.join(str(random.randint(0, 9)) for _ in range(length))
     
-    def _generate_svg_captcha(self, challenge_text: str) -> str:
+    def _draw_distorted_numbers(self, code: str, width: int = 280, height: int = 100) -> bytes:
         """
-        Gera SVG com o desafio matemático em destaque.
-        Design otimizado para mobile e fácil leitura.
+        Desenha números com distorção e efeito "rabiscado"
         """
-        # Configurações visuais
-        width = 260
-        height = 85
+        if not PIL_AVAILABLE:
+            # Fallback: gera SVG simples
+            return self._generate_svg_fallback(code, width, height)
         
-        # Cores aleatórias mas legíveis
-        gradients = [
-            ("#667eea", "#764ba2"),  # Roxo
-            ("#48bb78", "#38a169"),  # Verde
-            ("#4299e1", "#3182ce"),  # Azul
-            ("#ed8936", "#dd6b20"),  # Laranja
-            ("#e53e3e", "#c53030"),  # Vermelho
-        ]
-        grad1, grad2 = random.choice(gradients)
+        # Cria imagem com fundo gradiente
+        img = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(img)
         
-        # Efeitos de distorção (leves)
-        rotation = random.randint(-2, 2)
-        noise_density = random.randint(20, 40)
+        # Fundo com gradiente
+        for i in range(height):
+            r = int(102 + (i / height) * 100)
+            g = int(126 + (i / height) * 50)
+            b = int(234 - (i / height) * 100)
+            draw.line([(0, i), (width, i)], fill=(r, g, b))
         
-        # Escapar caracteres especiais
-        challenge_escaped = challenge_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Adiciona ruído (pontos aleatórios)
+        for _ in range(300):
+            x = random.randint(0, width)
+            y = random.randint(0, height)
+            draw.point((x, y), fill=(random.randint(0, 100), random.randint(0, 100), random.randint(0, 100)))
         
-        # Gerar ruído de fundo (pontos)
-        noise = []
-        for _ in range(noise_density):
-            nx = random.randint(10, width - 10)
-            ny = random.randint(10, height - 10)
-            noise.append(f'<circle cx="{nx}" cy="{ny}" r="1.5" fill="rgba(255,255,255,0.25)"/>')
+        # Linhas de distorção (rabiscos)
+        for _ in range(15):
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
+            x2 = random.randint(0, width)
+            y2 = random.randint(0, height)
+            draw.line([(x1, y1), (x2, y2)], fill=(random.randint(100, 200), random.randint(100, 200), random.randint(100, 200)), width=2)
         
-        # Linhas de distorção
-        lines = []
-        for _ in range(random.randint(2, 3)):
-            x1 = random.randint(5, width // 2)
-            y1 = random.randint(10, height - 10)
-            x2 = random.randint(width // 2, width - 5)
-            y2 = random.randint(10, height - 10)
-            lines.append(
-                f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
-                f'stroke="rgba(255,255,255,0.2)" stroke-width="{random.randint(1, 2)}"/>'
-            )
+        # Curvas de distorção
+        for _ in range(5):
+            points = []
+            start_x = random.randint(0, width // 4)
+            start_y = random.randint(0, height)
+            for i in range(5):
+                points.append((start_x + i * (width // 6), start_y + random.randint(-15, 15)))
+            draw.line(points, fill=(random.randint(80, 150), random.randint(80, 150), random.randint(80, 150)), width=2)
         
-        # SVG completo com o desafio matemático
+        # Desenha cada número com distorção individual
+        try:
+            # Tenta usar uma fonte
+            font_size = 48
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+            except:
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+        except:
+            font = ImageFont.load_default()
+        
+        # Calcula posições
+        char_width = width // len(code)
+        for i, char in enumerate(code):
+            # Posição com deslocamento aleatório
+            x = (i * char_width) + random.randint(-8, 8) + 15
+            y = height // 2 + random.randint(-12, 12) - 10
+            
+            # Cores aleatórias para cada número
+            color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))
+            
+            # Desenha o número
+            draw.text((x, y), char, fill=color, font=font)
+            
+            # Adiciona sombra/contorno
+            draw.text((x+1, y+1), char, fill=(0, 0, 0), font=font)
+            draw.text((x, y), char, fill=color, font=font)
+        
+        # Aplica filtro de desfoque para suavizar
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.8))
+        
+        # Converte para bytes
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        
+        return img_bytes.getvalue()
+    
+    def _generate_svg_fallback(self, code: str, width: int = 280, height: int = 100) -> bytes:
+        """Gera SVG com números distorcidos (fallback sem PIL)"""
+        
+        # Cria SVG com números
+        numbers_html = ' '.join(code)
+        
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:{grad1};stop-opacity:1" />
-      <stop offset="100%" style="stop-color:{grad2};stop-opacity:1" />
+      <stop offset="0%" stop-color="#667eea" />
+      <stop offset="100%" stop-color="#764ba2" />
     </linearGradient>
-    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:rgba(255,255,255,0.15)" />
-      <stop offset="100%" style="stop-color:rgba(255,255,255,0)" />
-    </linearGradient>
+    <filter id="distort">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
   </defs>
   
-  <!-- Fundo gradiente -->
-  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="14" ry="14"/>
-  
-  <!-- Efeito de brilho -->
-  <rect width="{width}" height="{height}" fill="url(#shine)" rx="14" ry="14"/>
-  
-  <!-- Ruído visual -->
-  {''.join(noise)}
+  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="16" ry="16"/>
   
   <!-- Linhas de distorção -->
-  {''.join(lines)}
+  <g stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none">
+    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
+    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
+    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
+  </g>
   
-  <!-- Círculos decorativos -->
-  <circle cx="{width - 20}" cy="20" r="15" fill="rgba(255,255,255,0.08)"/>
-  <circle cx="20" cy="{height - 20}" r="10" fill="rgba(255,255,255,0.08)"/>
-  <circle cx="{width // 2}" cy="15" r="8" fill="rgba(255,255,255,0.06)"/>
-  
-  <!-- Texto do desafio matemático -->
+  <!-- Números -->
   <text x="{width // 2}" y="{height // 2 + 8}" 
-        font-family="'Courier New', 'Consolas', monospace" 
-        font-size="34" 
-        font-weight="bold" 
-        fill="white" 
-        text-anchor="middle"
-        letter-spacing="3"
-        dominant-baseline="middle"
-        transform="rotate({rotation}, {width // 2}, {height // 2})">
-    {challenge_escaped}
+        font-family="'Courier New', monospace" font-size="52" font-weight="bold" 
+        fill="white" text-anchor="middle" dominant-baseline="middle"
+        letter-spacing="12"
+        filter="url(#distort)">
+    {code}
   </text>
   
-  <!-- Borda sutil -->
-  <rect width="{width - 2}" height="{height - 2}" x="1" y="1" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" rx="13" ry="13"/>
+  <!-- Bordas decorativas -->
+  <rect x="2" y="2" width="{width-4}" height="{height-4}" fill="none" 
+        stroke="rgba(255,255,255,0.2)" stroke-width="2" rx="14" ry="14"/>
 </svg>'''
         
-        return svg
+        return svg.encode('utf-8')
     
-    def generate_captcha_image(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """
-        Gera CAPTCHA MATEMÁTICO ultrarrápido usando SVG.
-        - Desafio: soma simples (ex: "5 + 3 = ?")
-        - Resposta: resultado numérico (ex: "8")
-        - Geração em menos de 5ms
-        """
+    async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
+        """Gera imagem CAPTCHA com números distorcidos"""
         client_ip = self._get_client_ip(request)
         
         try:
-            # Gerar desafio matemático
-            challenge_text, correct_answer = self.generate_math_challenge()
+            # Gera código de 4 números
+            code = self.generate_number_code(4)
             
-            # Criar SVG com o desafio
-            svg = self._generate_svg_captcha(challenge_text)
+            # Desenha imagem com distorção
+            img_bytes = self._draw_distorted_numbers(code)
             
-            # Converter para bytes
-            img_bytes = svg.encode('utf-8')
+            # Gera ID único
+            captcha_id = f"captcha_{secrets.token_urlsafe(12)}_{int(time.time())}"
             
-            # Gerar ID único
-            captcha_id = f"math_{secrets.token_urlsafe(12)}_{int(time.time())}"
+            # Armazena no cache
+            await self.store.add(captcha_id, code, client_ip, session_type)
             
-            # Armazenar no store (com a pergunta e resposta)
-            self.store.add(captcha_id, challenge_text, correct_answer, client_ip, session_type)
-            
-            logger.info(f"🧮 CAPTCHA matemático gerado para IP {client_ip}: {challenge_text} = {correct_answer}")
+            logger.debug(f"🔢 CAPTCHA gerado: {code} para IP {client_ip}")
             
             return img_bytes, captcha_id
             
         except Exception as e:
-            logger.error(f"❌ Erro ao gerar CAPTCHA matemático: {e}")
-            # Fallback em caso de erro
-            return self._generate_fallback_captcha(client_ip, session_type)
+            logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
+            # Fallback: código simples
+            code = "1234"
+            svg = self._generate_svg_fallback(code)
+            captcha_id = f"captcha_fallback_{secrets.token_urlsafe(8)}_{int(time.time())}"
+            await self.store.add(captcha_id, code, client_ip, session_type)
+            return svg, captcha_id
     
-    def _generate_fallback_captcha(self, ip: str, session_type: str) -> Tuple[bytes, str]:
-        """Fallback simples em caso de erro (nunca deve acontecer)"""
-        # Gerar desafio simples
-        n1 = random.randint(1, 5)
-        n2 = random.randint(1, 5)
-        resultado = n1 + n2
-        challenge = f"{n1} + {n2} = ?"
-        
-        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="240" height="70">
-            <rect width="240" height="70" fill="#667eea" rx="12" ry="12"/>
-            <text x="120" y="45" font-family="monospace" font-size="32" fill="white" text-anchor="middle" font-weight="bold">{challenge}</text>
-            <rect x="2" y="2" width="236" height="66" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" rx="10" ry="10"/>
-        </svg>'''
-        
-        captcha_id = f"math_fallback_{secrets.token_urlsafe(8)}_{int(time.time())}"
-        self.store.add(captcha_id, challenge, str(resultado), ip, session_type)
-        
-        logger.info(f"📸 CAPTCHA matemático fallback gerado para IP {ip}: {challenge} = {resultado}")
-        
-        return svg.encode('utf-8'), captcha_id
-    
-    def validate_captcha(self, captcha_id: str, captcha_text: str, request: Request, session_type: str = "login") -> bool:
-        """
-        Valida a resposta do CAPTCHA matemático.
-        - Verifica se a resposta do usuário é o resultado correto da soma
-        - Consumo único (remove após uso)
-        - Expiração automática após 2 minutos
-        """
+    async def validate_captcha_async(self, captcha_id: str, captcha_text: str,
+                                      request: Request, session_type: str = "login") -> bool:
+        """Valida resposta do CAPTCHA"""
         client_ip = self._get_client_ip(request)
         
-        logger.info(f"🔍 Validando CAPTCHA matemático - ID: {captcha_id[:12] if captcha_id else 'None'}..., IP: {client_ip}")
-        
-        # Modo DEV: aceitar '9' como resposta mágica
-        if self._dev_mode and captcha_text == "9":
-            logger.warning("🔧 Modo DEV: resposta '9' aceita automaticamente no CAPTCHA")
+        if self._dev_mode and captcha_text == "1234":
+            logger.warning("🔧 Modo DEV: resposta '1234' aceita")
             return True
         
-        # Limpar resposta (remover espaços)
-        user_answer_clean = captcha_text.strip()
-        
-        valid, message = self.store.get_and_validate(captcha_id, user_answer_clean, client_ip, session_type)
+        valid, message = await self.store.get_and_validate(
+            captcha_id, captcha_text.strip(), client_ip, session_type
+        )
         
         if valid:
-            logger.info(f"✅ CAPTCHA matemático válido para IP {client_ip} - Resposta: {user_answer_clean}")
+            logger.info(f"✅ CAPTCHA válido para IP {client_ip}")
         else:
-            logger.warning(f"❌ CAPTCHA matemático inválido para IP {client_ip}: {message}")
+            logger.warning(f"❌ CAPTCHA inválido para IP {client_ip}: {message}")
         
         return valid
-    
-    def validate_captcha_only(self, captcha_id: str, captcha_text: str, request: Request, session_type: str = "login") -> bool:
-        """
-        Valida CAPTCHA sem consumir (apenas verifica se é válido).
-        Útil para pré-validação antes de operações custosas.
-        """
-        client_ip = self._get_client_ip(request)
-        
-        if self._dev_mode and captcha_text == "9":
-            return True
-        
-        if captcha_id not in self.store._store:
-            return False
-        
-        session = self.store._store[captcha_id]
-        
-        if session.is_expired():
-            return False
-        
-        if session.used:
-            return False
-        
-        user_answer_clean = captcha_text.strip()
-        
-        if user_answer_clean != session.correct_answer:
-            return False
-        
-        return True
     
     def get_active_captcha(self, request: Request, session_type: str = "login") -> Optional[str]:
         client_ip = self._get_client_ip(request)
@@ -880,7 +1109,7 @@ class CaptchaManager:
 
 
 # ==============================================
-# 4. RATE LIMITER
+# 5. RATE LIMITER
 # ==============================================
 
 class RateLimiter:
@@ -891,6 +1120,9 @@ class RateLimiter:
         self.memory_cache = {}
         self._last_cleanup = datetime.now().timestamp()
         self._redis_initialized = False
+        self._max_memory_keys = 5000
+        
+        logger.info("✅ Rate Limiter inicializado")
     
     async def init_redis(self):
         if self._redis_initialized:
@@ -906,7 +1138,7 @@ class RateLimiter:
             self._redis_initialized = True
             logger.info("✅ Redis configurado para rate limiting")
         except Exception as e:
-            logger.warning(f"⚠️ Redis não disponível para rate limiting: {e}")
+            logger.warning(f"⚠️ Redis não disponível: {e}")
             self.redis_client = None
             self._redis_initialized = True
     
@@ -920,18 +1152,15 @@ class RateLimiter:
                 await pipe.expire(f"rate:{key}", window)
                 result = await pipe.execute()
                 
-                current = result[0]
-                
-                if current <= max_requests:
+                if result[0] <= max_requests:
                     return True
                 else:
-                    logger.warning(f"Rate limit excedido - {key}: {current}/{max_requests}")
+                    logger.warning(f"Rate limit excedido - {key}: {result[0]}/{max_requests}")
                     return False
-                
             except Exception as e:
-                logger.error(f"Erro no Redis rate limit: {e}")
+                logger.error(f"Erro no Redis: {e}")
         
-        if now - self._last_cleanup > 60:
+        if now - self._last_cleanup > 300:
             self._cleanup_memory_cache()
             self._last_cleanup = now
         
@@ -945,32 +1174,36 @@ class RateLimiter:
             return False
         
         self.memory_cache[key].append(now)
+        
+        if len(self.memory_cache) > self._max_memory_keys:
+            to_remove = int(len(self.memory_cache) * 0.2)
+            for k in list(self.memory_cache.keys())[:to_remove]:
+                del self.memory_cache[k]
+            logger.info(f"🧹 Limpeza rate limit cache: {to_remove} chaves")
+        
         return True
     
     def _cleanup_memory_cache(self):
         now = datetime.now().timestamp()
-        to_delete = []
-        
-        for key, timestamps in self.memory_cache.items():
+        for key, timestamps in list(self.memory_cache.items()):
             self.memory_cache[key] = [t for t in timestamps if t > now - 3600]
             if not self.memory_cache[key]:
-                to_delete.append(key)
-        
-        for key in to_delete:
-            del self.memory_cache[key]
+                del self.memory_cache[key]
 
 
 # ==============================================
-# 5. INSTÂNCIAS GLOBAIS
+# 6. INSTÂNCIAS GLOBAIS
 # ==============================================
 
 hasher = Argon2Hasher()
 jwt_manager = JWTManager()
 captcha_manager = CaptchaManager()
 rate_limiter = RateLimiter()
+pow_manager = PoWManager()
+
 
 # ==============================================
-# 6. DEPENDÊNCIAS FASTAPI
+# 7. DEPENDÊNCIAS FASTAPI
 # ==============================================
 
 async def get_current_user(
@@ -1013,13 +1246,11 @@ async def get_current_user(
             logger.warning(f"Usuário {email} não encontrado")
             raise credentials_exception
         
-        if user.is_admin:
-            logger.info(f"👑 Admin logado: {user.email}")
-        
         return user
     finally:
         if should_close:
             db.close()
+
 
 async def get_current_active_user(
     current_user = Depends(get_current_user)
@@ -1032,6 +1263,7 @@ async def get_current_active_user(
         )
     return current_user
 
+
 async def get_current_admin_user(
     current_user = Depends(get_current_active_user)
 ):
@@ -1042,6 +1274,7 @@ async def get_current_admin_user(
             detail="Acesso negado. Requer permissão de administrador."
         )
     return current_user
+
 
 async def get_current_manager_user(
     current_user = Depends(get_current_active_user)
@@ -1059,9 +1292,9 @@ async def get_current_manager_user(
         )
     return current_user
 
+
 async def check_captcha(request: Request, session_type: str = "login") -> bool:
     if captcha_manager._dev_mode:
-        logger.debug("🔧 Modo DEV: CAPTCHA ignorado")
         return True
     
     captcha_id = request.headers.get("X-Captcha-ID")
@@ -1076,38 +1309,41 @@ async def check_captcha(request: Request, session_type: str = "login") -> bool:
             pass
     
     if not captcha_id or not captcha_text:
-        logger.warning("CAPTCHA ID ou texto não fornecido")
         raise HTTPException(
             status_code=400,
             detail="CAPTCHA ID e resposta são obrigatórios"
         )
     
-    valid = captcha_manager.validate_captcha(captcha_id, captcha_text, request, session_type)
+    valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, session_type)
     
     if not valid:
         raise HTTPException(
             status_code=400,
-            detail="Resposta do desafio matemático incorreta ou expirada"
+            detail="Código incorreto! Digite os números que aparecem na imagem."
         )
     
     return True
 
 
 # ==============================================
-# 7. FUNÇÕES DE UTILIDADE
+# 8. FUNÇÕES DE UTILIDADE
 # ==============================================
 
 def generate_api_key() -> str:
     return f"sk_{secrets.token_urlsafe(32)}"
 
+
 def generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
+
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
+
 def verify_token_hash(token: str, hashed: str) -> bool:
     return hmac.compare_digest(hash_token(token), hashed)
+
 
 def create_password_reset_token(email: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=24)
@@ -1118,6 +1354,7 @@ def create_password_reset_token(email: str) -> str:
         "jti": secrets.token_urlsafe(16)
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
 
 def verify_password_reset_token(token: str) -> Optional[str]:
     try:
@@ -1134,7 +1371,7 @@ def verify_password_reset_token(token: str) -> Optional[str]:
 
 
 # ==============================================
-# 8. FUNÇÕES PARA COOKIES
+# 9. FUNÇÕES PARA COOKIES
 # ==============================================
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str = None, expires_in: int = 3600):
@@ -1159,36 +1396,28 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str =
             path="/"
         )
     
-    logger.info("🍪 Cookies de autenticação definidos")
     return response
 
+
 def clear_auth_cookies(response: Response):
-    response.set_cookie(
-        key="access_token",
-        value="",
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=0,
-        path="/"
-    )
-    
-    response.set_cookie(
-        key="refresh_token",
-        value="",
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=0,
-        path="/"
-    )
-    
-    logger.info("🍪 Cookies de autenticação removidos")
+    response.set_cookie(key="access_token", value="", httponly=True, max_age=0, path="/")
+    response.set_cookie(key="refresh_token", value="", httponly=True, max_age=0, path="/")
     return response
 
 
 # ==============================================
-# 9. EXPORTAÇÕES
+# 10. FUNÇÃO DE LIMPEZA GLOBAL
+# ==============================================
+
+async def start_cleanup_tasks():
+    """Inicia todas as tarefas de limpeza em background"""
+    await captcha_manager.store.start_cleanup_loop()
+    asyncio.create_task(pow_manager.cleanup_expired())
+    logger.info("✅ Tarefas de limpeza em background iniciadas")
+
+
+# ==============================================
+# 11. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
@@ -1196,6 +1425,7 @@ __all__ = [
     'jwt_manager',
     'captcha_manager',
     'rate_limiter',
+    'pow_manager',
     'oauth2_scheme',
     'get_current_user',
     'get_current_active_user',
@@ -1209,5 +1439,9 @@ __all__ = [
     'create_password_reset_token',
     'verify_password_reset_token',
     'set_auth_cookies',
-    'clear_auth_cookies'
+    'clear_auth_cookies',
+    'start_cleanup_tasks'
 ]
+
+print("✅ security.py carregado - CAPTCHA de números rabiscados ativo")
+print("🔢 PoW mantido apenas para upload de arquivos")

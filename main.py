@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO COMPLETA COM PoW INTEGRADO
+# main.py (na raiz) - VERSÃO ATUALIZADA COM CAPTCHA APENAS
 import sys
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ import time
 import asyncio
 
 print("=" * 60)
-print("🚀 AUTOANALYTICS v3.1 - COM GOOGLE GEMINI, CAPTCHA PRÓPRIO E PoW")
+print("🚀 AUTOANALYTICS v3.2 - COM GOOGLE GEMINI E CAPTCHA DE NÚMEROS")
 print("=" * 60)
 
 # Configurar paths
@@ -45,12 +45,12 @@ class Settings:
     MODELS_DIR = str(BACKEND_DIR / "models")
     DATA_DIR = str(BACKEND_DIR / "data")
     
-    MAX_FILE_SIZE = 100 * 1024 * 1024
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
     # Google Gemini
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     
     # JWT
     SECRET_KEY = os.getenv("SECRET_KEY", "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64)))
@@ -63,17 +63,10 @@ class Settings:
     ARGON2_MEMORY_COST = 65536
     ARGON2_PARALLELISM = 4
     
-    # CAPTCHA próprio
-    CAPTCHA_TYPE = "custom"
-    CAPTCHA_SITE_KEY = ""
-    CAPTCHA_SECRET_KEY = ""
+    # CAPTCHA - Números Rabiscados
+    CAPTCHA_TYPE = "custom_numbers"
+    CAPTCHA_CODE_LENGTH = 4
     CAPTCHA_EXPIRATION_SECONDS = 120
-    
-    # PoW (Proof of Work)
-    ENABLE_POW = os.getenv("ENABLE_POW", "true").lower() == "true"
-    POW_DEFAULT_COMPLEXITY = int(os.getenv("POW_DEFAULT_COMPLEXITY", "3"))
-    POW_MAX_COMPLEXITY = int(os.getenv("POW_MAX_COMPLEXITY", "5"))
-    POW_CHALLENGE_TTL = int(os.getenv("POW_CHALLENGE_TTL", "60"))
     
     # CORS
     CORS_ORIGINS = [
@@ -100,7 +93,7 @@ class Settings:
     # Ambiente
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
-    # Redis
+    # Redis (opcional)
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
@@ -140,10 +133,10 @@ if FRONTEND_DIR.exists():
     if js_dir.exists():
         if (js_dir / "auth.js").exists():
             print(f"✅ auth.js encontrado!")
-        if (js_dir / "pow-client.js").exists():
-            print(f"✅ pow-client.js encontrado!")
-        if (js_dir / "pow-worker.js").exists():
-            print(f"✅ pow-worker.js encontrado!")
+        if (js_dir / "app.js").exists():
+            print(f"✅ app.js encontrado!")
+        if (js_dir / "dashboard.js").exists():
+            print(f"✅ dashboard.js encontrado!")
 else:
     print(f"\n❌ Frontend não encontrado em: {FRONTEND_DIR}")
 
@@ -164,15 +157,15 @@ except ImportError as e:
 # Inicializar app
 app = FastAPI(
     title=settings.APP_NAME,
-    version="3.1.0",
-    description="Sistema com Google Gemini para oficinas mecânicas - CAPTCHA próprio + PoW silencioso",
+    version="3.2.0",
+    description="Sistema com Google Gemini para oficinas mecânicas - CAPTCHA de números rabiscados",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
 
 # ==============================================
-# MIDDLEWARE - CORS ATUALIZADO
+# MIDDLEWARE - CORS
 # ==============================================
 
 app.add_middleware(
@@ -183,10 +176,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=[
         "X-Captcha-ID", 
-        "X-Captcha-Expires",
-        "X-PoW-Prefix",
-        "X-PoW-Nonce",
-        "X-PoW-Complexity"
+        "X-Captcha-Expires"
     ]
 )
 
@@ -228,20 +218,6 @@ if frontend_available:
             return FileResponse(auth_js_path, media_type="application/javascript")
         raise HTTPException(status_code=404, detail="auth.js não encontrado")
     
-    @app.get("/js/pow-client.js", include_in_schema=False)
-    async def serve_pow_client_js():
-        pow_client_path = js_dir / "pow-client.js"
-        if pow_client_path.exists():
-            return FileResponse(pow_client_path, media_type="application/javascript")
-        return Response(status_code=204)  # Não encontrado, mas não quebra
-    
-    @app.get("/js/pow-worker.js", include_in_schema=False)
-    async def serve_pow_worker_js():
-        pow_worker_path = js_dir / "pow-worker.js"
-        if pow_worker_path.exists():
-            return FileResponse(pow_worker_path, media_type="application/javascript")
-        return Response(status_code=204)
-    
     @app.get("/js/app.js", include_in_schema=False)
     async def serve_app_js():
         app_js_path = js_dir / "app.js"
@@ -263,7 +239,7 @@ if frontend_available:
             return FileResponse(str(FRONTEND_DIR / "index.html"))
         elif login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return JSONResponse({"message": "AutoAnalytics API com Gemini e PoW", "docs": "/api/docs"})
+        return JSONResponse({"message": "AutoAnalytics API com Gemini", "docs": "/api/docs"})
     
     @app.get("/login", include_in_schema=False)
     async def login_page():
@@ -316,9 +292,6 @@ else:
 db_path = PROJECT_ROOT / "autoanalytics.db"
 print(f"🗄️ Banco de dados: {db_path}")
 
-# Variável global para o pow_service
-pow_service = None
-
 try:
     from backend.config import settings as backend_settings
     for key, value in settings.__dict__.items():
@@ -335,16 +308,6 @@ try:
         set_auth_cookies, clear_auth_cookies
     )
     print("✅ Módulos de segurança carregados")
-    
-    # Importar PoW service se disponível
-    try:
-        from backend.services.pow_service import pow_service as _pow_service
-        pow_service = _pow_service
-        print(f"✅ PoW Service carregado (complexidade: {settings.POW_DEFAULT_COMPLEXITY})")
-    except ImportError as e:
-        print(f"⚠️ PoW Service não disponível: {e}")
-    except Exception as e:
-        print(f"⚠️ Erro ao carregar PoW Service: {e}")
     
     from backend.services.daily_credits_service import DailyCreditsService
     print("✅ Módulo de créditos diários carregado")
@@ -381,17 +344,6 @@ try:
     app.include_router(payment_routes.router, prefix="/api", tags=["payments"])
     print("✅ Rotas de pagamento: /api/payments/*")
     
-    # Registrar rotas PoW se disponível
-    if pow_service:
-        try:
-            from backend.api import pow_routes
-            app.include_router(pow_routes.router, prefix="/api", tags=["proof-of-work"])
-            print("✅ Rotas PoW: /api/pow/*")
-        except ImportError:
-            print("⚠️ Rotas PoW não disponíveis (pow_routes não encontrado)")
-        except Exception as e:
-            print(f"⚠️ Erro ao registrar rotas PoW: {e}")
-    
     print("✅ Sistema de rotas configurado")
     
 except Exception as e:
@@ -400,22 +352,7 @@ except Exception as e:
     traceback.print_exc()
 
 # ==============================================
-# MIDDLEWARE PoW (se disponível)
-# ==============================================
-if settings.ENABLE_POW:
-    try:
-        from backend.middleware.pow_middleware import PoWMiddleware
-        app.add_middleware(PoWMiddleware, enabled=settings.ENABLE_POW)
-        print(f"✅ PoW Middleware ativado (complexidade: {settings.POW_DEFAULT_COMPLEXITY})")
-    except ImportError:
-        print("⚠️ PoW Middleware não disponível (pow_middleware não encontrado)")
-    except Exception as e:
-        print(f"⚠️ Erro ao ativar PoW Middleware: {e}")
-else:
-    print("⚠️ PoW desabilitado via configuração (ENABLE_POW=false)")
-
-# ==============================================
-# ROTAS DA API
+# ROTAS ADICIONAIS DA API
 # ==============================================
 
 @app.get("/api/user/credits", tags=["user"])
@@ -440,12 +377,10 @@ async def get_user_credits(
 
 @app.get("/api/health", tags=["system"])
 async def health_check():
-    pow_status = "enabled" if (settings.ENABLE_POW and pow_service) else "disabled"
-    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "3.1.0",
+        "version": "3.2.0",
         "ai_provider": "Google Gemini",
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "gemini_model": settings.GEMINI_MODEL if settings.GEMINI_API_KEY else None,
@@ -457,18 +392,13 @@ async def health_check():
                 "refresh_expiry": f"{settings.REFRESH_TOKEN_EXPIRE_DAYS} days"
             },
             "captcha": {
-                "type": "CUSTOM_MATH",
+                "type": "CUSTOM_NUMBERS",
+                "code_length": settings.CAPTCHA_CODE_LENGTH,
                 "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
+                "expiration_minutes": 2,
                 "single_use": True,
                 "auto_invalidate": True,
-                "challenge": "mathematical_sum (ex: 5 + 3 = ?)"
-            },
-            "pow": {
-                "enabled": pow_status == "enabled",
-                "default_complexity": settings.POW_DEFAULT_COMPLEXITY,
-                "max_complexity": settings.POW_MAX_COMPLEXITY,
-                "challenge_ttl": settings.POW_CHALLENGE_TTL,
-                "description": "Silent Proof of Work for API protection"
+                "challenge": "rewrite_the_numbers_you_see"
             }
         },
         "database": "connected" if db_path.exists() else "disconnected",
@@ -481,10 +411,6 @@ async def health_check():
 
 @app.get("/api/security/info", tags=["security"])
 async def security_info():
-    pow_complexity = settings.POW_DEFAULT_COMPLEXITY
-    if pow_service and hasattr(pow_service, 'default_complexity'):
-        pow_complexity = pow_service.default_complexity
-    
     return {
         "security_layers": {
             "password_hashing": {
@@ -495,50 +421,29 @@ async def security_info():
             "jwt": {
                 "algorithm": settings.ALGORITHM,
                 "access_expiry_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-                "refresh_expiry_days": settings.REFRESH_TOKEN_EXPIRE_DAYS
+                "refresh_expiry_days": settings.REFRESH_TOKEN_EXPIRE_DAYS,
+                "blacklist_enabled": True
             },
             "captcha": {
-                "type": "CUSTOM_MATH",
-                "challenge_type": "simple_sum",
+                "type": "CUSTOM_NUMBERS",
+                "challenge_type": "rewrite_numbers",
+                "code_length": settings.CAPTCHA_CODE_LENGTH,
                 "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
                 "expiration_minutes": 2,
                 "single_use": True,
                 "auto_invalidate_on_refresh": True,
-                "example": "5 + 3 = ? (resposta: 8)"
-            },
-            "pow": {
-                "type": "PROOF_OF_WORK",
-                "enabled": settings.ENABLE_POW,
-                "default_complexity": pow_complexity,
-                "algorithm": "SHA-256",
-                "validation": "prefix_hash_matching",
-                "client": "Web Worker (non-blocking)",
-                "protected_endpoints": [
-                    "/api/upload",
-                    "/api/upload-auto",
-                    "/api/process",
-                    "/api/predict",
-                    "/api/generate-report"
-                ]
+                "image_effects": ["gradient_background", "noise", "distortion_lines", "random_position", "blur"],
+                "example": "Imagem mostra: 3 8 5 2 (digitar: 3852)"
             }
         },
         "ai_provider": "Google Gemini",
-        "status": "active",
-        "pow_available": pow_service is not None
+        "status": "active"
     }
 
 @app.get("/api/captcha/stats", tags=["security"])
 async def captcha_stats(current_user = Depends(get_current_admin_user)):
     stats = captcha_manager.get_stats()
     return {"success": True, "stats": stats}
-
-@app.get("/api/pow/stats", tags=["security"])
-async def pow_stats(current_user = Depends(get_current_admin_user)):
-    """Estatísticas do PoW (apenas admin)"""
-    if pow_service and hasattr(pow_service, 'get_stats'):
-        stats = pow_service.get_stats()
-        return {"success": True, "stats": stats}
-    return {"success": True, "stats": {"message": "PoW não disponível", "enabled": settings.ENABLE_POW}}
 
 # ==============================================
 # EVENTO DE INICIALIZAÇÃO
@@ -565,10 +470,6 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Redis (Rate Limiting) não disponível: {e}")
     
-    # Inicializar PoW service (se disponível)
-    if pow_service:
-        print(f"🧮 PoW Service ativo: complexity={settings.POW_DEFAULT_COMPLEXITY}, max={settings.POW_MAX_COMPLEXITY}")
-    
     print("🧠 Inicializando modelos de Machine Learning...")
     try:
         from backend.ml.predict import predictor
@@ -590,11 +491,10 @@ async def startup_event():
     print(f"📊 CAPTCHA Store: {captcha_stats['total_active']} ativos, {captcha_stats['total_sessions']} sessões")
     
     gemini_status = "✅ CONFIGURADO" if (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]) else "❌ NÃO CONFIGURADO"
-    pow_status = "✅ ATIVO" if (settings.ENABLE_POW and pow_service) else "❌ DESABILITADO"
     
     print(f"""
     ╔══════════════════════════════════════════════════════════════════════════════╗
-    ║                    🎉 {settings.APP_NAME} v3.1 INICIADO!                              ║
+    ║                    🎉 {settings.APP_NAME} v3.2 INICIADO!                              ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🤖 GOOGLE GEMINI: {gemini_status:<59} ║
     ║     Modelo: {settings.GEMINI_MODEL if settings.GEMINI_API_KEY else 'N/A':<59} ║
@@ -602,12 +502,11 @@ async def startup_event():
     ║  🔐 SEGURANÇA:                                                                ║
     ║     🔑 Argon2: ✅                                                             ║
     ║     🎫 JWT: ✅ (15min access, 7d refresh)                                     ║
-    ║     🖼️ CAPTCHA: ✅ (Matemático - soma simples)                                ║
+    ║     🔢 CAPTCHA: ✅ (Números Rabiscados)                                       ║
+    ║        └─ {settings.CAPTCHA_CODE_LENGTH} números por desafio                         ║
     ║        └─ 2 minutos de validade                                              ║
     ║        └─ Uso único                                                           ║
-    ║     🧮 PoW: {pow_status:<58} ║
-    ║        └─ Complexidade: {settings.POW_DEFAULT_COMPLEXITY} zeros ( ~{settings.POW_DEFAULT_COMPLEXITY * 100}ms )   ║
-    ║        └─ Protege: uploads, análises, previsões                               ║
+    ║        └─ Efeitos: ruído, linhas, desfoque                                   ║
     ║     ⏱️ Rate Limiting: ✅                                                      ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🔗 URLs:                                                                    ║
@@ -668,8 +567,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
-    print(f"🔐 CAPTCHA: Matemático (soma simples - 2min validade)")
-    print(f"🧮 PoW: {'ATIVO' if settings.ENABLE_POW else 'DESABILITADO'} (proteção silenciosa)")
+    print(f"🔢 CAPTCHA: Números Rabiscados ({settings.CAPTCHA_CODE_LENGTH} dígitos - 2min validade)")
     print("🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(
@@ -678,4 +576,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
         log_level="info"
-    )
+    ) 

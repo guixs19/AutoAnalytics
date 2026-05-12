@@ -1,27 +1,109 @@
 // frontend/js/pow-client.js
 /**
- * Cliente Proof of Work - Solução silenciosa em background
- * Não atrapalha a experiência do usuário (drag & drop)
+ * Cliente Proof of Work - SOLUÇÃO INSTANTÂNEA
+ * Sistema de pré-cálculo em background para zero latência no upload
  */
 
 class PoWClient {
     constructor() {
         this.currentChallenge = null;
+        this.precomputedSolution = null;
+        this.solutionStock = []; // Estoque de soluções pré-calculadas
         this.isSolving = false;
         this.worker = null;
         this.apiBase = window.location.hostname.includes('localhost') 
             ? 'http://localhost:8000/api'
             : '/api';
+        
+        // Configurações de performance
+        this.stockSize = 2; // Mantém 2 soluções prontas
+        this.refillThreshold = 1; // Refaz quando só tem 1 restante
+        this.lastSolutionTime = 0;
+        
+        // Inicialização automática
+        this.autoRefill = true;
+        this.refillInterval = null;
+        
+        console.log('⚡ PoW Client otimizado - Sistema de pré-cálculo ativo');
     }
     
     /**
-     * Obtém um desafio do servidor
+     * PRÉ-CÁLCULO INSTANTÂNEO - Chame na inicialização da página
+     * Começa a resolver PoW em background ANTES do usuário precisar
+     */
+    async preSolve() {
+        if (this.isSolving || this.solutionStock.length >= this.stockSize) {
+            console.log(`📦 Estoque de PoW: ${this.solutionStock.length}/${this.stockSize} soluções prontas`);
+            return;
+        }
+        
+        console.log('⚡ Iniciando pré-cálculo de PoW em background...');
+        
+        try {
+            // Pega desafio do servidor
+            const challenge = await this.getChallenge();
+            
+            if (!challenge) {
+                console.warn('⚠️ Não foi possível obter desafio PoW');
+                return;
+            }
+            
+            // Resolve em worker (não bloqueia UI)
+            const solution = await this.solveChallengeAsync(challenge);
+            
+            if (solution) {
+                this.solutionStock.push({
+                    solution: solution,
+                    challenge: challenge,
+                    timestamp: Date.now()
+                });
+                
+                console.log(`✅ PoW pré-calculado (${this.solutionStock.length}/${this.stockSize}) - Pronto para uso instantâneo`);
+                
+                // Continua calculando se ainda não atingiu o estoque
+                if (this.autoRefill && this.solutionStock.length < this.stockSize) {
+                    setTimeout(() => this.preSolve(), 100);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Erro no pré-cálculo PoW:', error);
+        }
+    }
+    
+    /**
+     * Inicia refill automático periódico
+     */
+    startAutoRefill(intervalMs = 25000) { // 25 segundos
+        if (this.refillInterval) clearInterval(this.refillInterval);
+        
+        this.refillInterval = setInterval(() => {
+            if (this.solutionStock.length < this.refillThreshold) {
+                console.log('🔄 Reposição automática de PoW iniciada');
+                this.preSolve();
+            } else {
+                console.log(`📦 Estoque saudável: ${this.solutionStock.length} PoWs prontos`);
+            }
+        }, intervalMs);
+        
+        console.log(`🔄 Auto-refill PoW ativado (a cada ${intervalMs}ms)`);
+    }
+    
+    stopAutoRefill() {
+        if (this.refillInterval) {
+            clearInterval(this.refillInterval);
+            this.refillInterval = null;
+        }
+    }
+    
+    /**
+     * Obtém um desafio do servidor (otimizado)
      */
     async getChallenge() {
         try {
             const response = await fetch(`${this.apiBase}/pow/challenge`, {
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                    'Cache-Control': 'no-cache' // Evita cache
                 }
             });
             
@@ -38,51 +120,34 @@ class PoWClient {
     }
     
     /**
-     * Resolve o desafio PoW usando Web Worker (não trava a UI)
+     * Resolve desafio de forma assíncrona (não bloqueante)
      */
-    async solveChallenge(challenge = null) {
-        const challengeToSolve = challenge || this.currentChallenge;
-        
-        if (!challengeToSolve) {
-            throw new Error('Nenhum desafio disponível');
-        }
-        
-        if (this.isSolving) {
-            // Aguarda solução em andamento
-            return new Promise((resolve) => {
-                const checkInterval = setInterval(() => {
-                    if (!this.isSolving && this.lastSolution) {
-                        clearInterval(checkInterval);
-                        resolve(this.lastSolution);
-                    }
-                }, 50);
-            });
-        }
-        
-        this.isSolving = true;
-        
+    async solveChallengeAsync(challenge) {
         return new Promise((resolve, reject) => {
+            const startTime = performance.now();
+            
             // Criar Web Worker para resolver em background
             const worker = new Worker('/js/pow-worker.js');
             
-            worker.postMessage(challengeToSolve);
+            worker.postMessage(challenge);
             
             worker.onmessage = (e) => {
                 const { nonce, timeMs } = e.data;
-                this.lastSolution = {
-                    nonce,
-                    prefix: challengeToSolve.prefix,
-                    complexity: challengeToSolve.complexity
-                };
-                this.isSolving = false;
+                const totalTime = performance.now() - startTime;
+                
                 worker.terminate();
                 
-                console.log(`⚡ PoW resolvido em ${timeMs}ms (complexidade ${challengeToSolve.complexity})`);
-                resolve(this.lastSolution);
+                console.log(`⚡ PoW resolvido em ${timeMs}ms (total: ${totalTime.toFixed(0)}ms, complexidade ${challenge.complexity})`);
+                
+                resolve({
+                    nonce,
+                    prefix: challenge.prefix,
+                    complexity: challenge.complexity,
+                    solvedAt: Date.now()
+                });
             };
             
             worker.onerror = (error) => {
-                this.isSolving = false;
                 worker.terminate();
                 reject(error);
             };
@@ -90,100 +155,128 @@ class PoWClient {
     }
     
     /**
-     * Prepara headers para requisição protegida
-     * (Já inclui PoW automaticamente)
+     * PEGA SOLUÇÃO INSTANTÂNEA - Zero espera!
      */
-    async getProtectedHeaders() {
-        // Se não tem desafio ou expirou, pega um novo
-        if (!this.currentChallenge || this.isChallengeExpired()) {
-            await this.getChallenge();
+    async getInstantSolution() {
+        // Se tem solução no estoque, usa imediatamente
+        if (this.solutionStock.length > 0) {
+            const stockItem = this.solutionStock.shift();
+            console.log(`⚡ Usando PoW pré-calculado (restam ${this.solutionStock.length})`);
+            
+            // Dispara reposição em background
+            if (this.autoRefill && this.solutionStock.length < this.refillThreshold) {
+                setTimeout(() => this.preSolve(), 50);
+            }
+            
+            return stockItem.solution;
         }
         
-        // Resolve PoW se ainda não resolveu
-        if (!this.lastSolution || this.needsNewSolution()) {
-            await this.solveChallenge();
-        }
+        // Fallback: calcula na hora (nunca deve acontecer com auto-refill)
+        console.warn('⚠️ Estoque vazio! Calculando PoW sob demanda...');
         
-        return {
-            'X-PoW-Prefix': this.lastSolution.prefix,
-            'X-PoW-Nonce': this.lastSolution.nonce,
-            'X-PoW-Complexity': this.lastSolution.complexity,
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        };
-    }
-    
-    isChallengeExpired() {
-        if (!this.currentChallenge) return true;
-        const now = Math.floor(Date.now() / 1000);
-        const expiresAt = this.currentChallenge.timestamp + this.currentChallenge.expires_in;
-        return now > expiresAt;
-    }
-    
-    needsNewSolution() {
-        if (!this.lastSolution) return true;
-        // Se passou mais de 30s, resolve novamente
-        if (this.lastSolution.solvedAt && (Date.now() - this.lastSolution.solvedAt) > 30000) {
-            return true;
-        }
-        return false;
+        const challenge = await this.getChallenge();
+        const solution = await this.solveChallengeAsync(challenge);
+        
+        return solution;
     }
     
     /**
-     * Para integração com drag & drop: resolve PoW automaticamente
-     * enquanto o usuário arrasta o arquivo
-     */
-    async prepareForUpload() {
-        // Pré-resolve PoW em background durante o drag
-        if (!this.currentChallenge || this.isChallengeExpired()) {
-            await this.getChallenge();
-        }
-        
-        if (!this.lastSolution || this.needsNewSolution()) {
-            // Inicia resolução em background (não aguarda)
-            this.solveChallenge().catch(console.error);
-        }
-    }
-    
-    /**
-     * Faz upload com PoW incluso (para drag & drop)
+     * Upload com PoW INSTANTÂNEO (sem espera)
      */
     async uploadWithPow(file, endpoint = '/api/upload') {
-        // Garante que temos uma solução
-        if (!this.lastSolution || this.needsNewSolution()) {
-            await this.solveChallenge();
-        }
+        // Pega solução instantânea do estoque
+        const solution = await this.getInstantSolution();
         
         const formData = new FormData();
         formData.append('file', file);
         
+        // Adiciona campos específicos da análise
+        const analysisType = document.getElementById('tipoAnalise')?.value || 'auto';
+        const aiModel = document.getElementById('modeloIA')?.value || 'auto';
+        formData.append('analysis_type', analysisType);
+        formData.append('ai_model', aiModel);
+        
+        const startTime = performance.now();
+        
         const response = await fetch(`${this.apiBase}${endpoint}`, {
             method: 'POST',
             headers: {
-                'X-PoW-Prefix': this.lastSolution.prefix,
-                'X-PoW-Nonce': this.lastSolution.nonce,
-                'X-PoW-Complexity': this.lastSolution.complexity,
+                'X-PoW-Prefix': solution.prefix,
+                'X-PoW-Nonce': solution.nonce,
+                'X-PoW-Complexity': solution.complexity,
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`
             },
             body: formData
         });
         
+        const totalTime = performance.now() - startTime;
+        console.log(`📤 Upload concluído em ${totalTime.toFixed(0)}ms (PoW incluso)`);
+        
+        // Tratamento de erro: PoW expirado
         if (response.status === 428 || response.status === 401) {
-            // PoW expirou ou inválido - resolve novamente e tenta
-            console.log('🔄 PoW expirado, resolvendo novamente...');
-            this.currentChallenge = null;
-            this.lastSolution = null;
-            return this.uploadWithPow(file, endpoint);
+            console.log('🔄 PoW expirado, usando próximo do estoque...');
+            
+            if (this.solutionStock.length > 0) {
+                // Tenta com a próxima solução
+                return this.uploadWithPow(file, endpoint);
+            } else {
+                // Recalcula
+                await this.preSolve();
+                return this.uploadWithPow(file, endpoint);
+            }
         }
         
         if (!response.ok) {
-            throw new Error(`Upload falhou: ${response.status}`);
+            const error = await response.json();
+            throw new Error(error.detail || `Upload falhou: ${response.status}`);
         }
         
         return response.json();
     }
+    
+    /**
+     * Pré-prepara para drag & drop (chamado durante o drag)
+     */
+    async prepareForUpload() {
+        // Garante que temos pelo menos uma solução pronta
+        if (this.solutionStock.length === 0) {
+            console.log('🔄 Preparando PoW durante drag...');
+            await this.preSolve();
+        } else {
+            console.log(`⚡ PoW pronto para drag (${this.solutionStock.length} disponíveis)`);
+        }
+    }
+    
+    /**
+     * Reseta o estado (útil no logout)
+     */
+    reset() {
+        this.solutionStock = [];
+        this.currentChallenge = null;
+        this.precomputedSolution = null;
+        console.log('🔄 PoW Client resetado');
+    }
+    
+    /**
+     * Retorna estatísticas do PoW
+     */
+    getStats() {
+        return {
+            solutionsReady: this.solutionStock.length,
+            maxStock: this.stockSize,
+            autoRefill: this.autoRefill,
+            lastSolutionAge: this.solutionStock[0] ? Date.now() - this.solutionStock[0].timestamp : null
+        };
+    }
 }
 
-// Instância global
+// Instância global com auto-refill
 window.powClient = new PoWClient();
 
-console.log('✅ PoW Client inicializado - Proteção silenciosa ativa');
+// Inicia auto-refill quando autenticado
+document.addEventListener('userAuthenticated', () => {
+    window.powClient.startAutoRefill(30000); // Refill a cada 30 segundos
+    window.powClient.preSolve(); // Pré-cálculo inicial
+});
+
+console.log('✅ PoW Client otimizado - Sistema de pré-cálculo ativo');

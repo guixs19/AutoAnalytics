@@ -1,4 +1,4 @@
-# backend/ml/boosting_ensemble.py
+# backend/ml/boosting_ensemble.py - VERSÃO CORRIGIDA (SEM IMPORT CIRCULAR)
 """
 Sistema de Ensemble Learning com Boosting
 Cada modelo aprende com os erros do anterior
@@ -26,9 +26,12 @@ from sklearn.metrics import (
     confusion_matrix, roc_auc_score, f1_score
 )
 
-# Importar seus módulos existentes
-from ml.model import MLModel
-from ml.predict import predictor
+# ❌ REMOVIDOS:
+# from ml.model import MLModel
+# from ml.predict import predictor
+# (causavam import circular)
+
+print("🔧 Carregando boosting_ensemble.py...")
 
 
 class BoostingEnsemble:
@@ -61,7 +64,7 @@ class BoostingEnsemble:
         self.last_training_metrics = None
         self.feature_importance_history = []
         
-        print("✅ BoostingEnsemble inicializado")
+        print("✅ BoostingEnsemble inicializado (sem import circular)")
     
     def train_sequential_boost(
         self,
@@ -504,7 +507,7 @@ class BoostingEnsemble:
     
     def get_ensemble_metrics_for_gemini(self) -> Dict[str, Any]:
         """
-        Retorna métricas detalhadas do ensemble para o Gemini analisar como Analista Sênior
+        Retorna métricas detalhadas do ensemble para o Gemini
         """
         if not self.models:
             return {
@@ -515,7 +518,6 @@ class BoostingEnsemble:
         
         # Calcular métricas do ensemble
         total_models = len(self.models)
-        avg_error = np.mean(self.errors_history) if self.errors_history else 0
         final_error = self.errors_history[-1] if self.errors_history else 0
         initial_error = self.errors_history[0] if self.errors_history else 0
         improvement = initial_error - final_error if len(self.errors_history) > 1 else 0
@@ -584,92 +586,10 @@ class BoostingEnsemble:
                 }
                 for m in self.models
             ],
-            "analise_aprendizado": self._analyze_learning_curve(),
-            "recomendacoes": self._generate_ensemble_recommendations(),
             "performance_ensemble": self.last_training_metrics
         }
         
         return metrics
-    
-    def _analyze_learning_curve(self) -> Dict[str, Any]:
-        """Analisa a curva de aprendizado do ensemble"""
-        if len(self.errors_history) < 3:
-            return {
-                "status": "dados_insuficientes", 
-                "mensagem": "Mais modelos necessários para análise completa",
-                "modelos_recomendados": 5 - len(self.errors_history)
-            }
-        
-        # Verificar tendência
-        errors_recent = self.errors_history[-3:]
-        errors_early = self.errors_history[:3]
-        
-        trend = "Decrescente" if self.errors_history[-1] < self.errors_history[0] else "Estacionária" if abs(self.errors_history[-1] - self.errors_history[0]) < 0.05 else "Crescente"
-        
-        # Calcular taxa de aprendizado
-        learning_rate = (self.errors_history[0] - self.errors_history[-1]) / len(self.errors_history)
-        
-        # Verificar overfitting pela curva
-        if len(self.accuracy_history) >= 3:
-            acc_trend = self.accuracy_history[-1] - self.accuracy_history[0]
-            overfitting_from_curve = acc_trend < -0.05  # Se acurácia caiu mais que 5%
-        else:
-            overfitting_from_curve = False
-        
-        return {
-            "tendencia": trend,
-            "taxa_aprendizado": float(learning_rate),
-            "risco_overfitting_curva": "Alto" if overfitting_from_curve else "Baixo",
-            "confianca_ensemble": float(max(0, min(1, 1 - self.errors_history[-1]))),
-            "modelos_restantes_recomendados": max(0, 8 - len(self.models)) if trend == "Decrescente" else 0,
-            "estabilizacao_atingida": len(self.errors_history) >= 5 and abs(self.errors_history[-1] - self.errors_history[-2]) < 0.01
-        }
-    
-    def _generate_ensemble_recommendations(self) -> List[str]:
-        """Gera recomendações baseadas no desempenho do ensemble"""
-        recommendations = []
-        
-        if not self.models:
-            return ["Treine o ensemble antes de gerar recomendações"]
-        
-        final_error = self.errors_history[-1] if self.errors_history else 1
-        initial_error = self.errors_history[0] if self.errors_history else 1
-        
-        # Recomendações baseadas no erro final
-        if final_error < 0.05:
-            recommendations.append("✅ Ensemble com performance excelente - pronto para produção")
-        elif final_error < 0.10:
-            recommendations.append("📊 Bom desempenho - pode ser implantado com monitoramento")
-        elif final_error < 0.20:
-            recommendations.append("⚠️ Desempenho moderado - considere mais iterações ou mais dados")
-        else:
-            recommendations.append("🔴 Desempenho abaixo do esperado - revisar features e dados")
-        
-        # Recomendações baseadas na melhoria
-        improvement_pct = (initial_error - final_error) / (initial_error + 1e-10) * 100
-        if improvement_pct > 30:
-            recommendations.append(f"📈 Boa evolução ({improvement_pct:.0f}% melhoria) - ensemble eficaz")
-        elif improvement_pct < 5 and len(self.models) > 3:
-            recommendations.append("🔄 Ensemble estabilizado - adicionar mais modelos pode não ajudar")
-        
-        # Recomendações baseadas no número de modelos
-        if len(self.models) < 5:
-            recommendations.append(f"➕ Adicionar mais {5 - len(self.models)} modelos pode melhorar o ensemble")
-        elif len(self.models) > 10:
-            recommendations.append("⚖️ Ensemble grande - considerar pruning para reduzir complexidade")
-        
-        # Recomendações de validação
-        if len(self.models) >= 3:
-            recommendations.append("🔬 Recomenda-se validação cruzada para confirmar generalização")
-        
-        if not recommendations:
-            recommendations = [
-                "📊 Ensemble treinado com sucesso",
-                "🔍 Monitorar performance em produção",
-                "💡 Coletar mais dados para próximas iterações"
-            ]
-        
-        return recommendations
     
     def get_model_summary(self) -> pd.DataFrame:
         """Retorna resumo dos modelos treinados"""
@@ -690,7 +610,10 @@ class BoostingEnsemble:
         return pd.DataFrame(summary)
     
     def integrate_with_predictor(self):
-        """Integra o melhor ensemble com o predictor existente"""
+        """
+        Integra o melhor ensemble com o predictor existente
+        ✅ NÃO importa predictor diretamente - apenas salva o arquivo
+        """
         if self.best_model is None:
             print("❌ Nenhum modelo treinado para integrar")
             return False
@@ -709,8 +632,8 @@ class BoostingEnsemble:
             model_path = os.path.join("backend", "ml", "models", "office_model.pkl")
             joblib.dump(model_data, model_path)
             
-            print(f"\n✅ Ensemble integrado com predictor em: {model_path}")
-            print(f"📊 Métricas do ensemble salvas: {self.last_training_metrics}")
+            print(f"\n✅ Ensemble salvo em: {model_path}")
+            print("   O predictor carregará automaticamente na próxima inicialização")
             return True
             
         except Exception as e:
@@ -791,5 +714,5 @@ class BoostingEnsemble:
 # Instância global
 boosting_ensemble = BoostingEnsemble()
 
-print("\n✅ BoostingEnsemble pronto para uso com Gemini!")
-print("📊 Métodos disponíveis para Gemini: get_ensemble_metrics_for_gemini()")
+print("\n✅ BoostingEnsemble pronto (sem dependência circular!)")
+print("📊 Métodos disponíveis: get_ensemble_metrics_for_gemini()")

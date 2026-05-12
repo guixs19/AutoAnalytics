@@ -211,7 +211,11 @@
             padding: 0.75rem;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
             border: 1px solid #e9ecef;
-            margin-bottom: 1rem;
+            margin-bottom: 0;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .captcha-image {
@@ -250,7 +254,6 @@
             transform: none;
         }
         
-        /* TEclado numérico otimizado para mobile */
         .captcha-input {
             border: 2px solid #e9ecef;
             border-radius: 12px;
@@ -260,6 +263,7 @@
             text-align: center;
             transition: all 0.3s ease;
             background: white;
+            letter-spacing: 4px;
         }
         
         .captcha-input:focus {
@@ -308,8 +312,7 @@
             100% { opacity: 1; }
         }
         
-        /* Dica do CAPTCHA matemático */
-        .math-hint {
+        .captcha-hint {
             background: rgba(102, 126, 234, 0.08);
             border-radius: 10px;
             padding: 0.5rem;
@@ -319,7 +322,7 @@
             margin-top: 0.5rem;
         }
         
-        .math-hint i {
+        .captcha-hint i {
             margin-right: 0.25rem;
         }
         
@@ -386,6 +389,7 @@
             .captcha-input {
                 font-size: 1.2rem;
                 padding: 0.85rem;
+                letter-spacing: 2px;
             }
         }
         
@@ -446,12 +450,12 @@
                         </p>
                         <div class="mt-2">
                             <span class="security-badge">
-                                <i class="fas fa-calculator"></i>
-                                CAPTCHA Matemático
+                                <i class="fas fa-shield-alt"></i>
+                                Protegido
                             </span>
                             <span class="security-badge ms-1">
                                 <i class="fas fa-clock"></i>
-                                Token 15min
+                                Sessão Segura
                             </span>
                         </div>
                     </div>
@@ -490,7 +494,7 @@
                                         </label>
                                         <input type="password" class="form-control" id="loginPassword" 
                                                placeholder="Sua senha" required autocomplete="current-password">
-                                        <button type="button" class="password-toggle" onclick="togglePassword('loginPassword')">
+                                        <button type="button" class="password-toggle" data-field="loginPassword">
                                             <i class="far fa-eye"></i>
                                         </button>
                                     </div>
@@ -501,18 +505,19 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- CAPTCHA MATEMÁTICO -->
+                                    <!-- CAPTCHA - DIGITE OS NÚMEROS -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="loginCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='80' viewBox='0 0 240 80'%3E%3Crect width='240' height='80' fill='%23667eea'/%3E%3Ctext x='120' y='45' font-family='Arial' font-size='28' fill='white' text-anchor='middle'%3ECarregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="CAPTCHA Matemático">
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='100' viewBox='0 0 280 100'%3E%3Crect width='280' height='100' fill='%23667eea'/%3E%3Ctext x='140' y='55' font-family='monospace' font-size='20' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         alt="Digite os números da imagem">
+                                                    <input type="hidden" id="loginCaptchaId">
                                                 </div>
                                             </div>
                                             <div class="col-4">
-                                                <div class="captcha-refresh" id="refreshLoginCaptcha" title="Novo desafio matemático">
+                                                <div class="captcha-refresh" id="refreshLoginCaptcha" title="Nova imagem">
                                                     <i class="fas fa-sync-alt"></i>
                                                 </div>
                                             </div>
@@ -521,19 +526,19 @@
                                             <input type="text" 
                                                    class="form-control captcha-input" 
                                                    id="loginCaptchaInput" 
-                                                   placeholder="? = resultado da soma" 
-                                                   maxlength="2" 
+                                                   placeholder="Digite os números" 
+                                                   maxlength="4" 
                                                    inputmode="numeric" 
                                                    pattern="[0-9]*" 
                                                    autocomplete="off"
                                                    required>
-                                            <div class="math-hint">
-                                                <i class="fas fa-calculator"></i>
-                                                Digite APENAS o número do resultado
+                                            <div class="captcha-hint">
+                                                <i class="fas fa-eye"></i>
+                                                Digite os números que aparecem na imagem
                                             </div>
                                             <div class="captcha-helper">
                                                 <i class="fas fa-hourglass-half me-1"></i>
-                                                Expira em <span class="captcha-timer" id="loginCaptchaTimer">--:--</span>
+                                                Expira em <span class="captcha-timer" id="loginCaptchaTimer">02:00</span>
                                                 <i class="fas fa-ban ms-2 me-1"></i>
                                                 Uso único
                                             </div>
@@ -544,7 +549,7 @@
                                         <input type="checkbox" class="form-check-input" id="rememberMe">
                                         <label class="form-check-label small" for="rememberMe">
                                             <i class="far fa-check-circle me-1"></i>
-                                            Manter conectado por 7 dias
+                                            Manter conectado
                                         </label>
                                     </div>
                                     
@@ -582,7 +587,7 @@
                                             <input type="password" class="form-control" id="regPassword" 
                                                    minlength="6" placeholder="Mínimo 6 caracteres" 
                                                    required autocomplete="new-password">
-                                            <button type="button" class="password-toggle" onclick="togglePassword('regPassword')">
+                                            <button type="button" class="password-toggle" data-field="regPassword">
                                                 <i class="far fa-eye"></i>
                                             </button>
                                         </div>
@@ -593,7 +598,7 @@
                                             </label>
                                             <input type="password" class="form-control" id="regConfirmPassword" 
                                                    placeholder="Digite novamente" required autocomplete="new-password">
-                                            <button type="button" class="password-toggle" onclick="togglePassword('regConfirmPassword')">
+                                            <button type="button" class="password-toggle" data-field="regConfirmPassword">
                                                 <i class="far fa-eye"></i>
                                             </button>
                                         </div>
@@ -607,18 +612,19 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- CAPTCHA MATEMÁTICO REGISTER -->
+                                    <!-- CAPTCHA REGISTER - DIGITE OS NÚMEROS -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center">
                                             <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="registerCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='80' viewBox='0 0 240 80'%3E%3Crect width='240' height='80' fill='%23667eea'/%3E%3Ctext x='120' y='45' font-family='Arial' font-size='28' fill='white' text-anchor='middle'%3ECarregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="CAPTCHA Matemático">
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='100' viewBox='0 0 280 100'%3E%3Crect width='280' height='100' fill='%23667eea'/%3E%3Ctext x='140' y='55' font-family='monospace' font-size='20' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         alt="Digite os números da imagem">
+                                                    <input type="hidden" id="registerCaptchaId">
                                                 </div>
                                             </div>
                                             <div class="col-4">
-                                                <div class="captcha-refresh" id="refreshRegisterCaptcha" title="Novo desafio matemático">
+                                                <div class="captcha-refresh" id="refreshRegisterCaptcha" title="Nova imagem">
                                                     <i class="fas fa-sync-alt"></i>
                                                 </div>
                                             </div>
@@ -627,19 +633,19 @@
                                             <input type="text" 
                                                    class="form-control captcha-input" 
                                                    id="registerCaptchaInput" 
-                                                   placeholder="? = resultado da soma" 
-                                                   maxlength="2" 
+                                                   placeholder="Digite os números" 
+                                                   maxlength="4" 
                                                    inputmode="numeric" 
                                                    pattern="[0-9]*" 
                                                    autocomplete="off"
                                                    required>
-                                            <div class="math-hint">
-                                                <i class="fas fa-calculator"></i>
-                                                Digite APENAS o número do resultado
+                                            <div class="captcha-hint">
+                                                <i class="fas fa-eye"></i>
+                                                Digite os números que aparecem na imagem
                                             </div>
                                             <div class="captcha-helper">
                                                 <i class="fas fa-hourglass-half me-1"></i>
-                                                Expira em <span class="captcha-timer" id="registerCaptchaTimer">--:--</span>
+                                                Expira em <span class="captcha-timer" id="registerCaptchaTimer">02:00</span>
                                                 <i class="fas fa-ban ms-2 me-1"></i>
                                                 Uso único
                                             </div>
@@ -668,7 +674,7 @@
                         <div class="text-center mt-3">
                             <small class="text-muted">
                                 <i class="fas fa-shield-alt me-1"></i>
-                                Seus dados estão seguros
+                                Plataforma segura
                             </small>
                         </div>
                     </div>
@@ -679,7 +685,7 @@
                             <small><a href="#" class="text-decoration-none"><i class="fas fa-shield-alt me-1"></i>Privacidade</a></small>
                             <small><a href="#" class="text-decoration-none"><i class="fas fa-file-alt me-1"></i>Termos</a></small>
                         </div>
-                        <small class="text-muted">© 2024 AutoAnalytics. Todos os direitos reservados.</small>
+                        <small class="text-muted">© 2024 AutoAnalytics.</small>
                     </div>
                 </div>
             </div>
@@ -690,25 +696,43 @@
     <script src="/js/auth.js"></script>
     
     <script>
-        // Função para toggle de senha
-        function togglePassword(fieldId) {
-            const field = document.getElementById(fieldId);
-            const icon = field.parentElement.querySelector('.password-toggle i');
-            if (field.type === 'password') {
-                field.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                field.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
+        // Função auxiliar para toggle de senha (fallback)
+        function setupPasswordToggles() {
+            document.querySelectorAll('.password-toggle').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const fieldId = this.getAttribute('data-field');
+                    if (fieldId) {
+                        const field = document.getElementById(fieldId);
+                        if (field) {
+                            const icon = this.querySelector('i');
+                            if (field.type === 'password') {
+                                field.type = 'text';
+                                icon.classList.remove('fa-eye');
+                                icon.classList.add('fa-eye-slash');
+                            } else {
+                                field.type = 'password';
+                                icon.classList.remove('fa-eye-slash');
+                                icon.classList.add('fa-eye');
+                            }
+                        }
+                    }
+                });
+            });
         }
         
-        // Pré-carregar CAPTCHA quando a página carregar
+        // Aguarda o DOM carregar completamente
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('✅ UI do login carregada - CAPTCHA Matemático (soma simples)');
-            console.log('📱 Otimizado para mobile com teclado numérico');
+            console.log('📄 Página de login carregada');
+            setupPasswordToggles();
+            
+            // Verifica se o Auth foi carregado
+            setTimeout(function() {
+                if (window.appAuth) {
+                    console.log('✅ Auth.js carregado com sucesso');
+                } else {
+                    console.error('❌ Auth.js não carregou corretamente');
+                }
+            }, 500);
         });
     </script>
 </body>

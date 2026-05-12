@@ -735,3 +735,171 @@ def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
         } for p in payments],
         "timestamp": datetime.now().isoformat()
     }
+    
+
+# ==============================================
+# SESSÃO E LOGOUT COMPLETO - NOVAS FUNÇÕES
+# ==============================================
+
+def clear_user_session(db: Session, user_id: int, logout_all_devices: bool = True) -> bool:
+    """
+    ✅ LIMPA COMPLETAMENTE A SESSÃO DO USUÁRIO
+    - Remove refresh tokens
+    - Limpa metadados de sessão
+    - Opcional: logout de todos os dispositivos
+    
+    Usar no logout para garantir limpeza completa
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        logger.warning(f"⚠️ Tentativa de limpar sessão de usuário inexistente: ID {user_id}")
+        return False
+    
+    # Revoga refresh token atual
+    user.revoke_refresh_token()
+    
+    if logout_all_devices:
+        # Remove qualquer referência a tokens
+        user.refresh_token = None
+        user.refresh_token_jti = None
+        user.refresh_token_revoked = True
+        user.refresh_token_expires = None
+        
+        # Limpa qualquer metadata de sessão (se existir no futuro)
+        if hasattr(user, 'session_metadata'):
+            user.session_metadata = None
+        if hasattr(user, 'last_active_at'):
+            user.last_active_at = None
+    
+    safe_commit(db, "Erro ao limpar sessão do usuário")
+    
+    device_msg = "todos os dispositivos" if logout_all_devices else "dispositivo atual"
+    logger.info(f"🔓 Sessão encerrada para usuário {user.email} ({device_msg})")
+    
+    return True
+
+
+def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
+    """
+    ✅ Retorna informações da sessão atual do usuário
+    Útil para debug e verificação de estado
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return {"error": "Usuário não encontrado"}
+    
+    has_valid_token = False
+    if user.refresh_token and user.refresh_token_expires:
+        has_valid_token = user.refresh_token_expires > datetime.now() and not user.refresh_token_revoked
+    
+    return {
+        "user_id": user.id,
+        "user_email": user.email,
+        "is_admin": user.is_admin,
+        "has_refresh_token": bool(user.refresh_token),
+        "refresh_token_valid": has_valid_token,
+        "refresh_token_expires_at": user.refresh_token_expires.isoformat() if user.refresh_token_expires else None,
+        "refresh_token_revoked": user.refresh_token_revoked,
+        "session_active": has_valid_token,
+        "needs_cleanup": user.refresh_token_expires and user.refresh_token_expires < datetime.now() if user.refresh_token_expires else False
+    }
+
+
+def force_logout_user(db: Session, email: str, reason: str = "Admin action") -> bool:
+    """
+    ✅ FORÇA LOGOUT DE UM USUÁRIO (para administradores)
+    Útil para situações de segurança ou usuários problemáticos
+    """
+    user = get_user_by_email(db, email)
+    if not user:
+        logger.warning(f"⚠️ Tentativa de force logout em usuário inexistente: {email}")
+        return False
+    
+    # Limpa completamente a sessão
+    user.revoke_refresh_token()
+    user.refresh_token = None
+    user.refresh_token_jti = None
+    user.refresh_token_revoked = True
+    user.refresh_token_expires = None
+    
+    # Opcional: desativa temporariamente? (comentado)
+    # user.is_active = False
+    
+    safe_commit(db, f"Erro ao forçar logout do usuário {email}")
+    
+    logger.warning(f"⚠️ FORCE LOGOUT: Usuário {email} foi desconectado por {reason}")
+    
+    return True
+
+
+def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
+    """
+    ✅ LIMPEZA DE SESSÕES ÓRFÃS
+    Remove tokens de usuários inativos há N dias
+    """
+    cutoff_date = datetime.now() - timedelta(days=older_than_days)
+    
+    # Busca usuários com token expirado há mais de N dias
+    users_with_expired_tokens = db.query(models.User).filter(
+        models.User.refresh_token_expires < cutoff_date,
+        models.User.refresh_token.isnot(None)
+    ).all()
+    
+    count = 0
+    for user in users_with_expired_tokens:
+        user.refresh_token = None
+        user.refresh_token_jti = None
+        user.refresh_token_revoked = True
+        user.refresh_token_expires = None
+        count += 1
+    
+    if count > 0:
+        safe_commit(db, "Erro ao limpar sessões órfãs")
+        logger.info(f"🧹 {count} sessões órfãs limpas (inativas há {older_than_days}+ dias)")
+    
+    return count
+
+
+# ==============================================
+# CORREÇÃO: Função para auth_routes.py usar no logout
+# ==============================================
+
+def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> bool:
+    """
+    ✅ LOGOUT COMPLETO - Versão unificada
+    Usar esta função em todos os endpoints de logout
+    
+    Args:
+        db: Sessão do banco
+        user_id: ID do usuário
+        refresh_token: Token específico para revogar (opcional)
+    
+    Returns:
+        bool: Sucesso da operação
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return False
+    
+    # Se um token específico foi fornecido, valida antes de revogar
+    if refresh_token:
+        if user.refresh_token == refresh_token:
+            user.revoke_refresh_token()
+        else:
+            # Token diferente do esperado - possível tentativa de fraude
+            logger.warning(f"⚠️ Tentativa de logout com token inválido para usuário {user.email}")
+            return False
+    else:
+        # Revoga o token atual
+        user.revoke_refresh_token()
+    
+    # Limpa completamente para garantir
+    user.refresh_token = None
+    user.refresh_token_jti = None
+    user.refresh_token_revoked = True
+    
+    safe_commit(db, "Erro ao realizar logout completo")
+    
+    logger.info(f"🔓 Logout completo: {user.email}")
+    
+    return True

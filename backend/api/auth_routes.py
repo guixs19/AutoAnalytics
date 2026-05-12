@@ -1,11 +1,16 @@
-# backend/api/auth_routes.py - VERSÃO ATUALIZADA COM CAPTCHA MATEMÁTICO
+# backend/api/auth_routes.py - VERSÃO COM CAPTCHA DE NÚMEROS RABISCADOS
+"""
+Rotas de autenticação com CAPTCHA simples (reescrever números)
+"""
 
 from datetime import timedelta, datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
+import secrets
+import time
 
 from backend.database import get_db
 from backend import crud, schemas
@@ -29,50 +34,96 @@ router = APIRouter(tags=["authentication"])
 
 
 # ==============================================
-# CAPTCHA MATEMÁTICO - VERSÃO ULTRARRÁPIDA
+# DECORATORS PARA HIERARQUIA DE ADMIN
+# ==============================================
+
+def require_super_admin(func):
+    """Decorator que só permite SUPER_ADMIN executar a função"""
+    from functools import wraps
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        current_user = kwargs.get('current_user')
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Não autenticado")
+        
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Permissão de admin necessária")
+        
+        if not hasattr(current_user, 'admin_level') or current_user.admin_level != "super_admin":
+            logger.warning(f"⚠️ Tentativa de acesso a super admin por: {current_user.email}")
+            raise HTTPException(status_code=403, detail="Acesso restrito a super administradores")
+        
+        return await func(*args, **kwargs)
+    return wrapper
+
+
+def require_min_admin_level(required_level: str):
+    """Decorator que exige nível mínimo de admin"""
+    from functools import wraps
+    levels = {"moderator": 1, "admin": 2, "super_admin": 3}
+    
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_user = kwargs.get('current_user')
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Não autenticado")
+            
+            if not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Permissão de admin necessária")
+            
+            user_level = getattr(current_user, 'admin_level', None)
+            if not user_level or levels.get(user_level, 0) < levels.get(required_level, 0):
+                logger.warning(f"⚠️ Nível insuficiente: {current_user.email} ({user_level}) tentou acessar nível {required_level}")
+                raise HTTPException(status_code=403, detail=f"Nível mínimo necessário: {required_level}")
+            
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ==============================================
+# CAPTCHA DE NÚMEROS RABISCADOS
 # ==============================================
 
 @router.get("/captcha/generate")
-async def generate_captcha(request: Request):
+async def generate_captcha(request: Request, session_type: str = "login"):
     """
-    Gera CAPTCHA MATEMÁTICO (soma simples)
-    - Desafio: "5 + 3 = ?"
-    - Resposta: número (ex: 8)
-    - Tempo de resposta: < 2ms
-    - Otimizado para mobile com Connection: close
+    Gera CAPTCHA com números distorcidos/rabiscados
+    O usuário deve reescrever os números que aparecem na imagem
     """
     try:
-        # Gerar desafio matemático e obter imagem
-        img_bytes, captcha_id = captcha_manager.generate_captcha_image(request)
+        client_ip = request.client.host if request.client else "unknown"
+        allowed = await rate_limiter.check_rate_limit(f"captcha:{client_ip}", 30, 300)
         
-        logger.info(f"📐 CAPTCHA Matemático gerado - ID: {captcha_id[:12]}... - Tamanho: {len(img_bytes)} bytes")
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Muitas solicitações de CAPTCHA. Aguarde alguns minutos."
+            )
+        
+        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
         
         return Response(
             content=img_bytes,
-            media_type="image/svg+xml",
+            media_type="image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml",
             headers={
                 "X-Captcha-ID": captcha_id,
                 "X-Captcha-Expires": "120",
                 "Cache-Control": "no-store, no-cache, must-revalidate, private",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "Connection": "close",  # Resolve atraso de rede
                 "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
-        raise HTTPException(
-            status_code=500, 
-            detail="Erro ao gerar desafio matemático. Tente novamente."
-        )
+        raise HTTPException(status_code=500, detail="Erro ao gerar desafio")
 
 
 @router.post("/captcha/validate")
 async def validate_captcha_endpoint(request: Request):
-    """
-    Valida resposta do CAPTCHA matemático (para teste)
-    """
+    """Valida resposta do CAPTCHA de números"""
     try:
         body = await request.json()
     except:
@@ -84,17 +135,17 @@ async def validate_captcha_endpoint(request: Request):
     if not captcha_id or not captcha_text:
         raise HTTPException(status_code=400, detail="CAPTCHA ID e resposta são obrigatórios")
     
-    valid = captcha_manager.validate_captcha(captcha_id, captcha_text, request)
+    valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request)
     
     return {
         "valid": valid,
-        "message": "✅ Resposta correta!" if valid else "❌ Resposta incorreta. Tente novamente."
+        "message": "✅ Código correto!" if valid else "❌ Código incorreto. Digite os números que aparecem na imagem."
     }
 
 
 @router.get("/captcha/status/{captcha_id}")
 async def get_captcha_status(captcha_id: str):
-    """Verifica status de um CAPTCHA (ativo, expirado, usado)"""
+    """Verifica status de um CAPTCHA"""
     if captcha_id not in captcha_manager.store._store:
         return {"status": "not_found", "message": "CAPTCHA não encontrado"}
     
@@ -109,12 +160,12 @@ async def get_captcha_status(captcha_id: str):
     return {
         "status": "active",
         "expires_in": session.time_remaining(),
-        "message": f"Desafio matemático válido por {session.time_remaining()} segundos"
+        "message": f"Desafio válido por {session.time_remaining()} segundos"
     }
 
 
 # ==============================================
-# LOGIN - OTIMIZADO COM CAPTCHA MATEMÁTICO
+# LOGIN (com CAPTCHA de números)
 # ==============================================
 
 @router.post("/login")
@@ -124,80 +175,47 @@ async def login(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """
-    🔐 LOGIN COM CAPTCHA MATEMÁTICO
-    ✅ Primeiro: Valida resposta matemática (rápido)
-    ✅ Depois: Verifica usuário
-    """
+    """Login com CAPTCHA de números (reescrever o que aparece na imagem)"""
     
     client_ip = request.client.host if request.client else "unknown"
     
-    # 🔥 VALIDAÇÃO 1: CAPTCHA Matemático (rápido)
-    captcha_id = request.headers.get("X-Captcha-ID")
+    # VALIDAÇÃO 1: CAPTCHA
+    captcha_id = request.headers.get("X-Captcha-ID") or login_data.captcha_id
     captcha_text = login_data.captcha_text
     
     if not captcha_id:
-        logger.warning(f"❌ CAPTCHA ID não fornecido - IP: {client_ip}")
-        raise HTTPException(
-            status_code=400, 
-            detail="CAPTCHA não carregado. Recarregue a página e tente novamente."
-        )
+        raise HTTPException(status_code=400, detail="CAPTCHA não carregado. Recarregue a página.")
     
     if not captcha_text:
-        logger.warning(f"❌ Resposta CAPTCHA não fornecida - IP: {client_ip}")
-        raise HTTPException(
-            status_code=400, 
-            detail="Responda o desafio matemático da imagem. Ex: Se aparecer '5 + 3 = ?', digite 8"
-        )
+        raise HTTPException(status_code=400, detail="Digite os números que aparecem na imagem.")
     
-    # Validar CAPTCHA matemático
-    if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
-        logger.warning(f"❌ CAPTCHA matemático incorreto - IP: {client_ip}, Resposta: {captcha_text}")
-        raise HTTPException(
-            status_code=400, 
-            detail="❌ Resposta incorreta! Calcule a soma corretamente e tente novamente."
-        )
+    if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
+        logger.warning(f"❌ CAPTCHA incorreto - IP: {client_ip}")
+        raise HTTPException(status_code=400, detail="❌ Código incorreto! Digite os números da imagem.")
     
-    logger.info(f"✅ CAPTCHA matemático validado para IP: {client_ip}")
+    logger.info(f"✅ CAPTCHA validado para IP: {client_ip}")
     
-    # 🔥 VALIDAÇÃO 2: Rate limiting
+    # VALIDAÇÃO 2: Rate limiting
     ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
     email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
     if not ip_allowed or not email_allowed:
-        logger.warning(f"⚠️ Rate limit excedido - IP: {client_ip}, Email: {login_data.email}")
-        raise HTTPException(
-            status_code=429, 
-            detail="Muitas tentativas de login. Aguarde 15 minutos antes de tentar novamente."
-        )
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 15 minutos.")
     
-    # 🔥 VALIDAÇÃO 3: Verificar usuário
+    # VALIDAÇÃO 3: Usuário
     user = crud.get_user_by_email(db, login_data.email)
     
     if not user or not user.verify_password(login_data.password):
-        logger.warning(f"❌ Falha de login - IP: {client_ip}, Email: {login_data.email}")
-        
-        # Aumentar contador de tentativas
-        await rate_limiter.increment(f"login_ip:{client_ip}")
-        await rate_limiter.increment(f"login_email:{login_data.email}")
-        
-        raise HTTPException(
-            status_code=401, 
-            detail="Email ou senha incorretos"
-        )
+        logger.warning(f"❌ Falha de login - IP: {client_ip}")
+        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
-    # Verificar se conta está ativa
     if not user.is_active:
-        logger.warning(f"⚠️ Tentativa de login em conta desativada: {user.email}")
-        raise HTTPException(
-            status_code=403, 
-            detail="Conta desativada. Entre em contato com o suporte."
-        )
+        raise HTTPException(status_code=403, detail="Conta desativada.")
     
-    # ✅ Tudo validado! Atualizar último login
+    # Atualizar último login
     crud.update_last_login(db, user.id)
     
-    # Dados para o token
+    # Criar tokens
     user_data = {
         "sub": user.email,
         "email": user.email,
@@ -205,21 +223,16 @@ async def login(
         "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
         "plan": user.plan.value if hasattr(user.plan, 'value') else str(user.plan),
         "credits": user.credits,
-        "is_admin": user.is_admin
+        "is_admin": user.is_admin,
+        "admin_level": user.admin_level if hasattr(user, 'admin_level') else None
     }
     
-    # Criar par de tokens
     tokens = jwt_manager.create_token_pair(user_data)
     
-    # Salvar refresh token no banco
-    user.set_refresh_token(
-        tokens["refresh_token"],
-        tokens["refresh_jti"],
-        7
-    )
+    # Salvar refresh token
+    user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
     db.commit()
     
-    # Dados para o frontend
     response_data = {
         "success": True,
         "access_token": tokens["access_token"],
@@ -233,58 +246,39 @@ async def login(
         "plan": str(user.plan),
         "credits": user.credits,
         "is_admin": user.is_admin,
+        "admin_level": user.admin_level if hasattr(user, 'admin_level') else None,
         "credits_display": "∞" if user.is_admin else str(user.credits),
         "message": "Login realizado com sucesso"
     }
     
     api_response = JSONResponse(content=response_data)
+    api_response = set_auth_cookies(api_response, tokens["access_token"], tokens["refresh_token"], tokens["expires_in"])
     
-    # Setar cookies
-    api_response = set_auth_cookies(
-        response=api_response,
-        access_token=tokens["access_token"],
-        refresh_token=tokens["refresh_token"],
-        expires_in=tokens["expires_in"]
-    )
-    
-    admin_tag = "👑 " if user.is_admin else ""
-    logger.info(f"✅ {admin_tag}Login bem-sucedido: {user.email} - IP: {client_ip}")
+    logger.info(f"✅ Login: {user.email} - IP: {client_ip}")
     
     return api_response
 
 
 # ==============================================
-# REGISTER - COM CAPTCHA MATEMÁTICO
+# REGISTER (com CAPTCHA de números)
 # ==============================================
 
 @router.post("/register")
-async def register(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """
-    📝 REGISTRO COM CAPTCHA MATEMÁTICO
-    ✅ Primeiro: Valida resposta matemática
-    ✅ Depois: Cria usuário
-    """
+async def register(request: Request, db: Session = Depends(get_db)):
+    """Registro com CAPTCHA de números (reescrever o que aparece na imagem)"""
     
     client_ip = request.client.host if request.client else "unknown"
     
-    # 🔥 VALIDAÇÃO 1: CAPTCHA Matemático
+    # CAPTCHA obrigatório
     captcha_id = request.headers.get("X-Captcha-ID")
     
     if not captcha_id:
-        logger.warning(f"❌ Registro - CAPTCHA ID não fornecido - IP: {client_ip}")
-        raise HTTPException(
-            status_code=400, 
-            detail="CAPTCHA não carregado. Recarregue a página e tente novamente."
-        )
+        raise HTTPException(status_code=400, detail="CAPTCHA não carregado. Recarregue a página.")
     
     try:
         body = await request.json()
-    except Exception as e:
-        logger.error(f"❌ Registro - corpo inválido: {e}")
-        raise HTTPException(status_code=400, detail="Corpo da requisição inválido")
+    except:
+        raise HTTPException(status_code=400, detail="Corpo inválido")
     
     name = body.get("name", "")
     email = body.get("email", "")
@@ -293,37 +287,18 @@ async def register(
     captcha_text = body.get("captcha_text", "")
     
     if not captcha_text:
-        logger.warning(f"❌ Registro - resposta CAPTCHA não fornecida - IP: {client_ip}")
-        raise HTTPException(
-            status_code=400, 
-            detail="Responda o desafio matemático da imagem antes de continuar."
-        )
+        raise HTTPException(status_code=400, detail="Digite os números que aparecem na imagem.")
     
-    # Validar CAPTCHA matemático
-    if not captcha_manager.validate_captcha(captcha_id, captcha_text, request):
-        logger.warning(f"❌ Registro - CAPTCHA matemático incorreto - IP: {client_ip}")
-        raise HTTPException(
-            status_code=400, 
-            detail="❌ Resposta incorreta! Calcule a soma corretamente e tente novamente."
-        )
+    if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
+        logger.warning(f"❌ Registro - CAPTCHA incorreto - IP: {client_ip}")
+        raise HTTPException(status_code=400, detail="❌ Código incorreto! Digite os números da imagem.")
     
-    logger.info(f"✅ Registro - CAPTCHA matemático validado para IP: {client_ip}")
-    
-    # 🔥 VALIDAÇÃO 2: Rate limiting
-    allowed = await rate_limiter.check_rate_limit(
-        f"register:{client_ip}", 
-        max_requests=3,
-        window=3600
-    )
-    
+    # Rate limiting
+    allowed = await rate_limiter.check_rate_limit(f"register:{client_ip}", 3, 3600)
     if not allowed:
-        logger.warning(f"⚠️ Registro - Rate limit excedido - IP: {client_ip}")
-        raise HTTPException(
-            status_code=429, 
-            detail="Muitas tentativas de registro. Aguarde 1 hora antes de tentar novamente."
-        )
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 hora.")
     
-    # 🔥 VALIDAÇÃO 3: Validações de negócio
+    # Validações
     if not all([name, email, password, workshop_name]):
         raise HTTPException(status_code=400, detail="Todos os campos são obrigatórios")
     
@@ -333,9 +308,7 @@ async def register(
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Email inválido")
     
-    # Verificar email já existe
     if crud.get_user_by_email(db, email):
-        logger.warning(f"⚠️ Registro - Email já cadastrado: {email}")
         raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     # Criar usuário
@@ -348,7 +321,7 @@ async def register(
     
     user = crud.create_user(db=db, user=user_data)
     
-    logger.info(f"✅ Usuário registrado com sucesso: {user.email} - IP: {client_ip}")
+    logger.info(f"✅ Usuário registrado: {user.email} - IP: {client_ip}")
     
     return {
         "success": True,
@@ -384,11 +357,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     if not access_token and not refresh_token:
         return JSONResponse(
             status_code=401,
-            content={
-                "status": "no_token",
-                "message": "Nenhum token encontrado",
-                "action": "redirect_to_login"
-            }
+            content={"status": "no_token", "message": "Nenhum token encontrado", "action": "redirect_to_login"}
         )
     
     if access_token:
@@ -409,6 +378,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     "user": user.email,
                     "name": user.name,
                     "is_admin": user.is_admin,
+                    "admin_level": user.admin_level if hasattr(user, 'admin_level') else None,
                     "credits": user.credits,
                     "credits_display": "∞" if user.is_admin else str(user.credits),
                     "expires_in": expires_in,
@@ -435,22 +405,16 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     "user": user.email,
                     "name": user.name,
                     "is_admin": user.is_admin,
+                    "admin_level": user.admin_level if hasattr(user, 'admin_level') else None,
                     "credits": user.credits,
                     "credits_display": "∞" if user.is_admin else str(user.credits),
                     "action": "update_tokens"
                 }
                 
                 response = JSONResponse(content=response_data)
-                
-                response = set_auth_cookies(
-                    response=response,
-                    access_token=new_tokens["access_token"],
-                    refresh_token=new_tokens["refresh_token"],
-                    expires_in=new_tokens["expires_in"]
-                )
+                response = set_auth_cookies(response, new_tokens["access_token"], new_tokens["refresh_token"], new_tokens["expires_in"])
                 
                 return response
-                
         except Exception as e:
             logger.error(f"❌ Erro no refresh: {e}")
     
@@ -464,13 +428,8 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     
     response = JSONResponse(
         status_code=401,
-        content={
-            "status": "invalid",
-            "message": "Sessão expirada. Faça login novamente.",
-            "action": "clear_storage_and_redirect"
-        }
+        content={"status": "invalid", "message": "Sessão expirada. Faça login novamente.", "action": "clear_storage_and_redirect"}
     )
-    
     response = clear_auth_cookies(response)
     
     return response
@@ -481,10 +440,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
 # ==============================================
 
 @router.post("/refresh")
-async def refresh_token(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def refresh_token(request: Request, db: Session = Depends(get_db)):
     """Renova access token manualmente"""
     
     try:
@@ -511,13 +467,7 @@ async def refresh_token(
     }
     
     response = JSONResponse(content=response_data)
-    
-    response = set_auth_cookies(
-        response=response,
-        access_token=new_tokens["access_token"],
-        refresh_token=new_tokens["refresh_token"],
-        expires_in=new_tokens["expires_in"]
-    )
+    response = set_auth_cookies(response, new_tokens["access_token"], new_tokens["refresh_token"], new_tokens["expires_in"])
     
     return response
 
@@ -527,10 +477,7 @@ async def refresh_token(
 # ==============================================
 
 @router.post("/logout")
-async def logout(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def logout(request: Request, db: Session = Depends(get_db)):
     """Logout - invalida tokens e limpa cookies"""
     
     try:
@@ -547,12 +494,7 @@ async def logout(
     if refresh_token:
         await jwt_manager.logout(refresh_token, db, access_token)
     
-    response = JSONResponse(content={
-        "status": "logged_out",
-        "message": "Logout realizado com sucesso",
-        "action": "clear_storage"
-    })
-    
+    response = JSONResponse(content={"status": "logged_out", "message": "Logout realizado com sucesso", "action": "clear_storage"})
     response = clear_auth_cookies(response)
     
     return response
@@ -563,9 +505,7 @@ async def logout(
 # ==============================================
 
 @router.get("/me")
-async def get_me(
-    current_user = Depends(get_current_active_user)
-):
+async def get_me(current_user = Depends(get_current_active_user)):
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -575,6 +515,7 @@ async def get_me(
         "plan": str(current_user.plan),
         "credits": current_user.credits,
         "is_admin": current_user.is_admin,
+        "admin_level": current_user.admin_level if hasattr(current_user, 'admin_level') else None,
         "is_active": current_user.is_active
     }
 
@@ -624,9 +565,12 @@ async def get_all_users(
     skip: int = 0,
     limit: int = 100
 ):
+    """Lista todos os usuários (admin nível 1+ pode ver)"""
     users = crud.get_all_users(db, skip=skip, limit=limit)
-    return [
-        {
+    
+    result = []
+    for u in users:
+        user_data = {
             "id": u.id,
             "name": u.name,
             "email": u.email,
@@ -634,12 +578,19 @@ async def get_all_users(
             "role": str(u.role),
             "plan": str(u.plan),
             "credits": u.credits,
-            "is_admin": u.is_admin,
             "is_active": u.is_active,
             "created_at": u.created_at.isoformat() if u.created_at else None
         }
-        for u in users
-    ]
+        
+        if current_user.is_admin:
+            user_data.update({
+                "is_admin": u.is_admin,
+                "admin_level": u.admin_level if hasattr(u, 'admin_level') and u.is_admin else None,
+            })
+        
+        result.append(user_data)
+    
+    return result
 
 
 @router.get("/admin/stats")
@@ -647,58 +598,205 @@ async def get_stats(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
+    """Estatísticas do sistema"""
     return crud.get_user_stats(db)
+
+
+@router.get("/admin/captcha-stats")
+async def get_captcha_stats(current_user = Depends(get_current_admin_user)):
+    return captcha_manager.get_stats()
 
 
 @router.post("/admin/make-admin")
 async def make_admin(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
+    """Promove usuário a admin - VERSÃO SEGURA"""
     try:
         body = await request.json()
         email = body.get("email")
-    except:
-        raise HTTPException(400, "Corpo inválido")
-    
-    user = crud.get_user_by_email(db, email)
-    if not user:
-        raise HTTPException(404, "Usuário não encontrado")
-    
-    user.is_admin = True
-    db.commit()
-    
-    return {"message": f"{email} agora é admin"}
+        admin_level = body.get("admin_level", "admin")
+        reason = body.get("reason", "")
+        
+        if not email:
+            raise HTTPException(400, "Email é obrigatório")
+        
+        current_level = getattr(current_user, 'admin_level', None)
+        
+        if not current_level:
+            logger.warning(f"Admin sem nível definido: {current_user.email}")
+            if admin_level not in ["admin", "moderator"]:
+                raise HTTPException(403, "Admin sem nível definido só pode criar admins normais")
+        else:
+            if current_level == "moderator":
+                raise HTTPException(403, "Moderadores não podem promover usuários")
+            
+            if admin_level == "admin" and current_level != "super_admin":
+                raise HTTPException(403, "Apenas super administradores podem criar administradores")
+        
+        target_user = crud.get_user_by_email(db, email)
+        if not target_user:
+            raise HTTPException(404, "Usuário não encontrado")
+        
+        if target_user.is_admin:
+            raise HTTPException(400, f"Usuário {email} já é administrador")
+        
+        if target_user.id == current_user.id:
+            raise HTTPException(400, "Não é possível promover a si mesmo")
+        
+        admin_log = {
+            "action": "make_admin",
+            "admin_id": current_user.id,
+            "admin_email": current_user.email,
+            "admin_level": current_level,
+            "target_email": email,
+            "target_level": admin_level,
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat(),
+            "ip": request.client.host if request.client else "unknown"
+        }
+        
+        target_user.is_admin = True
+        target_user.admin_level = admin_level
+        target_user.admin_created_at = datetime.utcnow()
+        target_user.admin_notes = reason
+        
+        if not hasattr(current_user, 'admin_actions_log') or not current_user.admin_actions_log:
+            current_user.admin_actions_log = []
+        current_user.admin_actions_log.append(admin_log)
+        
+        db.commit()
+        
+        logger.warning(f"🔐 NOVO ADMIN: {email} promovido a {admin_level} por {current_user.email}")
+        
+        return {
+            "message": f"✅ {email} agora é {admin_level}",
+            "admin_level": admin_level,
+            "created_by": current_user.email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao promover admin: {e}")
+        raise HTTPException(500, f"Erro interno: {str(e)}")
 
 
 @router.post("/admin/remove-admin")
 async def remove_admin(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
+    """Remove permissões de admin - VERSÃO SEGURA"""
     try:
         body = await request.json()
         email = body.get("email")
-    except:
-        raise HTTPException(400, "Corpo inválido")
-    
-    user = crud.get_user_by_email(db, email)
-    if not user:
-        raise HTTPException(404, "Usuário não encontrado")
-    
-    user.is_admin = False
-    db.commit()
-    
-    return {"message": f"Admin removido de {email}"}
+        reason = body.get("reason", "")
+        
+        if not email:
+            raise HTTPException(400, "Email é obrigatório")
+        
+        target_user = crud.get_user_by_email(db, email)
+        if not target_user:
+            raise HTTPException(404, "Usuário não encontrado")
+        
+        if not target_user.is_admin:
+            raise HTTPException(400, f"Usuário {email} não é administrador")
+        
+        target_level = getattr(target_user, 'admin_level', 'admin')
+        current_level = getattr(current_user, 'admin_level', None)
+        
+        if target_level == "super_admin":
+            raise HTTPException(403, "Não é possível remover super administrador")
+        
+        if current_level:
+            level_priority = {"moderator": 1, "admin": 2, "super_admin": 3}
+            if level_priority.get(target_level, 0) >= level_priority.get(current_level, 0):
+                raise HTTPException(403, "Não é possível remover administrador de nível igual ou superior")
+        
+        if target_user.id == current_user.id:
+            raise HTTPException(400, "Não é possível remover a si mesmo")
+        
+        admin_log = {
+            "action": "remove_admin",
+            "admin_id": current_user.id,
+            "admin_email": current_user.email,
+            "target_email": email,
+            "target_previous_level": target_level,
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat(),
+            "ip": request.client.host if request.client else "unknown"
+        }
+        
+        target_user.is_admin = False
+        target_user.admin_level = None
+        target_user.admin_notes = f"Removido por {current_user.email} - {reason}"
+        
+        if not hasattr(current_user, 'admin_actions_log') or not current_user.admin_actions_log:
+            current_user.admin_actions_log = []
+        current_user.admin_actions_log.append(admin_log)
+        
+        db.commit()
+        
+        logger.warning(f"🔐 ADMIN REMOVIDO: {email} perdeu permissões por {current_user.email}")
+        
+        return {
+            "message": f"✅ Permissões de admin removidas de {email}",
+            "removed_by": current_user.email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao remover admin: {e}")
+        raise HTTPException(500, f"Erro interno: {str(e)}")
 
 
-@router.get("/admin/captcha-stats")
-async def get_captcha_stats(
-    current_user = Depends(get_current_admin_user)
+@router.get("/admin/audit-log")
+async def get_admin_audit_log(
+    current_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+    limit: int = 100
 ):
-    return captcha_manager.get_stats()
+    """Retorna log de ações administrativas (apenas super_admin)"""
+    if getattr(current_user, 'admin_level', None) != "super_admin":
+        raise HTTPException(403, "Apenas super administradores podem ver logs de auditoria")
+    
+    from backend.models import User
+    admins = db.query(User).filter(User.is_admin == True).all()
+    
+    all_logs = []
+    for admin in admins:
+        if hasattr(admin, 'admin_actions_log') and admin.admin_actions_log:
+            all_logs.extend(admin.admin_actions_log)
+    
+    all_logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    
+    return {
+        "logs": all_logs[:limit],
+        "total": len(all_logs)
+    }
 
 
-print("✅ auth_routes.py carregado - Sistema de CAPTCHA Matemático ativo")
+# ==============================================
+# HEALTH CHECK
+# ==============================================
+
+@router.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": {
+            "captcha": "active",
+            "jwt": "active"
+        }
+    }
+
+
+print("✅ auth_routes.py carregado ")
