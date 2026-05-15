@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO ATUALIZADA COM CAPTCHA APENAS
+# main.py (na raiz) - VERSÃO CORRIGIDA COM ORDEM DE ROTAS CORRETA
 import sys
 import os
 from pathlib import Path
@@ -205,33 +205,11 @@ async def log_requests(request: Request, call_next):
 if frontend_available:
     print("\n🌐 CONFIGURANDO ARQUIVOS ESTÁTICOS...")
     
+    # Montar toda a pasta frontend em /static
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
     print("✅ Arquivos estáticos montados em /static")
     
-    # Servir arquivos JS específicos
-    js_dir = FRONTEND_DIR / "js"
-    
-    @app.get("/js/auth.js", include_in_schema=False)
-    async def serve_auth_js():
-        auth_js_path = js_dir / "auth.js"
-        if auth_js_path.exists():
-            return FileResponse(auth_js_path, media_type="application/javascript")
-        raise HTTPException(status_code=404, detail="auth.js não encontrado")
-    
-    @app.get("/js/app.js", include_in_schema=False)
-    async def serve_app_js():
-        app_js_path = js_dir / "app.js"
-        if app_js_path.exists():
-            return FileResponse(app_js_path, media_type="application/javascript")
-        raise HTTPException(status_code=404, detail="app.js não encontrado")
-    
-    @app.get("/js/dashboard.js", include_in_schema=False)
-    async def serve_dashboard_js():
-        dashboard_js_path = js_dir / "dashboard.js"
-        if dashboard_js_path.exists():
-            return FileResponse(dashboard_js_path, media_type="application/javascript")
-        raise HTTPException(status_code=404, detail="dashboard.js não encontrado")
-    
+    # Rotas HTML
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
         token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -277,7 +255,6 @@ if frontend_available:
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
     print("✅ Rotas HTML configuradas")
-    print("✅ Rotas de arquivos JS configuradas")
 
 # ==============================================
 # CARREGAR MÓDULOS
@@ -323,9 +300,10 @@ except Exception as e:
 time.sleep(1)
 
 # ==============================================
-# REGISTRO DE ROTAS
+# REGISTRO DE ROTAS - ORDEM CORRETA (MAIS ESPECÍFICO PRIMEIRO)
 # ==============================================
 print("\n📦 Registrando rotas da API...")
+print("   Ordem: /api/auth → /api/payments → /api (geral)")
 
 try:
     from backend.api import auth_routes
@@ -335,16 +313,28 @@ try:
     if hasattr(auth_routes, 'captcha_manager'):
         auth_routes.captcha_manager = captcha_manager
     
+    # 1. ROTAS DE AUTENTICAÇÃO (mais específicas: /api/auth/*)
     app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
-    print("✅ Rotas de autenticação: /api/auth/*")
+    print("✅ 1. Rotas de autenticação: /api/auth/*")
+    print("      → CAPTCHA: /api/auth/captcha/generate")
+    print("      → Login: /api/auth/login")
+    print("      → Registro: /api/auth/register")
     
+    # 2. ROTAS DE PAGAMENTO (específicas: /api/payments/*)
+    app.include_router(payment_routes.router, prefix="/api/payments", tags=["payments"])
+    print("✅ 2. Rotas de pagamento: /api/payments/*")
+    print("      → Criar pagamento: /api/payments/create")
+    print("      → Webhook: /api/payments/webhook")
+    
+    # 3. ROTAS GERAIS (catch-all: /api/*) - DEVE SER A ÚLTIMA
     app.include_router(routes.router, prefix="/api", tags=["api"])
-    print("✅ Rotas da API: /api/*")
+    print("✅ 3. Rotas da API principal: /api/*")
+    print("      → Upload: /api/upload")
+    print("      → Status: /api/status/{id}")
+    print("      → Health: /api/health")
     
-    app.include_router(payment_routes.router, prefix="/api", tags=["payments"])
-    print("✅ Rotas de pagamento: /api/payments/*")
-    
-    print("✅ Sistema de rotas configurado")
+    print("✅ Sistema de rotas configurado com sucesso!")
+    print("   🔒 CAPTCHA protegido contra sequestro de rota")
     
 except Exception as e:
     print(f"❌ Erro ao registrar rotas: {e}")
@@ -452,6 +442,21 @@ async def captcha_stats(current_user = Depends(get_current_admin_user)):
 async def startup_event():
     print("\n🚀 Inicializando sistema...")
     
+    # Verificar rotas registradas
+    print("\n📋 Rotas registradas (API):")
+    auth_routes_found = False
+    for route in app.routes:
+        if hasattr(route, 'path') and '/api' in route.path:
+            methods = getattr(route, 'methods', set())
+            print(f"   {methods} {route.path}")
+            if '/api/auth/captcha/generate' in route.path:
+                auth_routes_found = True
+    
+    if auth_routes_found:
+        print("\n   ✅ ROTA /api/auth/captcha/generate ENCONTRADA!")
+    else:
+        print("\n   ❌ ROTA /api/auth/captcha/generate NÃO ENCONTRADA!")
+    
     try:
         asyncio.create_task(captcha_manager.store.start_cleanup_loop())
         print("✅ Cleanup loop do CAPTCHA iniciado")
@@ -506,7 +511,6 @@ async def startup_event():
     ║        └─ {settings.CAPTCHA_CODE_LENGTH} números por desafio                         ║
     ║        └─ 2 minutos de validade                                              ║
     ║        └─ Uso único                                                           ║
-    ║        └─ Efeitos: ruído, linhas, desfoque                                   ║
     ║     ⏱️ Rate Limiting: ✅                                                      ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🔗 URLs:                                                                    ║
@@ -515,6 +519,7 @@ async def startup_event():
     ║     💳 Planos: http://localhost:{settings.PORT}/planos                       ║
     ║     📚 API Docs: http://localhost:{settings.PORT}/api/docs                   ║
     ║     🔐 Security Info: http://localhost:{settings.PORT}/api/security/info     ║
+    ║     🎯 CAPTCHA: http://localhost:{settings.PORT}/api/auth/captcha/generate   ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S'):<71} ║
     ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -547,7 +552,7 @@ async def not_found_exception_handler(request: Request, exc):
             content={
                 "error": "Endpoint não encontrado",
                 "path": request.url.path,
-                "suggestions": ["/api/docs", "/api/health", "/api/auth/login", "/api/security/info"]
+                "suggestions": ["/api/docs", "/api/health", "/api/auth/login", "/api/security/info", "/api/auth/captcha/generate"]
             }
         )
     if login_available and not request.url.path.startswith('/static'):
@@ -568,6 +573,7 @@ if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
     print(f"🔢 CAPTCHA: Números Rabiscados ({settings.CAPTCHA_CODE_LENGTH} dígitos - 2min validade)")
+    print(f"📍 CAPTCHA URL: http://localhost:{settings.PORT}/api/auth/captcha/generate")
     print("🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(
@@ -576,4 +582,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
         log_level="info"
-    ) 
+    )

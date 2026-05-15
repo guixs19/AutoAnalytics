@@ -312,3 +312,5 @@ class GeminiService:
 """))
         
         full_prompt = f"""{specific_prompt}**DADOS RECEBIDOS:**```json{data_str}"""
+
+gemini_service = GeminiService()

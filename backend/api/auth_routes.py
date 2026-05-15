@@ -1,6 +1,6 @@
-# backend/api/auth_routes.py - VERSÃO COM CAPTCHA DE NÚMEROS RABISCADOS
+# backend/api/auth_routes.py - VERSÃO COMPLETA COM TODAS AS ROTAS
 """
-Rotas de autenticação com CAPTCHA simples (reescrever números)
+Rotas de autenticação com CAPTCHA de números rabiscados
 """
 
 from datetime import timedelta, datetime
@@ -83,17 +83,20 @@ def require_min_admin_level(required_level: str):
 
 
 # ==============================================
-# CAPTCHA DE NÚMEROS RABISCADOS
+# CAPTCHA ROUTES - ROTAS DE NÚMEROS RABISCADOS
 # ==============================================
 
 @router.get("/captcha/generate")
 async def generate_captcha(request: Request, session_type: str = "login"):
     """
     Gera CAPTCHA com números distorcidos/rabiscados
+    URL: /api/auth/captcha/generate
     O usuário deve reescrever os números que aparecem na imagem
     """
     try:
         client_ip = request.client.host if request.client else "unknown"
+        
+        # Rate limit: máximo 30 CAPTCHAs por 5 minutos
         allowed = await rate_limiter.check_rate_limit(f"captcha:{client_ip}", 30, 300)
         
         if not allowed:
@@ -102,11 +105,16 @@ async def generate_captcha(request: Request, session_type: str = "login"):
                 detail="Muitas solicitações de CAPTCHA. Aguarde alguns minutos."
             )
         
+        # Gerar imagem CAPTCHA
         img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
         
+        # Determinar o tipo de conteúdo
+        content_type = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml"
+        
+        # Retornar imagem com headers
         return Response(
             content=img_bytes,
-            media_type="image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml",
+            media_type=content_type,
             headers={
                 "X-Captcha-ID": captcha_id,
                 "X-Captcha-Expires": "120",
@@ -118,7 +126,7 @@ async def generate_captcha(request: Request, session_type: str = "login"):
         raise
     except Exception as e:
         logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
-        raise HTTPException(status_code=500, detail="Erro ao gerar desafio")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar desafio: {str(e)}")
 
 
 @router.post("/captcha/validate")
@@ -146,7 +154,8 @@ async def validate_captcha_endpoint(request: Request):
 @router.get("/captcha/status/{captcha_id}")
 async def get_captcha_status(captcha_id: str):
     """Verifica status de um CAPTCHA"""
-    if captcha_id not in captcha_manager.store._store:
+    # Verificar se existe no store
+    if not hasattr(captcha_manager, 'store') or captcha_id not in captcha_manager.store._store:
         return {"status": "not_found", "message": "CAPTCHA não encontrado"}
     
     session = captcha_manager.store._store[captcha_id]
@@ -258,81 +267,6 @@ async def login(
     
     return api_response
 
-
-# ==============================================
-# REGISTER (com CAPTCHA de números)
-# ==============================================
-
-@router.post("/register")
-async def register(request: Request, db: Session = Depends(get_db)):
-    """Registro com CAPTCHA de números (reescrever o que aparece na imagem)"""
-    
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # CAPTCHA obrigatório
-    captcha_id = request.headers.get("X-Captcha-ID")
-    
-    if not captcha_id:
-        raise HTTPException(status_code=400, detail="CAPTCHA não carregado. Recarregue a página.")
-    
-    try:
-        body = await request.json()
-    except:
-        raise HTTPException(status_code=400, detail="Corpo inválido")
-    
-    name = body.get("name", "")
-    email = body.get("email", "")
-    password = body.get("password", "")
-    workshop_name = body.get("workshop_name", "")
-    captcha_text = body.get("captcha_text", "")
-    
-    if not captcha_text:
-        raise HTTPException(status_code=400, detail="Digite os números que aparecem na imagem.")
-    
-    if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
-        logger.warning(f"❌ Registro - CAPTCHA incorreto - IP: {client_ip}")
-        raise HTTPException(status_code=400, detail="❌ Código incorreto! Digite os números da imagem.")
-    
-    # Rate limiting
-    allowed = await rate_limiter.check_rate_limit(f"register:{client_ip}", 3, 3600)
-    if not allowed:
-        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 hora.")
-    
-    # Validações
-    if not all([name, email, password, workshop_name]):
-        raise HTTPException(status_code=400, detail="Todos os campos são obrigatórios")
-    
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
-    
-    if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Email inválido")
-    
-    if crud.get_user_by_email(db, email):
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    
-    # Criar usuário
-    user_data = schemas.UserCreate(
-        name=name,
-        email=email,
-        password=password,
-        workshop_name=workshop_name
-    )
-    
-    user = crud.create_user(db=db, user=user_data)
-    
-    logger.info(f"✅ Usuário registrado: {user.email} - IP: {client_ip}")
-    
-    return {
-        "success": True,
-        "message": "✅ Conta criada com sucesso! Faça login para continuar.",
-        "user": {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-            "workshop_name": user.workshop_name
-        }
-    }
 
 
 # ==============================================
@@ -799,4 +733,4 @@ async def health_check():
     }
 
 
-print("✅ auth_routes.py carregado ")
+print("✅ auth_routes.py carregado com TODAS as rotas CAPTCHA")

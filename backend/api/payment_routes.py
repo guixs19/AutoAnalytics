@@ -13,7 +13,7 @@ import logging
 
 from backend.database import get_db
 from backend import crud
-from backend.auth import get_current_user
+from backend.api.auth_routes import get_current_user
 from backend.models import User, Payment, DailyCreditLog, UserPlan
 from backend.services.payment_service import MercadoPagoService
 

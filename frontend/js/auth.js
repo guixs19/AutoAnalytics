@@ -1,7 +1,7 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA COM CAPTCHA DE NÚMEROS RABISCADOS
+// frontend/js/auth.js - VERSÃO CORRIGIDA PARA PNG DIRETO
 /**
- * Sistema de Autenticação com CAPTCHA simples
- * Usuário deve reescrever os números que aparecem na imagem
+ * Sistema de Autenticação com CAPTCHA de números rabiscados
+ * AGORA FUNCIONA COM IMAGEM PNG DIRETA
  */
 
 class Auth {
@@ -28,12 +28,11 @@ class Auth {
     }
     
     // ==============================================
-    // CAPTCHA DE NÚMEROS RABISCADOS - CORRIGIDO
+    // CAPTCHA DE NÚMEROS RABISCADOS - VERSÃO PNG DIRETO
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
         try {
-            // CORREÇÃO: Adicionado /auth/ antes de /captcha/generate
             const url = `${this.apiBase}/auth/captcha/generate?session_type=${sessionType}&t=${Date.now()}`;
             console.log(`🔄 Carregando CAPTCHA de: ${url}`);
             
@@ -51,8 +50,7 @@ class Auth {
                 throw new Error(`Erro ao carregar CAPTCHA: ${response.status}`);
             }
             
-            // Verifica o tipo de conteúdo
-            const contentType = response.headers.get('Content-Type');
+            // 1. Lê o ID do CAPTCHA do HEADER (NOVO!)
             const captchaId = response.headers.get('X-Captcha-ID');
             
             if (!captchaId) {
@@ -63,14 +61,14 @@ class Auth {
             console.log(`✅ CAPTCHA ID recebido: ${captchaId.substring(0, 8)}...`);
             this.currentCaptchaId = captchaId;
             
-            // Converte resposta para blob e cria URL
+            // 2. Converte a imagem PNG em blob e cria URL
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            // Atualiza imagem do CAPTCHA
+            // 3. Atualiza a imagem no DOM
             const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
             if (captchaImage) {
-                // Revoga URL antiga para evitar memory leak
+                // Limpa URL antiga para evitar memory leak
                 if (captchaImage.src && captchaImage.src.startsWith('blob:')) {
                     URL.revokeObjectURL(captchaImage.src);
                 }
@@ -80,21 +78,22 @@ class Auth {
                 console.error(`❌ Elemento ${sessionType}CaptchaImage não encontrado`);
             }
             
-            // Atualiza hidden field com o ID
+            // 4. Salva o ID em campo hidden
             const captchaIdField = document.getElementById(`${sessionType}CaptchaId`);
             if (captchaIdField) {
                 captchaIdField.value = captchaId;
             }
             
-            // Inicia timer de 2 minutos
+            // 5. Inicia timer de 2 minutos
             this.startCaptchaTimer(sessionType);
             
-            // Limpa input anterior
+            // 6. Limpa input anterior
             const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
             if (captchaInput) {
                 captchaInput.value = '';
                 captchaInput.disabled = false;
                 captchaInput.placeholder = 'Digite os números da imagem';
+                captchaInput.focus();
             }
             
             return captchaId;
@@ -109,7 +108,7 @@ class Auth {
     showCaptchaError(sessionType = 'login') {
         const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
         if (captchaImage) {
-            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="100" viewBox="0 0 280 100"%3E%3Crect width="280" height="100" fill="%23e53e3e"/%3E%3Ctext x="140" y="55" font-family="monospace" font-size="16" fill="white" text-anchor="middle"%3E⚠️ ERRO - Clique para recarregar%3C/text%3E%3C/svg%3E';
+            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="100" viewBox="0 0 280 100"%3E%3Crect width="280" height="100" fill="%23e53e3e"/%3E%3Ctext x="140" y="55" font-family="monospace" font-size="14" fill="white" text-anchor="middle"%3E⚠️ ERRO - Clique para recarregar%3C/text%3E%3C/svg%3E';
         }
     }
     
@@ -150,7 +149,7 @@ class Auth {
                 const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
                 if (captchaInput) {
                     captchaInput.disabled = true;
-                    captchaInput.placeholder = 'EXPIRADO - Clique em ↻';
+                    captchaInput.placeholder = '📢 EXPIRADO - Clique em ↻';
                 }
             }
         }, 1000);
@@ -169,7 +168,7 @@ class Auth {
     }
     
     // ==============================================
-    // LOGIN - CORRIGIDO COM HEADERS CAPTCHA
+    // LOGIN - COM CAPTCHA NO HEADER
     // ==============================================
     
     async login(email, password, captchaText, captchaId) {
@@ -195,8 +194,7 @@ class Auth {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Captcha-ID': captchaId,
-                    'X-Captcha-Text': captchaText
+                    'X-Captcha-ID': captchaId
                 },
                 body: JSON.stringify({
                     email,
@@ -240,7 +238,7 @@ class Auth {
                 document.dispatchEvent(new CustomEvent('userAuthenticated', { detail: this.userData }));
                 
                 setTimeout(() => {
-                    window.location.href = '/dashboard.html';
+                    window.location.href = '/dashboard';
                 }, 1000);
                 
                 return true;
@@ -259,7 +257,7 @@ class Auth {
     }
     
     // ==============================================
-    // REGISTRO - CORRIGIDO COM HEADERS CAPTCHA
+    // REGISTRO - COM CAPTCHA NO HEADER
     // ==============================================
     
     async register(name, email, password, workshopName, captchaText, captchaId) {
@@ -290,8 +288,7 @@ class Auth {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Captcha-ID': captchaId,
-                    'X-Captcha-Text': captchaText
+                    'X-Captcha-ID': captchaId
                 },
                 body: JSON.stringify({
                     name,
@@ -314,7 +311,7 @@ class Auth {
                 this.showSuccess('Conta criada! Faça login para continuar.');
                 
                 setTimeout(() => {
-                    window.location.href = '/login.html';
+                    window.location.href = '/login';
                 }, 2000);
                 
                 return true;
@@ -457,7 +454,7 @@ class Auth {
         
         document.dispatchEvent(new CustomEvent('userLoggedOut'));
         
-        window.location.href = '/login.html';
+        window.location.href = '/login';
     }
     
     clearTokens() {
@@ -526,8 +523,8 @@ class Auth {
         }
         
         setTimeout(() => {
-            if (window.location.pathname !== '/planos.html') {
-                window.location.href = '/planos.html';
+            if (window.location.pathname !== '/planos') {
+                window.location.href = '/planos';
             }
         }, 2000);
     }
@@ -754,4 +751,4 @@ window.appAuth = new Auth();
 window.getAuth = () => window.appAuth;
 window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
 
-console.log('✅ auth.js carregado - CAPTCHA de números rabiscados ativo');
+console.log('✅ auth.js carregado - CAPTCHA PNG DIRETO ativo');

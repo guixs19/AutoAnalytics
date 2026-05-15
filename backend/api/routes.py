@@ -29,7 +29,7 @@ from functools import wraps
 # Banco de dados e modelos
 from backend.database import get_db
 from backend import crud, schemas
-from backend.auth import get_current_user
+from backend.api.auth_routes import get_current_user
 from backend.models import User, UserPlan
 from backend.crud import get_credits_display, check_credits, deduct_credits
 
@@ -47,12 +47,7 @@ from backend.services.service_factory import (
     is_gemini_available
 )
 
-# Utilitários
-from backend.utils.analytics_helpers import (
-    normalize_predictions,
-    calculate_prediction_stats,
-    auto_detect_target
-)
+
 
 # Configurar logging
 logger = logging.getLogger(__name__)
