@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO COMPLETA COM TODAS AS ROTAS
+# backend/api/auth_routes.py - VERSÃO COMPLETA COM TODAS AS ROTAS INCLUINDO REGISTER CORRIGIDO
 """
 Rotas de autenticação com CAPTCHA de números rabiscados
 """
@@ -80,6 +80,104 @@ def require_min_admin_level(required_level: str):
             return await func(*args, **kwargs)
         return wrapper
     return decorator
+
+
+# ==============================================
+# REGISTER - ROTA DE CADASTRO CORRIGIDA
+# ==============================================
+
+@router.post("/register")
+async def register(
+    register_data: schemas.UserCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Registro de novo usuário
+    URL: /api/auth/register
+    
+    Body esperado:
+    {
+        "name": "Nome do usuário",
+        "email": "email@exemplo.com",
+        "password": "senha123",
+        "workshop_name": "Oficina Exemplo" (opcional),
+        "phone": "11999999999" (opcional),
+        "captcha_text": "1234" (opcional, se usar CAPTCHA)
+    }
+    """
+    
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # VALIDAÇÃO 1: CAPTCHA (opcional - pode ser obrigatório se preferir)
+    captcha_id = request.headers.get("X-Captcha-ID")
+    captcha_text = register_data.captcha_text
+    
+    # Se o CAPTCHA foi enviado, validar
+    if captcha_id and captcha_text:
+        if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
+            logger.warning(f"❌ CAPTCHA inválido no registro - IP: {client_ip}")
+            raise HTTPException(
+                status_code=400, 
+                detail="❌ Código CAPTCHA incorreto! Digite os números que aparecem na imagem."
+            )
+        logger.info(f"✅ CAPTCHA validado para registro - IP: {client_ip}")
+    
+    # VALIDAÇÃO 2: Rate limiting para registro (evitar spam)
+    ip_allowed = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)  # 5 tentativas por hora
+    
+    if not ip_allowed:
+        raise HTTPException(
+            status_code=429, 
+            detail="Muitas tentativas de registro deste IP. Aguarde 1 hora antes de tentar novamente."
+        )
+    
+    # VALIDAÇÃO 3: Verificar se email já existe
+    existing_user = crud.get_user_by_email(db, register_data.email)
+    if existing_user:
+        logger.warning(f"⚠️ Tentativa de registro com email existente: {register_data.email} - IP: {client_ip}")
+        raise HTTPException(
+            status_code=400, 
+            detail="Este email já está cadastrado. Faça login ou recupere sua senha."
+        )
+    
+    # VALIDAÇÃO 4: Senha forte
+    if len(register_data.password) < 6:
+        raise HTTPException(
+            status_code=400, 
+            detail="A senha deve ter no mínimo 6 caracteres."
+        )
+    
+    # Criar usuário usando o crud.create_user (que já espera schemas.UserCreate)
+    try:
+        # O crud.create_user já faz o hash da senha e todas as validações
+        new_user = crud.create_user(db, register_data)
+        
+        # Log de registro bem-sucedido
+        logger.info(f"✅ NOVO USUÁRIO REGISTRADO: {new_user.email} - Nome: {new_user.name} - IP: {client_ip}")
+        
+        # Retornar sucesso
+        return {
+            "success": True,
+            "message": "Cadastro realizado com sucesso! Agora você pode fazer login.",
+            "user_id": new_user.id,
+            "user_email": new_user.email,
+            "user_name": new_user.name,
+            "credits": new_user.credits,
+            "redirect_to": "/login"
+        }
+        
+    except ValueError as e:
+        # Erro de validação (ex: email duplicado)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Erro ao registrar usuário: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Erro interno ao criar usuário. Tente novamente mais tarde."
+        )
 
 
 # ==============================================
@@ -211,10 +309,10 @@ async def login(
     if not ip_allowed or not email_allowed:
         raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 15 minutos.")
     
-    # VALIDAÇÃO 3: Usuário
-    user = crud.get_user_by_email(db, login_data.email)
+    # VALIDAÇÃO 3: Usuário - usando authenticate_user do crud
+    user = crud.authenticate_user(db, login_data.email, login_data.password)
     
-    if not user or not user.verify_password(login_data.password):
+    if not user:
         logger.warning(f"❌ Falha de login - IP: {client_ip}")
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
@@ -266,7 +364,6 @@ async def login(
     logger.info(f"✅ Login: {user.email} - IP: {client_ip}")
     
     return api_response
-
 
 
 # ==============================================
@@ -733,4 +830,4 @@ async def health_check():
     }
 
 
-print("✅ auth_routes.py carregado com TODAS as rotas CAPTCHA")
+print("✅ auth_routes.py carregado com TODAS as rotas (CAPTCHA + LOGIN + REGISTER + ADMIN)")

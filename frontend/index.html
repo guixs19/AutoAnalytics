@@ -326,6 +326,50 @@
             transition: width 1s ease;
         }
 
+        /* Limite Info Bar */
+        .limit-info {
+            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+            border-radius: 12px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-size: 0.85rem;
+            border: 1px solid #a5b4fc;
+        }
+
+        .limit-info i {
+            color: #4f46e5;
+            margin-right: 0.5rem;
+        }
+
+        .limit-info .limit-value {
+            font-weight: 700;
+            color: #4f46e5;
+        }
+
+        /* Size Warning */
+        .size-warning {
+            background: #fed7aa;
+            border: 1px solid #f97316;
+            color: #9a3412;
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+
+        .size-warning.show {
+            display: block;
+            animation: shake 0.3s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
         /* Responsividade */
         @media (max-width: 768px) {
             .hero-title {
@@ -341,7 +385,7 @@
             }
         }
 
-        /* ✅ NOVOS ESTILOS PARA ADMIN */
+        /* Admin Badge */
         .admin-badge {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
             color: white;
@@ -385,6 +429,30 @@
 
         .toast-warning {
             background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
+        }
+
+        /* Metric Card */
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #718096;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
     </style>
 </head>
@@ -522,6 +590,13 @@
                                     </span>
                                 </div>
                                 
+                                <!-- 🔥 LIMITE DE ARQUIVO - 15KB -->
+                                <div class="limit-info">
+                                    <i class="fas fa-hard-drive"></i>
+                                    <span>Limite de arquivo: <strong class="limit-value">15 KB</strong> por análise</span>
+                                    <i class="fas fa-shield-alt ms-2"></i>
+                                </div>
+                                
                                 <form id="uploadForm">
                                     <!-- Área de Upload -->
                                     <div class="upload-area mb-4" id="dropArea">
@@ -535,7 +610,7 @@
                                         </p>
                                         <div class="text-muted small mb-2">
                                             <i class="fas fa-info-circle me-1"></i>
-                                            Limite de <strong>10MB</strong> por arquivo
+                                            Limite de <strong>15KB</strong> por arquivo (aprox. 200-500 linhas)
                                         </div>
                                         <div>
                                             <label for="fileInput" class="btn btn-gradient btn-sm">
@@ -544,6 +619,12 @@
                                             </label>
                                             <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls">
                                         </div>
+                                    </div>
+                                    
+                                    <!-- Aviso de tamanho excedido -->
+                                    <div class="size-warning" id="sizeWarning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        <span id="sizeWarningText">Arquivo excede o limite de 15KB!</span>
                                     </div>
                                     
                                     <!-- Arquivo Selecionado -->
@@ -560,7 +641,7 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- 🔥 NOVO: Preview Tecnológico -->
+                                    <!-- Preview Tecnológico -->
                                     <div id="dataPreview" class="mt-4 d-none"></div>
                                     
                                     <!-- Indicador de Processamento Automático -->
@@ -767,6 +848,7 @@
                             <li>Você começa com 3 créditos</li>
                             <li>⭐ Premium ganha 1 crédito por dia</li>
                             <li>Cada análise consome 1 crédito</li>
+                            <li>📁 Arquivos limitados a <strong>15KB</strong></li>
                         </ul>
                     </div>
                 </div>
@@ -798,6 +880,10 @@
                     <span class="badge bg-light text-dark py-2 px-3 ms-2">
                         <i class="fas fa-chart-line me-1"></i>
                         Scikit-learn
+                    </span>
+                    <span class="badge bg-light text-dark py-2 px-3 ms-2">
+                        <i class="fas fa-hard-drive me-1"></i>
+                        15KB Limit
                     </span>
                 </div>
             </div>

@@ -1,7 +1,6 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA PARA PNG DIRETO
+// frontend/js/auth.js - VERSÃO CORRIGIDA COM FLAG INITIALIZED
 /**
  * Sistema de Autenticação com CAPTCHA de números rabiscados
- * AGORA FUNCIONA COM IMAGEM PNG DIRETA
  */
 
 class Auth {
@@ -15,20 +14,22 @@ class Auth {
         this.userData = null;
         this.currentCaptchaId = null;
         this.captchaTimer = null;
+        this.initialized = false;  // ← FLAG DE INICIALIZAÇÃO
         
         this.init();
     }
     
     async init() {
-        console.log('🔐 Inicializando Auth Manager...');
+        console.log('🔐 Inicializando AuthManager...');
         await this.checkToken();
         this.setupAuthPageListeners();
         this.updateUI();
+        this.initialized = true;  // ← MARCA COMO INICIALIZADO
         console.log(`✅ Auth Manager inicializado - Autenticado: ${this.isAuthenticated}`);
     }
     
     // ==============================================
-    // CAPTCHA DE NÚMEROS RABISCADOS - VERSÃO PNG DIRETO
+    // CAPTCHA DE NÚMEROS RABISCADOS
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
@@ -50,7 +51,6 @@ class Auth {
                 throw new Error(`Erro ao carregar CAPTCHA: ${response.status}`);
             }
             
-            // 1. Lê o ID do CAPTCHA do HEADER (NOVO!)
             const captchaId = response.headers.get('X-Captcha-ID');
             
             if (!captchaId) {
@@ -61,14 +61,11 @@ class Auth {
             console.log(`✅ CAPTCHA ID recebido: ${captchaId.substring(0, 8)}...`);
             this.currentCaptchaId = captchaId;
             
-            // 2. Converte a imagem PNG em blob e cria URL
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            // 3. Atualiza a imagem no DOM
             const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
             if (captchaImage) {
-                // Limpa URL antiga para evitar memory leak
                 if (captchaImage.src && captchaImage.src.startsWith('blob:')) {
                     URL.revokeObjectURL(captchaImage.src);
                 }
@@ -78,16 +75,13 @@ class Auth {
                 console.error(`❌ Elemento ${sessionType}CaptchaImage não encontrado`);
             }
             
-            // 4. Salva o ID em campo hidden
             const captchaIdField = document.getElementById(`${sessionType}CaptchaId`);
             if (captchaIdField) {
                 captchaIdField.value = captchaId;
             }
             
-            // 5. Inicia timer de 2 minutos
             this.startCaptchaTimer(sessionType);
             
-            // 6. Limpa input anterior
             const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
             if (captchaInput) {
                 captchaInput.value = '';
@@ -113,7 +107,6 @@ class Auth {
     }
     
     startCaptchaTimer(sessionType) {
-        // Limpa timer anterior
         if (this.captchaTimer) {
             clearInterval(this.captchaTimer);
         }
@@ -145,7 +138,6 @@ class Auth {
                     timerElement.classList.add('expired');
                 }
                 
-                // Desabilita input
                 const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
                 if (captchaInput) {
                     captchaInput.disabled = true;
@@ -158,17 +150,15 @@ class Auth {
     async refreshCaptcha(sessionType = 'login') {
         console.log(`🔄 Atualizando CAPTCHA para ${sessionType}...`);
         
-        // Reseta timer
         if (this.captchaTimer) {
             clearInterval(this.captchaTimer);
         }
         
-        // Recarrega
         await this.loadCaptcha(sessionType);
     }
     
     // ==============================================
-    // LOGIN - COM CAPTCHA NO HEADER
+    // LOGIN
     // ==============================================
     
     async login(email, password, captchaText, captchaId) {
@@ -257,7 +247,7 @@ class Auth {
     }
     
     // ==============================================
-    // REGISTRO - COM CAPTCHA NO HEADER
+    // REGISTRO
     // ==============================================
     
     async register(name, email, password, workshopName, captchaText, captchaId) {
@@ -686,7 +676,6 @@ class Auth {
                 await this.login(email, password, captchaText, captchaId);
             });
             
-            // Carrega CAPTCHA do login
             this.loadCaptcha('login');
             
             const refreshBtn = document.getElementById('refreshLoginCaptcha');
@@ -711,7 +700,6 @@ class Auth {
                 await this.register(name, email, password, workshopName, captchaText, captchaId);
             });
             
-            // Carrega CAPTCHA do registro
             this.loadCaptcha('register');
             
             const refreshBtn = document.getElementById('refreshRegisterCaptcha');
@@ -751,4 +739,4 @@ window.appAuth = new Auth();
 window.getAuth = () => window.appAuth;
 window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
 
-console.log('✅ auth.js carregado - CAPTCHA PNG DIRETO ativo');
+console.log('✅ auth.js carregado - CAPTCHA ativo');

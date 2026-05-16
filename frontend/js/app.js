@@ -1,11 +1,14 @@
-// frontend/js/app.js - VERSÃO ATUALIZADA
-// CAPTCHA no login, PoW removido (apenas no upload se necessário)
+// frontend/js/app.js - VERSÃO CORRIGIDA
+// Limite máximo: 15KB por arquivo
 
 class AutoAnalytics {
     constructor() {
         this.apiBase = window.location.hostname.includes('localhost') 
             ? 'http://localhost:8000/api'
             : '/api';
+        
+        this.MAX_FILE_SIZE_KB = 15;
+        this.MAX_FILE_SIZE_BYTES = this.MAX_FILE_SIZE_KB * 1024;
         
         this.currentProcessId = null;
         this.pollInterval = null;
@@ -15,7 +18,6 @@ class AutoAnalytics {
         this.initialized = false;
         this.authCheckInterval = null;
         
-        // Monitoramento de token
         this.tokenExpiryTimer = null;
         this.tokenCheckInterval = null;
         this.isRefreshing = false;
@@ -31,12 +33,20 @@ class AutoAnalytics {
             if (window.appAuth) {
                 console.log('✅ auth.js encontrado!');
                 
+                if (window.appAuth.initialized === false) {
+                    console.log('⏳ Aguardando inicialização do auth...');
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    continue;
+                }
+                
                 if (this.isLoginPage() || this.isRegisterPage()) {
                     console.log('📝 Página de autenticação - app não será inicializado');
                     return;
                 }
                 
-                if (!window.appAuth.isAuthenticated()) {
+                const isAuthenticated = window.appAuth.isAuthenticated && window.appAuth.isAuthenticated();
+                
+                if (!isAuthenticated) {
                     console.log('❌ Usuário não autenticado');
                     this.redirectToLogin();
                     return;
@@ -90,41 +100,51 @@ class AutoAnalytics {
     // ===== FUNÇÕES DELEGADAS PARA auth.js =====
     
     isAdmin() {
-        return window.appAuth ? window.appAuth.isAdmin() : false;
+        return window.appAuth && window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
     }
     
     isPremium() {
-        return window.appAuth ? window.appAuth.isPremium() : false;
+        return window.appAuth && window.appAuth.isPremium ? window.appAuth.isPremium() : false;
     }
     
     getCurrentUser() {
-        return window.appAuth ? window.appAuth.getCurrentUser() : {};
+        return window.appAuth && window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
     }
     
     getCreditsDisplay() {
-        return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
+        if (window.appAuth && window.appAuth.getCreditsDisplay) {
+            return window.appAuth.getCreditsDisplay();
+        }
+        const user = this.getCurrentUser();
+        if (user.is_admin) return '∞';
+        return String(user.credits || 0);
     }
     
     getCredits() {
-        return window.appAuth ? window.appAuth.getCredits() : 0;
+        if (window.appAuth && window.appAuth.getCredits) {
+            return window.appAuth.getCredits();
+        }
+        return this.getCurrentUser().credits || 0;
     }
     
     updateCreditsDisplay() {
-        if (window.appAuth) window.appAuth.updateCreditsDisplay();
+        if (window.appAuth && window.appAuth.updateCreditsDisplay) {
+            window.appAuth.updateCreditsDisplay();
+        }
     }
     
     async loadUserCredits() {
-        if (window.appAuth) {
+        if (window.appAuth && window.appAuth.loadUserCredits) {
             return await window.appAuth.loadUserCredits();
         }
         return false;
     }
     
     async checkCreditsForAnalysis() {
-        if (window.appAuth) {
+        if (window.appAuth && window.appAuth.checkCreditsForAnalysis) {
             return await window.appAuth.checkCreditsForAnalysis();
         }
-        return false;
+        return this.isAdmin() ? true : this.getCredits() > 0;
     }
     
     // ===== MONITORAMENTO DE TOKEN =====
@@ -300,7 +320,12 @@ class AutoAnalytics {
         }
         
         setTimeout(() => {
-            window.appAuth?.logout();
+            if (window.appAuth && window.appAuth.logout) {
+                window.appAuth.logout();
+            } else {
+                localStorage.clear();
+                window.location.href = '/login.html';
+            }
         }, 1500);
     }
     
@@ -323,13 +348,16 @@ class AutoAnalytics {
     
     async init() {
         console.log('🚀 Inicializando AutoAnalytics App...');
+        console.log(`📁 Limite máximo: ${this.MAX_FILE_SIZE_KB}KB por arquivo`);
         
         if (this.isLoginPage() || this.isRegisterPage()) {
             console.log('🚫 App não inicializado em página de autenticação');
             return;
         }
         
-        if (!window.appAuth || !window.appAuth.isAuthenticated()) {
+        const isAuth = window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated();
+        
+        if (!isAuth) {
             console.log('❌ Não autenticado');
             this.redirectToLogin();
             return;
@@ -355,14 +383,65 @@ class AutoAnalytics {
             this.initialized = true;
             
             console.log('✅ App inicializado com sucesso');
-            console.log(`👤 Usuário: ${this.getCurrentUser().email}`);
+            const user = this.getCurrentUser();
+            console.log(`👤 Usuário: ${user.email || 'desconhecido'}`);
             console.log(`💰 Créditos: ${this.getCreditsDisplay()}`);
             console.log(`🔐 Token monitoramento: ativo`);
+            console.log(`📁 Limite: ${this.MAX_FILE_SIZE_KB}KB`);
             
         }, 500);
     }
     
-    // ===== UPLOAD SEM PoW (apenas autenticação padrão) =====
+    // ===== VALIDAÇÃO DE TAMANHO =====
+    
+    validateFileSize(file) {
+        const fileSizeKB = file.size / 1024;
+        
+        console.log(`📁 Verificando arquivo: ${file.name}`);
+        console.log(`📊 Tamanho: ${fileSizeKB.toFixed(2)}KB / ${this.MAX_FILE_SIZE_KB}KB`);
+        
+        if (file.size > this.MAX_FILE_SIZE_BYTES) {
+            const exceededBy = (file.size - this.MAX_FILE_SIZE_BYTES) / 1024;
+            console.warn(`⚠️ Arquivo excede o limite! Excesso: ${exceededBy.toFixed(2)}KB`);
+            
+            this.showFileSizeWarning(fileSizeKB);
+            return false;
+        }
+        
+        this.hideFileSizeWarning();
+        return true;
+    }
+    
+    showFileSizeWarning(fileSizeKB) {
+        const warningEl = document.getElementById('sizeWarning');
+        const warningText = document.getElementById('sizeWarningText');
+        
+        if (warningEl && warningText) {
+            warningText.innerHTML = `
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Arquivo muito grande! (${fileSizeKB.toFixed(2)}KB) 
+                Limite máximo: ${this.MAX_FILE_SIZE_KB}KB. 
+                Por favor, reduza o arquivo.
+            `;
+            warningEl.classList.add('show');
+        }
+        
+        if (this.uploadButton) {
+            this.uploadButton.disabled = true;
+            this.uploadButton.innerHTML = `❌ Arquivo excede ${this.MAX_FILE_SIZE_KB}KB`;
+        }
+        
+        this.showNotification(`⚠️ Arquivo excede o limite de ${this.MAX_FILE_SIZE_KB}KB!`, 'error');
+    }
+    
+    hideFileSizeWarning() {
+        const warningEl = document.getElementById('sizeWarning');
+        if (warningEl) {
+            warningEl.classList.remove('show');
+        }
+    }
+    
+    // ===== UPLOAD =====
     
     async handleUpload(e) {
         e.preventDefault();
@@ -373,10 +452,16 @@ class AutoAnalytics {
             return;
         }
         
+        if (!this.validateFileSize(file)) {
+            this.resetFileSelection();
+            return;
+        }
+        
         const validTypes = ['.xlsx', '.xls', '.csv'];
         const fileExt = '.' + file.name.split('.').pop().toLowerCase();
         if (!validTypes.includes(fileExt)) {
             this.showNotification('❌ Formato não suportado. Use Excel (.xlsx, .xls) ou CSV', 'error');
+            this.resetFileSelection();
             return;
         }
         
@@ -390,6 +475,8 @@ class AutoAnalytics {
         try {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('analysis_type', 'auto');
+            formData.append('ai_model', 'auto');
             
             const token = localStorage.getItem('access_token');
             const response = await fetch(`${this.apiBase}/upload-auto`, {
@@ -412,6 +499,7 @@ class AutoAnalytics {
                 
                 if (this.fileInput) this.fileInput.value = '';
                 if (this.selectedFile) this.selectedFile.classList.add('d-none');
+                this.hideFileSizeWarning();
                 
                 await this.loadAnalysisHistory();
                 
@@ -419,6 +507,8 @@ class AutoAnalytics {
                 const errorMsg = data?.detail || data?.error || 'Erro no upload';
                 if (errorMsg.includes('Créditos insuficientes')) {
                     this.showCreditsModal();
+                } else if (errorMsg.includes('tamanho') || errorMsg.includes('size')) {
+                    this.showNotification(`❌ ${errorMsg} (Limite: ${this.MAX_FILE_SIZE_KB}KB)`, 'error');
                 } else {
                     this.showNotification('❌ ' + errorMsg, 'error');
                 }
@@ -447,7 +537,8 @@ class AutoAnalytics {
             this.uploadButton.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Processando...';
         } else {
             const icon = this.isAdmin() ? '👑' : (this.isPremium() ? '⭐' : '🚀');
-            this.uploadButton.innerHTML = `${icon} Iniciar Análise Automática <span class="credit-badge">${this.getCreditsDisplay()} créditos</span>`;
+            const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
+            this.uploadButton.innerHTML = `${icon} Iniciar Análise Automática <span class="credit-badge">${creditText}</span>`;
         }
     }
     
@@ -473,11 +564,14 @@ class AutoAnalytics {
         }
     }
     
-    // ===== LEITURA DE ARQUIVO =====
-    
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (!file) return;
+        
+        if (!this.validateFileSize(file)) {
+            this.resetFileSelection();
+            return;
+        }
         
         if (!this.validateFile(file)) return;
         
@@ -486,15 +580,8 @@ class AutoAnalytics {
     }
     
     validateFile(file) {
-        const MAX_SIZE = 10 * 1024 * 1024;
         const validExtensions = ['.csv', '.xlsx', '.xls'];
         const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-        
-        if (file.size > MAX_SIZE) {
-            this.showNotification(`❌ Arquivo muito grande (${(file.size/1024/1024).toFixed(2)}MB). Máx: 10MB`, 'error');
-            this.resetFileSelection();
-            return false;
-        }
         
         if (!validExtensions.includes(ext)) {
             this.showNotification('❌ Formato não suportado. Use CSV ou Excel', 'error');
@@ -506,38 +593,31 @@ class AutoAnalytics {
     }
     
     displayFileInfo(file) {
+        const fileSizeKB = (file.size / 1024).toFixed(2);
+        const isWithinLimit = file.size <= this.MAX_FILE_SIZE_BYTES;
+        
         if (this.fileName) this.fileName.textContent = file.name;
-        if (this.fileSize) this.fileSize.textContent = this.formatFileSize(file.size);
+        if (this.fileSize) {
+            this.fileSize.textContent = `${this.formatFileSize(file.size)} (${fileSizeKB}KB)`;
+            
+            if (file.size > this.MAX_FILE_SIZE_BYTES * 0.8 && file.size <= this.MAX_FILE_SIZE_BYTES) {
+                this.fileSize.className = 'badge bg-warning ms-2';
+            } else if (file.size <= this.MAX_FILE_SIZE_BYTES) {
+                this.fileSize.className = 'badge bg-success ms-2';
+            }
+        }
+        
         if (this.selectedFile) {
             this.selectedFile.classList.remove('d-none');
-            
-            this.selectedFile.innerHTML = `
-                <div class="file-info-glow">
-                    <div class="file-icon">
-                        <i class="fas fa-file-${file.name.endsWith('.csv') ? 'csv' : 'excel'}"></i>
-                    </div>
-                    <div class="file-details">
-                        <div class="file-name">${this.escapeHtml(file.name)}</div>
-                        <div class="file-meta">
-                            <span class="file-size">${this.formatFileSize(file.size)}</span>
-                            <span class="file-type">${file.name.endsWith('.csv') ? 'CSV' : 'Excel'}</span>
-                        </div>
-                    </div>
-                    <button class="file-remove-btn" id="removeFile">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `;
-            
-            document.getElementById('removeFile')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.resetFileSelection();
-            });
+        }
+        
+        if (isWithinLimit) {
+            console.log(`✅ Arquivo OK: ${fileSizeKB}KB dentro do limite de ${this.MAX_FILE_SIZE_KB}KB`);
         }
     }
     
     async analyzeFile(file) {
-        this.showNotification('🔍 Analisando estrutura do arquivo...', 'info');
+        this.showNotification(`🔍 Analisando arquivo (${(file.size/1024).toFixed(2)}KB)...`, 'info');
         
         try {
             let data, columns, types;
@@ -562,7 +642,8 @@ class AutoAnalytics {
             
             if (this.uploadButton) {
                 this.uploadButton.disabled = false;
-                this.uploadButton.innerHTML = `🚀 Iniciar Análise Automática <span class="credit-badge">${this.getCreditsDisplay()} créditos</span>`;
+                const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
+                this.uploadButton.innerHTML = `🚀 Iniciar Análise Automática <span class="credit-badge">${creditText}</span>`;
             }
             
             this.showNotification('✅ Arquivo analisado! Pronto para processar.', 'success');
@@ -679,6 +760,10 @@ class AutoAnalytics {
         const previewSection = document.getElementById('dataPreview');
         if (!previewSection) return;
         
+        const numericCount = columns.filter(c => types[c] === 'numeric').length;
+        const textCount = columns.filter(c => types[c] === 'text').length;
+        const dateCount = columns.filter(c => types[c] === 'date').length;
+        
         let html = `
             <div class="preview-container mt-3">
                 <h6><i class="fas fa-chart-line me-2"></i>Pré-visualização dos Dados</h6>
@@ -707,9 +792,12 @@ class AutoAnalytics {
                 </div>
                 <div class="text-muted small mt-2">
                     <i class="fas fa-info-circle me-1"></i>
-                    Detectadas ${columns.length} colunas (${columns.filter(c => types[c] === 'numeric').length} numéricas, 
-                    ${columns.filter(c => types[c] === 'text').length} texto, 
-                    ${columns.filter(c => types[c] === 'date').length} data)
+                    Detectadas ${columns.length} colunas (${numericCount} numéricas, 
+                    ${textCount} texto, ${dateCount} data)
+                </div>
+                <div class="text-success small mt-1">
+                    <i class="fas fa-check-circle me-1"></i>
+                    Tamanho do arquivo dentro do limite de ${this.MAX_FILE_SIZE_KB}KB
                 </div>
             </div>
         `;
@@ -895,12 +983,14 @@ class AutoAnalytics {
         
         const html = analyses.slice(0, 5).map(a => {
             const date = new Date(a.created_at);
+            const fileSizeInfo = a.file_size ? ` • ${(a.file_size/1024).toFixed(1)}KB` : '';
             return `
                 <div class="list-group-item list-group-item-action">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <i class="fas fa-file-alt me-2 text-primary"></i>
                             <strong>${this.escapeHtml(a.filename || 'Análise')}</strong>
+                            <small class="text-muted">${fileSizeInfo}</small>
                         </div>
                         <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}">${a.status}</span>
                     </div>
@@ -920,10 +1010,11 @@ class AutoAnalytics {
             if (response && response.ok) {
                 const stats = await response.json();
                 
-                if (stats) {
-                    if (this.totalAnalises) this.totalAnalises.textContent = stats.total_analises || 0;
-                    if (this.analisesHoje) this.analisesHoje.textContent = stats.analises_hoje || 0;
-                }
+                const totalAnalises = document.getElementById('totalAnalises');
+                const analisesHoje = document.getElementById('analisesHoje');
+                
+                if (totalAnalises) totalAnalises.textContent = stats.total_analises || 0;
+                if (analisesHoje) analisesHoje.textContent = stats.analises_hoje || 0;
             }
         } catch (error) {
             console.error('Erro ao carregar stats:', error);
@@ -969,7 +1060,7 @@ class AutoAnalytics {
                 </div>
                 <div class="flex-grow-1">
                     <h6 class="mb-0">PLANO PREMIUM ATIVO</h6>
-                    <small>${daysLeft} dias restantes • 1 crédito/dia</small>
+                    <small>${daysLeft} dias restantes • 1 crédito/dia • Limite: ${this.MAX_FILE_SIZE_KB}KB</small>
                 </div>
                 <button class="btn btn-sm btn-outline-primary" onclick="window.app?.claimDailyCredit()">
                     <i class="fas fa-gift me-1"></i> Receber crédito
@@ -1015,7 +1106,7 @@ class AutoAnalytics {
         
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro (max ${this.MAX_FILE_SIZE_KB}KB)`;
         }
     }
     
@@ -1045,6 +1136,11 @@ class AutoAnalytics {
         if (this.fileInput) {
             this.fileInput.addEventListener('change', () => this.handleFileSelect());
         }
+        
+        const removeFileBtn = document.getElementById('removeFile');
+        if (removeFileBtn) {
+            removeFileBtn.addEventListener('click', () => this.resetFileSelection());
+        }
     }
     
     preventDefaults(e) {
@@ -1057,11 +1153,13 @@ class AutoAnalytics {
         if (this.selectedFile) this.selectedFile.classList.add('d-none');
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro`;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro (max ${this.MAX_FILE_SIZE_KB}KB)`;
         }
         
         const preview = document.getElementById('dataPreview');
         if (preview) preview.classList.add('d-none');
+        
+        this.hideFileSizeWarning();
         
         this.fileData = null;
         this.columns = [];
@@ -1073,22 +1171,23 @@ class AutoAnalytics {
             logoutBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.stopTokenMonitoring();
-                window.appAuth?.logout();
+                if (window.appAuth && window.appAuth.logout) {
+                    window.appAuth.logout();
+                } else {
+                    localStorage.clear();
+                    window.location.href = '/login.html';
+                }
             });
         }
     }
     
     initAnimations() {
-        // Animação opcional
+        // Optional animations
     }
     
     async fetchWithAuth(url, options = {}) {
         if (this.isLoginPage() || this.isRegisterPage()) {
             return null;
-        }
-        
-        if (!window.appAuth) {
-            await new Promise(resolve => setTimeout(resolve, 300));
         }
         
         if (window.appAuth && window.appAuth.fetchWithAuth) {
@@ -1188,20 +1287,35 @@ class AutoAnalytics {
     }
     
     showCreditsModal() {
-        if (window.appAuth) {
+        if (window.appAuth && window.appAuth.showCreditsModal) {
             window.appAuth.showCreditsModal();
         } else if (!this.isAdmin()) {
             this.showNotification('Créditos insuficientes!', 'warning');
         }
     }
+    
+    async loadFullHistory() {
+        await this.loadAnalysisHistory();
+        this.showNotification('Histórico atualizado!', 'info');
+    }
 }
 
 // ===== INICIALIZAÇÃO =====
-document.addEventListener('DOMContentLoaded', () => {
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            window.app = new AutoAnalytics();
+        }, 200);
+    });
+} else {
     setTimeout(() => {
         window.app = new AutoAnalytics();
     }, 200);
-});
+}
+
+window.getApp = () => window.app;
+window.claimDailyCredit = () => window.app?.claimDailyCredit();
+window.showCreditsModal = () => window.app?.showCreditsModal();
 
 // Adiciona CSS
 const style = document.createElement('style');
@@ -1220,11 +1334,24 @@ style.textContent = `
         transform: scale(1.02);
         transition: all 0.2s ease;
     }
+    .credit-badge {
+        background: rgba(255,255,255,0.3);
+        padding: 0.2rem 0.5rem;
+        border-radius: 50px;
+        font-size: 0.75rem;
+        margin-left: 0.5rem;
+    }
+    .list-group-item {
+        border-radius: 12px !important;
+        margin-bottom: 8px;
+        border: 1px solid #e2e8f0;
+    }
+    .list-group-item:hover {
+        background: #f8fafc;
+        transform: translateX(4px);
+        transition: all 0.2s;
+    }
 `;
 document.head.appendChild(style);
 
-window.getApp = () => window.app;
-window.claimDailyCredit = () => window.app?.claimDailyCredit();
-window.showCreditsModal = () => window.app?.showCreditsModal();
-
-console.log('✅ app.js carregado - Modo sem PoW, apenas autenticação padrão');
+console.log('✅ app.js carregado');
