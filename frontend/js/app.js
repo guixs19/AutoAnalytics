@@ -1354,4 +1354,4 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-console.log('✅ app.js carregado');
+console.log('✅ app.js carregado');""

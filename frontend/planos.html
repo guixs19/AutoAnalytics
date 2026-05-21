@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plano Único - AutoAnalytics Pro</title>
+    <title>Planos - AutoAnalytics Pro</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -43,6 +43,11 @@
             overflow: hidden;
             max-width: 500px;
             margin: 0 auto;
+            transition: transform 0.3s;
+        }
+        
+        .plan-card:hover {
+            transform: translateY(-5px);
         }
         
         .plan-card::before {
@@ -157,7 +162,6 @@
             border: 1px solid #dee2e6;
         }
         
-        /* ✅ NOVOS ESTILOS PARA ADMIN */
         .admin-badge {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
             color: white;
@@ -191,6 +195,49 @@
             font-weight: 800;
             color: #f39c12;
         }
+        
+        /* Animação de pulso para o aviso de vagas */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.9;
+                transform: scale(1.02);
+            }
+        }
+        
+        .animate-pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .popular-badge {
+            position: absolute;
+            top: 20px;
+            right: -30px;
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+            padding: 8px 40px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            transform: rotate(45deg);
+            z-index: 10;
+        }
+        
+        .limit-warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+        }
+        
+        .limit-warning i {
+            color: #ffc107;
+            margin-right: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -205,7 +252,6 @@
                     <i class="fas fa-coins me-2"></i>
                     <span id="creditsDisplay">0</span> créditos
                 </span>
-                <!-- ✅ BADGE DE ADMIN (INICIALMENTE ESCONDIDO) -->
                 <span class="admin-badge" id="adminBadge">
                     <i class="fas fa-crown"></i>
                     Admin
@@ -234,9 +280,8 @@
             </div>
         </div>
         
-        <!-- ✅ CONTAINER DE PLANOS (SERÁ PREENCHIDO PELO JAVASCRIPT) -->
+        <!-- CONTAINER DE PLANOS -->
         <div class="row justify-content-center" id="plansContainer">
-            <!-- Loading spinner -->
             <div class="text-center py-5">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Carregando...</span>
@@ -272,6 +317,10 @@
                             </div>
                         </div>
                     </div>
+                    <div class="mt-3 text-center text-muted small">
+                        <i class="fas fa-layer-group me-1"></i>
+                        Máximo de 3 arquivos por vez | Limite de 15KB por arquivo
+                    </div>
                 </div>
             </div>
         </div>
@@ -296,15 +345,17 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     
-    <!-- ✅ INCLUIR AUTH.JS PARA FUNÇÕES DE ADMIN -->
-    <script src="/static/js/auth.js"></script>
-    
     <script>
         AOS.init();
         
-        const API_URL = 'http://localhost:8000/api';
+        const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:8000/api'
+            : '/api';
         
-        // ✅ FUNÇÕES DE ADMIN
+        // ==============================================
+        // FUNÇÕES DE AUTENTICAÇÃO E ADMIN
+        // ==============================================
+        
         function isAdmin() {
             const user = JSON.parse(localStorage.getItem('user') || '{}');
             return user.is_admin === true;
@@ -326,28 +377,81 @@
         async function loadUserData() {
             const user = JSON.parse(localStorage.getItem('user') || '{}');
             
-            // Atualizar badge de admin
             const adminBadge = document.getElementById('adminBadge');
             if (adminBadge) {
                 adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
             }
             
-            // Atualizar display de créditos
             const creditsSpan = document.querySelector('#navbarCredits span');
             if (creditsSpan) {
                 creditsSpan.textContent = getCreditsDisplay();
             }
             
-            // Se for admin, mostrar mensagem especial nos planos
             if (user.is_admin) {
                 showAdminMessage();
             } else {
-                // Carregar planos normais
                 await loadPlans();
+                await loadPremiumSubscribersCount();
             }
         }
         
-        // ✅ CARREGAR PLANOS DO BACKEND
+        // ==============================================
+        // 🔥 CONTAGEM REGRESSIVA DE VAGAS
+        // ==============================================
+        
+        async function loadPremiumSubscribersCount() {
+            try {
+                const response = await fetch(`${API_URL}/payments/premium/subscribers-count`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        const totalSubscribers = data.subscribers_count;
+                        const totalVagasLote = data.batch_limit || 100;
+                        const vagasRestantes = data.remaining_slots;
+                        
+                        // Atualizar o aviso no card do plano premium
+                        const avisoVagasElement = document.getElementById('avisoVagas');
+                        const precoElement = document.getElementById('planoPreco');
+                        const vagaElement = document.getElementById('vagaNumero');
+                        
+                        if (vagasRestantes > 0) {
+                            if (precoElement) precoElement.innerText = "R$ 97,00";
+                            if (vagaElement) vagaElement.innerHTML = `<span class="badge bg-warning text-dark me-2"><i class="fas fa-ticket-alt"></i> Vaga #${totalSubscribers + 1}</span>`;
+                            
+                            if (avisoVagasElement) {
+                                avisoVagasElement.innerHTML = `
+                                    <div class="alert alert-danger py-2 mt-3 border-0 shadow-sm text-center fw-bold animate-pulse" style="animation: pulse 2s infinite; background: linear-gradient(135deg, #fff5f5, #fed7d7);">
+                                        <i class="fas fa-fire text-danger me-2"></i>
+                                        🔥 URGENTE! Restam apenas <span class="badge bg-danger fs-6 px-3 py-2">${vagasRestantes}</span> vagas neste lote promocional!
+                                        <br>
+                                        <small class="text-muted mt-1">Próximas vagas terão reajuste no valor</small>
+                                    </div>
+                                `;
+                            }
+                        } else {
+                            if (avisoVagasElement) {
+                                avisoVagasElement.innerHTML = `
+                                    <div class="alert alert-secondary py-2 mt-3 border-0 shadow-sm text-center fw-bold">
+                                        <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                                        ⚠️ As vagas do lote promocional esgotaram!
+                                        <br>
+                                        <small>Novas promoções em breve</small>
+                                    </div>
+                                `;
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar contagem de vagas:', error);
+            }
+        }
+        
+        // ==============================================
+        // CARREGAR PLANOS DO BACKEND
+        // ==============================================
+        
         async function loadPlans() {
             try {
                 const response = await fetch(`${API_URL}/payments/plans`);
@@ -355,7 +459,6 @@
                     const data = await response.json();
                     renderPlans(data.plans);
                 } else {
-                    // Fallback para plano único
                     renderSinglePlan();
                 }
             } catch (error) {
@@ -364,7 +467,142 @@
             }
         }
         
-        // ✅ RENDERIZAR PLANO ÚNICO (FALLBACK)
+        function renderPlans(plans) {
+            const container = document.getElementById('plansContainer');
+            if (!container) return;
+            
+            let html = '';
+            
+            for (const [key, plan] of Object.entries(plans)) {
+                if (key === 'gratuito') {
+                    html += `
+                        <div class="col-lg-4 mb-4">
+                            <div class="plan-card" data-aos="fade-up" data-aos-delay="100">
+                                <div class="text-center">
+                                    <span class="guarantee-badge mb-3">
+                                        <i class="fas fa-gift me-2"></i>
+                                        Grátis
+                                    </span>
+                                    <h3 class="h4 mb-3">${plan.name}</h3>
+                                    <div class="price-tag">
+                                        Grátis
+                                    </div>
+                                    <p class="mb-4">${plan.credits} créditos para testar</p>
+                                </div>
+                                
+                                <div class="my-4">
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span><strong>${plan.credits}</strong> análises grátis</span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Modelos <strong>Scikit-Learn</strong></span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Relatórios com <strong>IA</strong></span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Dashboard <strong>interativo</strong></span>
+                                    </div>
+                                    <div class="limit-warning">
+                                        <i class="fas fa-info-circle"></i>
+                                        <small>Limite máximo de ${plan.max_credits_balance || 3} créditos acumulados</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-gradient" onclick="window.location.href='/dashboard'">
+                                        <i class="fas fa-rocket me-2"></i>
+                                        Usar Agora
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="col-lg-4 mb-4">
+                            <div class="plan-card ${plan.popular ? 'popular' : ''}" data-aos="fade-up" data-aos-delay="200">
+                                ${plan.popular ? '<div class="popular-badge">🔥 MAIS POPULAR 🔥</div>' : ''}
+                                <div class="text-center">
+                                    <span class="guarantee-badge mb-3">
+                                        <i class="fas fa-shield-alt me-2"></i>
+                                        Garantia de 7 dias
+                                    </span>
+                                    <h3 class="h4 mb-3">${plan.name}</h3>
+                                    <h3 class="display-4 fw-bold text-primary mb-0">
+                                        <span id="planoPreco">R$ ${plan.price.toFixed(2).replace('.', ',')}</span>
+                                    </h3>
+                                    <p class="text-muted">ou ${(plan.price / 30).toFixed(2).replace('.', ',')}/dia</p>
+                                    <div id="vagaNumero"></div>
+                                </div>
+                                
+                                <div class="my-4">
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span><strong>${plan.credits_per_day} crédito novo</strong> por dia</span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span><strong>${plan.total_credits} créditos</strong> no total</span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Modelos avançados com <strong>Scikit-Learn</strong></span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Relatórios com <strong>IA generativa</strong></span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Dashboard <strong>interativo</strong> em tempo real</span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Importação de <strong>múltiplos arquivos</strong> (até 3 por vez)</span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Exportação <strong>CSV/Excel</strong></span>
+                                    </div>
+                                    <div class="feature-item">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span><strong>Suporte prioritário</strong> 24/7</span>
+                                    </div>
+                                    <div class="limit-warning">
+                                        <i class="fas fa-info-circle"></i>
+                                        <small>⚠️ Limite máximo de ${plan.max_credits_balance || 3} créditos acumulados. Use-os para continuar recebendo!</small>
+                                    </div>
+                                </div>
+                                
+                                <div id="avisoVagas"></div>
+                                
+                                <div class="d-grid gap-3 mt-4">
+                                    <button class="btn btn-gradient" onclick="selectPlan('${key}', 'pix')">
+                                        <i class="fas fa-qrcode me-2"></i>
+                                        Comprar com PIX - R$ ${plan.price.toFixed(2).replace('.', ',')}
+                                    </button>
+                                </div>
+                                
+                                <p class="text-center text-muted small mt-4">
+                                    <i class="fas fa-lock me-1"></i>
+                                    Pagamento 100% seguro via PIX<br>
+                                    <i class="fas fa-credit-card me-1"></i>
+                                    Créditos válidos por 30 dias
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            container.innerHTML = html;
+        }
+        
         function renderSinglePlan() {
             const container = document.getElementById('plansContainer');
             if (!container) return;
@@ -381,12 +619,15 @@
                             <div class="price-tag">
                                 R$ 97<span class="small">/mês</span>
                             </div>
+                            <div id="vagaNumero"></div>
                         </div>
+                        
+                        <div id="avisoVagas"></div>
                         
                         <div class="my-4">
                             <div class="feature-item">
                                 <i class="fas fa-check-circle"></i>
-                                <span><strong>30 análises</strong> por mês</span>
+                                <span><strong>1 crédito novo</strong> por dia</span>
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-check-circle"></i>
@@ -402,110 +643,34 @@
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-check-circle"></i>
-                                <span>Importação de arquivos <strong>CSV e Excel</strong></span>
-                                <span class="file-format-badge ms-2">
-                                    <i class="fas fa-file-csv me-1"></i>CSV
-                                </span>
-                                <span class="file-format-badge ms-1">
-                                    <i class="fas fa-file-excel me-1"></i>XLSX
-                                </span>
+                                <span>Importação de <strong>múltiplos arquivos</strong> (até 3 por vez)</span>
                             </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Exportação <strong>CSV/Excel</strong></span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span><strong>Suporte prioritário</strong> por email</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Atualizações <strong>gratuitas</strong></span>
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-primary bg-light border-0 rounded-4 mb-4">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-database fa-2x me-3 text-primary"></i>
-                                <div>
-                                    <small class="text-muted">Algoritmos disponíveis:</small>
-                                    <div class="fw-bold">Random Forest • XGBoost • Linear Regression • SVM • K-Means</div>
-                                </div>
+                            <div class="limit-warning">
+                                <i class="fas fa-info-circle"></i>
+                                <small>⚠️ Limite máximo de 3 créditos acumulados. Use-os para continuar recebendo!</small>
                             </div>
                         </div>
                         
                         <div class="d-grid gap-3">
-                            <button class="btn btn-gradient" onclick="selectPlan('profissional', 'pix')">
+                            <button class="btn btn-gradient" onclick="selectPlan('premium_mensal', 'pix')">
                                 <i class="fas fa-qrcode me-2"></i>
-                                Comprar com PIX (Única opção)
+                                Comprar com PIX - R$ 97,00
                             </button>
                         </div>
                         
                         <p class="text-center text-muted small mt-4">
                             <i class="fas fa-lock me-1"></i>
-                            Pagamento 100% seguro via PIX
+                            Pagamento 100% seguro via PIX<br>
+                            <i class="fas fa-credit-card me-1"></i>
+                            Créditos válidos por 30 dias
                         </p>
                     </div>
                 </div>
             `;
+            
+            loadPremiumSubscribersCount();
         }
         
-        // ✅ RENDERIZAR PLANOS DO BACKEND
-        function renderPlans(plans) {
-            const container = document.getElementById('plansContainer');
-            if (!container) return;
-            
-            let html = '';
-            
-            for (const [key, plan] of Object.entries(plans)) {
-                const popularClass = plan.popular ? 'popular' : '';
-                
-                html += `
-                    <div class="col-lg-4 mb-4">
-                        <div class="plan-card ${popularClass}">
-                            ${plan.popular ? '<div class="popular-badge">MAIS POPULAR</div>' : ''}
-                            <div class="text-center">
-                                <h3 class="h4 mb-3">${plan.name}</h3>
-                                <div class="price-tag">
-                                    R$ ${plan.price.toFixed(2).replace('.', ',')}
-                                </div>
-                                <p class="mb-4">${plan.credits} créditos</p>
-                            </div>
-                            
-                            <div class="my-4">
-                                <div class="feature-item">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span><strong>${plan.credits}</strong> análises</span>
-                                </div>
-                                <div class="feature-item">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span>Modelos <strong>Scikit-Learn</strong></span>
-                                </div>
-                                <div class="feature-item">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span>Relatórios com <strong>IA</strong></span>
-                                </div>
-                                <div class="feature-item">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span>Dashboard <strong>interativo</strong></span>
-                                </div>
-                            </div>
-                            
-                            <div class="d-grid gap-2">
-                                <button class="btn btn-gradient" onclick="selectPlan('${key}', 'pix')">
-                                    <i class="fas fa-qrcode me-2"></i>
-                                    Comprar com PIX
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            container.innerHTML = html;
-        }
-        
-        // ✅ MOSTRAR MENSAGEM ESPECIAL PARA ADMIN
         function showAdminMessage() {
             const container = document.getElementById('plansContainer');
             if (!container) return;
@@ -526,9 +691,9 @@
                             </div>
                             <div class="col-md-4 mb-3">
                                 <div class="bg-white bg-opacity-25 rounded-4 p-3">
-                                    <i class="fas fa-robot fa-2x mb-2"></i>
-                                    <h4>Todos os Algoritmos</h4>
-                                    <p class="small opacity-75">Scikit-Learn completo</p>
+                                    <i class="fas fa-layer-group fa-2x mb-2"></i>
+                                    <h4>Múltiplos Arquivos</h4>
+                                    <p class="small opacity-75">Até 3 arquivos por vez</p>
                                 </div>
                             </div>
                             <div class="col-md-4 mb-3">
@@ -548,8 +713,11 @@
             `;
         }
         
+        // ==============================================
+        // PAGAMENTO PIX
+        // ==============================================
+        
         async function selectPlan(planId, method) {
-            // ✅ SE FOR ADMIN, BLOQUEAR COMPRA
             if (isAdmin()) {
                 alert('👑 Como administrador, você tem acesso ilimitado. Não é necessário comprar planos.');
                 return;
@@ -571,37 +739,49 @@
                     alert(error.detail || 'Erro ao criar pagamento');
                 }
             } catch (error) {
-                alert('Erro de conexão');
+                console.error('Erro:', error);
+                alert('Erro de conexão com o servidor');
             }
         }
         
         function showPixModal(data) {
             const modalContent = document.getElementById('pixContent');
+            const mensagemPromocional = data.promotional_message || '';
+            
             modalContent.innerHTML = `
-                <img src="data:image/png;base64,${data.qr_code_base64}" class="img-fluid mb-3" style="max-width: 200px;">
+                ${mensagemPromocional ? `<div class="alert alert-warning mb-3">${mensagemPromocional}</div>` : ''}
+                
+                ${data.qr_code_base64 ? `
+                    <img src="data:image/png;base64,${data.qr_code_base64}" class="img-fluid mb-3" style="max-width: 200px;">
+                ` : ''}
+                
                 <div class="bg-light p-3 rounded-3 mb-3" style="word-break: break-all;">
-                    <code>${data.qr_code}</code>
+                    <code id="pixCodeText">${data.qr_code || 'Código indisponível'}</code>
                 </div>
+                
                 <button class="btn btn-outline-primary w-100 mb-3" onclick="copyPixCode()">
                     <i class="fas fa-copy me-2"></i>
-                    Copiar código
+                    Copiar código PIX
                 </button>
+                
                 <div class="alert alert-info small">
                     <i class="fas fa-info-circle me-2"></i>
-                    Após o pagamento, aguarde até 1 minuto.
+                    Após o pagamento, aguarde até 1 minuto para os créditos serem adicionados.
                 </div>
+                
                 <div id="paymentStatus"></div>
             `;
             
-            new bootstrap.Modal(document.getElementById('pixModal')).show();
+            const modal = new bootstrap.Modal(document.getElementById('pixModal'));
+            modal.show();
             startPaymentPolling(data.payment_id);
         }
         
         function copyPixCode() {
-            const code = document.querySelector('.bg-light code')?.textContent;
-            if (code) {
-                navigator.clipboard.writeText(code);
-                alert('Código PIX copiado!');
+            const codeElement = document.getElementById('pixCodeText');
+            if (codeElement) {
+                navigator.clipboard.writeText(codeElement.textContent.trim());
+                alert('✅ Código PIX copiado!');
             }
         }
         
@@ -614,29 +794,42 @@
                 const response = await fetchWithAuth(`${API_URL}/payments/status/${paymentId}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.payment.status === 'approved') {
+                    if (data.payment && data.payment.status === 'approved') {
                         clearInterval(paymentPolling);
-                        document.getElementById('paymentStatus').innerHTML = `
-                            <div class="alert alert-success">
-                                <i class="fas fa-check-circle me-2"></i>
-                                Pagamento aprovado! Redirecionando...
-                            </div>
-                        `;
+                        const statusDiv = document.getElementById('paymentStatus');
+                        if (statusDiv) {
+                            statusDiv.innerHTML = `
+                                <div class="alert alert-success">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Pagamento aprovado! Redirecionando...
+                                </div>
+                            `;
+                        }
                         setTimeout(() => {
-                            window.location.href = '/?success=1';
+                            const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
+                            if (modal) modal.hide();
+                            window.location.href = '/dashboard?payment=success';
                         }, 2000);
                     }
                 }
             }, 3000);
+            
+            setTimeout(() => {
+                if (paymentPolling) clearInterval(paymentPolling);
+            }, 120000);
         }
         
+        // ==============================================
+        // INICIALIZAÇÃO
+        // ==============================================
+        
         document.addEventListener('DOMContentLoaded', async () => {
-            if (!localStorage.getItem('access_token')) {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
                 window.location.href = '/login.html';
                 return;
             }
             
-            // ✅ CARREGAR DADOS DO USUÁRIO
             await loadUserData();
         });
     </script>

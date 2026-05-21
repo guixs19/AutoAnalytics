@@ -460,7 +460,7 @@ class JWTManager:
 
 
 # ==============================================
-# 3. PROOF OF WORK MANAGER (APENAS PARA UPLOAD)
+# 3. PROOF OF WORK MANAGER 
 # ==============================================
 
 class PoWManager:

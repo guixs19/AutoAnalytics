@@ -1,9 +1,9 @@
-# backend/api/payment_routes.py - VERSÃO OTIMIZADA
+# backend/api/payment_routes.py - VERSÃO OTIMIZADA COM CONTAGEM DE ASSINANTES
 # Com SQLAlchemy 2.0 style (select) e joinedload para reduzir consultas
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession  # para futuro async
 from sqlalchemy.orm import Session, joinedload, selectinload
 from datetime import datetime, timedelta, date
@@ -44,11 +44,13 @@ PLANO_PREMIUM = {
         "✅ 30 créditos no total",
         "✅ Válido por 30 dias",
         "✅ Análises com IA avançada",
-        "✅ Suporte prioritário"
+        "✅ Suporte prioritário",
+        "⚠️ Limite máximo de 3 créditos acumulados"
     ],
     "credits_per_day": 1,
     "total_days": 30,
-    "total_credits": 30
+    "total_credits": 30,
+    "max_credits_balance": 3
 }
 
 PLANO_GRATUITO = {
@@ -56,7 +58,8 @@ PLANO_GRATUITO = {
     "name": "Plano Gratuito",
     "price": 0,
     "credits": 3,
-    "description": "3 créditos iniciais para testes"
+    "description": "3 créditos iniciais para testes",
+    "max_credits_balance": 3
 }
 
 
@@ -72,7 +75,9 @@ async def get_plans():
                 "gratuito": PLANO_GRATUITO,
                 "premium_mensal": PLANO_PREMIUM
             },
-            "public_key": mp_service.public_key
+            "public_key": mp_service.public_key,
+            "max_credits_balance": 3,
+            "max_files_per_batch": 3
         }
     except Exception as e:
         logger.error(f"❌ Erro ao listar planos: {e}")
@@ -83,6 +88,54 @@ async def get_plans():
                 "gratuito": PLANO_GRATUITO,
                 "premium_mensal": PLANO_PREMIUM
             }
+        }
+
+
+# ==============================================
+# 🔥 NOVA ROTA: CONTAGEM DE ASSINANTES PREMIUM
+# ==============================================
+@router.get("/premium/subscribers-count")
+async def get_premium_subscribers_count(
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna a quantidade de assinantes ativos do plano premium
+    Usado para criar urgência (vagas limitadas)
+    """
+    try:
+        today = date.today()
+        
+        # Contar usuários com plano premium ativo (que não expirou)
+        stmt = select(func.count(User.id)).where(
+            User.plan == UserPlan.PREMIUM_MENSAL,
+            User.premium_expires_at >= today
+        )
+        active_subscribers = db.execute(stmt).scalar() or 0
+        
+        # Limite do lote promocional
+        BATCH_LIMIT = 100
+        
+        vagas_restantes = max(0, BATCH_LIMIT - active_subscribers)
+        
+        logger.info(f"📊 Assinantes premium ativos: {active_subscribers}/{BATCH_LIMIT}")
+        
+        return {
+            "success": True,
+            "subscribers_count": active_subscribers,
+            "batch_limit": BATCH_LIMIT,
+            "remaining_slots": vagas_restantes,
+            "is_promotional_active": vagas_restantes > 0,
+            "message": f"🔥 {vagas_restantes} vagas restantes!" if vagas_restantes > 0 else "⚠️ Lote promocional esgotado!",
+            "next_price_hint": "Em breve novas promoções"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao contar assinantes premium: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "subscribers_count": 0,
+            "remaining_slots": 0
         }
 
 
@@ -109,7 +162,8 @@ async def get_user_balance(
                 "success": False,
                 "error": "Usuário não encontrado",
                 "credits": 0,
-                "total_purchased": 0
+                "total_purchased": 0,
+                "max_credits_balance": 3
             }
         
         # 🔥 Segunda consulta otimizada: verifica crédito de hoje
@@ -121,7 +175,7 @@ async def get_user_balance(
         received_today = db.execute(credit_stmt).first() is not None
         
         # Verificar se é premium
-        is_premium = user.plan == UserPlan.PREMIUM_MENSAL
+        is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
         
         # Calcular dias restantes
         days_remaining = 0
@@ -131,10 +185,15 @@ async def get_user_balance(
             if days_remaining < 0:
                 days_remaining = 0
         
+        current_credits = user.credits or 0
+        max_credits_balance = 3
+        
         return {
             "success": True,
-            "credits": user.credits or 0,
+            "credits": current_credits,
             "total_purchased": user.total_purchased or 0,
+            "max_credits_balance": max_credits_balance,
+            "can_receive_more": current_credits < max_credits_balance,
             "plan": {
                 "type": user.plan.value if hasattr(user.plan, 'value') else str(user.plan),
                 "is_premium": is_premium,
@@ -160,12 +219,13 @@ async def get_user_balance(
             "success": False,
             "error": str(e),
             "credits": 0,
-            "total_purchased": 0
+            "total_purchased": 0,
+            "max_credits_balance": 3
         }
 
 
 # ==============================================
-# CRIAR PAGAMENTO PIX - PLANO PREMIUM R$97
+# CRIAR PAGAMENTO PIX - PLANO PREMIUM R$97 (COM CONTAGEM DE VAGAS)
 # ==============================================
 @router.post("/create-pix")
 async def create_pix_payment(
@@ -176,7 +236,29 @@ async def create_pix_payment(
 ):
     """Cria um pagamento PIX para o plano premium de R$97"""
     try:
-        logger.info(f"💰 Iniciando pagamento PIX para {current_user.email} - Plano Premium R$97,00")
+        # 🔥 Contar assinantes ativos para gerar número da vaga
+        today_date = date.today()
+        subscribers_count = db.execute(
+            select(func.count(User.id)).where(
+                User.plan == UserPlan.PREMIUM_MENSAL,
+                User.premium_expires_at >= today_date
+            )
+        ).scalar() or 0
+        
+        BATCH_LIMIT = 100
+        vaga_numero = subscribers_count + 1
+        vagas_restantes = BATCH_LIMIT - subscribers_count
+        
+        # Ajustar título baseado nas vagas
+        if vagas_restantes > 0:
+            titulo_plano = f"🔥 Plano Premium - Vaga #{vaga_numero} de {BATCH_LIMIT} (Lote Promocional)"
+            mensagem_promocional = f"🔥 APROVEITE! Esta é a vaga #{vaga_numero} de {BATCH_LIMIT} disponíveis!"
+        else:
+            titulo_plano = "Plano Premium Mensal (Lote Regular)"
+            mensagem_promocional = "Plano Premium - Assinatura Mensal"
+        
+        logger.info(f"💰 Iniciando pagamento PIX para {current_user.email} - {titulo_plano}")
+        logger.info(f"📊 Assinantes atuais: {subscribers_count}, Vaga #{vaga_numero}, Restantes: {vagas_restantes}")
         
         alert_payment_pending(
             user_email=current_user.email,
@@ -186,7 +268,7 @@ async def create_pix_payment(
         
         # Modo de teste
         if not mp_service.access_token:
-            return await _create_test_payment(current_user, db)
+            return await _create_test_payment(current_user, db, vaga_numero, vagas_restantes, titulo_plano)
         
         # Pagamento real
         result = mp_service.create_payment_pix(
@@ -194,9 +276,15 @@ async def create_pix_payment(
             user_email=current_user.email,
             user_name=current_user.name or "Cliente",
             amount=97.00,
-            description="Plano Premium - 30 dias de créditos",
+            description=titulo_plano,
             credits=30,
-            plan_id="premium_mensal"
+            plan_id="premium_mensal",
+            metadata={
+                "vaga_numero": vaga_numero,
+                "batch_limit": BATCH_LIMIT,
+                "vagas_restantes": vagas_restantes,
+                "is_promotional": vagas_restantes > 0
+            }
         )
         
         if not result.get("success", False):
@@ -222,14 +310,18 @@ async def create_pix_payment(
             qr_code=result.get("qr_code"),
             qr_code_base64=result.get("qr_code_base64"),
             qr_code_url=result.get("qr_code_url"),
-            description="Plano Premium - 30 dias de créditos",
+            description=titulo_plano,
             status="pending",
             payment_metadata={
                 "plan_id": "premium_mensal",
                 "plan_name": "Plano Premium Mensal",
                 "credits_per_day": 1,
                 "total_days": 30,
-                "external_reference": result.get("external_reference")
+                "external_reference": result.get("external_reference"),
+                "vaga_numero": vaga_numero,
+                "batch_limit": BATCH_LIMIT,
+                "vagas_restantes": vagas_restantes,
+                "is_promotional": vagas_restantes > 0
             }
         )
         
@@ -241,12 +333,16 @@ async def create_pix_payment(
             "qr_code": result.get("qr_code"),
             "expiration_date": result.get("expiration_date"),
             "plan": {
-                "name": "Plano Premium Mensal",
+                "name": titulo_plano,
                 "credits_per_day": 1,
-                "total_days": 30
+                "total_days": 30,
+                "vaga_numero": vaga_numero,
+                "vagas_restantes": vagas_restantes,
+                "batch_limit": BATCH_LIMIT
             },
             "amount": 97.00,
-            "status": "pending"
+            "status": "pending",
+            "promotional_message": mensagem_promocional
         }
         
     except Exception as e:
@@ -265,7 +361,7 @@ async def create_pix_payment(
         }
 
 
-async def _create_test_payment(current_user: User, db: Session):
+async def _create_test_payment(current_user: User, db: Session, vaga_numero: int, vagas_restantes: int, titulo_plano: str):
     """Cria pagamento de teste (modo desenvolvimento)"""
     logger.info(f"🧪 Modo teste ativado - ativando premium para {current_user.email}")
     
@@ -281,14 +377,16 @@ async def _create_test_payment(current_user: User, db: Session):
         payment_method="pix",
         qr_code="00020126580014BR.GOV.BCB.PIX0136teste@simulacao.com520400005303986540410.005802BR5913TesteSimulado6008BRASILIA62070503***6304E2B7",
         qr_code_base64="iVBORw0KGgoAAAANSUhEUgAA...",
-        description="Plano Premium - 30 dias de créditos",
+        description=titulo_plano,
         status="approved",
         payment_metadata={
             "plan_id": "premium_mensal",
             "plan_name": "Plano Premium Mensal",
             "test_mode": True,
             "credits_per_day": 1,
-            "total_days": 30
+            "total_days": 30,
+            "vaga_numero": vaga_numero,
+            "vagas_restantes": vagas_restantes
         }
     )
     
@@ -313,6 +411,8 @@ async def _create_test_payment(current_user: User, db: Session):
         expires_at=expires_at.strftime("%d/%m/%Y")
     )
     
+    mensagem_promocional = f"🔥 Vaga #{vaga_numero} garantida!" if vagas_restantes > 0 else "Plano Premium ativado!"
+    
     return {
         "success": True,
         "payment_id": payment.id,
@@ -321,14 +421,18 @@ async def _create_test_payment(current_user: User, db: Session):
         "qr_code": "00020126580014BR.GOV.BCB.PIX0136teste@simulacao.com520400005303986540410.005802BR5913TesteSimulado6008BRASILIA62070503***6304E2B7",
         "expiration_date": datetime.now().isoformat(),
         "plan": {
-            "name": "Plano Premium Mensal",
+            "name": titulo_plano,
             "credits_per_day": 1,
             "total_days": 30,
-            "expires_at": expires_at.isoformat()
+            "expires_at": expires_at.isoformat(),
+            "vaga_numero": vaga_numero,
+            "vagas_restantes": vagas_restantes - 1,
+            "batch_limit": 100
         },
         "amount": 97.00,
         "status": "approved",
-        "test_mode": True
+        "test_mode": True,
+        "promotional_message": mensagem_promocional
     }
 
 
@@ -419,7 +523,9 @@ async def activate_premium_plan(db: Session, payment_id: int, user_id: int, tota
             expires_at=expires_at.strftime("%d/%m/%Y")
         )
         
-        logger.info(f"✅ Plano premium ativado para {user.email} - Expira em {expires_at}")
+        # Log da ativação com número da vaga
+        vaga_info = payment.payment_metadata.get("vaga_numero", "N/A") if payment.payment_metadata else "N/A"
+        logger.info(f"✅ Plano premium ativado para {user.email} - Vaga #{vaga_info} - Expira em {expires_at}")
         
     except Exception as e:
         logger.error(f"❌ Erro na ativação: {e}")
@@ -464,7 +570,8 @@ async def check_payment_status(
                 "amount": payment.amount,
                 "credits": payment.credits,
                 "created_at": payment.created_at.isoformat() if payment.created_at else None,
-                "approved_at": payment.approved_at.isoformat() if payment.approved_at else None
+                "approved_at": payment.approved_at.isoformat() if payment.approved_at else None,
+                "vaga_numero": payment.payment_metadata.get("vaga_numero") if payment.payment_metadata else None
             }
         }
         
@@ -495,7 +602,8 @@ async def check_analysis_credits(
                 "success": False,
                 "has_credits": False,
                 "credits": 0,
-                "required": 1
+                "required": 1,
+                "max_credits_balance": 3
             }
         
         # Admin tem créditos infinitos
@@ -505,7 +613,8 @@ async def check_analysis_credits(
                 "has_credits": True,
                 "credits": float('inf'),
                 "required": 1,
-                "is_admin": True
+                "is_admin": True,
+                "max_credits_balance": 3
             }
         
         has_credits = user.credits > 0
@@ -515,7 +624,8 @@ async def check_analysis_credits(
             "has_credits": has_credits,
             "credits": user.credits or 0,
             "required": 1,
-            "is_premium": user.plan == UserPlan.PREMIUM_MENSAL
+            "is_premium": user.plan == UserPlan.PREMIUM_MENSAL,
+            "max_credits_balance": 3
         }
         
     except Exception as e:
@@ -525,7 +635,8 @@ async def check_analysis_credits(
             "error": str(e),
             "has_credits": False,
             "credits": 0,
-            "required": 1
+            "required": 1,
+            "max_credits_balance": 3
         }
 
 
