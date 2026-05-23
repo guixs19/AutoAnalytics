@@ -66,14 +66,33 @@ class ModelTrainer:
                     }
                 }
             
-            # Carregar dados
+            # Carregar dados - CORRIGIDO PARA UTF-8 E EXCEL/WINDOWS BRASIL
             if file_path.endswith('.csv'):
                 try:
+                    # Tentativa 1: UTF-8 (padrão moderno)
                     df = pd.read_csv(file_path, encoding='utf-8')
+                    print("   ✅ Arquivo carregado com UTF-8")
                 except UnicodeDecodeError:
-                    df = pd.read_csv(file_path, encoding='latin1')
+                    try:
+                        # Tentativa 2: cp1252 (Windows Português - Excel brasileiro)
+                        df = pd.read_csv(file_path, encoding='cp1252')
+                        print("   ✅ Arquivo carregado com cp1252 (Windows PT-BR)")
+                    except UnicodeDecodeError:
+                        try:
+                            # Tentativa 3: ISO-8859-1 (Latin 1 - fallback europeu)
+                            df = pd.read_csv(file_path, encoding='iso-8859-1')
+                            print("   ✅ Arquivo carregado com iso-8859-1")
+                        except UnicodeDecodeError:
+                            # Tentativa 4: latin1 (fallback final)
+                            df = pd.read_csv(file_path, encoding='latin1')
+                            print("   ⚠️ Arquivo carregado com latin1 (pode ter caracteres corrompidos)")
             else:
+                # Excel: já lida bem com acentos
                 df = pd.read_excel(file_path)
+                print("   ✅ Arquivo Excel carregado")
+            
+            # Limpar nomes de colunas (remover espaços extras e normalizar)
+            df.columns = df.columns.str.strip()
             
             # Informações básicas
             total_rows = len(df)
@@ -106,7 +125,8 @@ class ModelTrainer:
                 "diagnostico": {
                     "status": "success",
                     "mensagem": f"Processado: {total_rows} registros, {total_cols} colunas",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "encoding_used": self._detect_encoding_used(file_path) if file_path.endswith('.csv') else "excel"
                 }
             }
             
@@ -134,8 +154,34 @@ class ModelTrainer:
                 }
             }
     
+    def _detect_encoding_used(self, file_path: str) -> str:
+        """Detecta qual encoding foi usado (para debug)"""
+        encodings = ['utf-8', 'cp1252', 'iso-8859-1', 'latin1']
+        for enc in encodings:
+            try:
+                with open(file_path, 'r', encoding=enc) as f:
+                    f.read(1024)  # Ler apenas o início
+                return f"success_with_{enc}"
+            except:
+                continue
+        return "unknown"
+    
     def _detect_workshop_columns(self, df: pd.DataFrame) -> Dict[str, List[str]]:
-        """Detecta colunas específicas de oficina mecânica"""
+        """
+        Detecta colunas específicas de oficina mecânica
+        🔥 CORRIGIDO: Agora normaliza strings para comparação sem acentos
+        """
+        import unicodedata
+        
+        def normalize_text(text: str) -> str:
+            """Remove acentos e coloca em minúsculo para comparação"""
+            if not isinstance(text, str):
+                return ""
+            text = text.lower()
+            # Remove acentos
+            text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
+            return text
+        
         workshop_columns = {
             "cliente": [],
             "veiculo": [],
@@ -146,18 +192,18 @@ class ModelTrainer:
         }
         
         keywords = {
-            "cliente": ["cliente", "nome", "cpf", "cnpj", "telefone", "email", "endereço"],
+            "cliente": ["cliente", "nome", "cpf", "cnpj", "telefone", "email", "endereco"],
             "veiculo": ["veiculo", "placa", "modelo", "marca", "ano", "chassi", "km", "quilometragem"],
-            "servico": ["serviço", "servico", "descrição", "descricao", "observação", "observacao"],
-            "peca": ["peça", "peca", "produto", "item", "material"],
-            "valor": ["valor", "preço", "preco", "custo", "total", "desconto"],
-            "data": ["data", "dia", "mês", "mes", "ano", "horário", "horario"]
+            "servico": ["servico", "descricao", "observacao", "diagnostico", "mao de obra"],
+            "peca": ["peca", "produto", "item", "material", "componente"],
+            "valor": ["valor", "preco", "custo", "total", "desconto", "subtotal"],
+            "data": ["data", "dia", "mes", "ano", "horario", "hora"]
         }
         
         for col in df.columns:
-            col_lower = col.lower()
+            col_normalized = normalize_text(str(col))
             for category, words in keywords.items():
-                if any(word in col_lower for word in words):
+                if any(word in col_normalized for word in words):
                     workshop_columns[category].append(col)
                     break
         
@@ -382,6 +428,7 @@ class ModelTrainer:
         
         return predictions
 
+
 class DataPreprocessor(ModelTrainer):
     """
     Classe para pré-processamento de dados - compatível com routes.py
@@ -390,6 +437,16 @@ class DataPreprocessor(ModelTrainer):
     def __init__(self):
         super().__init__()
         print("✅ DataPreprocessor inicializado (wrapper para ModelTrainer)")
+        print("   🔧 Suporte a múltiplos encodings: UTF-8, cp1252, ISO-8859-1, latin1")
     
     # O método process_file já existe na classe pai (ModelTrainer)
     # Então não precisa reimplementar
+
+
+# Instância global para compatibilidade
+data_preprocessor = DataPreprocessor()
+model_trainer = ModelTrainer()
+
+print("\n✅ preprocessing.py carregado com correção de encoding para Windows PT-BR")
+print("   📁 Encodings suportados: UTF-8 → cp1252 → ISO-8859-1 → latin1")
+print("   🔤 Detecção de colunas normalizada (sem acentos)")

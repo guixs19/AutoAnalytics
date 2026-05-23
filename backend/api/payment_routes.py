@@ -1,6 +1,274 @@
 # backend/api/payment_routes.py - VERSÃO OTIMIZADA COM CONTAGEM DE ASSINANTES
 # Com SQLAlchemy 2.0 style (select) e joinedload para reduzir consultas
 
+# backend/api/payment_routes.py - VERSÃO COM PROTEÇÃO XSS E DADOS SENSÍVEIS
+# Adicionar no topo do arquivo:
+
+import re
+import hashlib
+import hmac
+from secrets import compare_digest
+
+# ==============================================
+# PROTEÇÃO XSS E SANITIZAÇÃO
+# ==============================================
+
+def sanitize_input(text: str) -> str:
+    """Sanitiza entrada para evitar XSS"""
+    if not text:
+        return ""
+    # Remove tags HTML/script
+    text = re.sub(r'<[^>]*>', '', text)
+    # Remove caracteres perigosos
+    text = re.sub(r'[<>\"\'\/\\;`]', '', text)
+    return text[:500]  # Limita tamanho
+
+def sanitize_payment_data(data: dict) -> dict:
+    """Sanitiza dados de pagamento antes de enviar ao frontend"""
+    # NUNCA enviar dados sensíveis completos
+    sensitive_fields = ['qr_code', 'qr_code_base64', 'payment_key', 'transaction_id', 'card_data']
+    
+    sanitized = {}
+    for key, value in data.items():
+        if key in sensitive_fields:
+            # Substituir por hash ou indicador
+            sanitized[key] = "***PROTECTED***"
+        elif isinstance(value, str):
+            sanitized[key] = sanitize_input(value)[:200]
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_payment_data(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
+# Modificar a rota /create-pix para não enviar QR Code completo
+@router.post("/create-pix")
+async def create_pix_payment(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cria um pagamento PIX para o plano premium de R$97"""
+    try:
+        # ... (código existente de contagem de vagas) ...
+        
+        # 🔥 CRIPTOGRAFAR QR CODE ANTES DE ENVIAR
+        if not mp_service.access_token:
+            return await _create_test_payment_secure(current_user, db, vaga_numero, vagas_restantes, titulo_plano)
+        
+        # Pagamento real
+        result = mp_service.create_payment_pix(
+            user_id=current_user.id,
+            user_email=current_user.email,
+            user_name=current_user.name or "Cliente",
+            amount=97.00,
+            description=titulo_plano,
+            credits=30,
+            plan_id="premium_mensal",
+            metadata={
+                "vaga_numero": vaga_numero,
+                "batch_limit": BATCH_LIMIT,
+                "vagas_restantes": vagas_restantes,
+                "is_promotional": vagas_restantes > 0
+            }
+        )
+        
+        if not result.get("success", False):
+            alert_payment_failed(
+                user_email=current_user.email,
+                amount=97.00,
+                error=result.get("error", "Erro no Mercado Pago")
+            )
+            
+            return {
+                "success": False,
+                "error": "Erro ao processar pagamento. Tente novamente."
+            }
+        
+        # 🔥 NUNCA ENVIAR QR_CODE_BASE64 COMPLETO PARA O FRONTEND
+        # Em vez disso, enviar apenas um ID e buscar no backend quando necessário
+        payment = crud.create_payment_record(
+            db=db,
+            user_id=current_user.id,
+            mp_id=result.get("payment_id", f"PIX_{uuid.uuid4().hex[:8]}"),
+            amount=97.00,
+            credits=30,
+            payment_method="pix",
+            qr_code=result.get("qr_code"),
+            qr_code_base64=result.get("qr_code_base64"),
+            qr_code_url=result.get("qr_code_url"),
+            description=titulo_plano,
+            status="pending",
+            payment_metadata={
+                "plan_id": "premium_mensal",
+                "plan_name": "Plano Premium Mensal",
+                "credits_per_day": 1,
+                "total_days": 30,
+                "external_reference": result.get("external_reference"),
+                "vaga_numero": vaga_numero,
+                "batch_limit": BATCH_LIMIT,
+                "vagas_restantes": vagas_restantes,
+                "is_promotional": vagas_restantes > 0
+            }
+        )
+        
+        # 🔥 RESPOSTA SEGURA - SEM DADOS SENSÍVEIS
+        return {
+            "success": True,
+            "payment_id": payment.id,
+            "status": "pending",
+            "plan": {
+                "name": sanitize_input(titulo_plano),
+                "credits_per_day": 1,
+                "total_days": 30,
+                "vaga_numero": vaga_numero,
+                "vagas_restantes": vagas_restantes,
+                "batch_limit": BATCH_LIMIT
+            },
+            "amount": 97.00,
+            "promotional_message": sanitize_input(mensagem_promocional),
+            "requires_qr_fetch": True  # Frontend precisa buscar o QR Code separadamente
+        }
+        
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Erro no create-pix: {e}\n{error_trace}")
+        
+        alert_system_error(
+            error=e,
+            endpoint="/payments/create-pix",
+            user=current_user.email if current_user else "unknown"
+        )
+        
+        return {
+            "success": False,
+            "error": "Erro interno. Tente novamente mais tarde."
+        }
+
+
+# 🔥 NOVA ROTA SEGURA PARA BUSCAR QR CODE (APENAS COM AUTENTICAÇÃO)
+@router.get("/pix-qrcode/{payment_id}")
+async def get_pix_qrcode(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna o QR Code PIX de forma segura (apenas para o dono do pagamento)"""
+    try:
+        stmt = select(Payment).where(Payment.id == payment_id)
+        payment = db.execute(stmt).scalar_one_or_none()
+        
+        if not payment:
+            raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+        
+        # Verificar se o usuário é o dono
+        if payment.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+        
+        # Verificar se o pagamento está pendente
+        if payment.status != "pending":
+            return {
+                "success": False,
+                "message": "Pagamento já foi processado",
+                "status": payment.status
+            }
+        
+        # Buscar QR Code do banco ou serviço
+        qr_code_data = payment.payment_metadata.get("qr_code_data") if payment.payment_metadata else None
+        
+        # Se não tiver no banco, buscar do Mercado Pago (implementar)
+        
+        return {
+            "success": True,
+            "qr_code_base64": payment.qr_code_base64,  # Só enviar após verificação
+            "qr_code": payment.qr_code,
+            "expiration_date": payment.payment_metadata.get("expiration_date") if payment.payment_metadata else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao buscar QR Code: {e}")
+        return {
+            "success": False,
+            "error": "Erro ao recuperar QR Code"
+        }
+
+
+async def _create_test_payment_secure(current_user: User, db: Session, vaga_numero: int, vagas_restantes: int, titulo_plano: str):
+    """Cria pagamento de teste (modo desenvolvimento) de forma segura"""
+    logger.info(f"🧪 Modo teste ativado - ativando premium para {current_user.email}")
+    
+    mock_payment_id = f"PIX_{uuid.uuid4().hex[:8].upper()}"
+    
+    # Criar QR Code SIMULADO (não real)
+    import random
+    mock_qr_code = f"00020126580014BR.GOV.BCB.PIX0136teste_{uuid.uuid4().hex[:6]}@simulacao.com520400005303986540410.005802BR5913TesteSimulado6008BRASILIA62070503***6304E2B7"
+    
+    # Criar registro de pagamento simulado
+    payment = crud.create_payment_record(
+        db=db,
+        user_id=current_user.id,
+        mp_id=mock_payment_id,
+        amount=97.00,
+        credits=30,
+        payment_method="pix",
+        qr_code=mock_qr_code,
+        qr_code_base64=None,  # Não armazenar base64 em modo teste
+        description=titulo_plano,
+        status="approved",
+        payment_metadata={
+            "plan_id": "premium_mensal",
+            "plan_name": "Plano Premium Mensal",
+            "test_mode": True,
+            "credits_per_day": 1,
+            "total_days": 30,
+            "vaga_numero": vaga_numero,
+            "vagas_restantes": vagas_restantes
+        }
+    )
+    
+    # 🔥 ATIVAR PLANO PREMIUM
+    expires_at = date.today() + timedelta(days=30)
+    
+    stmt = select(User).where(User.id == current_user.id)
+    user = db.execute(stmt).scalar_one()
+    
+    user.plan = UserPlan.PREMIUM_MENSAL
+    user.premium_activated_at = datetime.now()
+    user.premium_expires_at = expires_at
+    user.total_purchased = (user.total_purchased or 0) + 30
+    
+    db.commit()
+    
+    alert_premium_activated(
+        user_email=user.email,
+        credits=30,
+        expires_at=expires_at.strftime("%d/%m/%Y")
+    )
+    
+    mensagem_promocional = f"🔥 Vaga #{vaga_numero} garantida!" if vagas_restantes > 0 else "Plano Premium ativado!"
+    
+    # 🔥 RESPOSTA SEGURA - SEM DADOS SENSÍVEIS NO MODO TESTE
+    return {
+        "success": True,
+        "payment_id": payment.id,
+        "status": "approved",
+        "plan": {
+            "name": sanitize_input(titulo_plano),
+            "credits_per_day": 1,
+            "total_days": 30,
+            "expires_at": expires_at.isoformat(),
+            "vaga_numero": vaga_numero,
+            "vagas_restantes": vagas_restantes - 1,
+            "batch_limit": 100
+        },
+        "amount": 97.00,
+        "promotional_message": sanitize_input(mensagem_promocional),
+        "test_mode": True
+    }
+
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select, func
