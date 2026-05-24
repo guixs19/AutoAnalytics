@@ -1,7 +1,8 @@
-# backend/api/upload_routes.py - ROTAS DE UPLOAD E ANÁLISE
+# backend/api/upload_routes.py - VERSÃO CORRIGIDA E INTEGRADA
 """
 Rotas para upload e processamento de arquivos
 Suporte a múltiplos arquivos (até 3 por vez) com ML real
+Integrado com sistema de créditos do payment_routes.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
@@ -18,6 +19,7 @@ import time
 from backend.database import get_db
 from backend import crud, models
 from backend.security import get_current_active_user, jwt_manager
+from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ processing_status = {}
 
 # Limites
 MAX_FILE_SIZE = 15 * 1024  # 15KB
-MAX_FILES_PER_BATCH = 3     # 🔥 Máximo de 3 arquivos por vez
+MAX_FILES_PER_BATCH = 3     # Máximo de 3 arquivos por vez
 ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls']
 
 
@@ -37,7 +39,7 @@ ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls']
 # PROCESSAMENTO ML EM BACKGROUND PARA MÚLTIPLOS ARQUIVOS
 # ==============================================
 
-async def process_multiple_files_with_ml(files_to_process: List[tuple], user_email: str):
+async def process_multiple_files_with_ml(files_to_process: List[tuple], user_email: str, user_id: int, db: Session):
     """
     Processa múltiplos arquivos com o modelo de ML em background
     files_to_process: Lista de (process_id, content, filename)
@@ -91,6 +93,26 @@ async def process_multiple_files_with_ml(files_to_process: List[tuple], user_ema
                     processing_status[process_id]['insights'] = result.get('insights', {})
                     
                     logger.info(f"✅ ML concluído: {result.get('filename')} - {result.get('stats', {}).get('rows', 0)} linhas")
+                    
+                    # 🔥 APÓS ANÁLISE BEM-SUCEDIDA, CONSUMIR CRÉDITO
+                    # Buscar usuário atualizado
+                    from backend.database import SessionLocal
+                    db_local = SessionLocal()
+                    try:
+                        from backend.models import User
+                        user = db_local.query(User).filter(User.id == user_id).first()
+                        if user and not user.is_admin:
+                            # Consumir crédito
+                            success = consume_analysis_credit(user, db_local, 1)
+                            if success:
+                                logger.info(f"💰 Crédito consumido para análise {process_id} do usuário {user.email}")
+                                processing_status[process_id]['credit_consumed'] = True
+                                processing_status[process_id]['credits_remaining'] = user.credits
+                            else:
+                                logger.warning(f"⚠️ Falha ao consumir crédito para {user.email}")
+                    finally:
+                        db_local.close()
+                    
                 else:
                     processing_status[process_id]['status'] = 'error'
                     processing_status[process_id]['progress'] = 100
@@ -113,7 +135,7 @@ async def process_multiple_files_with_ml(files_to_process: List[tuple], user_ema
 @router.post("/upload-auto")
 async def upload_auto(
     request: Request,
-    files: List[UploadFile] = File(...),  # 🔥 Aceita múltiplos arquivos
+    files: List[UploadFile] = File(...),
     analysis_type: str = Form("auto"),
     ai_model: str = Form("auto"),
     current_user = Depends(get_current_active_user),
@@ -121,7 +143,8 @@ async def upload_auto(
 ):
     """
     Upload de múltiplos arquivos para análise com ML real (até 3 por vez)
-    Cada arquivo consome 1 crédito
+    🔥 VERIFICAÇÃO DE CRÉDITOS ANTES DO UPLOAD
+    🔥 CONSUMO DE CRÉDITOS APÓS ANÁLISE BEM-SUCEDIDA
     """
     client_ip = request.client.host if request.client else "unknown"
     
@@ -139,13 +162,12 @@ async def upload_auto(
     
     logger.info(f"📦 Recebendo lote de {total_arquivos} arquivo(s) de {current_user.email}")
     
-    # 2. Verifica se o usuário tem créditos suficientes
+    # 🔥 2. VERIFICA CRÉDITOS ANTES DE QUALQUER PROCESSAMENTO
     if not current_user.is_admin:
-        if current_user.credits < total_arquivos:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Créditos insuficientes. Você tentou processar {total_arquivos} arquivo(s), mas seu saldo atual é de {current_user.credits} crédito(s)."
-            )
+        if not can_perform_analysis(current_user, total_arquivos):
+            credits_msg = f"Créditos insuficientes. Você tem {current_user.credits or 0} crédito(s) e tentou processar {total_arquivos} arquivo(s)."
+            logger.warning(f"❌ {credits_msg}")
+            raise HTTPException(status_code=400, detail=credits_msg)
     
     # 3. Processa cada arquivo individualmente (validações)
     arquivos_processados = []
@@ -184,7 +206,7 @@ async def upload_auto(
             analysis_id = str(uuid.uuid4())[:8]
             timestamp = datetime.now()
             
-            # Salvar em processing_status
+            # Salvar em processing_status (sem consumir crédito ainda)
             processing_status[analysis_id] = {
                 "process_id": analysis_id,
                 "status": "uploaded",
@@ -198,7 +220,8 @@ async def upload_auto(
                 "ai_model": ai_model,
                 "batch_index": idx,
                 "batch_total": total_arquivos,
-                "message": "Arquivo recebido, aguardando processamento ML..."
+                "message": "Arquivo recebido, aguardando processamento ML...",
+                "credits_consumed": False
             }
             
             # Adicionar à lista para processamento ML
@@ -219,36 +242,35 @@ async def upload_auto(
                 "error": str(e)
             })
     
-    # 4. Deduz os créditos (apenas para arquivos validados com sucesso)
-    credits_deducted = 0
-    if not current_user.is_admin and len(arquivos_processados) > 0:
-        success = crud.deduct_credits(db, current_user, len(arquivos_processados), 
-                                      f"Processamento ML de {len(arquivos_processados)} arquivo(s): {', '.join([a['filename'] for a in arquivos_processados])}")
-        if success:
-            credits_deducted = len(arquivos_processados)
-            logger.info(f"💰 Deduzidos {credits_deducted} crédito(s) de {current_user.email}")
-            db.refresh(current_user)
+    # 🔥 NOTA: NÃO DEDUZIMOS CRÉDITOS AQUI!
+    # Os créditos serão consumidos APÓS a análise ML ser bem-sucedida
+    # Isso evita cobrar o usuário por análises que falharam
     
-    # 5. Iniciar processamento ML real em background (se houver arquivos)
+    # 4. Iniciar processamento ML real em background (se houver arquivos)
     if files_to_process:
         logger.info(f"🤖 Iniciando processamento ML para {len(files_to_process)} arquivo(s)")
-        asyncio.create_task(process_multiple_files_with_ml(files_to_process, current_user.email))
+        # Passar db e user_id para consumir crédito após conclusão
+        asyncio.create_task(process_multiple_files_with_ml(files_to_process, current_user.email, current_user.id, db))
     
-    # 6. Retornar resposta consolidada
+    # 5. Retornar resposta consolidada
+    credits_display = get_credits_display(current_user)
+    
     return {
         "success": len(arquivos_com_erro) == 0,
-        "message": f"Processado {len(arquivos_processados)} de {total_arquivos} arquivo(s) - ML iniciado",
+        "message": f"Processado {len(arquivos_processados)} de {total_arquivos} arquivo(s) - ML iniciado. Os créditos serão consumidos apenas após conclusão bem-sucedida.",
         "total_files": total_arquivos,
         "processed_files": arquivos_processados,
         "failed_files": arquivos_com_erro,
-        "credits_deducted": credits_deducted,
-        "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
+        "credits_before": current_user.credits if not current_user.is_admin else "∞",
+        "credits_display": credits_display,
+        "is_admin": current_user.is_admin,
         "batch_info": {
             "max_files_allowed": MAX_FILES_PER_BATCH,
             "uploaded": total_arquivos,
             "accepted": len(arquivos_processados),
             "failed": len(arquivos_com_erro),
-            "ml_processing_started": len(files_to_process) > 0
+            "ml_processing_started": len(files_to_process) > 0,
+            "credits_charged_after_success": True
         }
     }
 
@@ -262,7 +284,7 @@ async def get_status(
     process_id: str,
     current_user = Depends(get_current_active_user)
 ):
-    """Verifica status do processamento (inclui resultados do ML)"""
+    """Verifica status do processamento (inclui resultados do ML e créditos)"""
     
     if process_id not in processing_status:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
@@ -277,6 +299,10 @@ async def get_status(
     if current_user.is_admin:
         status_data['is_admin_view'] = True
     
+    # Adicionar info de créditos se disponível
+    if 'credits_remaining' in status_data:
+        status_data['credits_remaining'] = status_data['credits_remaining']
+    
     return status_data
 
 
@@ -285,10 +311,7 @@ async def get_batch_status(
     process_ids: str,
     current_user = Depends(get_current_active_user)
 ):
-    """
-    Verifica status de múltiplos processos em lote
-    Use: /batch-status?process_ids=id1,id2,id3
-    """
+    """Verifica status de múltiplos processos em lote"""
     ids = process_ids.split(',')
     results = []
     
@@ -304,7 +327,8 @@ async def get_batch_status(
                     "filename": status_data.get("filename"),
                     "message": status_data.get("message", ""),
                     "completed_at": status_data.get("completed_at"),
-                    "analysis_info": status_data.get("analysis_info")
+                    "analysis_info": status_data.get("analysis_info"),
+                    "credits_consumed": status_data.get("credits_consumed", False)
                 })
     
     return {
@@ -335,7 +359,8 @@ async def get_analyses_history(
                 "completed_at": data.get("completed_at"),
                 "file_size": data.get("file_size"),
                 "analysis_info": data.get("analysis_info"),
-                "prediction_stats": data.get("prediction_stats")
+                "prediction_stats": data.get("prediction_stats"),
+                "credits_consumed": data.get("credits_consumed", False)
             })
     
     # Ordenar por data (mais recente primeiro)
@@ -373,12 +398,16 @@ async def get_dashboard_stats(
     # Contar análises em andamento
     in_progress = len([a for a in user_analyses if a.get("status") not in ["completed", "error"]])
     
+    # Total de créditos consumidos
+    total_credits_used = sum([1 for a in user_analyses if a.get("credits_consumed", False)])
+    
     return {
         "success": True,
         "total_analises": len(user_analyses),
         "analises_hoje": analyses_today,
         "analises_andamento": in_progress,
-        "total_credits": current_user.credits if not current_user.is_admin else "∞",
+        "total_credits": get_credits_display(current_user),
+        "total_credits_used": total_credits_used,
         "is_admin": current_user.is_admin,
         "max_files_per_batch": MAX_FILES_PER_BATCH,
         "max_file_size_kb": MAX_FILE_SIZE // 1024,
@@ -421,69 +450,9 @@ async def get_analysis_result(
         "prediction_stats": status_data.get("prediction_stats", {}),
         "insights": status_data.get("insights", {}),
         "completed_at": status_data.get("completed_at"),
-        "file_size_kb": status_data.get("file_size", 0) / 1024 if status_data.get("file_size") else 0
+        "file_size_kb": status_data.get("file_size", 0) / 1024 if status_data.get("file_size") else 0,
+        "credit_consumed": status_data.get("credits_consumed", False)
     }
-
-
-@router.get("/payments/balance")
-async def get_balance(
-    current_user = Depends(get_current_active_user)
-):
-    """Retorna saldo de créditos do usuário"""
-    
-    return {
-        "success": True,
-        "credits": current_user.credits if not current_user.is_admin else "∞",
-        "credits_numeric": current_user.credits if not current_user.is_admin else 999999,
-        "is_admin": current_user.is_admin,
-        "plan": {
-            "is_premium": current_user.plan == "premium_mensal",
-            "name": current_user.plan
-        },
-        "max_files_per_batch": MAX_FILES_PER_BATCH,
-        "max_file_size_kb": MAX_FILE_SIZE // 1024
-    }
-
-
-@router.get("/premium/status")
-async def get_premium_status(
-    current_user = Depends(get_current_active_user)
-):
-    """Retorna status do plano premium"""
-    
-    is_premium = current_user.plan == "premium_mensal"
-    
-    return {
-        "success": True,
-        "has_premium": is_premium,
-        "plan": {
-            "name": current_user.plan,
-            "is_premium": is_premium,
-            "days_left": current_user.get_premium_days_left() if hasattr(current_user, 'get_premium_days_left') else (30 if is_premium else 0)
-        },
-        "max_files_per_batch": MAX_FILES_PER_BATCH
-    }
-
-
-@router.post("/premium/check-daily")
-async def check_daily_credit(
-    current_user = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Verifica e adiciona crédito diário para premium"""
-    
-    if current_user.plan != "premium_mensal":
-        return {"success": False, "message": "Plano premium não ativo"}
-    
-    from backend.scheduler.daily_credits_job import DailyCreditsService
-    
-    service = DailyCreditsService()
-    result = service.check_and_add_daily_credit(db, current_user.id)
-    
-    # Atualizar o objeto do usuário
-    db.refresh(current_user)
-    
-    return result
 
 
 # ==============================================

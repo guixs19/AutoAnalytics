@@ -1,355 +1,191 @@
-# backend/api/payment_routes.py - VERSÃO CORRIGIDA (ordem correta)
+# backend/api/payment_routes.py - VERSÃO FINAL COMPLETA
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
 import uuid
-import traceback
 import logging
 import re
+import html
+import asyncio
+from typing import Dict, Any, Optional
 
 from backend.database import get_db
 from backend import crud
 from backend.api.auth_routes import get_current_user
-from backend.models import User, Payment, DailyCreditLog, UserPlan
+from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis
+from backend.services.daily_credits_job import DailyCreditsService
+from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 from backend.services.payment_service import MercadoPagoService
-
-# Importar funções do sentinel
-from backend.observability.sentinel import (
-    alert_payment_approved,
-    alert_payment_pending,
-    alert_payment_failed,
-    alert_system_error,
-    alert_premium_activated
-)
+from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, get_webhook
 
 logger = logging.getLogger(__name__)
 
-# ==============================================
-# 🔥 CRIAÇÃO DO ROUTER (AQUI! ANTES DAS ROTAS)
-# ==============================================
 router = APIRouter(prefix="/payments", tags=["payments"])
 
-mp_service = MercadoPagoService()
-
 # ==============================================
-# PROTEÇÃO XSS E SANITIZAÇÃO
+# CONFIGURAÇÕES DE SEGURANÇA
 # ==============================================
 
-def sanitize_input(text: str) -> str:
-    """Sanitiza entrada para evitar XSS"""
+MAX_CREDITS_BALANCE = 3
+DAYS_PREMIUM = 30
+CREDITS_PER_DAY = 1
+INITIAL_FREE_CREDITS = 3
+
+# Função de sanitização anti-XSS
+def sanitize_string(text: str) -> str:
     if not text:
         return ""
     text = re.sub(r'<[^>]*>', '', text)
+    text = html.escape(text)
     text = re.sub(r'[<>\"\'\/\\;`]', '', text)
     return text[:500]
 
-# ==============================================
-# PLANO PREMIUM - R$97
-# ==============================================
-PLANO_PREMIUM = {
-    "id": "premium_mensal",
-    "name": "Plano Premium Mensal",
-    "price": 97.00,
-    "description": "1 crédito por dia durante 30 dias",
-    "popular": True,
-    "features": [
-        "✅ 1 crédito novo todo dia",
-        "✅ 30 créditos no total",
-        "✅ Válido por 30 dias",
-        "✅ Análises com IA avançada",
-        "✅ Suporte prioritário",
-        "⚠️ Limite máximo de 3 créditos acumulados"
-    ],
-    "credits_per_day": 1,
-    "total_days": 30,
-    "total_credits": 30,
-    "max_credits_balance": 3
-}
-
-PLANO_GRATUITO = {
-    "id": "gratuito",
-    "name": "Plano Gratuito",
-    "price": 0,
-    "credits": 3,
-    "description": "3 créditos iniciais para testes",
-    "max_credits_balance": 3
-}
+def sanitize_response(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {k: sanitize_response(v) for k, v in data.items()}
+    elif isinstance(data, str):
+        return sanitize_string(data)
+    elif isinstance(data, list):
+        return [sanitize_response(item) for item in data]
+    return data
 
 
 # ==============================================
-# ROTAS (DEPOIS DO router)
+# SERVIÇOS
 # ==============================================
 
-@router.get("/plans")
-async def get_plans():
-    """Retorna os planos disponíveis"""
+daily_credits_service = DailyCreditsService()
+mp_service = MercadoPagoService()
+webhook = get_webhook()
+
+
+# ==============================================
+# FUNÇÃO: INICIALIZAR CRÉDITOS DO USUÁRIO NOVO
+# ==============================================
+
+def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
+    """
+    Usuário novo ganha 3 créditos gratuitos para teste
+    """
     try:
-        logger.info("👀 Planos consultados")
-        return {
-            "success": True,
-            "plans": {
-                "gratuito": PLANO_GRATUITO,
-                "premium_mensal": PLANO_PREMIUM
-            },
-            "public_key": getattr(mp_service, 'public_key', None),
-            "max_credits_balance": 3,
-            "max_files_per_batch": 3
-        }
-    except Exception as e:
-        logger.error(f"❌ Erro ao listar planos: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "plans": {
-                "gratuito": PLANO_GRATUITO,
-                "premium_mensal": PLANO_PREMIUM
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"success": False, "error": "Usuário não encontrado"}
+        
+        # Verificar se já recebeu créditos iniciais
+        if (user.credits is None or user.credits == 0) and not user.is_admin:
+            user.credits = INITIAL_FREE_CREDITS
+            user.total_purchased = (user.total_purchased or 0) + INITIAL_FREE_CREDITS
+            
+            # Registrar log
+            log = DailyCreditLog(
+                user_id=user.id,
+                credits_added=INITIAL_FREE_CREDITS,
+                date=date.today(),
+                total_after=user.credits,
+                source="initial_bonus"
+            )
+            db.add(log)
+            db.commit()
+            
+            logger.info(f"🎉 Usuário novo {user.email} ganhou {INITIAL_FREE_CREDITS} créditos gratuitos!")
+            
+            return {
+                "success": True,
+                "credits_added": INITIAL_FREE_CREDITS,
+                "current_credits": user.credits,
+                "message": f"🎉 Boas-vindas! Você ganhou {INITIAL_FREE_CREDITS} créditos grátis para testar o sistema!"
             }
-        }
-
-
-@router.get("/premium/subscribers-count")
-async def get_premium_subscribers_count(db: Session = Depends(get_db)):
-    """Retorna a quantidade de assinantes ativos do plano premium"""
-    try:
-        today = date.today()
-        stmt = select(func.count(User.id)).where(
-            User.plan == UserPlan.PREMIUM_MENSAL,
-            User.premium_expires_at >= today
-        )
-        active_subscribers = db.execute(stmt).scalar() or 0
         
-        BATCH_LIMIT = 100
-        vagas_restantes = max(0, BATCH_LIMIT - active_subscribers)
+        return {"success": False, "message": "Usuário já possui créditos"}
         
-        return {
-            "success": True,
-            "subscribers_count": active_subscribers,
-            "batch_limit": BATCH_LIMIT,
-            "remaining_slots": vagas_restantes,
-            "is_promotional_active": vagas_restantes > 0,
-            "message": f"🔥 {vagas_restantes} vagas restantes!" if vagas_restantes > 0 else "⚠️ Lote promocional esgotado!"
-        }
     except Exception as e:
-        logger.error(f"❌ Erro ao contar assinantes: {e}")
-        return {"success": False, "error": str(e), "subscribers_count": 0, "remaining_slots": 0}
+        logger.error(f"❌ Erro ao inicializar créditos: {e}")
+        db.rollback()
+        return {"success": False, "error": str(e)}
 
+
+# ==============================================
+# 🔥 ROTA PRINCIPAL: SALDO DO USUÁRIO
+# ==============================================
 
 @router.get("/balance")
 async def get_user_balance(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
-    """Retorna saldo de créditos e status premium do usuário"""
-    try:
-        stmt = select(User).where(User.id == current_user.id)
-        user = db.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            return {"success": False, "error": "Usuário não encontrado", "credits": 0, "max_credits_balance": 3}
-        
-        hoje = date.today()
-        credit_stmt = select(DailyCreditLog).where(
+    """
+    Retorna saldo de créditos do usuário
+    Inicializa créditos gratuitos se for usuário novo
+    """
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "credits": 0,
+            "credits_display": "0",
+            "error": "Usuário não encontrado"
+        })
+    
+    # Verificar se é usuário novo e adicionar créditos
+    is_new_user = (user.credits is None or user.credits == 0) and not user.is_admin
+    welcome_message = None
+    
+    if is_new_user:
+        result = initialize_new_user_credits(user.id, db)
+        db.refresh(user)
+        if result.get("success"):
+            welcome_message = result.get("message")
+    
+    # Verificar status premium
+    is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
+    
+    # Calcular dias restantes
+    days_left = 0
+    if is_premium and user.premium_expires_at:
+        days_left = max(0, (user.premium_expires_at - date.today()).days)
+    
+    # Verificar se pode receber crédito diário
+    can_receive_daily = False
+    if is_premium and (user.credits or 0) < MAX_CREDITS_BALANCE:
+        today = date.today()
+        received_today = db.query(DailyCreditLog).filter(
             DailyCreditLog.user_id == user.id,
-            DailyCreditLog.date == hoje
-        )
-        received_today = db.execute(credit_stmt).first() is not None
-        
-        is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
-        
-        days_remaining = 0
-        if is_premium and user.premium_expires_at:
-            days_remaining = max(0, (user.premium_expires_at - date.today()).days)
-        
-        current_credits = user.credits or 0
-        max_credits_balance = 3
-        
-        return {
-            "success": True,
-            "credits": current_credits,
-            "total_purchased": user.total_purchased or 0,
-            "max_credits_balance": max_credits_balance,
-            "can_receive_more": current_credits < max_credits_balance,
-            "plan": {
-                "type": str(user.plan),
-                "is_premium": is_premium,
-                "premium_expires_at": user.premium_expires_at.isoformat() if user.premium_expires_at else None,
-                "days_remaining": days_remaining,
-                "credits_per_day": 1 if is_premium else 0,
-                "received_today": received_today,
-                "total_days": 30
-            }
-        }
-    except Exception as e:
-        logger.error(f"❌ Erro: {e}")
-        return {"success": False, "error": str(e), "credits": 0, "max_credits_balance": 3}
-
-
-@router.post("/create-pix")
-async def create_pix_payment(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Cria um pagamento PIX para o plano premium de R$97"""
-    try:
-        today_date = date.today()
-        subscribers_count = db.execute(
-            select(func.count(User.id)).where(
-                User.plan == UserPlan.PREMIUM_MENSAL,
-                User.premium_expires_at >= today_date
-            )
-        ).scalar() or 0
-        
-        BATCH_LIMIT = 100
-        vaga_numero = subscribers_count + 1
-        vagas_restantes = BATCH_LIMIT - subscribers_count
-        
-        if vagas_restantes > 0:
-            titulo_plano = f"Plano Premium - Vaga #{vaga_numero} de {BATCH_LIMIT}"
-            mensagem_promocional = f"🔥 Vaga #{vaga_numero} de {BATCH_LIMIT}!"
-        else:
-            titulo_plano = "Plano Premium Mensal"
-            mensagem_promocional = "Plano Premium - Assinatura Mensal"
-        
-        logger.info(f"💰 Iniciando pagamento PIX para {current_user.email}")
-        
-        alert_payment_pending(user_email=current_user.email, amount=97.00, method="pix")
-        
-        # Modo de teste
-        if not mp_service.access_token:
-            return await _create_test_payment(current_user, db, vaga_numero, vagas_restantes, titulo_plano)
-        
-        # Pagamento real (implementar com Mercado Pago)
-        mock_payment_id = f"PIX_{uuid.uuid4().hex[:8].upper()}"
-        
-        payment = crud.create_payment_record(
-            db=db,
-            user_id=current_user.id,
-            mp_id=mock_payment_id,
-            amount=97.00,
-            credits=30,
-            payment_method="pix",
-            qr_code=None,
-            qr_code_base64=None,
-            description=titulo_plano,
-            status="pending",
-            payment_metadata={
-                "plan_id": "premium_mensal",
-                "vaga_numero": vaga_numero,
-                "vagas_restantes": vagas_restantes
-            }
-        )
-        
-        return {
-            "success": True,
-            "payment_id": payment.id,
-            "status": "pending",
-            "plan": {
-                "name": sanitize_input(titulo_plano),
-                "credits_per_day": 1,
-                "total_days": 30,
-                "vaga_numero": vaga_numero,
-                "vagas_restantes": vagas_restantes
-            },
-            "amount": 97.00,
-            "promotional_message": sanitize_input(mensagem_promocional)
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Erro: {e}")
-        return {"success": False, "error": "Erro ao criar pagamento"}
-
-
-async def _create_test_payment(current_user: User, db: Session, vaga_numero: int, vagas_restantes: int, titulo_plano: str):
-    """Cria pagamento de teste (modo desenvolvimento)"""
-    logger.info(f"🧪 Modo teste - ativando premium para {current_user.email}")
+            DailyCreditLog.date == today,
+            DailyCreditLog.source.in_(["premium_daily", "daily"])
+        ).first()
+        can_receive_daily = received_today is None
     
-    mock_payment_id = f"PIX_{uuid.uuid4().hex[:8].upper()}"
-    
-    payment = crud.create_payment_record(
-        db=db,
-        user_id=current_user.id,
-        mp_id=mock_payment_id,
-        amount=97.00,
-        credits=30,
-        payment_method="pix",
-        qr_code=None,
-        qr_code_base64=None,
-        description=titulo_plano,
-        status="approved",
-        payment_metadata={"plan_id": "premium_mensal", "test_mode": True}
-    )
-    
-    expires_at = date.today() + timedelta(days=30)
-    
-    stmt = select(User).where(User.id == current_user.id)
-    user = db.execute(stmt).scalar_one()
-    
-    user.plan = UserPlan.PREMIUM_MENSAL
-    user.premium_activated_at = datetime.now()
-    user.premium_expires_at = expires_at
-    user.total_purchased = (user.total_purchased or 0) + 30
-    
-    db.commit()
-    
-    return {
+    response = {
         "success": True,
-        "payment_id": payment.id,
-        "status": "approved",
-        "plan": {"name": titulo_plano, "credits_per_day": 1, "total_days": 30},
-        "amount": 97.00,
-        "test_mode": True
-    }
-
-
-@router.post("/webhook")
-async def mercadopago_webhook(request: Request, db: Session = Depends(get_db)):
-    """Webhook para receber notificações do Mercado Pago"""
-    try:
-        data = await request.json()
-        logger.info(f"🔔 Webhook recebido")
-        return {"status": "received"}
-    except Exception as e:
-        logger.error(f"❌ Erro: {e}")
-        return {"status": "error"}
-
-
-@router.get("/status/{payment_id}")
-async def check_payment_status(
-    payment_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Verifica status de um pagamento específico"""
-    try:
-        stmt = select(Payment).where(Payment.id == payment_id)
-        payment = db.execute(stmt).scalar_one_or_none()
-        
-        if not payment:
-            return {"success": False, "error": "Pagamento não encontrado"}
-        
-        if payment.user_id != current_user.id and not current_user.is_admin:
-            return {"success": False, "error": "Acesso negado"}
-        
-        return {
-            "success": True,
-            "payment": {
-                "id": payment.id,
-                "status": payment.status,
-                "amount": payment.amount,
-                "credits": payment.credits,
-                "created_at": payment.created_at.isoformat() if payment.created_at else None,
-                "approved_at": payment.approved_at.isoformat() if payment.approved_at else None
-            }
+        "credits": user.credits or 0,
+        "credits_display": get_credits_display(user),
+        "is_admin": user.is_admin,
+        "max_credits_balance": MAX_CREDITS_BALANCE,
+        "is_new_user": is_new_user,
+        "welcome_message": welcome_message,
+        "can_perform_analysis": can_perform_analysis(user, 1),
+        "plan": {
+            "type": str(user.plan),
+            "is_premium": is_premium,
+            "premium_expires_at": user.premium_expires_at.isoformat() if user.premium_expires_at else None,
+            "days_left": days_left,
+            "credits_per_day": CREDITS_PER_DAY if is_premium else 0,
+            "can_receive_daily": can_receive_daily
         }
-    except Exception as e:
-        logger.error(f"Erro: {e}")
-        return {"success": False, "error": str(e)}
+    }
+    
+    return sanitize_response(response)
 
+
+# ==============================================
+# 🔥 ROTA: VERIFICAR CRÉDITOS PARA ANÁLISE
+# ==============================================
 
 @router.get("/check-analysis")
 async def check_analysis_credits(
@@ -357,38 +193,363 @@ async def check_analysis_credits(
     db: Session = Depends(get_db)
 ):
     """Verifica se usuário tem créditos para realizar análise"""
-    try:
-        stmt = select(User).where(User.id == current_user.id)
-        user = db.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            return {"success": False, "has_credits": False, "credits": 0}
-        
-        if user.is_admin:
-            return {"success": True, "has_credits": True, "credits": float('inf'), "is_admin": True}
-        
-        return {
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "has_credits": False,
+            "credits": 0,
+            "error": "Usuário não encontrado"
+        })
+    
+    # Admin tem créditos infinitos
+    if user.is_admin:
+        return sanitize_response({
             "success": True,
-            "has_credits": user.credits > 0,
-            "credits": user.credits or 0,
-            "required": 1,
-            "is_premium": user.plan == UserPlan.PREMIUM_MENSAL,
-            "max_credits_balance": 3
+            "has_credits": True,
+            "credits": float('inf'),
+            "credits_display": "∞",
+            "is_admin": True,
+            "message": "👑 Admin - créditos ilimitados"
+        })
+    
+    # Verificar se é usuário novo (sem créditos)
+    if (user.credits is None or user.credits == 0) and not user.is_premium():
+        initialize_new_user_credits(user.id, db)
+        db.refresh(user)
+    
+    current_credits = user.credits or 0
+    has_credits = current_credits > 0
+    
+    # Se não tem créditos mas é premium, tentar adicionar crédito diário
+    if not has_credits and user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium():
+        daily_result = daily_credits_service.check_and_add_daily_credit(db, user.id)
+        if daily_result.get("success") and daily_result.get("credits_added", 0) > 0:
+            db.refresh(user)
+            current_credits = user.credits or 0
+            has_credits = current_credits > 0
+            logger.info(f"🔄 Crédito diário automático adicionado para {user.email}")
+    
+    return sanitize_response({
+        "success": True,
+        "has_credits": has_credits,
+        "credits": current_credits,
+        "credits_display": str(current_credits),
+        "required": 1,
+        "max_credits_balance": MAX_CREDITS_BALANCE,
+        "is_premium": user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium(),
+        "message": f"Você tem {current_credits} crédito(s)" if has_credits else "Créditos insuficientes. Adquira o plano premium!"
+    })
+
+
+# ==============================================
+# 🔥 ROTA: CONSUMIR CRÉDITO (APÓS ANÁLISE)
+# ==============================================
+
+@router.post("/consume")
+async def consume_credit(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Consome 1 crédito do usuário após análise bem-sucedida"""
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "error": "Usuário não encontrado"
+        })
+    
+    # Admin não consome créditos
+    if user.is_admin:
+        return sanitize_response({
+            "success": True,
+            "credits_consumed": 0,
+            "credits_remaining": "∞",
+            "message": "Admin não consome créditos"
+        })
+    
+    # Consumir crédito
+    success = consume_analysis_credit(user, db, 1)
+    
+    if success:
+        db.refresh(user)
+        return sanitize_response({
+            "success": True,
+            "credits_consumed": 1,
+            "credits_remaining": user.credits,
+            "credits_display": str(user.credits),
+            "message": f"✅ Análise realizada! Crédito consumido. Saldo: {user.credits}/{MAX_CREDITS_BALANCE}"
+        })
+    else:
+        return sanitize_response({
+            "success": False,
+            "error": "Créditos insuficientes",
+            "credits_remaining": user.credits or 0,
+            "message": "❌ Você não tem créditos suficientes. Adquira o plano premium!"
+        })
+
+
+# ==============================================
+# 🔥 ROTA: RECEBER CRÉDITO DIÁRIO (PREMIUM)
+# ==============================================
+
+@router.post("/premium/check-daily")
+async def check_daily_credit(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Endpoint para usuário premium receber crédito diário"""
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "error": "Usuário não encontrado"
+        })
+    
+    # Verificar se é premium
+    is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
+    
+    if not is_premium:
+        return sanitize_response({
+            "success": False,
+            "message": "Este recurso é exclusivo para assinantes premium",
+            "is_premium": False
+        })
+    
+    # Usar o serviço existente
+    result = daily_credits_service.check_and_add_daily_credit(db, current_user.id)
+    
+    # Se conseguiu adicionar crédito, atualizar
+    if result.get("success") and result.get("credits_added", 0) > 0:
+        db.refresh(current_user)
+        result["new_balance"] = current_user.credits
+        result["max_balance"] = MAX_CREDITS_BALANCE
+        result["message"] = f"⭐ Você ganhou 1 crédito do seu plano premium! Agora tem {current_user.credits}/{MAX_CREDITS_BALANCE} créditos."
+    
+    return sanitize_response(result)
+
+
+# ==============================================
+# 🔥 ROTA: CRIAR PAGAMENTO PIX
+# ==============================================
+
+@router.post("/create-pix")
+async def create_pix_payment(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cria pagamento PIX para plano premium"""
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "error": "Usuário não encontrado"
+        })
+    
+    # Admin não precisa comprar
+    if user.is_admin:
+        return sanitize_response({
+            "success": False,
+            "error": "Administradores têm acesso ilimitado"
+        })
+    
+    # Verificar se já tem premium ativo
+    if user.plan == UserPlan.PREMIUM_MENSAL and user.premium_expires_at and user.premium_expires_at >= date.today():
+        days_left = (user.premium_expires_at - date.today()).days
+        return sanitize_response({
+            "success": False,
+            "error": f"Você já possui plano premium ativo por mais {days_left} dias!",
+            "days_left": days_left
+        })
+    
+    # Criar ID único
+    payment_uuid = str(uuid.uuid4())
+    
+    # Criar registro de pagamento
+    payment = Payment(
+        user_id=user.id,
+        mp_id=f"PIX_{payment_uuid[:8].upper()}",
+        amount=97.00,
+        credits=DAYS_PREMIUM,
+        payment_method="pix",
+        status="pending",
+        created_at=datetime.now(),
+        description="Plano Premium Mensal",
+        payment_metadata={
+            "plan_id": "premium_mensal",
+            "uuid": payment_uuid,
+            "days": DAYS_PREMIUM,
+            "credits_per_day": CREDITS_PER_DAY,
+            "max_credits": MAX_CREDITS_BALANCE
         }
+    )
+    
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+    
+    logger.info(f"💰 Pagamento criado: {payment.id} para {user.email}")
+    
+    # Alertar sobre pagamento pendente
+    alert_payment_pending(user_email=user.email, amount=97.00, method="pix")
+    
+    # Simular aprovação após 3 segundos
+    background_tasks.add_task(simulate_payment_approval, payment.id, user.id, db)
+    
+    # Gerar código PIX (simulado)
+    pix_code = f"00020126360014BR.GOV.BCB.PIX0114{user.email[:20]}520400005303986540497.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
+    
+    return sanitize_response({
+        "success": True,
+        "payment_id": payment.id,
+        "status": "pending",
+        "amount": 97.00,
+        "qr_code": pix_code,
+        "qr_code_base64": None,
+        "message": "💰 Pagamento PIX gerado! Após confirmação, você receberá 1 crédito por dia (máx 3 acumulados)",
+        "test_mode": True,
+        "plan_details": {
+            "credits_per_day": CREDITS_PER_DAY,
+            "total_days": DAYS_PREMIUM,
+            "max_credits_balance": MAX_CREDITS_BALANCE,
+            "initial_free_credits": INITIAL_FREE_CREDITS
+        }
+    })
+
+
+# ==============================================
+# SIMULAÇÃO DE APROVAÇÃO DE PAGAMENTO
+# ==============================================
+
+async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
+    """Simula aprovação de pagamento e ativa plano premium"""
+    await asyncio.sleep(3)
+    
+    try:
+        payment = db.query(Payment).filter(Payment.id == payment_id).first()
+        
+        if payment and payment.status == "pending":
+            user = db.query(User).filter(User.id == user_id).first()
+            
+            if user:
+                # Ativar plano premium
+                user.plan = UserPlan.PREMIUM_MENSAL
+                user.premium_activated_at = datetime.now()
+                user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
+                
+                payment.status = "approved"
+                payment.approved_at = datetime.now()
+                
+                db.commit()
+                
+                # Enviar alerta
+                alert_payment_approved(user_email=user.email, amount=97.00, method="pix")
+                
+                logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para {user.email}")
+                
     except Exception as e:
-        return {"success": False, "has_credits": False, "credits": 0}
+        logger.error(f"❌ Erro na simulação: {e}")
+        db.rollback()
 
 
-@router.get("/success")
-async def payment_success():
-    return RedirectResponse(url="/dashboard?payment=success")
+# ==============================================
+# 🔥 ROTA: LISTAR PLANOS
+# ==============================================
+
+@router.get("/plans")
+async def get_plans():
+    """Retorna os planos disponíveis"""
+    return sanitize_response({
+        "success": True,
+        "plans": {
+            "gratuito": {
+                "id": "gratuito",
+                "name": "Plano Gratuito",
+                "price": 0,
+                "credits": INITIAL_FREE_CREDITS,
+                "description": f"{INITIAL_FREE_CREDITS} créditos iniciais para testes",
+                "max_credits_balance": MAX_CREDITS_BALANCE
+            },
+            "premium_mensal": {
+                "id": "premium_mensal",
+                "name": "Plano Premium Mensal",
+                "price": 97.00,
+                "description": f"1 crédito por dia durante {DAYS_PREMIUM} dias",
+                "popular": True,
+                "credits_per_day": CREDITS_PER_DAY,
+                "total_days": DAYS_PREMIUM,
+                "total_credits": DAYS_PREMIUM,
+                "max_credits_balance": MAX_CREDITS_BALANCE
+            }
+        },
+        "max_credits_balance": MAX_CREDITS_BALANCE,
+        "max_files_per_batch": 3,
+        "initial_free_credits": INITIAL_FREE_CREDITS
+    })
 
 
-@router.get("/failure")
-async def payment_failure():
-    return RedirectResponse(url="/dashboard?payment=failure")
+# ==============================================
+# ROTA: STATUS DO PAGAMENTO
+# ==============================================
+
+@router.get("/status/{payment_id}")
+async def check_payment_status(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Verifica status do pagamento"""
+    
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    
+    if not payment:
+        return sanitize_response({"success": False, "error": "Pagamento não encontrado"})
+    
+    if payment.user_id != current_user.id and not current_user.is_admin:
+        return sanitize_response({"success": False, "error": "Acesso negado"})
+    
+    return sanitize_response({
+        "success": True,
+        "payment": {
+            "id": payment.id,
+            "status": payment.status,
+            "amount": payment.amount,
+            "credits": payment.credits,
+            "created_at": payment.created_at.isoformat() if payment.created_at else None,
+            "approved_at": payment.approved_at.isoformat() if payment.approved_at else None
+        }
+    })
 
 
-@router.get("/pending")
-async def payment_pending():
-    return RedirectResponse(url="/dashboard?payment=pending")
+# ==============================================
+# ROTA: WEBHOOK MERCADO PAGO
+# ==============================================
+
+@router.post("/webhook")
+async def mercadopago_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Webhook para receber notificações do Mercado Pago"""
+    try:
+        data = await request.json()
+        logger.info(f"🔔 Webhook recebido")
+        
+        # Processar webhook
+        await webhook.process_webhook(data, db, background_tasks)
+        
+        return {"status": "received"}
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no webhook: {e}")
+        return {"status": "error"}

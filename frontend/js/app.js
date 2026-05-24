@@ -1,5 +1,5 @@
-// frontend/js/app.js - VERSÃO CORRIGIDA
-// Limite máximo: 15KB por arquivo
+// frontend/js/app.js - VERSÃO FINAL CORRIGIDA
+// Sistema de créditos com proteção contra redirecionamento infinito
 
 class AutoAnalytics {
     constructor() {
@@ -9,6 +9,7 @@ class AutoAnalytics {
         
         this.MAX_FILE_SIZE_KB = 15;
         this.MAX_FILE_SIZE_BYTES = this.MAX_FILE_SIZE_KB * 1024;
+        this.MAX_CREDITS_BALANCE = 3;
         
         this.currentProcessId = null;
         this.pollInterval = null;
@@ -89,6 +90,12 @@ class AutoAnalytics {
                window.location.pathname === '/checkout';
     }
     
+    isDashboardPage() {
+        return window.location.pathname.includes('dashboard') || 
+               window.location.pathname === '/' ||
+               window.location.pathname === '/index.html';
+    }
+    
     redirectToLogin() {
         if (!this.isLoginPage() && !this.isRegisterPage() && 
             !this.isPlanosPage() && !this.isCheckoutPage()) {
@@ -97,7 +104,21 @@ class AutoAnalytics {
         }
     }
     
-    // ===== FUNÇÕES DELEGADAS PARA auth.js =====
+    // 🔥 REDIRECIONAR PARA PLANOS (APENAS UMA VEZ)
+    redirectToPlanos() {
+        // SÓ REDIRECIONA SE NÃO ESTIVER JÁ NA PÁGINA DE PLANOS
+        if (!this.isPlanosPage() && !this.isLoginPage() && !this.isRegisterPage()) {
+            console.log('💰 Redirecionando para planos (créditos insuficientes)...');
+            this.showNotification('💰 Créditos insuficientes! Adquira o plano premium.', 'warning');
+            setTimeout(() => {
+                window.location.href = '/planos.html';
+            }, 1500);
+        } else {
+            console.log('📱 Usuário já está na página de planos - evitando loop');
+        }
+    }
+    
+    // ===== FUNÇÕES DE CRÉDITOS =====
     
     isAdmin() {
         return window.appAuth && window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
@@ -111,6 +132,13 @@ class AutoAnalytics {
         return window.appAuth && window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
     }
     
+    getCredits() {
+        if (window.appAuth && window.appAuth.getCredits) {
+            return window.appAuth.getCredits();
+        }
+        return this.getCurrentUser().credits || 0;
+    }
+    
     getCreditsDisplay() {
         if (window.appAuth && window.appAuth.getCreditsDisplay) {
             return window.appAuth.getCreditsDisplay();
@@ -120,31 +148,137 @@ class AutoAnalytics {
         return String(user.credits || 0);
     }
     
-    getCredits() {
-        if (window.appAuth && window.appAuth.getCredits) {
-            return window.appAuth.getCredits();
-        }
-        return this.getCurrentUser().credits || 0;
-    }
-    
     updateCreditsDisplay() {
         if (window.appAuth && window.appAuth.updateCreditsDisplay) {
             window.appAuth.updateCreditsDisplay();
+        }
+        const uploadCreditsSpan = document.getElementById('uploadCredits');
+        if (uploadCreditsSpan) {
+            uploadCreditsSpan.textContent = this.getCreditsDisplay();
+        }
+        const creditsCountSpan = document.getElementById('creditsCount');
+        if (creditsCountSpan) {
+            creditsCountSpan.textContent = this.getCreditsDisplay();
         }
     }
     
     async loadUserCredits() {
         if (window.appAuth && window.appAuth.loadUserCredits) {
-            return await window.appAuth.loadUserCredits();
+            const result = await window.appAuth.loadUserCredits();
+            
+            if (result && result.welcome_message) {
+                this.showNotification(result.welcome_message, 'success');
+                const hasSeenWelcome = localStorage.getItem('has_seen_welcome');
+                if (!hasSeenWelcome && result.is_new_user) {
+                    setTimeout(() => this.showCreditsInfoModal(), 1500);
+                    localStorage.setItem('has_seen_welcome', 'true');
+                }
+            }
+            
+            this.updateCreditsDisplay();
+            return result;
         }
         return false;
     }
     
-    async checkCreditsForAnalysis() {
-        if (window.appAuth && window.appAuth.checkCreditsForAnalysis) {
-            return await window.appAuth.checkCreditsForAnalysis();
+    showCreditsInfoModal() {
+        let modal = document.getElementById('creditsInfoModal');
+        
+        if (!modal) {
+            const modalHtml = `
+                <div class="modal fade" id="creditsInfoModal" tabindex="-1" data-bs-backdrop="static">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content rounded-4">
+                            <div class="modal-header bg-success text-white border-0">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-gift me-2"></i>
+                                    🎉 Créditos Grátis Adicionados!
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center py-4">
+                                <i class="fas fa-coins fa-5x text-warning mb-3"></i>
+                                <h3 class="fw-bold">3 Créditos Grátis!</h3>
+                                <p class="text-muted mb-3">Você ganhou <strong>3 créditos</strong> para testar o sistema!</p>
+                                
+                                <div class="alert alert-info text-start mt-3">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Como funciona o sistema de créditos:</strong>
+                                    <ul class="mt-2 mb-0 small">
+                                        <li>✅ Cada análise consome <strong>1 crédito</strong></li>
+                                        <li>✅ Você pode enviar até <strong>3 arquivos por vez</strong></li>
+                                        <li>✅ Limite máximo de <strong>3 créditos acumulados</strong></li>
+                                        <li>⭐ <strong>Plano Premium:</strong> 1 crédito novo por dia</li>
+                                        <li>📁 Limite de <strong>15KB por arquivo</strong></li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="modal-footer border-0 justify-content-center">
+                                <button type="button" class="btn btn-gradient px-4" data-bs-dismiss="modal">
+                                    <i class="fas fa-rocket me-2"></i>
+                                    Começar a Usar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            modal = document.getElementById('creditsInfoModal');
         }
-        return this.isAdmin() ? true : this.getCredits() > 0;
+        
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    // 🔥 VERIFICAÇÃO DE CRÉDITOS COM PROTEÇÃO DE LOOP
+    async checkCreditsForAnalysis() {
+        if (this.isAdmin()) return true;
+        
+        // SE JÁ ESTIVER NA PÁGINA DE PLANOS, NÃO REDIRECIONA
+        if (this.isPlanosPage()) {
+            console.log('📱 Usuário já está na página de planos');
+            return false;
+        }
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
+            if (response && response.ok) {
+                const data = await response.json();
+                if (data.has_credits) {
+                    return true;
+                } else {
+                    this.showNotification(`💰 ${data.message || 'Créditos insuficientes!'}`, 'warning');
+                    // SÓ REDIRECIONA SE NÃO ESTIVER NA PÁGINA DE PLANOS
+                    if (!this.isPlanosPage()) {
+                        setTimeout(() => {
+                            window.location.href = '/planos.html';
+                        }, 1500);
+                    }
+                    return false;
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao verificar créditos:', error);
+        }
+        
+        // FALLBACK: verificar localmente
+        const credits = this.getCredits();
+        if (credits <= 0) {
+            this.showNotification('❌ Você não tem créditos disponíveis!', 'error');
+            if (!this.isPlanosPage()) {
+                setTimeout(() => {
+                    window.location.href = '/planos.html';
+                }, 1500);
+            }
+            return false;
+        }
+        
+        return true;
+    }
+    
+    buyCredits() {
+        this.redirectToPlanos();
     }
     
     // ===== MONITORAMENTO DE TOKEN =====
@@ -364,7 +498,6 @@ class AutoAnalytics {
         }
         
         this.startTokenMonitoring();
-        
         this.initializeElements();
         this.bindEvents();
         
@@ -403,7 +536,6 @@ class AutoAnalytics {
         if (file.size > this.MAX_FILE_SIZE_BYTES) {
             const exceededBy = (file.size - this.MAX_FILE_SIZE_BYTES) / 1024;
             console.warn(`⚠️ Arquivo excede o limite! Excesso: ${exceededBy.toFixed(2)}KB`);
-            
             this.showFileSizeWarning(fileSizeKB);
             return false;
         }
@@ -414,14 +546,12 @@ class AutoAnalytics {
     
     showFileSizeWarning(fileSizeKB) {
         const warningEl = document.getElementById('sizeWarning');
-        const warningText = document.getElementById('sizeWarningText');
         
-        if (warningEl && warningText) {
-            warningText.innerHTML = `
+        if (warningEl) {
+            warningEl.innerHTML = `
                 <i class="fas fa-exclamation-triangle me-2"></i>
                 Arquivo muito grande! (${fileSizeKB.toFixed(2)}KB) 
-                Limite máximo: ${this.MAX_FILE_SIZE_KB}KB. 
-                Por favor, reduza o arquivo.
+                Limite máximo: ${this.MAX_FILE_SIZE_KB}KB
             `;
             warningEl.classList.add('show');
         }
@@ -505,8 +635,9 @@ class AutoAnalytics {
                 
             } else {
                 const errorMsg = data?.detail || data?.error || 'Erro no upload';
-                if (errorMsg.includes('Créditos insuficientes')) {
-                    this.showCreditsModal();
+                if (errorMsg.includes('Créditos insuficientes') || errorMsg.includes('credits')) {
+                    this.showNotification('💰 Créditos insuficientes!', 'warning');
+                    this.redirectToPlanos();
                 } else if (errorMsg.includes('tamanho') || errorMsg.includes('size')) {
                     this.showNotification(`❌ ${errorMsg} (Limite: ${this.MAX_FILE_SIZE_KB}KB)`, 'error');
                 } else {
@@ -958,7 +1089,8 @@ class AutoAnalytics {
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
             if (response && response.ok) {
-                const analyses = await response.json();
+                const data = await response.json();
+                const analyses = data.analyses || data;
                 this.displayHistory(analyses);
             }
         } catch (error) {
@@ -972,10 +1104,12 @@ class AutoAnalytics {
         
         if (!analyses || analyses.length === 0) {
             container.innerHTML = `
-                <div class="text-center text-muted py-4">
-                    <i class="fas fa-chart-line fa-2x mb-2"></i>
-                    <p>Nenhuma análise realizada</p>
-                    <small>Envie seu primeiro arquivo</small>
+                <div class="timeline-item">
+                    <div class="timeline-marker"></div>
+                    <div class="timeline-content">
+                        <p class="mb-1 small text-muted">Nenhuma análise realizada</p>
+                        <small>Envie seu primeiro arquivo</small>
+                    </div>
                 </div>
             `;
             return;
@@ -984,22 +1118,29 @@ class AutoAnalytics {
         const html = analyses.slice(0, 5).map(a => {
             const date = new Date(a.created_at);
             const fileSizeInfo = a.file_size ? ` • ${(a.file_size/1024).toFixed(1)}KB` : '';
+            const statusClass = a.status === 'completed' ? 'bg-success' : 'bg-secondary';
+            const statusIcon = a.status === 'completed' ? '✅' : '⏳';
+            
             return `
-                <div class="list-group-item list-group-item-action">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas fa-file-alt me-2 text-primary"></i>
-                            <strong>${this.escapeHtml(a.filename || 'Análise')}</strong>
-                            <small class="text-muted">${fileSizeInfo}</small>
+                <div class="timeline-item">
+                    <div class="timeline-marker ${statusClass}"></div>
+                    <div class="timeline-content">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <p class="mb-1 small fw-bold">
+                                    ${statusIcon} ${this.escapeHtml(a.filename || 'Análise')}
+                                    <small class="text-muted">${fileSizeInfo}</small>
+                                </p>
+                                <small class="text-muted">${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}</small>
+                            </div>
+                            <span class="badge ${statusClass}">${a.status === 'completed' ? 'Concluído' : a.status}</span>
                         </div>
-                        <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}">${a.status}</span>
                     </div>
-                    <small class="text-muted">${date.toLocaleDateString('pt-BR')}</small>
                 </div>
             `;
         }).join('');
         
-        container.innerHTML = `<div class="list-group">${html}</div>`;
+        container.innerHTML = html;
     }
     
     async loadDashboardStats() {
@@ -1026,7 +1167,7 @@ class AutoAnalytics {
         if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/premium/status`);
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
             if (response && response.ok) {
                 const data = await response.json();
                 this.displayPremiumInfo(data);
@@ -1037,7 +1178,7 @@ class AutoAnalytics {
     }
     
     displayPremiumInfo(data) {
-        if (!data?.has_premium) return;
+        if (!data.plan?.is_premium) return;
         
         let premiumContainer = document.getElementById('premiumDashboardInfo');
         
@@ -1052,17 +1193,20 @@ class AutoAnalytics {
         }
         
         const daysLeft = data.plan?.days_left || 0;
+        const creditsPerDay = data.plan?.credits_per_day || 1;
         
         premiumContainer.innerHTML = `
-            <div class="d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas fa-crown fa-2x text-warning"></i>
+            <div class="d-flex align-items-center justify-content-between flex-wrap">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-crown fa-2x text-warning"></i>
+                    </div>
+                    <div>
+                        <h6 class="mb-0 fw-bold">⭐ PLANO PREMIUM ATIVO</h6>
+                        <small>${daysLeft} dias restantes • ${creditsPerDay} crédito/dia • Limite: ${this.MAX_FILE_SIZE_KB}KB</small>
+                    </div>
                 </div>
-                <div class="flex-grow-1">
-                    <h6 class="mb-0">PLANO PREMIUM ATIVO</h6>
-                    <small>${daysLeft} dias restantes • 1 crédito/dia • Limite: ${this.MAX_FILE_SIZE_KB}KB</small>
-                </div>
-                <button class="btn btn-sm btn-outline-primary" onclick="window.app?.claimDailyCredit()">
+                <button class="btn btn-sm btn-outline-primary mt-2 mt-sm-0" onclick="window.app?.claimDailyCredit()">
                     <i class="fas fa-gift me-1"></i> Receber crédito
                 </button>
             </div>
@@ -1073,20 +1217,24 @@ class AutoAnalytics {
         if (!this.isPremium()) return;
         
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/premium/check-daily`, {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium/check-daily`, {
                 method: 'POST'
             });
             
             if (response && response.ok) {
                 const data = await response.json();
                 if (data.credits_added > 0) {
-                    this.showNotification('⭐ Você ganhou 1 crédito do plano premium!', 'success');
+                    this.showNotification(data.message || '⭐ Você ganhou 1 crédito do plano premium!', 'success');
                     await this.loadUserCredits();
                     await this.loadPremiumStatus();
+                    this.updateCreditsDisplay();
+                } else if (data.message) {
+                    this.showNotification(data.message, 'info');
                 }
             }
         } catch (error) {
             console.error('Erro ao receber crédito:', error);
+            this.showNotification('Erro ao receber crédito. Tente novamente.', 'error');
         }
     }
     
@@ -1141,6 +1289,11 @@ class AutoAnalytics {
         if (removeFileBtn) {
             removeFileBtn.addEventListener('click', () => this.resetFileSelection());
         }
+        
+        const buyCreditsBtn = document.getElementById('buyCreditsBtn');
+        if (buyCreditsBtn) {
+            buyCreditsBtn.addEventListener('click', () => this.buyCredits());
+        }
     }
     
     preventDefaults(e) {
@@ -1181,9 +1334,7 @@ class AutoAnalytics {
         }
     }
     
-    initAnimations() {
-        // Optional animations
-    }
+    initAnimations() {}
     
     async fetchWithAuth(url, options = {}) {
         if (this.isLoginPage() || this.isRegisterPage()) {
@@ -1290,7 +1441,7 @@ class AutoAnalytics {
         if (window.appAuth && window.appAuth.showCreditsModal) {
             window.appAuth.showCreditsModal();
         } else if (!this.isAdmin()) {
-            this.showNotification('Créditos insuficientes!', 'warning');
+            this.redirectToPlanos();
         }
     }
     
@@ -1317,7 +1468,7 @@ window.getApp = () => window.app;
 window.claimDailyCredit = () => window.app?.claimDailyCredit();
 window.showCreditsModal = () => window.app?.showCreditsModal();
 
-// Adiciona CSS
+// CSS
 const style = document.createElement('style');
 style.textContent = `
     @keyframes slideInRight {
@@ -1341,17 +1492,56 @@ style.textContent = `
         font-size: 0.75rem;
         margin-left: 0.5rem;
     }
-    .list-group-item {
-        border-radius: 12px !important;
-        margin-bottom: 8px;
-        border: 1px solid #e2e8f0;
+    .timeline {
+        position: relative;
+        padding-left: 1.5rem;
     }
-    .list-group-item:hover {
-        background: #f8fafc;
-        transform: translateX(4px);
-        transition: all 0.2s;
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+    }
+    .timeline-item {
+        position: relative;
+        padding-bottom: 1rem;
+    }
+    .timeline-item:last-child {
+        padding-bottom: 0;
+    }
+    .timeline-marker {
+        position: absolute;
+        left: -1.5rem;
+        top: 0.25rem;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #667eea;
+        border: 2px solid white;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    }
+    .timeline-marker.bg-success {
+        background: #48bb78;
+        box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
+    }
+    .timeline-content {
+        padding-left: 0.5rem;
+    }
+    .btn-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        transition: all 0.3s;
+    }
+    .btn-gradient:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        color: white;
     }
 `;
 document.head.appendChild(style);
 
-console.log('✅ app.js carregado');""
+console.log('✅ app.js carregado - Versão final com proteção contra loop de redirecionamento');
