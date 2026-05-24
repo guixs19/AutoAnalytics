@@ -1,4 +1,5 @@
-# backend/schemas.py - VERSÃO COMPLETA COM PLANO PREMIUM E CORREÇÕES
+# backend/schemas.py - VERSÃO ATUALIZADA COM session_type
+
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
@@ -24,15 +25,15 @@ class AIModel(str, Enum):
     FLOWISE = "flowise"
     BASICO = "basico"
 
-# NOVO ENUM PARA PLANOS
 class UserPlan(str, Enum):
     BASICO = "basico"
     PROFISSIONAL = "profissional"
     EMPRESARIAL = "empresarial"
-    PREMIUM_MENSAL = "premium_mensal"  # 1 crédito por dia durante 30 dias
+    PREMIUM_MENSAL = "premium_mensal"
+
 
 # ==============================================
-# USER SCHEMAS (ATUALIZADOS)
+# USER SCHEMAS (ATUALIZADOS COM session_type)
 # ==============================================
 
 class UserBase(BaseModel):
@@ -42,14 +43,23 @@ class UserBase(BaseModel):
     phone: Optional[str] = None
     role: UserRole = UserRole.USER
 
+
 class UserCreate(UserBase):
     password: str
-    captcha_text: Optional[str] = None  # 🔥 ADICIONADO: captcha para registro
+    captcha_text: Optional[str] = None
+    captcha_id: Optional[str] = None
+    # 🔥 ADICIONADO: session_type para identificar se é login ou register
+    session_type: Optional[str] = "register"  # 'login' ou 'register'
+
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    captcha_text: Optional[str] = None  # 🔥 ADICIONADO: captcha para login
+    captcha_text: Optional[str] = None
+    captcha_id: Optional[str] = None
+    # 🔥 ADICIONADO: session_type para identificar se é login ou register
+    session_type: Optional[str] = "login"  # 'login' ou 'register'
+
 
 class UserResponse(UserBase):
     id: int
@@ -57,8 +67,6 @@ class UserResponse(UserBase):
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime] = None
-    
-    # ===== NOVOS CAMPOS =====
     credits: int = 0
     total_purchased: int = 0
     plan: UserPlan = UserPlan.BASICO
@@ -68,12 +76,12 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+
 # ==============================================
-# PREMIUM SCHEMAS (NOVOS)
+# PREMIUM SCHEMAS
 # ==============================================
 
 class PremiumStatus(BaseModel):
-    """Status detalhado do plano premium"""
     is_premium: bool
     plan: UserPlan
     activated_at: Optional[datetime] = None
@@ -82,32 +90,29 @@ class PremiumStatus(BaseModel):
     days_passed: int = 0
     total_days: int = 30
     progress_percentage: float = 0
-    
-    # Créditos
-    credits_received: int = 0  # Total de créditos recebidos até hoje
-    credits_remaining_to_receive: int = 0  # Créditos que ainda vai receber
-    current_balance: int = 0  # Saldo atual
-    
-    # Status de hoje
+    credits_received: int = 0
+    credits_remaining_to_receive: int = 0
+    current_balance: int = 0
     received_today: bool = False
     next_credit_date: Optional[date] = None
     
     class Config:
         from_attributes = True
 
+
 class DailyCreditLogBase(BaseModel):
-    """Base para log de crédito diário"""
     credits_added: int
     date: date
     day_number: int
     total_after: int
 
+
 class DailyCreditLogCreate(DailyCreditLogBase):
     user_id: int
     payment_id: Optional[int] = None
 
+
 class DailyCreditLogResponse(DailyCreditLogBase):
-    """Resposta com log de crédito diário"""
     id: int
     user_id: int
     payment_id: Optional[int] = None
@@ -116,8 +121,8 @@ class DailyCreditLogResponse(DailyCreditLogBase):
     class Config:
         from_attributes = True
 
+
 class PremiumSummary(BaseModel):
-    """Resumo do plano premium para dashboard"""
     plan_name: str = "Premium Mensal"
     price: float = 58.90
     credits_per_day: int = 1
@@ -131,6 +136,7 @@ class PremiumSummary(BaseModel):
         "Menos de R$ 2,00 por dia"
     ]
 
+
 # ==============================================
 # TOKEN SCHEMAS
 # ==============================================
@@ -143,23 +149,26 @@ class Token(BaseModel):
     user_email: str
     workshop_name: Optional[str] = None
     role: UserRole
-    # NOVO: incluir plano no token
     plan: UserPlan = UserPlan.BASICO
     credits: int = 0
+
 
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
 
+
 class TokenRefresh(BaseModel):
     refresh_token: str
+
 
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+
 # ==============================================
-# ADMIN SCHEMAS (ATUALIZADOS)
+# ADMIN SCHEMAS
 # ==============================================
 
 class UserUpdate(BaseModel):
@@ -168,9 +177,9 @@ class UserUpdate(BaseModel):
     workshop_name: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
-    # NOVOS CAMPOS
     plan: Optional[UserPlan] = None
     credits: Optional[int] = None
+
 
 class UserStats(BaseModel):
     total_users: int
@@ -178,13 +187,13 @@ class UserStats(BaseModel):
     admins: int
     managers: int
     users: int
-    # NOVOS CAMPOS
     premium_users: int = 0
     total_credits_distributed: int = 0
     premium_revenue: float = 0
 
+
 # ==============================================
-# PAYMENT SCHEMAS (ATUALIZADOS)
+# PAYMENT SCHEMAS
 # ==============================================
 
 class PaymentBase(BaseModel):
@@ -193,10 +202,12 @@ class PaymentBase(BaseModel):
     payment_method: str
     description: Optional[str] = None
 
+
 class PaymentCreate(PaymentBase):
     user_id: int
     mp_id: str
     payment_metadata: Optional[Dict[str, Any]] = None
+
 
 class PaymentResponse(PaymentBase):
     id: int
@@ -210,15 +221,13 @@ class PaymentResponse(PaymentBase):
     payment_metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
     approved_at: Optional[datetime] = None
-    
-    # NOVO
     daily_credit_logs: List[DailyCreditLogResponse] = []
     
     class Config:
         from_attributes = True
 
+
 class PixPaymentResponse(BaseModel):
-    """Resposta específica para pagamento PIX"""
     success: bool
     payment_id: int
     mp_payment_id: str
@@ -230,6 +239,7 @@ class PixPaymentResponse(BaseModel):
     status: str
     test_mode: bool = False
 
+
 # ==============================================
 # ANALYSIS SCHEMAS
 # ==============================================
@@ -238,9 +248,11 @@ class AnalysisBase(BaseModel):
     filename: str
     analysis_type: AnalysisType = AnalysisType.CLIENTES
 
+
 class AnalysisCreate(AnalysisBase):
     user_id: Optional[int] = None
     ai_model: AIModel = AIModel.FLOWISE
+
 
 class AnalysisResponse(AnalysisBase):
     id: int
@@ -257,6 +269,7 @@ class AnalysisResponse(AnalysisBase):
     class Config:
         from_attributes = True
 
+
 class AnalysisUpdate(BaseModel):
     status: Optional[str] = None
     ai_used: Optional[bool] = None
@@ -266,13 +279,15 @@ class AnalysisUpdate(BaseModel):
     report_path: Optional[str] = None
     processed_at: Optional[datetime] = None
 
+
 class UploadResponse(BaseModel):
     message: str
     analysis_id: int
     filename: str
     status: str
     process_id: Optional[str] = None
-    credits_remaining: Optional[int] = None  # NOVO
+    credits_remaining: Optional[int] = None
+
 
 # ==============================================
 # UPLOAD & PROCESSING SCHEMAS
@@ -282,6 +297,7 @@ class FileUpload(BaseModel):
     analysis_type: AnalysisType = AnalysisType.CLIENTES
     ai_model: AIModel = AIModel.FLOWISE
 
+
 class ProcessingStatus(BaseModel):
     process_id: str
     status: str
@@ -289,6 +305,7 @@ class ProcessingStatus(BaseModel):
     message: Optional[str] = None
     analysis_id: Optional[int] = None
     error: Optional[str] = None
+
 
 class AnalysisResult(BaseModel):
     process_id: str
@@ -302,8 +319,9 @@ class AnalysisResult(BaseModel):
     download_url: Optional[str] = None
     created_at: datetime = datetime.now()
 
+
 # ==============================================
-# STATISTICS & DASHBOARD SCHEMAS (ATUALIZADOS)
+# STATISTICS & DASHBOARD SCHEMAS
 # ==============================================
 
 class DashboardStats(BaseModel):
@@ -312,10 +330,9 @@ class DashboardStats(BaseModel):
     ai_used_count: int
     total_users: int
     recent_analyses: List[Dict[str, Any]] = []
-    
-    # NOVOS CAMPOS
     credits_balance: int = 0
     premium_status: Optional[PremiumStatus] = None
+
 
 class MLPrediction(BaseModel):
     id_registro: int
@@ -328,6 +345,7 @@ class MLPrediction(BaseModel):
     acao_recomendada: str
     detalhes: Dict[str, Any]
 
+
 # ==============================================
 # AI RESPONSE SCHEMAS
 # ==============================================
@@ -337,6 +355,7 @@ class AIAnalysisRequest(BaseModel):
     data: Dict[str, Any]
     context: str = "oficina"
 
+
 class AIAnalysisResponse(BaseModel):
     success: bool
     insights: List[str]
@@ -345,6 +364,7 @@ class AIAnalysisResponse(BaseModel):
     raw_response: Optional[str] = None
     ai_available: bool = True
     message: Optional[str] = None
+
 
 # ==============================================
 # FILE SCHEMAS
@@ -356,6 +376,7 @@ class FileInfo(BaseModel):
     extension: str
     uploaded_at: datetime = datetime.now()
 
+
 class FileProcessResult(BaseModel):
     success: bool
     message: str
@@ -364,6 +385,7 @@ class FileProcessResult(BaseModel):
     columns: int
     sample_data: List[Dict[str, Any]] = []
     analysis: Dict[str, Any] = {}
+
 
 # ==============================================
 # ERROR SCHEMAS
@@ -375,10 +397,12 @@ class ErrorResponse(BaseModel):
     code: int = 400
     timestamp: datetime = datetime.now()
 
+
 class ValidationError(BaseModel):
     field: str
     message: str
     value: Optional[Any] = None
+
 
 # ==============================================
 # SYSTEM SCHEMAS
@@ -392,6 +416,7 @@ class HealthCheck(BaseModel):
     frontend: Dict[str, bool]
     services: Dict[str, str]
 
+
 class SystemInfo(BaseModel):
     app_name: str
     version: str
@@ -399,3 +424,6 @@ class SystemInfo(BaseModel):
     port: int
     database: str
     paths: Dict[str, str]
+
+
+print("✅ schemas.py carregado com session_type")

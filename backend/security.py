@@ -1,4 +1,5 @@
-# backend/security.py - VERSÃO COM CAPTCHA SIMPLES (REESCREVER NÚMEROS)
+# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA)
+
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO ATUALIZADA
 - PoW (Proof of Work) com Redis (apenas para upload)
@@ -729,7 +730,10 @@ class CaptchaSession:
 
 
 class CaptchaStore:
-    """Armazenamento de CAPTCHAs"""
+    """
+    Armazenamento de CAPTCHAs - VERSÃO CORRIGIDA
+    Agora isola completamente sessões por tipo (login/register)
+    """
     
     def __init__(self):
         self._store: Dict[str, CaptchaSession] = {}
@@ -765,7 +769,9 @@ class CaptchaStore:
             self._cleanup_task = None
             logger.info("🛑 Cleanup loop do CAPTCHA parado")
     
+    # 🔥 CORREÇÃO: Chave composta com session_type para isolar login e register
     def _get_user_key(self, ip: str, session_type: str = "login") -> str:
+        """Garante que a chave diferencia completamente o login do registro"""
         return f"{session_type}:{ip}"
     
     async def _cleanup_async(self):
@@ -784,6 +790,7 @@ class CaptchaStore:
             
             self._last_cleanup = now
     
+    # 🔥 CORREÇÃO: add com isolamento por session_type
     async def add(self, captcha_id: str, correct_code: str, ip: str, session_type: str = "login") -> str:
         async with self._store_lock:
             now = time.time()
@@ -802,14 +809,16 @@ class CaptchaStore:
                     del self._store[cid]
                 logger.info(f"🧹 Limpeza emergencial: {to_remove} CAPTCHAs removidos")
             
+            # 🔥 CRIA CHAVE COMPOSTA (IP + TIPO DE SESSÃO)
             user_key = self._get_user_key(ip, session_type)
             
+            # Remove apenas a sessão antiga DESTE TIPO ESPECÍFICO
             if user_key in self._user_sessions:
                 old_id = self._user_sessions[user_key]
                 if old_id in self._store:
                     del self._store[old_id]
+                    logger.info(f"🔄 CAPTCHA anterior para {user_key} substituído")
                 del self._user_sessions[user_key]
-                logger.info(f"🔄 CAPTCHA anterior {old_id[:8]}... substituído")
             
             expires_at = time.time() + 120
             session = CaptchaSession(captcha_id, correct_code, ip, expires_at)
@@ -817,10 +826,11 @@ class CaptchaStore:
             self._store[captcha_id] = session
             self._user_sessions[user_key] = captcha_id
             
-            logger.info(f"🔢 CAPTCHA criado para IP {ip}: código = {correct_code}")
+            logger.info(f"🔢 CAPTCHA criado para {user_key}: código = {correct_code}")
             
             return captcha_id
     
+    # 🔥 CORREÇÃO: validação com session_type
     async def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
         async with self._store_lock:
             if time.time() - self._last_cleanup > self._cleanup_interval:
@@ -831,6 +841,11 @@ class CaptchaStore:
             
             session = self._store[captcha_id]
             user_key = self._get_user_key(ip, session_type)
+            
+            # 🔥 VERIFICA SE O CAPTCHA PERTENCE À SESSÃO CORRETA
+            if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
+                logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
+                return False, "Desafio não pertence à sua sessão atual"
             
             if session.is_expired():
                 if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
@@ -844,10 +859,6 @@ class CaptchaStore:
                 del self._store[captcha_id]
                 return False, "Desafio já foi utilizado"
             
-            if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
-                logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
-                return False, "Desafio não pertence à sua sessão atual"
-            
             user_answer_clean = user_answer.strip().replace(" ", "")
             
             if user_answer_clean != session.correct_code:
@@ -860,7 +871,7 @@ class CaptchaStore:
             
             del self._store[captcha_id]
             
-            logger.info(f"✅ CAPTCHA {captcha_id[:8]}... validado com sucesso!")
+            logger.info(f"✅ CAPTCHA {captcha_id[:8]}... validado com sucesso para {user_key}!")
             
             return True, "Código correto!"
     
@@ -1064,10 +1075,10 @@ class CaptchaManager:
             # Gera ID único
             captcha_id = f"captcha_{secrets.token_urlsafe(12)}_{int(time.time())}"
             
-            # Armazena no cache
+            # Armazena no cache com session_type
             await self.store.add(captcha_id, code, client_ip, session_type)
             
-            logger.debug(f"🔢 CAPTCHA gerado: {code} para IP {client_ip}")
+            logger.debug(f"🔢 CAPTCHA gerado: {code} para {session_type}:{client_ip}")
             
             return img_bytes, captcha_id
             
@@ -1086,7 +1097,7 @@ class CaptchaManager:
         client_ip = self._get_client_ip(request)
         
         if self._dev_mode and captcha_text == "1234":
-            logger.warning("🔧 Modo DEV: resposta '1234' aceita")
+            logger.info("🔧 Modo DEV: resposta '1234' aceita")
             return True
         
         valid, message = await self.store.get_and_validate(
@@ -1094,9 +1105,9 @@ class CaptchaManager:
         )
         
         if valid:
-            logger.info(f"✅ CAPTCHA válido para IP {client_ip}")
+            logger.info(f"✅ CAPTCHA válido para {session_type}:{client_ip}")
         else:
-            logger.warning(f"❌ CAPTCHA inválido para IP {client_ip}: {message}")
+            logger.warning(f"❌ CAPTCHA inválido para {session_type}:{client_ip}: {message}")
         
         return valid
     
@@ -1445,3 +1456,4 @@ __all__ = [
 
 print("✅ security.py carregado - CAPTCHA de números rabiscados ativo")
 print("🔢 PoW mantido apenas para upload de arquivos")
+print("🔒 CAPTCHA Store agora isola sessões por tipo (login/register)")

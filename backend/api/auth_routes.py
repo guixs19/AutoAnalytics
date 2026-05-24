@@ -1,7 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO COMPLETA COM TODAS AS ROTAS INCLUINDO REGISTER CORRIGIDO
-"""
-Rotas de autenticação com CAPTCHA de números rabiscados
-"""
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA COM session_type
 
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
@@ -83,7 +80,7 @@ def require_min_admin_level(required_level: str):
 
 
 # ==============================================
-# REGISTER - ROTA DE CADASTRO CORRIGIDA
+# REGISTER - ROTA DE CADASTRO CORRIGIDA COM session_type
 # ==============================================
 
 @router.post("/register")
@@ -96,36 +93,31 @@ async def register(
     """
     Registro de novo usuário
     URL: /api/auth/register
-    
-    Body esperado:
-    {
-        "name": "Nome do usuário",
-        "email": "email@exemplo.com",
-        "password": "senha123",
-        "workshop_name": "Oficina Exemplo" (opcional),
-        "phone": "11999999999" (opcional),
-        "captcha_text": "1234" (opcional, se usar CAPTCHA)
-    }
     """
     
     client_ip = request.client.host if request.client else "unknown"
     
-    # VALIDAÇÃO 1: CAPTCHA (opcional - pode ser obrigatório se preferir)
-    captcha_id = request.headers.get("X-Captcha-ID")
+    # 🔥 CAPTURA O session_type DO BODY (padrão 'register')
+    session_type = getattr(register_data, 'session_type', 'register')
+    logger.info(f"📝 Registro - session_type: {session_type} - IP: {client_ip}")
+    
+    # VALIDAÇÃO 1: CAPTCHA
+    captcha_id = request.headers.get("X-Captcha-ID") or register_data.captcha_id
     captcha_text = register_data.captcha_text
     
     # Se o CAPTCHA foi enviado, validar
     if captcha_id and captcha_text:
-        if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
-            logger.warning(f"❌ CAPTCHA inválido no registro - IP: {client_ip}")
+        # 🔥 USA O session_type NA VALIDAÇÃO
+        if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, session_type):
+            logger.warning(f"❌ CAPTCHA inválido no registro - IP: {client_ip} - Tipo: {session_type}")
             raise HTTPException(
                 status_code=400, 
                 detail="❌ Código CAPTCHA incorreto! Digite os números que aparecem na imagem."
             )
-        logger.info(f"✅ CAPTCHA validado para registro - IP: {client_ip}")
+        logger.info(f"✅ CAPTCHA validado para registro - IP: {client_ip} - Tipo: {session_type}")
     
     # VALIDAÇÃO 2: Rate limiting para registro (evitar spam)
-    ip_allowed = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)  # 5 tentativas por hora
+    ip_allowed = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)
     
     if not ip_allowed:
         raise HTTPException(
@@ -149,15 +141,12 @@ async def register(
             detail="A senha deve ter no mínimo 6 caracteres."
         )
     
-    # Criar usuário usando o crud.create_user (que já espera schemas.UserCreate)
+    # Criar usuário
     try:
-        # O crud.create_user já faz o hash da senha e todas as validações
         new_user = crud.create_user(db, register_data)
         
-        # Log de registro bem-sucedido
         logger.info(f"✅ NOVO USUÁRIO REGISTRADO: {new_user.email} - Nome: {new_user.name} - IP: {client_ip}")
         
-        # Retornar sucesso
         return {
             "success": True,
             "message": "Cadastro realizado com sucesso! Agora você pode fazer login.",
@@ -169,14 +158,13 @@ async def register(
         }
         
     except ValueError as e:
-        # Erro de validação (ex: email duplicado)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"❌ Erro ao registrar usuário: {e}")
         db.rollback()
         raise HTTPException(
             status_code=500, 
-            detail=f"Erro interno ao criar usuário. Tente novamente mais tarde."
+            detail="Erro interno ao criar usuário. Tente novamente mais tarde."
         )
 
 
@@ -189,12 +177,10 @@ async def generate_captcha(request: Request, session_type: str = "login"):
     """
     Gera CAPTCHA com números distorcidos/rabiscados
     URL: /api/auth/captcha/generate
-    O usuário deve reescrever os números que aparecem na imagem
     """
     try:
         client_ip = request.client.host if request.client else "unknown"
         
-        # Rate limit: máximo 30 CAPTCHAs por 5 minutos
         allowed = await rate_limiter.check_rate_limit(f"captcha:{client_ip}", 30, 300)
         
         if not allowed:
@@ -203,13 +189,10 @@ async def generate_captcha(request: Request, session_type: str = "login"):
                 detail="Muitas solicitações de CAPTCHA. Aguarde alguns minutos."
             )
         
-        # Gerar imagem CAPTCHA
         img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
         
-        # Determinar o tipo de conteúdo
         content_type = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml"
         
-        # Retornar imagem com headers
         return Response(
             content=img_bytes,
             media_type=content_type,
@@ -237,11 +220,12 @@ async def validate_captcha_endpoint(request: Request):
     
     captcha_id = body.get("captcha_id")
     captcha_text = body.get("captcha_text")
+    session_type = body.get("session_type", "login")
     
     if not captcha_id or not captcha_text:
         raise HTTPException(status_code=400, detail="CAPTCHA ID e resposta são obrigatórios")
     
-    valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request)
+    valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, session_type)
     
     return {
         "valid": valid,
@@ -252,7 +236,6 @@ async def validate_captcha_endpoint(request: Request):
 @router.get("/captcha/status/{captcha_id}")
 async def get_captcha_status(captcha_id: str):
     """Verifica status de um CAPTCHA"""
-    # Verificar se existe no store
     if not hasattr(captcha_manager, 'store') or captcha_id not in captcha_manager.store._store:
         return {"status": "not_found", "message": "CAPTCHA não encontrado"}
     
@@ -272,7 +255,7 @@ async def get_captcha_status(captcha_id: str):
 
 
 # ==============================================
-# LOGIN (com CAPTCHA de números)
+# LOGIN
 # ==============================================
 
 @router.post("/login")
@@ -282,9 +265,10 @@ async def login(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """Login com CAPTCHA de números (reescrever o que aparece na imagem)"""
+    """Login com CAPTCHA de números"""
     
     client_ip = request.client.host if request.client else "unknown"
+    session_type = "login"
     
     # VALIDAÇÃO 1: CAPTCHA
     captcha_id = request.headers.get("X-Captcha-ID") or login_data.captcha_id
@@ -296,11 +280,11 @@ async def login(
     if not captcha_text:
         raise HTTPException(status_code=400, detail="Digite os números que aparecem na imagem.")
     
-    if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request):
+    if not await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, session_type):
         logger.warning(f"❌ CAPTCHA incorreto - IP: {client_ip}")
         raise HTTPException(status_code=400, detail="❌ Código incorreto! Digite os números da imagem.")
     
-    logger.info(f"✅ CAPTCHA validado para IP: {client_ip}")
+    logger.info(f"✅ CAPTCHA validado para login - IP: {client_ip}")
     
     # VALIDAÇÃO 2: Rate limiting
     ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
@@ -309,7 +293,7 @@ async def login(
     if not ip_allowed or not email_allowed:
         raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 15 minutos.")
     
-    # VALIDAÇÃO 3: Usuário - usando authenticate_user do crud
+    # VALIDAÇÃO 3: Usuário
     user = crud.authenticate_user(db, login_data.email, login_data.password)
     
     if not user:
@@ -319,10 +303,8 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Conta desativada.")
     
-    # Atualizar último login
     crud.update_last_login(db, user.id)
     
-    # Criar tokens
     user_data = {
         "sub": user.email,
         "email": user.email,
@@ -336,7 +318,6 @@ async def login(
     
     tokens = jwt_manager.create_token_pair(user_data)
     
-    # Salvar refresh token
     user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
     db.commit()
     
@@ -596,7 +577,6 @@ async def get_all_users(
     skip: int = 0,
     limit: int = 100
 ):
-    """Lista todos os usuários (admin nível 1+ pode ver)"""
     users = crud.get_all_users(db, skip=skip, limit=limit)
     
     result = []
@@ -629,7 +609,6 @@ async def get_stats(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Estatísticas do sistema"""
     return crud.get_user_stats(db)
 
 
@@ -645,7 +624,7 @@ async def make_admin(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Promove usuário a admin - VERSÃO SEGURA"""
+    """Promove usuário a admin"""
     try:
         body = await request.json()
         email = body.get("email")
@@ -723,7 +702,7 @@ async def remove_admin(
     current_user = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Remove permissões de admin - VERSÃO SEGURA"""
+    """Remove permissões de admin"""
     try:
         body = await request.json()
         email = body.get("email")
@@ -830,4 +809,4 @@ async def health_check():
     }
 
 
-print("✅ auth_routes.py carregado com TODAS as rotas (CAPTCHA + LOGIN + REGISTER + ADMIN)")
+print("✅ auth_routes.py carregado com session_type para CAPTCHA")
