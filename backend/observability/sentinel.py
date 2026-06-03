@@ -1,4 +1,10 @@
 # backend/observability/sentinel.py
+"""
+SENTINEL - Sistema de Observabilidade e Alertas
+-----------------------------------------------
+Monitoramento, logs estruturados e alertas para o AutoAnalytics
+"""
+
 import requests
 import os
 import json
@@ -24,7 +30,7 @@ class DiscordWebhook:
     
     def __init__(self, webhook_url: str = None):
         # Pega a URL do webhook do ambiente ou usa a que você passar
-        self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK", "")
+        self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK", "") or os.getenv("WEBHOOK_URL", "")
         self.app_name = "AutoAnalytics"
         
         if not self.webhook_url:
@@ -115,11 +121,11 @@ class DiscordWebhook:
         
         return True
 
+
 # ==============================================
-# FUNÇÕES ESPECÍFICAS DE ALERTA
+# INSTÂNCIA GLOBAL (SINGLETON)
 # ==============================================
 
-# Instância global (singleton)
 _webhook_instance = None
 
 def get_webhook():
@@ -128,6 +134,11 @@ def get_webhook():
     if _webhook_instance is None:
         _webhook_instance = DiscordWebhook()
     return _webhook_instance
+
+
+# ==============================================
+# FUNÇÕES ESPECÍFICAS DE ALERTA
+# ==============================================
 
 # Alertas de Pagamento
 def alert_payment_approved(user_email: str, amount: float, credits: int, plan: str):
@@ -143,6 +154,7 @@ def alert_payment_approved(user_email: str, amount: float, credits: int, plan: s
         status="✅ Aprovado"
     )
 
+
 def alert_payment_pending(user_email: str, amount: float, method: str):
     """⏳ Pagamento pendente"""
     webhook = get_webhook()
@@ -154,6 +166,7 @@ def alert_payment_pending(user_email: str, amount: float, method: str):
         metodo=method,
         status="Aguardando pagamento"
     )
+
 
 def alert_payment_failed(user_email: str, amount: float, error: str):
     """❌ Falha no pagamento"""
@@ -167,6 +180,7 @@ def alert_payment_failed(user_email: str, amount: float, error: str):
         status="Rejeitado"
     )
 
+
 def alert_suspicious_payment(user_email: str, amount: float, reason: str):
     """🚨 Pagamento suspeito"""
     webhook = get_webhook()
@@ -178,6 +192,7 @@ def alert_suspicious_payment(user_email: str, amount: float, reason: str):
         motivo=reason,
         acao="🔍 Revisão manual necessária"
     )
+
 
 # Alertas do Plano Premium
 def alert_premium_activated(user_email: str, credits: int, expires_at: str):
@@ -193,6 +208,7 @@ def alert_premium_activated(user_email: str, credits: int, expires_at: str):
         mensagem="🎉 1 crédito por dia durante 30 dias!"
     )
 
+
 def alert_daily_credits_distributed(user_email: str, day: int, credits: int, total: int):
     """📅 Crédito diário distribuído"""
     webhook = get_webhook()
@@ -206,6 +222,7 @@ def alert_daily_credits_distributed(user_email: str, day: int, credits: int, tot
         mensagem="+1 crédito disponível! 🎯"
     )
 
+
 def alert_premium_expiring_soon(user_email: str, days_left: int):
     """⏰ Plano premium perto de expirar"""
     webhook = get_webhook()
@@ -216,6 +233,7 @@ def alert_premium_expiring_soon(user_email: str, days_left: int):
         dias_restantes=days_left,
         acao="Renovar para continuar recebendo créditos diários"
     )
+
 
 # Alertas de Sistema
 def alert_system_error(error: Exception, endpoint: str = None, user: str = None):
@@ -233,17 +251,19 @@ def alert_system_error(error: Exception, endpoint: str = None, user: str = None)
         trace=error_trace[:500] if error_trace else None
     )
 
+
 def alert_system_startup():
     """🚀 Sistema iniciado"""
     webhook = get_webhook()
     webhook.send_alert(
         AlertLevel.SUCCESS,
         "🚀 SISTEMA INICIADO",
-        versao="2.0.0",
+        versao="3.2.0",
         ambiente=os.getenv("ENVIRONMENT", "development"),
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         status="✅ Online"
     )
+
 
 def alert_new_user(user_email: str, name: str):
     """👤 Novo usuário registrado"""
@@ -255,6 +275,7 @@ def alert_new_user(user_email: str, name: str):
         nome=name,
         data=datetime.now().strftime("%d/%m/%Y %H:%M")
     )
+
 
 # Alertas de ML
 def alert_training_started(model: str, data_size: int):
@@ -268,6 +289,7 @@ def alert_training_started(model: str, data_size: int):
         status="Processando..."
     )
 
+
 def alert_training_completed(model: str, accuracy: float, time: float):
     """✅ Treinamento concluído"""
     webhook = get_webhook()
@@ -279,27 +301,31 @@ def alert_training_completed(model: str, accuracy: float, time: float):
         tempo=f"{time:.2f}s",
         status="Modelo pronto para uso"
     )
+
+
 # ==============================================
-# FUNÇÕES DE EXPORTAÇÃO
+# COMPATIBILIDADE
 # ==============================================
 
-# Instância global (singleton)
-_webhook_instance = None
-
-def get_webhook():
-    """Retorna instância única do webhook"""
-    global _webhook_instance
-    if _webhook_instance is None:
-        _webhook_instance = DiscordWebhook()
-    return _webhook_instance
-
-# ✅ Compatibilidade com código antigo
+# ✅ Para compatibilidade com código antigo que usa get_sentinel
 get_sentinel = get_webhook
 
-# Exportar todas as funções de alerta
+# ✅ Para compatibilidade com payment_service.py
+def get_webhook_safe():
+    """Versão segura que nunca retorna None"""
+    return get_webhook()
+
+
+# ==============================================
+# EXPORTAÇÕES
+# ==============================================
+
 __all__ = [
+    'AlertLevel',
+    'DiscordWebhook',
     'get_webhook',
     'get_sentinel',  # Para compatibilidade
+    'get_webhook_safe',  # Versão segura
     'alert_payment_approved',
     'alert_payment_pending',
     'alert_payment_failed',
@@ -313,3 +339,6 @@ __all__ = [
     'alert_training_started',
     'alert_training_completed'
 ]
+
+
+print("✅ sentinel.py carregado - Sistema de observabilidade ativo")""

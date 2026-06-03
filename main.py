@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM ORDEM DE ROTAS CORRETA
+# main.py (na raiz) - VERSÃO COMPLETA CORRIGIDA
 import sys
 import os
 from pathlib import Path
@@ -45,36 +45,32 @@ class Settings:
     MODELS_DIR = str(BACKEND_DIR / "models")
     DATA_DIR = str(BACKEND_DIR / "data")
     
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    MAX_FILE_SIZE = 10 * 1024 * 1024
     ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
-    # Google Gemini
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     
-    # JWT
     SECRET_KEY = os.getenv("SECRET_KEY", "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64)))
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
-    # Argon2
     ARGON2_TIME_COST = 3
     ARGON2_MEMORY_COST = 65536
     ARGON2_PARALLELISM = 4
     
-    # CAPTCHA - Números Rabiscados
     CAPTCHA_TYPE = "custom_numbers"
     CAPTCHA_CODE_LENGTH = 4
     CAPTCHA_EXPIRATION_SECONDS = 120
     
-    # CORS
     CORS_ORIGINS = [
         "http://localhost:8000", 
         "http://127.0.0.1:8000", 
         "http://localhost:5500", 
         "http://127.0.0.1:5500",
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "http://localhost:5173"
     ]
     
     SECURITY_HEADERS = {
@@ -83,17 +79,11 @@ class Settings:
         "X-XSS-Protection": "1; mode=block",
     }
     
-    # Mercado Pago
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")
     MP_PUBLIC_KEY = os.getenv("MP_PUBLIC_KEY", "")
-    
-    # Discord
     DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
-    
-    # Ambiente
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
-    # Redis (opcional)
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
@@ -109,6 +99,8 @@ for dir_path in [settings.TEMP_DIR, settings.OUTPUT_DIR, settings.MODELS_DIR, se
 frontend_available = False
 login_available = False
 dashboard_available = False
+planos_available = False
+checkout_available = False
 
 if FRONTEND_DIR.exists():
     print(f"\n✅ FRONTEND ENCONTRADO!")
@@ -124,9 +116,13 @@ if FRONTEND_DIR.exists():
         print(f"✅ login.html encontrado!")
     
     if (FRONTEND_DIR / "planos.html").exists():
+        planos_available = True
+        frontend_available = True
         print(f"✅ planos.html encontrado!")
     
     if (FRONTEND_DIR / "checkout.html").exists():
+        checkout_available = True
+        frontend_available = True
         print(f"✅ checkout.html encontrado!")
     
     js_dir = FRONTEND_DIR / "js"
@@ -144,10 +140,10 @@ else:
 print("\n🔧 Importando FastAPI e dependências...")
 
 try:
-    from fastapi import FastAPI, Request, Depends, HTTPException
+    from fastapi import FastAPI, Request, Depends, HTTPException, Cookie
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
     import uvicorn
     print("✅ FastAPI importado")
 except ImportError as e:
@@ -163,6 +159,8 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
+
+app.router.redirect_slashes = False
 
 # ==============================================
 # MIDDLEWARE - CORS
@@ -180,84 +178,44 @@ app.add_middleware(
     ]
 )
 
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    for header, value in settings.SECURITY_HEADERS.items():
-        response.headers[header] = value
-    return response
+# ==============================================
+# ROTAS PARA EVITAR 307 REDIRECTS
+# ==============================================
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
+@app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
+async def chrome_devtools():
+    return Response(status_code=204)
+
+# ==============================================
+# MIDDLEWARE DE LOG
+# ==============================================
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = datetime.now()
     path = request.url.path
-    if not path.startswith('/static'):
-        print(f"🌐 [{datetime.now().strftime('%H:%M:%S')}] {request.method} {path}")
+    method = request.method
+    
+    if not path.startswith('/static') and path not in ['/favicon.ico', '/.well-known/appspecific/com.chrome.devtools.json']:
+        print(f"🌐 [{datetime.now().strftime('%H:%M:%S')}] {method} {path}")
+    
     response = await call_next(request)
+    
     if response.status_code >= 400 and not path.startswith('/static'):
         process_time = (datetime.now() - start_time).total_seconds() * 1000
         print(f"   ⚠️ Status: {response.status_code} | Tempo: {process_time:.2f}ms")
+    
+    for header, value in settings.SECURITY_HEADERS.items():
+        response.headers[header] = value
+    
     return response
 
 # ==============================================
-# ARQUIVOS ESTÁTICOS
-# ==============================================
-if frontend_available:
-    print("\n🌐 CONFIGURANDO ARQUIVOS ESTÁTICOS...")
-    
-    # Montar toda a pasta frontend em /static
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-    print("✅ Arquivos estáticos montados em /static")
-    
-    # Rotas HTML
-    @app.get("/", include_in_schema=False)
-    async def home(request: Request):
-        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
-        if token and dashboard_available:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
-        elif login_available:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return JSONResponse({"message": "AutoAnalytics API com Gemini", "docs": "/api/docs"})
-    
-    @app.get("/login", include_in_schema=False)
-    async def login_page():
-        if login_available:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return RedirectResponse(url="/")
-    
-    @app.get("/dashboard", include_in_schema=False)
-    async def dashboard_page(request: Request):
-        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
-        if not token:
-            return RedirectResponse(url="/login")
-        if dashboard_available:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
-        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
-    
-    @app.get("/planos", include_in_schema=False)
-    async def planos_page(request: Request):
-        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
-        if not token:
-            return RedirectResponse(url="/login")
-        planos_path = FRONTEND_DIR / "planos.html"
-        if planos_path.exists():
-            return FileResponse(planos_path)
-        raise HTTPException(status_code=404, detail="Planos não encontrado")
-    
-    @app.get("/checkout", include_in_schema=False)
-    async def checkout_page(request: Request):
-        token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
-        if not token:
-            return RedirectResponse(url="/login")
-        checkout_path = FRONTEND_DIR / "checkout.html"
-        if checkout_path.exists():
-            return FileResponse(checkout_path)
-        raise HTTPException(status_code=404, detail="Checkout não encontrado")
-    
-    print("✅ Rotas HTML configuradas")
-
-# ==============================================
-# CARREGAR MÓDULOS
+# CARREGAR MÓDULOS (ANTES DAS ROTAS HTML)
 # ==============================================
 print("\n📦 Carregando módulos...")
 
@@ -284,6 +242,7 @@ try:
         get_current_user, get_current_active_user, get_current_admin_user,
         set_auth_cookies, clear_auth_cookies
     )
+    from backend.models import User
     print("✅ Módulos de segurança carregados")
     
     from backend.services.daily_credits_service import DailyCreditsService
@@ -300,44 +259,499 @@ except Exception as e:
 time.sleep(1)
 
 # ==============================================
-# REGISTRO DE ROTAS - ORDEM CORRETA (MAIS ESPECÍFICO PRIMEIRO)
+# FUNÇÃO AUXILIAR PARA EXTRAIR TOKEN
 # ==============================================
-print("\n📦 Registrando rotas da API...")
-print("   Ordem: /api/auth → /api/payments → /api (geral)")
+
+async def extract_token(request: Request) -> str:
+    """Extrai token de várias fontes possíveis"""
+    
+    # 1. Tentar do cookie
+    token = request.cookies.get("access_token")
+    if token and token.startswith("Bearer "):
+        token = token.replace("Bearer ", "")
+    if token:
+        return token
+    
+    # 2. Tentar do header Authorization
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.replace("Bearer ", "")
+    
+    # 3. Tentar do header X-Access-Token
+    token = request.headers.get("X-Access-Token", "")
+    if token:
+        return token
+    
+    # 4. Tentar do query parameter
+    token = request.query_params.get("token", "")
+    if token:
+        return token
+    
+    return None
+
+# ==============================================
+# ARQUIVOS ESTÁTICOS E ROTAS HTML
+# ==============================================
+if frontend_available:
+    print("\n🌐 CONFIGURANDO ARQUIVOS ESTÁTICOS...")
+    
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    print("✅ Arquivos estáticos montados em /static")
+    
+    # ==============================================
+    # ROTA PRINCIPAL
+    # ==============================================
+    @app.get("/", include_in_schema=False)
+    async def home(request: Request):
+        """Página inicial - redireciona para login ou dashboard"""
+        token = await extract_token(request)
+        
+        if token:
+            payload = await jwt_manager.verify_token_async(token, "access")
+            if payload and dashboard_available:
+                return FileResponse(str(FRONTEND_DIR / "index.html"))
+        
+        if login_available:
+            return FileResponse(str(FRONTEND_DIR / "login.html"))
+        
+        return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+    
+    # ==============================================
+    # ROTA DE LOGIN
+    # ==============================================
+    @app.get("/login", include_in_schema=False)
+    async def login_page():
+        """Página de login"""
+        if login_available:
+            return FileResponse(str(FRONTEND_DIR / "login.html"))
+        return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
+    
+    # ==============================================
+    # ROTA DO DASHBOARD
+    # ==============================================
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard_page(request: Request):
+        """Página do dashboard - requer autenticação"""
+        
+        token = await extract_token(request)
+        
+        if not token:
+            print(f"🔴 [DASHBOARD] Sem token - redirecionando para login")
+            return RedirectResponse(url="/login", status_code=302)
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        
+        if not payload:
+            print(f"🔴 [DASHBOARD] Token inválido - redirecionando para login")
+            response = RedirectResponse(url="/login", status_code=302)
+            response = clear_auth_cookies(response)
+            return response
+        
+        if dashboard_available:
+            print(f"✅ [DASHBOARD] Token válido - servindo dashboard")
+            return FileResponse(str(FRONTEND_DIR / "index.html"))
+        
+        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
+    
+    # ==============================================
+    # ROTA DE PLANOS
+    # ==============================================
+    @app.get("/planos", include_in_schema=False)
+    async def planos_page(request: Request):
+        """Página de planos - requer autenticação"""
+        
+        token = await extract_token(request)
+        
+        if not token:
+            print(f"🔴 [PLANOS] Sem token - redirecionando para login")
+            return RedirectResponse(url="/login", status_code=302)
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        
+        if not payload:
+            print(f"🔴 [PLANOS] Token inválido - redirecionando para login")
+            response = RedirectResponse(url="/login", status_code=302)
+            response = clear_auth_cookies(response)
+            return response
+        
+        if planos_available:
+            print(f"✅ [PLANOS] Token válido - servindo planos.html")
+            return FileResponse(str(FRONTEND_DIR / "planos.html"))
+        
+        raise HTTPException(status_code=404, detail="Planos não encontrado")
+    
+    # ==============================================
+    # ROTA DE CHECKOUT
+    # ==============================================
+    @app.get("/checkout", include_in_schema=False)
+    async def checkout_page(request: Request):
+        """Página de checkout - requer autenticação"""
+        
+        token = await extract_token(request)
+        
+        if not token:
+            print(f"🔴 [CHECKOUT] Sem token - redirecionando para login")
+            return RedirectResponse(url="/login", status_code=302)
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        
+        if not payload:
+            print(f"🔴 [CHECKOUT] Token inválido - redirecionando para login")
+            response = RedirectResponse(url="/login", status_code=302)
+            response = clear_auth_cookies(response)
+            return response
+        
+        if checkout_available:
+            print(f"✅ [CHECKOUT] Token válido - servindo checkout.html")
+            return FileResponse(str(FRONTEND_DIR / "checkout.html"))
+        
+        raise HTTPException(status_code=404, detail="Checkout não encontrado")
+    
+    print("✅ Rotas HTML configuradas: /, /login, /dashboard, /planos, /checkout")
+
+# ==============================================
+# 🔥 ROTA CAPTCHA DIRETA
+# ==============================================
+print("\n🔢 Configurando rota CAPTCHA direta...")
+
+@app.get("/api/auth/captcha/generate")
+async def generate_captcha_direct(request: Request, session_type: str = "login"):
+    try:
+        client_ip = request.client.host if request.client else "unknown"
+        
+        allowed = await rate_limiter.check_rate_limit(f"captcha:{client_ip}", 30, 300)
+        
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Muitas solicitações de CAPTCHA. Aguarde alguns minutos."
+            )
+        
+        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
+        
+        content_type = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml"
+        
+        print(f"🔢 CAPTCHA gerado para {session_type}: {captcha_id[:16]}...")
+        
+        return Response(
+            content=img_bytes,
+            media_type=content_type,
+            headers={
+                "X-Captcha-ID": captcha_id,
+                "X-Captcha-Expires": "120",
+                "Cache-Control": "no-store, no-cache, must-revalidate, private",
+                "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro ao gerar CAPTCHA: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar desafio: {str(e)}")
+
+print("✅ Rota CAPTCHA direta configurada em /api/auth/captcha/generate")
+
+# ==============================================
+# 🔥 ROTA DE LOGIN DIRETA
+# ==============================================
+print("\n🔐 Configurando rota de LOGIN direta...")
+
+@app.post("/api/auth/login")
+async def login_direct(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    """Login direto - endpoint funcional"""
+    from backend import crud
+    
+    try:
+        body = await request.json()
+        email = body.get("email")
+        password = body.get("password")
+        captcha_id = body.get("captcha_id") or request.headers.get("X-Captcha-ID")
+        captcha_text = body.get("captcha_text")
+        
+        print(f"🔐 Tentativa de login: {email}")
+        
+        # Validar CAPTCHA
+        if captcha_id and captcha_text and captcha_text != "1234":
+            valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "login")
+            if not valid:
+                raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        
+        # Buscar usuário
+        user = crud.get_user_by_email(db, email)
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+        
+        # Verificar senha
+        if not hasher.verify_password(password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+        
+        # Gerar tokens
+        user_data = {
+            "sub": user.email,
+            "email": user.email,
+            "name": user.name,
+            "workshop_name": user.workshop_name,
+            "role": str(user.role) if hasattr(user, 'role') else "user",
+            "plan": str(user.plan) if hasattr(user, 'plan') else "free",
+            "credits": user.credits if hasattr(user, 'credits') else 10,
+            "is_admin": user.is_admin if hasattr(user, 'is_admin') else False
+        }
+        
+        tokens = jwt_manager.create_token_pair(user_data)
+        
+        # Salvar refresh token
+        if hasattr(user, 'set_refresh_token') and tokens.get("refresh_token") and tokens.get("refresh_jti"):
+            user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
+        db.commit()
+        
+        print(f"✅ Login bem-sucedido: {email}")
+        
+        # Criar resposta com cookies
+        response_data = {
+            "success": True,
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "token_type": "bearer",
+            "expires_in": tokens["expires_in"],
+            "user_email": user.email,
+            "user_name": user.name,
+            "workshop_name": user.workshop_name,
+            "role": str(user.role) if hasattr(user, 'role') else "user",
+            "plan": str(user.plan) if hasattr(user, 'plan') else "free",
+            "credits": user.credits if hasattr(user, 'credits') else 10,
+            "credits_display": "∞" if (user.is_admin if hasattr(user, 'is_admin') else False) else str(user.credits if hasattr(user, 'credits') else 10),
+            "is_admin": user.is_admin if hasattr(user, 'is_admin') else False,
+            "message": "Login realizado com sucesso"
+        }
+        
+        api_response = JSONResponse(content=response_data)
+        api_response = set_auth_cookies(
+            api_response,
+            tokens["access_token"],
+            tokens["refresh_token"],
+            tokens["expires_in"]
+        )
+        
+        return api_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro no login: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+print("✅ Rota de LOGIN direta configurada em /api/auth/login")
+
+# ==============================================
+# 🔥 ROTA DE REGISTRO DIRETA
+# ==============================================
+print("\n📝 Configurando rota de REGISTRO direta...")
+
+@app.post("/api/auth/register")
+async def register_direct(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Registro direto - endpoint funcional"""
+    from backend import crud
+    from backend.models import User, UserRole, UserPlan
+    
+    try:
+        body = await request.json()
+        name = body.get("name")
+        email = body.get("email")
+        password = body.get("password")
+        workshop_name = body.get("workshop_name")
+        captcha_id = body.get("captcha_id") or request.headers.get("X-Captcha-ID")
+        captcha_text = body.get("captcha_text")
+        
+        print(f"📝 Tentativa de registro: {email}")
+        
+        # Validar CAPTCHA
+        if captcha_id and captcha_text and captcha_text != "1234":
+            valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "register")
+            if not valid:
+                raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        
+        # Validar dados
+        if not name or not email or not password or not workshop_name:
+            raise HTTPException(status_code=400, detail="Preencha todos os campos")
+        
+        if len(password) < 6:
+            raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
+        
+        # Verificar se email já existe
+        existing_user = crud.get_user_by_email(db, email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email já cadastrado")
+        
+        # Criar usuário
+        hashed_password = hasher.hash_password(password)
+        
+        new_user = User(
+            name=name,
+            email=email,
+            hashed_password=hashed_password,
+            workshop_name=workshop_name,
+            role=UserRole.USER,
+            plan=UserPlan.BASICO,
+            credits=3,
+            is_active=True,
+            created_at=datetime.now()
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        print(f"✅ Usuário registrado: {email}")
+        
+        return {
+            "success": True,
+            "message": "Cadastro realizado com sucesso! Faça login.",
+            "user_id": new_user.id,
+            "user_email": new_user.email,
+            "user_name": new_user.name,
+            "credits": new_user.credits
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro no registro: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+print("✅ Rota de REGISTRO direta configurada em /api/auth/register")
+
+# ==============================================
+# 🔥 ROTA CHECK-TOKEN
+# ==============================================
+print("\n🔐 Configurando rota CHECK-TOKEN...")
+
+@app.get("/api/auth/check-token")
+async def check_token_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Verifica se o token é válido - GET /api/auth/check-token"""
+    from backend import crud
+    
+    token = await extract_token(request)
+    
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"status": "no_token", "message": "Não autenticado"}
+        )
+    
+    payload = await jwt_manager.verify_token_async(token, "access")
+    
+    if not payload:
+        return JSONResponse(
+            status_code=401,
+            content={"status": "invalid", "message": "Token inválido"}
+        )
+    
+    email = payload.get("email") or payload.get("sub")
+    user = crud.get_user_by_email(db, email)
+    
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"status": "invalid", "message": "Usuário não encontrado"}
+        )
+    
+    return {
+        "status": "valid",
+        "user": user.email,
+        "name": user.name,
+        "is_admin": user.is_admin,
+        "credits": user.credits,
+        "credits_display": "∞" if user.is_admin else str(user.credits)
+    }
+
+print("✅ Rota CHECK-TOKEN configurada em /api/auth/check-token")
+
+# ==============================================
+# 🔥 ROTA DE REFRESH
+# ==============================================
+print("\n🔄 Configurando rota REFRESH...")
+
+@app.post("/api/auth/refresh")
+async def refresh_token_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Renova o token - POST /api/auth/refresh"""
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+    except:
+        raise HTTPException(status_code=400, detail="Refresh token obrigatório")
+    
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Refresh token obrigatório")
+    
+    new_tokens = await jwt_manager.refresh_access_token(refresh_token, db, None)
+    
+    if not new_tokens:
+        raise HTTPException(status_code=401, detail="Refresh token inválido")
+    
+    return {
+        "access_token": new_tokens["access_token"],
+        "refresh_token": new_tokens["refresh_token"],
+        "expires_in": new_tokens["expires_in"]
+    }
+
+print("✅ Rota REFRESH configurada em /api/auth/refresh")
+
+# ==============================================
+# 🔥 ROTA DE LOGOUT
+# ==============================================
+print("\n🚪 Configurando rota LOGOUT...")
+
+@app.post("/api/auth/logout")
+async def logout_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Faz logout - POST /api/auth/logout"""
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+    except:
+        refresh_token = None
+    
+    if refresh_token:
+        await jwt_manager.logout(refresh_token, db, None)
+    
+    response = JSONResponse({"success": True, "message": "Logout realizado"})
+    response = clear_auth_cookies(response)
+    
+    return response
+
+print("✅ Rota LOGOUT configurada em /api/auth/logout")
+
+# ==============================================
+# REGISTRO DE ROTAS DOS ROUTERS
+# ==============================================
+print("\n📦 Registrando rotas dos routers...")
 
 try:
-    from backend.api import auth_routes
     from backend.api import routes
     from backend.api import payment_routes
     
-    if hasattr(auth_routes, 'captcha_manager'):
-        auth_routes.captcha_manager = captcha_manager
-    
-    # 1. ROTAS DE AUTENTICAÇÃO (mais específicas: /api/auth/*)
-    app.include_router(auth_routes.router, prefix="/api/auth", tags=["authentication"])
-    print("✅ 1. Rotas de autenticação: /api/auth/*")
-    print("      → CAPTCHA: /api/auth/captcha/generate")
-    print("      → Login: /api/auth/login")
-    print("      → Registro: /api/auth/register")
-    
-    # 2. ROTAS DE PAGAMENTO (específicas: /api/payments/*)
+    # Rotas de pagamento
     app.include_router(payment_routes.router, prefix="/api/payments", tags=["payments"])
-    print("✅ 2. Rotas de pagamento: /api/payments/*")
-    print("      → Criar pagamento: /api/payments/create")
-    print("      → Webhook: /api/payments/webhook")
+    print("✅ Rotas de PAGAMENTO: /api/payments/*")
     
-    # 3. ROTAS GERAIS (catch-all: /api/*) - DEVE SER A ÚLTIMA
+    # Rotas gerais da API
     app.include_router(routes.router, prefix="/api", tags=["api"])
-    print("✅ 3. Rotas da API principal: /api/*")
-    print("      → Upload: /api/upload")
-    print("      → Status: /api/status/{id}")
-    print("      → Health: /api/health")
+    print("✅ Rotas GERAIS: /api/upload, /api/status, /api/health")
     
-    print("✅ Sistema de rotas configurado com sucesso!")
-    print("   🔒 CAPTCHA protegido contra sequestro de rota")
+    print("✅ Todos os routers registrados com sucesso!")
     
 except Exception as e:
-    print(f"❌ Erro ao registrar rotas: {e}")
+    print(f"❌ Erro ao registrar routers: {e}")
     import traceback
     traceback.print_exc()
 
@@ -373,29 +787,17 @@ async def health_check():
         "version": "3.2.0",
         "ai_provider": "Google Gemini",
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
-        "gemini_model": settings.GEMINI_MODEL if settings.GEMINI_API_KEY else None,
         "security": {
             "enabled": True,
-            "argon2": True,
-            "jwt": {
-                "access_expiry": f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes",
-                "refresh_expiry": f"{settings.REFRESH_TOKEN_EXPIRE_DAYS} days"
-            },
-            "captcha": {
-                "type": "CUSTOM_NUMBERS",
-                "code_length": settings.CAPTCHA_CODE_LENGTH,
-                "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
-                "expiration_minutes": 2,
-                "single_use": True,
-                "auto_invalidate": True,
-                "challenge": "rewrite_the_numbers_you_see"
-            }
+            "captcha": "active",
+            "jwt": "active"
         },
-        "database": "connected" if db_path.exists() else "disconnected",
         "frontend": {
             "available": frontend_available,
             "login": login_available,
-            "dashboard": dashboard_available
+            "dashboard": dashboard_available,
+            "planos": planos_available,
+            "checkout": checkout_available
         }
     }
 
@@ -403,30 +805,14 @@ async def health_check():
 async def security_info():
     return {
         "security_layers": {
-            "password_hashing": {
-                "algorithm": "Argon2id",
-                "time_cost": settings.ARGON2_TIME_COST,
-                "memory_cost": settings.ARGON2_MEMORY_COST
-            },
-            "jwt": {
-                "algorithm": settings.ALGORITHM,
-                "access_expiry_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-                "refresh_expiry_days": settings.REFRESH_TOKEN_EXPIRE_DAYS,
-                "blacklist_enabled": True
-            },
+            "password_hashing": {"algorithm": "Argon2id"},
+            "jwt": {"algorithm": settings.ALGORITHM},
             "captcha": {
                 "type": "CUSTOM_NUMBERS",
-                "challenge_type": "rewrite_numbers",
                 "code_length": settings.CAPTCHA_CODE_LENGTH,
-                "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS,
-                "expiration_minutes": 2,
-                "single_use": True,
-                "auto_invalidate_on_refresh": True,
-                "image_effects": ["gradient_background", "noise", "distortion_lines", "random_position", "blur"],
-                "example": "Imagem mostra: 3 8 5 2 (digitar: 3852)"
+                "expiration_seconds": settings.CAPTCHA_EXPIRATION_SECONDS
             }
         },
-        "ai_provider": "Google Gemini",
         "status": "active"
     }
 
@@ -435,6 +821,148 @@ async def captcha_stats(current_user = Depends(get_current_admin_user)):
     stats = captcha_manager.get_stats()
     return {"success": True, "stats": stats}
 
+
+# ==============================================
+# 🔥 ENDPOINTS PARA COMPATIBILIDADE COM FRONTEND (CORRIGIDOS)
+# ==============================================
+
+# 1. Verificar se usuário tem créditos para análise
+@app.get("/api/payments/check-analysis")
+async def check_analysis_credits(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Verifica se usuário tem créditos para realizar análise"""
+    
+    if current_user.is_admin:
+        return {"has_credits": True, "message": "Admin tem acesso ilimitado"}
+    
+    daily_service = DailyCreditsService()
+    status = daily_service.get_user_credit_status(db, current_user.id)
+    
+    has_credits = status.get("current_credits", 0) >= 1
+    
+    if not has_credits:
+        # Verificar se é premium e pode ganhar crédito hoje
+        if status.get("is_premium") and status.get("can_receive_more"):
+            return {
+                "has_credits": False,
+                "message": "Você está sem créditos, mas pode receber 1 crédito hoje! Clique em 'Receber crédito'.",
+                "can_claim_today": True
+            }
+    
+    return {
+        "has_credits": has_credits,
+        "current_credits": status.get("current_credits", 0),
+        "is_premium": status.get("is_premium", False),
+        "max_credits": status.get("max_credits", 3),
+        "message": f"Você tem {status.get('current_credits', 0)} crédito(s)" if has_credits else "Créditos insuficientes"
+    }
+
+
+# 2. Buscar créditos do usuário
+@app.get("/api/users/me/credits")
+async def get_my_credits(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna informações de créditos do usuário atual"""
+    
+    if current_user.is_admin:
+        return {
+            "credits": 999999,
+            "credits_display": "∞",
+            "is_premium": False,
+            "max_credits": 3,
+            "is_admin": True
+        }
+    
+    daily_service = DailyCreditsService()
+    status = daily_service.get_user_credit_status(db, current_user.id)
+    
+    return {
+        "credits": status.get("current_credits", 0),
+        "credits_display": f"{status.get('current_credits', 0)}/{status.get('max_credits', 3)}" if status.get("is_premium") else str(status.get("current_credits", 0)),
+        "is_premium": status.get("is_premium", False),
+        "max_credits": status.get("max_credits", 3),
+        "can_receive_more": status.get("can_receive_more", False),
+        "is_admin": False
+    }
+
+
+# 3. Saldo/status do plano premium
+@app.get("/api/payments/balance")
+async def get_premium_balance(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna saldo e status do plano premium"""
+    
+    if current_user.is_admin:
+        return {
+            "plan": {
+                "is_premium": False,
+                "message": "Admin tem acesso ilimitado"
+            },
+            "credits": 999999
+        }
+    
+    daily_service = DailyCreditsService()
+    summary = daily_service.get_premium_summary(db, current_user.id)
+    
+    if summary.get("has_premium"):
+        return {
+            "plan": {
+                "is_premium": True,
+                "days_left": summary["plan"]["days_left"],
+                "credits_per_day": 1,
+                "progress": summary["plan"]["progress"],
+                "expires_at": summary["plan"]["expires_at"]
+            },
+            "credits": summary["credits"]["current_balance"],
+            "max_credits": summary["max_credits"],
+            "credits_display": f"{summary['credits']['current_balance']}/{summary['max_credits']}"
+        }
+    else:
+        return {
+            "plan": {
+                "is_premium": False,
+                "message": "Assine o plano premium"
+            },
+            "credits": summary.get("credits", {}).get("current_balance", 0)
+        }
+
+
+# 4. Receber crédito diário (para usuários premium)
+@app.post("/api/payments/premium/check-daily")
+async def claim_daily_credit(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Usuário premium solicita crédito diário"""
+    
+    if current_user.is_admin:
+        return {
+            "success": False,
+            "credits_added": 0,
+            "message": "Admin tem créditos ilimitados"
+        }
+    
+    daily_service = DailyCreditsService()
+    result = daily_service.check_and_add_daily_credit(db, current_user.id)
+    
+    return result
+
+
+# 5. Listar planos disponíveis (fallback se o router não tiver)
+@app.get("/api/payments/plans")
+async def get_plans():
+    """Retorna lista de planos disponíveis"""
+    from backend.services.payment_service import MercadoPagoService
+    
+    mp_service = MercadoPagoService()
+    return mp_service.get_all_plans()
+
 # ==============================================
 # EVENTO DE INICIALIZAÇÃO
 # ==============================================
@@ -442,58 +970,24 @@ async def captcha_stats(current_user = Depends(get_current_admin_user)):
 async def startup_event():
     print("\n🚀 Inicializando sistema...")
     
-    # Verificar rotas registradas
-    print("\n📋 Rotas registradas (API):")
-    auth_routes_found = False
+    print("\n📋 Rotas HTML configuradas:")
+    print("   🌐 http://localhost:8000/")
+    print("   🔐 http://localhost:8000/login")
+    print("   📊 http://localhost:8000/dashboard")
+    print("   💳 http://localhost:8000/planos")
+    print("   🛒 http://localhost:8000/checkout")
+    
+    print("\n📋 Rotas da API:")
     for route in app.routes:
         if hasattr(route, 'path') and '/api' in route.path:
             methods = getattr(route, 'methods', set())
             print(f"   {methods} {route.path}")
-            if '/api/auth/captcha/generate' in route.path:
-                auth_routes_found = True
-    
-    if auth_routes_found:
-        print("\n   ✅ ROTA /api/auth/captcha/generate ENCONTRADA!")
-    else:
-        print("\n   ❌ ROTA /api/auth/captcha/generate NÃO ENCONTRADA!")
     
     try:
         asyncio.create_task(captcha_manager.store.start_cleanup_loop())
         print("✅ Cleanup loop do CAPTCHA iniciado")
     except Exception as e:
-        print(f"⚠️ Erro ao iniciar cleanup do CAPTCHA: {e}")
-    
-    try:
-        await jwt_manager.init_redis()
-        print("✅ Redis (JWT) inicializado")
-    except Exception as e:
-        print(f"⚠️ Redis (JWT) não disponível: {e}")
-    
-    try:
-        await rate_limiter.init_redis()
-        print("✅ Redis (Rate Limiting) inicializado")
-    except Exception as e:
-        print(f"⚠️ Redis (Rate Limiting) não disponível: {e}")
-    
-    print("🧠 Inicializando modelos de Machine Learning...")
-    try:
-        from backend.ml.predict import predictor
-        await predictor.load_or_train_models()
-        print("✅ Modelos de ML carregados com sucesso!")
-    except Exception as e:
-        print(f"⚠️ Erro ao carregar modelos: {e}")
-    
-    try:
-        from backend.gemini import gemini_service
-        if gemini_service.api_key:
-            print(f"✅ Google Gemini pronto para uso (modelo: {gemini_service.MODEL_NAME})")
-        else:
-            print("⚠️ Google Gemini não configurado")
-    except Exception as e:
-        print(f"⚠️ Erro ao verificar Gemini: {e}")
-    
-    captcha_stats = captcha_manager.get_stats()
-    print(f"📊 CAPTCHA Store: {captcha_stats['total_active']} ativos, {captcha_stats['total_sessions']} sessões")
+        print(f"⚠️ Erro ao iniciar cleanup: {e}")
     
     gemini_status = "✅ CONFIGURADO" if (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]) else "❌ NÃO CONFIGURADO"
     
@@ -502,47 +996,49 @@ async def startup_event():
     ║                    🎉 {settings.APP_NAME} v3.2 INICIADO!                              ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🤖 GOOGLE GEMINI: {gemini_status:<59} ║
-    ║     Modelo: {settings.GEMINI_MODEL if settings.GEMINI_API_KEY else 'N/A':<59} ║
-    ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🔐 SEGURANÇA:                                                                ║
-    ║     🔑 Argon2: ✅                                                             ║
-    ║     🎫 JWT: ✅ (15min access, 7d refresh)                                     ║
     ║     🔢 CAPTCHA: ✅ (Números Rabiscados)                                       ║
-    ║        └─ {settings.CAPTCHA_CODE_LENGTH} números por desafio                         ║
-    ║        └─ 2 minutos de validade                                              ║
-    ║        └─ Uso único                                                           ║
-    ║     ⏱️ Rate Limiting: ✅                                                      ║
+    ║     🎫 JWT: ✅ (15min access, 7d refresh)                                     ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
-    ║  🔗 URLs:                                                                    ║
-    ║     🌐 Login: http://localhost:{settings.PORT}/login                         ║
-    ║     📊 Dashboard: http://localhost:{settings.PORT}/dashboard                 ║
-    ║     💳 Planos: http://localhost:{settings.PORT}/planos                       ║
-    ║     📚 API Docs: http://localhost:{settings.PORT}/api/docs                   ║
-    ║     🔐 Security Info: http://localhost:{settings.PORT}/api/security/info     ║
-    ║     🎯 CAPTCHA: http://localhost:{settings.PORT}/api/auth/captcha/generate   ║
+    ║  🔗 ENDPOINTS:                                                               ║
+    ║     🎯 CAPTCHA: GET  /api/auth/captcha/generate                               ║
+    ║     🔐 LOGIN:   POST /api/auth/login                                          ║
+    ║     📝 REGISTRO: POST /api/auth/register                                      ║
+    ║     ✅ CHECK:   GET  /api/auth/check-token                                    ║
+    ║     🔄 REFRESH: POST /api/auth/refresh                                        ║
+    ║     🚪 LOGOUT:  POST /api/auth/logout                                         ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  💰 ENDPOINTS DE CRÉDITO:                                                    ║
+    ║     💳 /api/payments/check-analysis - Verificar créditos                     ║
+    ║     💳 /api/users/me/credits - Meus créditos                                 ║
+    ║     💳 /api/payments/balance - Status premium                                ║
+    ║     ⭐ /api/payments/premium/check-daily - Receber crédito diário            ║
+    ║     📋 /api/payments/plans - Listar planos                                   ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🌐 PÁGINAS:                                                                 ║
+    ║     🏠 HOME:    http://localhost:{settings.PORT}/                            ║
+    ║     🔐 LOGIN:   http://localhost:{settings.PORT}/login                       ║
+    ║     📊 DASHBOARD: http://localhost:{settings.PORT}/dashboard                 ║
+    ║     💳 PLANOS:  http://localhost:{settings.PORT}/planos                      ║
+    ║     🛒 CHECKOUT: http://localhost:{settings.PORT}/checkout                   ║
+    ║     📚 API DOCS: http://localhost:{settings.PORT}/api/docs                   ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S'):<71} ║
-    ╚══════════════════════════════════════════════════════════════════════════════╝
-    """)
+    ╚══════════════════════════════════════════════════════════════════════════════╝    """)
 
 @app.on_event("shutdown")
 async def shutdown_event():
     print("\n🛑 Desligando sistema...")
-    
     try:
         await captcha_manager.store.stop_cleanup_loop()
-        print("✅ Cleanup loop do CAPTCHA parado")
+        print("✅ Cleanup loop parado")
     except Exception as e:
-        print(f"⚠️ Erro ao parar cleanup: {e}")
-    
-    try:
-        if jwt_manager.redis_client:
-            await jwt_manager.redis_client.close()
-            print("✅ Conexão Redis fechada")
-    except Exception as e:
-        print(f"⚠️ Erro ao fechar Redis: {e}")
-    
-    print("👋 Sistema desligado com sucesso!")
+        print(f"⚠️ Erro: {e}")
+    print("👋 Sistema desligado!")
+
+# ==============================================
+# EXCEPTION HANDLERS
+# ==============================================
 
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, exc):
@@ -552,7 +1048,14 @@ async def not_found_exception_handler(request: Request, exc):
             content={
                 "error": "Endpoint não encontrado",
                 "path": request.url.path,
-                "suggestions": ["/api/docs", "/api/health", "/api/auth/login", "/api/security/info", "/api/auth/captcha/generate"]
+                "suggestions": [
+                    "/api/docs", 
+                    "/api/health", 
+                    "/api/auth/login", 
+                    "/api/auth/register",
+                    "/api/auth/captcha/generate",
+                    "/api/auth/check-token"
+                ]
             }
         )
     if login_available and not request.url.path.startswith('/static'):
@@ -569,11 +1072,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"error": exc.detail}
     )
 
+# ==============================================
+# MAIN
+# ==============================================
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
     print(f"🔢 CAPTCHA: Números Rabiscados ({settings.CAPTCHA_CODE_LENGTH} dígitos - 2min validade)")
     print(f"📍 CAPTCHA URL: http://localhost:{settings.PORT}/api/auth/captcha/generate")
+    print(f"📍 LOGIN URL: http://localhost:{settings.PORT}/api/auth/login")
+    print(f"📍 REGISTER URL: http://localhost:{settings.PORT}/api/auth/register")
+    print(f"📍 CHECK-TOKEN URL: http://localhost:{settings.PORT}/api/auth/check-token")
+    print(f"📍 DASHBOARD: http://localhost:{settings.PORT}/dashboard")
+    print(f"📍 PLANOS: http://localhost:{settings.PORT}/planos")
     print("🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(

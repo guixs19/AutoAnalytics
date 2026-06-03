@@ -16,7 +16,7 @@ from backend.database import get_db
 from backend import crud
 from backend.api.auth_routes import get_current_user
 from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis
-from backend.services.daily_credits_job import DailyCreditsService
+from backend.services.daily_credits_service import DailyCreditsService
 from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 from backend.services.payment_service import MercadoPagoService
 from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, get_webhook

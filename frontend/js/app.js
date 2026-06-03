@@ -45,7 +45,7 @@ class AutoAnalytics {
                     return;
                 }
                 
-                const isAuthenticated = window.appAuth.isAuthenticated && window.appAuth.isAuthenticated();
+                const isAuthenticated = window.appAuth.isAuthenticated;
                 
                 if (!isAuthenticated) {
                     console.log('❌ Usuário não autenticado');
