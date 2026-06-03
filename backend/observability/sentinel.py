@@ -341,4 +341,4 @@ __all__ = [
 ]
 
 
-print("✅ sentinel.py carregado - Sistema de observabilidade ativo")""
+print("✅ sentinel.py carregado - Sistema de observabilidade ativo")
