@@ -1,4 +1,4 @@
-# backend/api/payment_routes.py - VERSÃO FINAL COMPLETA
+# backend/api/payment_routes.py - VERSÃO COMPLETA COM PROMOÇÃO BRONZE
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional
 from backend.database import get_db
 from backend import crud
 from backend.api.auth_routes import get_current_user
-from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis
+from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis, PromotionControl
 from backend.services.daily_credits_service import DailyCreditsService
 from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 from backend.services.payment_service import MercadoPagoService
@@ -67,20 +67,16 @@ webhook = get_webhook()
 # ==============================================
 
 def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
-    """
-    Usuário novo ganha 3 créditos gratuitos para teste
-    """
+    """Usuário novo ganha 3 créditos gratuitos para teste"""
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return {"success": False, "error": "Usuário não encontrado"}
         
-        # Verificar se já recebeu créditos iniciais
         if (user.credits is None or user.credits == 0) and not user.is_admin:
             user.credits = INITIAL_FREE_CREDITS
             user.total_purchased = (user.total_purchased or 0) + INITIAL_FREE_CREDITS
             
-            # Registrar log
             log = DailyCreditLog(
                 user_id=user.id,
                 credits_added=INITIAL_FREE_CREDITS,
@@ -109,6 +105,53 @@ def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
 
 
 # ==============================================
+# FUNÇÃO: OBTER OU CRIAR PROMOÇÃO
+# ==============================================
+
+def get_or_create_promotion(db: Session) -> PromotionControl:
+    """Retorna ou cria o controle de promoção"""
+    promo = db.query(PromotionControl).first()
+    if not promo:
+        promo = PromotionControl()
+        db.add(promo)
+        db.commit()
+        db.refresh(promo)
+        logger.info("✅ Promoção Bronze inicializada (100 vagas a R$ 97,00)")
+    return promo
+
+
+# ==============================================
+# 🔥 ROTA: STATUS DA PROMOÇÃO (VAGAS)
+# ==============================================
+
+@router.get("/promotion-status")
+async def get_promotion_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna status atual da promoção (vagas restantes, preços)"""
+    
+    promo = get_or_create_promotion(db)
+    
+    # Verificar se usuário já tem preço travado
+    user_locked = current_user.promotional_price_locked
+    user_price = current_user.promotional_price if user_locked else None
+    
+    return sanitize_response({
+        "success": True,
+        "total_slots": promo.total_slots,
+        "used_slots": promo.used_slots,
+        "remaining_slots": promo.get_remaining_slots(),
+        "promotional_price": promo.promotional_price,
+        "regular_price": promo.regular_price,
+        "current_price": promo.get_current_price(),
+        "is_active": promo.has_available_slots(),
+        "user_locked_price": user_price,
+        "message": f"🔥 {promo.get_remaining_slots()} vagas restantes!" if promo.has_available_slots() else "⛔ Promoção esgotada! Preço regular: R$ 149,90"
+    })
+
+
+# ==============================================
 # 🔥 ROTA PRINCIPAL: SALDO DO USUÁRIO
 # ==============================================
 
@@ -118,10 +161,7 @@ async def get_user_balance(
     db: Session = Depends(get_db),
     request: Request = None
 ):
-    """
-    Retorna saldo de créditos do usuário
-    Inicializa créditos gratuitos se for usuário novo
-    """
+    """Retorna saldo de créditos do usuário"""
     user = db.query(User).filter(User.id == current_user.id).first()
     
     if not user:
@@ -204,7 +244,6 @@ async def check_analysis_credits(
             "error": "Usuário não encontrado"
         })
     
-    # Admin tem créditos infinitos
     if user.is_admin:
         return sanitize_response({
             "success": True,
@@ -215,7 +254,6 @@ async def check_analysis_credits(
             "message": "👑 Admin - créditos ilimitados"
         })
     
-    # Verificar se é usuário novo (sem créditos)
     if (user.credits is None or user.credits == 0) and not user.is_premium():
         initialize_new_user_credits(user.id, db)
         db.refresh(user)
@@ -223,7 +261,6 @@ async def check_analysis_credits(
     current_credits = user.credits or 0
     has_credits = current_credits > 0
     
-    # Se não tem créditos mas é premium, tentar adicionar crédito diário
     if not has_credits and user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium():
         daily_result = daily_credits_service.check_and_add_daily_credit(db, user.id)
         if daily_result.get("success") and daily_result.get("credits_added", 0) > 0:
@@ -245,7 +282,7 @@ async def check_analysis_credits(
 
 
 # ==============================================
-# 🔥 ROTA: CONSUMIR CRÉDITO (APÓS ANÁLISE)
+# 🔥 ROTA: CONSUMIR CRÉDITO
 # ==============================================
 
 @router.post("/consume")
@@ -263,7 +300,6 @@ async def consume_credit(
             "error": "Usuário não encontrado"
         })
     
-    # Admin não consome créditos
     if user.is_admin:
         return sanitize_response({
             "success": True,
@@ -272,7 +308,6 @@ async def consume_credit(
             "message": "Admin não consome créditos"
         })
     
-    # Consumir crédito
     success = consume_analysis_credit(user, db, 1)
     
     if success:
@@ -312,7 +347,6 @@ async def check_daily_credit(
             "error": "Usuário não encontrado"
         })
     
-    # Verificar se é premium
     is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
     
     if not is_premium:
@@ -322,10 +356,8 @@ async def check_daily_credit(
             "is_premium": False
         })
     
-    # Usar o serviço existente
     result = daily_credits_service.check_and_add_daily_credit(db, current_user.id)
     
-    # Se conseguiu adicionar crédito, atualizar
     if result.get("success") and result.get("credits_added", 0) > 0:
         db.refresh(current_user)
         result["new_balance"] = current_user.credits
@@ -336,7 +368,7 @@ async def check_daily_credit(
 
 
 # ==============================================
-# 🔥 ROTA: CRIAR PAGAMENTO PIX
+# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM PREÇO DINÂMICO)
 # ==============================================
 
 @router.post("/create-pix")
@@ -345,7 +377,7 @@ async def create_pix_payment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Cria pagamento PIX para plano premium"""
+    """Cria pagamento PIX com preço automático baseado nas vagas"""
     
     user = db.query(User).filter(User.id == current_user.id).first()
     
@@ -355,14 +387,12 @@ async def create_pix_payment(
             "error": "Usuário não encontrado"
         })
     
-    # Admin não precisa comprar
     if user.is_admin:
         return sanitize_response({
             "success": False,
             "error": "Administradores têm acesso ilimitado"
         })
     
-    # Verificar se já tem premium ativo
     if user.plan == UserPlan.PREMIUM_MENSAL and user.premium_expires_at and user.premium_expires_at >= date.today():
         days_left = (user.premium_expires_at - date.today()).days
         return sanitize_response({
@@ -371,25 +401,37 @@ async def create_pix_payment(
             "days_left": days_left
         })
     
-    # Criar ID único
+    # 🔥 PEGAR PREÇO DINÂMICO BASEADO NAS VAGAS
+    promo = get_or_create_promotion(db)
+    
+    # Verificar se usuário já tem preço travado
+    if user.promotional_price_locked and user.promotional_price:
+        price = user.promotional_price
+        price_type = "locked_promotional"
+    else:
+        price = promo.get_current_price()  # 97 se tem vaga, 149 se não tem
+        price_type = "promotional" if promo.has_available_slots() else "regular"
+    
     payment_uuid = str(uuid.uuid4())
     
-    # Criar registro de pagamento
     payment = Payment(
         user_id=user.id,
         mp_id=f"PIX_{payment_uuid[:8].upper()}",
-        amount=97.00,
+        amount=price,
         credits=DAYS_PREMIUM,
         payment_method="pix",
         status="pending",
         created_at=datetime.now(),
-        description="Plano Premium Mensal",
+        description=f"Plano Bronze - {'Promocional' if price_type != 'regular' else 'Regular'}",
         payment_metadata={
             "plan_id": "premium_mensal",
             "uuid": payment_uuid,
             "days": DAYS_PREMIUM,
             "credits_per_day": CREDITS_PER_DAY,
-            "max_credits": MAX_CREDITS_BALANCE
+            "max_credits": MAX_CREDITS_BALANCE,
+            "price_type": price_type,
+            "promotional_used": price_type == "promotional",
+            "remaining_slots": promo.get_remaining_slots()
         }
     )
     
@@ -397,26 +439,26 @@ async def create_pix_payment(
     db.commit()
     db.refresh(payment)
     
-    logger.info(f"💰 Pagamento criado: {payment.id} para {user.email}")
+    logger.info(f"💰 Pagamento criado: {payment.id} para {user.email} - Valor: R$ {price:.2f}")
     
-    # Alertar sobre pagamento pendente
-    alert_payment_pending(user_email=user.email, amount=97.00, method="pix")
+    alert_payment_pending(user_email=user.email, amount=price, method="pix")
     
-    # Simular aprovação após 3 segundos
     background_tasks.add_task(simulate_payment_approval, payment.id, user.id, db)
     
-    # Gerar código PIX (simulado)
-    pix_code = f"00020126360014BR.GOV.BCB.PIX0114{user.email[:20]}520400005303986540497.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
+    # Gerar código PIX simulado
+    pix_code = f"00020126360014BR.GOV.BCB.PIX0114{user.email[:20]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
     
     return sanitize_response({
         "success": True,
         "payment_id": payment.id,
         "status": "pending",
-        "amount": 97.00,
+        "amount": price,
+        "price_type": price_type,
+        "promotional_available": promo.has_available_slots(),
+        "remaining_slots": promo.get_remaining_slots(),
         "qr_code": pix_code,
         "qr_code_base64": None,
-        "message": "💰 Pagamento PIX gerado! Após confirmação, você receberá 1 crédito por dia (máx 3 acumulados)",
-        "test_mode": True,
+        "message": f"💰 Pagamento PIX gerado! Valor: R$ {price:.2f}",
         "plan_details": {
             "credits_per_day": CREDITS_PER_DAY,
             "total_days": DAYS_PREMIUM,
@@ -427,11 +469,11 @@ async def create_pix_payment(
 
 
 # ==============================================
-# SIMULAÇÃO DE APROVAÇÃO DE PAGAMENTO
+# SIMULAÇÃO DE APROVAÇÃO DE PAGAMENTO (COM VAGA)
 # ==============================================
 
 async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
-    """Simula aprovação de pagamento e ativa plano premium"""
+    """Simula aprovação de pagamento, ativa premium e usa vaga promocional"""
     await asyncio.sleep(3)
     
     try:
@@ -446,14 +488,25 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
                 user.premium_activated_at = datetime.now()
                 user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
                 
+                # 🔥 VERIFICAR SE FOI COMPRA PROMOCIONAL
+                price_type = payment.payment_metadata.get("price_type", "regular")
+                was_promotional = price_type == "promotional"
+                
+                if was_promotional and not user.promotional_price_locked:
+                    promo = get_or_create_promotion(db)
+                    if promo.has_available_slots():
+                        promo.use_slot()  # ← DECREMENTA VAGA
+                        user.promotional_price_locked = True
+                        user.promotional_price = payment.amount
+                        user.purchased_at_promotion = datetime.now()
+                        logger.info(f"🎟️ Vaga promocional utilizada! Restam: {promo.get_remaining_slots()}")
+                
                 payment.status = "approved"
                 payment.approved_at = datetime.now()
                 
                 db.commit()
                 
-                # Enviar alerta
-                alert_payment_approved(user_email=user.email, amount=97.00, method="pix")
-                
+                alert_payment_approved(user_email=user.email, amount=payment.amount, method="pix")
                 logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para {user.email}")
                 
     except Exception as e:
@@ -466,8 +519,11 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
 # ==============================================
 
 @router.get("/plans")
-async def get_plans():
-    """Retorna os planos disponíveis"""
+async def get_plans(db: Session = Depends(get_db)):
+    """Retorna os planos disponíveis com preço dinâmico"""
+    
+    promo = get_or_create_promotion(db)
+    
     return sanitize_response({
         "success": True,
         "plans": {
@@ -481,14 +537,18 @@ async def get_plans():
             },
             "premium_mensal": {
                 "id": "premium_mensal",
-                "name": "Plano Premium Mensal",
-                "price": 97.00,
+                "name": "Plano Bronze",
+                "price": promo.get_current_price(),
+                "regular_price": promo.regular_price,
+                "promotional_price": promo.promotional_price,
                 "description": f"1 crédito por dia durante {DAYS_PREMIUM} dias",
                 "popular": True,
                 "credits_per_day": CREDITS_PER_DAY,
                 "total_days": DAYS_PREMIUM,
                 "total_credits": DAYS_PREMIUM,
-                "max_credits_balance": MAX_CREDITS_BALANCE
+                "max_credits_balance": MAX_CREDITS_BALANCE,
+                "remaining_slots": promo.get_remaining_slots(),
+                "total_slots": promo.total_slots
             }
         },
         "max_credits_balance": MAX_CREDITS_BALANCE,
@@ -545,7 +605,6 @@ async def mercadopago_webhook(
         data = await request.json()
         logger.info(f"🔔 Webhook recebido")
         
-        # Processar webhook
         await webhook.process_webhook(data, db, background_tasks)
         
         return {"status": "received"}
@@ -553,3 +612,6 @@ async def mercadopago_webhook(
     except Exception as e:
         logger.error(f"❌ Erro no webhook: {e}")
         return {"status": "error"}
+
+
+print("✅ payment_routes.py carregado com promoção Bronze (100 vagas)")

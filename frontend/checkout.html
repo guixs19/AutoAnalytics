@@ -8,6 +8,9 @@
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -38,6 +41,25 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .btn-outline-secondary:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
+            color: white;
+        }
+        
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        
+        #timeoutMessage {
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -47,15 +69,35 @@
                 <div class="card text-center p-5">
                     <i class="fas fa-credit-card fa-4x text-primary mb-4"></i>
                     <h3>Redirecionando para o Mercado Pago</h3>
-                    <p class="text-muted">Aguarde um momento...</p>
+                    <p class="text-muted" id="statusMessage">Aguarde um momento...</p>
                     
-                    <div class="loader"></div>
+                    <div class="loader" id="loader"></div>
+                    
+                    <!-- Barra de progresso -->
+                    <div class="progress mt-3" style="height: 4px;" id="progressContainer">
+                        <div class="progress-bar progress-bar-striped" id="progressBar" style="width: 0%"></div>
+                    </div>
                     
                     <div class="mt-4">
-                        <a href="/dashboard" class="btn btn-outline-secondary">
+                        <a href="/dashboard" class="btn btn-outline-secondary" id="backButton">
                             <i class="fas fa-arrow-left me-2"></i>
                             Voltar ao Dashboard
                         </a>
+                    </div>
+                    
+                    <!-- Mensagem de timeout (inicialmente oculta) -->
+                    <div id="timeoutMessage" style="display: none;" class="mt-3">
+                        <div class="alert alert-warning text-center">
+                            <i class="fas fa-clock me-2"></i>
+                            <strong>Demorando muito?</strong><br>
+                            <small>O redirecionamento pode estar bloqueado. Clique no botão abaixo se o navegador não redirecionar automaticamente.</small>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-warning" id="manualRedirectBtn">
+                                    <i class="fas fa-external-link-alt me-1"></i>
+                                    Tentar redirecionar manualmente
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -63,20 +105,156 @@
     </div>
 
     <script>
-        // Obter URL do checkout da URL
+        // 🔒 Função de sanitização segura
+        function sanitizeURL(url) {
+            if (!url || typeof url !== 'string') return null;
+            // Permitir apenas URLs http/https relativas ou absolutas
+            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {
+                // Bloquear URLs maliciosas
+                const dangerous = ['javascript:', 'data:', 'vbscript:', 'file:'];
+                for (const d of dangerous) {
+                    if (url.toLowerCase().includes(d)) {
+                        console.warn('URL bloqueada por segurança:', d);
+                        return null;
+                    }
+                }
+                return url;
+            }
+            return null;
+        }
+        
+        // 🔒 Função para definir texto de forma segura
+        function setSafeText(elementId, text) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+            }
+        }
+        
+        // Obter URL do checkout da URL de forma segura
         const urlParams = new URLSearchParams(window.location.search);
-        const checkoutUrl = urlParams.get('url');
+        const rawCheckoutUrl = urlParams.get('url');
+        const checkoutUrl = sanitizeURL(rawCheckoutUrl);
+        
+        let redirectTimeout;
+        let progressInterval;
+        let progress = 0;
+        
+        // Atualizar barra de progresso
+        function startProgress() {
+            progressInterval = setInterval(() => {
+                if (progress < 90) {
+                    progress += 5;
+                    const progressBar = document.getElementById('progressBar');
+                    if (progressBar) {
+                        progressBar.style.width = `${progress}%`;
+                    }
+                }
+            }, 100);
+        }
+        
+        function stopProgress() {
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                progressBar.style.width = '100%';
+            }
+        }
+        
+        function showTimeoutMessage() {
+            const timeoutMsg = document.getElementById('timeoutMessage');
+            if (timeoutMsg) {
+                timeoutMsg.style.display = 'block';
+            }
+            setSafeText('statusMessage', 'O redirecionamento está demorando mais que o esperado...');
+        }
+        
+        function performRedirect(url) {
+            if (!url) return false;
+            
+            try {
+                // Limpar timers
+                if (redirectTimeout) {
+                    clearTimeout(redirectTimeout);
+                    redirectTimeout = null;
+                }
+                stopProgress();
+                
+                setSafeText('statusMessage', 'Redirecionando...');
+                
+                // Redirecionar
+                window.location.href = url;
+                return true;
+            } catch (error) {
+                console.error('Erro no redirecionamento:', error);
+                setSafeText('statusMessage', 'Erro ao redirecionar. Clique no botão abaixo.');
+                return false;
+            }
+        }
         
         if (checkoutUrl) {
+            console.log('✅ URL de checkout válida encontrada');
+            setSafeText('statusMessage', 'Preparando redirecionamento...');
+            startProgress();
+            
             // Redirecionar após 2 segundos
-            setTimeout(() => {
-                window.location.href = checkoutUrl;
+            redirectTimeout = setTimeout(() => {
+                performRedirect(checkoutUrl);
             }, 2000);
-        } else {
-            // Se não tiver URL, voltar para planos
+            
+            // Mostrar mensagem de timeout após 5 segundos (se ainda não redirecionou)
             setTimeout(() => {
-                window.location.href = '/planos.html';
+                const currentUrl = window.location.href;
+                if (currentUrl.includes('checkout.html') && !currentUrl.includes('checkout')) {
+                    showTimeoutMessage();
+                }
+            }, 5000);
+            
+        } else {
+            console.warn('❌ URL de checkout inválida ou ausente');
+            setSafeText('statusMessage', 'URL de pagamento inválida. Redirecionando para planos...');
+            startProgress();
+            
+            // Se não tiver URL, voltar para planos após 3 segundos
+            redirectTimeout = setTimeout(() => {
+                window.location.href = '/planos';
             }, 3000);
+        }
+        
+        // Evento para redirecionamento manual
+        const manualBtn = document.getElementById('manualRedirectBtn');
+        if (manualBtn && checkoutUrl) {
+            manualBtn.addEventListener('click', function() {
+                performRedirect(checkoutUrl);
+            });
+        }
+        
+        // Limpar timers ao sair da página
+        window.addEventListener('beforeunload', function() {
+            if (redirectTimeout) {
+                clearTimeout(redirectTimeout);
+            }
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+        });
+        
+        // Botão voltar com segurança
+        const backButton = document.getElementById('backButton');
+        if (backButton) {
+            backButton.addEventListener('click', function(e) {
+                if (redirectTimeout) {
+                    clearTimeout(redirectTimeout);
+                }
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                }
+                // Redirecionamento seguro
+                window.location.href = '/dashboard';
+            });
         }
     </script>
 </body>

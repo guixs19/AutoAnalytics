@@ -1,4 +1,4 @@
-// payment.js - VERSÃO COMPLETA SINCRONIZADA COM BACKEND PREMIUM
+// payment.js - VERSÃO COMPLETA COM LAYOUT BRONZE
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
@@ -6,17 +6,26 @@
 const API_URL = window.API_URL || 'http://localhost:8000/api';
 
 // ==============================================
-// FUNÇÕES DE SEGURANÇA
+// 🔒 FUNÇÕES DE SEGURANÇA CONTRA XSS
 // ==============================================
 
 function sanitizeHTML(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
+    if (typeof str !== 'string') str = String(str);
+    
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;')
+        .replace(/\//g, '&#47;');
+}
+
+function sanitizeNumber(value, defaultValue = 0) {
+    const num = parseFloat(value);
+    return isNaN(num) ? defaultValue : num;
 }
 
 // ==============================================
@@ -24,27 +33,32 @@ function sanitizeHTML(str) {
 // ==============================================
 
 function isAdmin() {
-    return window.appAuth ? window.appAuth.isAdmin() : false;
+    try {
+        return window.appAuth ? window.appAuth.isAdmin() : false;
+    } catch {
+        return false;
+    }
 }
 
 function getCreditsDisplay() {
-    return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
+    try {
+        return window.appAuth ? window.appAuth.getCreditsDisplay() : '0';
+    } catch {
+        return '0';
+    }
 }
 
-function isPremium() {
-    return window.appAuth ? window.appAuth.isPremium() : false;
-}
-
-// Formatar exibição de créditos (suporte premium com limite de 3)
 function formatCreditsDisplay(credits, isPremiumUser = false, maxCredits = 3) {
+    const safeCredits = sanitizeNumber(credits, 0);
+    const safeMaxCredits = sanitizeNumber(maxCredits, 3);
+    
     if (isAdmin()) return '∞';
     if (isPremiumUser) {
-        return `${credits}/${maxCredits}`;
+        return `${safeCredits}/${safeMaxCredits}`;
     }
-    return credits.toString();
+    return safeCredits.toString();
 }
 
-// Atualizar display de créditos no header/navbar
 async function updateCreditsDisplay() {
     try {
         const response = await fetchWithAuth(`${API_URL}/users/me/credits`);
@@ -57,12 +71,7 @@ async function updateCreditsDisplay() {
                     data.is_premium || false,
                     data.max_credits || 3
                 );
-                creditsElement.innerHTML = `<i class="fas fa-coins me-1"></i> ${displayText}`;
-                
-                // Atualizar também no appAuth
-                if (window.appAuth && window.appAuth.updateCredits) {
-                    window.appAuth.updateCredits(data.current_credits, data.is_premium);
-                }
+                creditsElement.textContent = displayText;
             }
         }
     } catch (error) {
@@ -71,7 +80,7 @@ async function updateCreditsDisplay() {
 }
 
 // ==============================================
-// CARREGAMENTO DE PLANOS
+// 🔥 CARREGAMENTO DE PLANOS (LAYOUT BRONZE)
 // ==============================================
 
 async function loadPlans() {
@@ -79,7 +88,7 @@ async function loadPlans() {
         const response = await fetch(`${API_URL}/payments/plans`);
         if (response.ok) {
             const data = await response.json();
-            renderPlans(data.plans, data.premium_info);
+            renderBronzePlan(data.plans, data);
         } else {
             console.error('Erro ao carregar planos:', response.status);
             showNotification('Erro ao carregar planos. Tente novamente.', 'error');
@@ -90,102 +99,205 @@ async function loadPlans() {
     }
 }
 
-// Renderizar planos com informações completas (incluindo limite de 3 créditos)
-function renderPlans(plans, premiumInfo = null) {
+// 🔥 RENDERIZAÇÃO EXCLUSIVA DO PLANO BRONZE
+async function renderBronzePlan(plans, fullData = null) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
     
     // Admin tem acesso ilimitado
     if (isAdmin()) {
         container.innerHTML = `
-            <div class="col-12">
-                <div class="alert alert-warning text-center p-5 rounded-4">
-                    <i class="fas fa-crown fa-4x mb-3 text-warning"></i>
-                    <h3>👑 Você é Administrador</h3>
-                    <p class="lead">Como admin, você tem acesso ilimitado a todas as funcionalidades.</p>
-                    <p class="small text-muted">Créditos: ∞ (ilimitado)</p>
+            <div class="col-lg-8 mx-auto">
+                <div class="admin-message">
+                    <i class="fas fa-crown"></i>
+                    <h2 class="h3 mb-3">👑 Você é Administrador</h2>
+                    <p class="lead mb-4">Como admin, você tem acesso ilimitado a todas as funcionalidades.</p>
+                    <a href="/dashboard" class="btn btn-light btn-lg mt-3">
+                        <i class="fas fa-arrow-left me-2"></i> Voltar ao Dashboard
+                    </a>
                 </div>
             </div>
         `;
         return;
     }
     
-    let html = '';
+    // Buscar o plano premium_mensal
+    const plan = plans['premium_mensal'];
+    if (!plan) {
+        container.innerHTML = '<div class="text-center text-danger">Erro ao carregar plano. Tente novamente.</div>';
+        return;
+    }
     
-    for (const [key, plan] of Object.entries(plans)) {
-        const planName = sanitizeHTML(plan.name);
-        const isDailyCredits = plan.type === 'daily_credits';
-        
-        html += `
-            <div class="col-lg-4 mb-4">
-                <div class="plan-card ${plan.popular ? 'popular' : ''}">
-                    ${plan.popular ? '<div class="popular-badge">🔥 MAIS POPULAR 🔥</div>' : ''}
-                    <div class="text-center">
-                        <span class="guarantee-badge mb-3">
-                            <i class="fas fa-shield-alt me-2"></i>
-                            Garantia de 7 dias
-                        </span>
-                        <h3 class="h4 mb-3">${planName}</h3>
-                        <div class="price-tag">
-                            R$ ${plan.price.toFixed(2).replace('.', ',')}
-                        </div>
-                        ${plan.price_per_credit ? `
-                            <div class="small text-muted mt-2">
-                                ~ R$ ${plan.price_per_credit.toFixed(2)} por crédito
+    // Buscar status da promoção
+    let vagasRestantes = 100;
+    let totalVagas = 100;
+    let precoPromocional = plan.price || 97.00;
+    let precoRegular = plan.regular_price || 149.90;
+    let isUserLocked = false;
+    
+    try {
+        const promoResponse = await fetchWithAuth(`${API_URL}/payments/promotion-status`);
+        if (promoResponse && promoResponse.ok) {
+            const promoData = await promoResponse.json();
+            vagasRestantes = promoData.remaining_slots;
+            totalVagas = promoData.total_slots;
+            precoPromocional = promoData.promotional_price;
+            precoRegular = promoData.regular_price;
+            isUserLocked = promoData.user_locked_price !== null;
+        }
+    } catch (error) {
+        console.warn('Erro ao buscar status da promoção:', error);
+    }
+    
+    const isSoldOut = vagasRestantes <= 0;
+    const precoAtual = isSoldOut ? precoRegular : precoPromocional;
+    const economia = precoRegular - precoPromocional;
+    const vagasUsadas = totalVagas - vagasRestantes;
+    const percentual = (vagasUsadas / totalVagas) * 100;
+    const isUrgent = vagasRestantes <= 20 && vagasRestantes > 0;
+    
+    // 🔥 HTML DO PLANO BRONZE COM LAYOUT ESCURO
+    const html = `
+        <div class="col-lg-8 mx-auto">
+            <div class="bronze-card" data-aos="fade-up" data-aos-duration="800">
+                <div class="bronze-badge">
+                    <i class="fas fa-trophy"></i> PLANO BRONZE
+                </div>
+                
+                <div class="bronze-title">
+                    <h2>
+                        <i class="fas fa-crown me-2"></i>
+                        AutoAnalytics Pro
+                    </h2>
+                    <p><i class="fas fa-check-circle me-1"></i> A escolha dos profissionais</p>
+                </div>
+                
+                <div class="price-container">
+                    <span class="old-price">De R$ ${precoRegular.toFixed(2).replace('.', ',')}</span>
+                    <div class="price-tag" id="planoPreco">
+                        R$ ${precoAtual.toFixed(2).replace('.', ',')}<small>/mês</small>
+                    </div>
+                    ${!isSoldOut ? `<span class="economy-badge">🔥 ECONOMIZE R$ ${economia.toFixed(2).replace('.', ',')} 🔥</span>` : ''}
+                </div>
+                
+                <!-- DIV DE VAGAS -->
+                <div class="vagas-counter ${isUrgent ? 'vagas-urgent' : ''}">
+                    <div class="d-flex align-items-center justify-content-center flex-wrap">
+                        <i class="fas fa-ticket-alt fa-2x me-3" style="color: #f5a623;"></i>
+                        <div>
+                            <span class="vagas-label">VAGAS PROMOCIONAIS</span>
+                            <div>
+                                <span class="vagas-number">${vagasRestantes}</span>
+                                <span class="vagas-label">restantes de ${totalVagas}</span>
                             </div>
-                        ` : ''}
+                        </div>
+                    </div>
+                    <div class="vagas-progress">
+                        <div class="vagas-progress-bar" style="width: ${percentual}%"></div>
+                    </div>
+                    ${isUrgent ? `
+                        <div class="mt-2 text-center">
+                            <strong style="color: #f5a623;">🔥 URGENTE! ÚLTIMAS ${vagasRestantes} VAGAS! 🔥</strong>
+                            <br><small>Após esgotar, valor volta para R$ ${precoRegular.toFixed(2).replace('.', ',')}</small>
+                        </div>
+                    ` : `
+                        <div class="mt-2 text-center small text-muted">
+                            ${isSoldOut ? 'Promoção esgotada!' : `Garanta sua vaga por R$ ${precoPromocional.toFixed(2).replace('.', ',')}`}
+                        </div>
+                    `}
+                </div>
+                
+                <div class="my-3">
+                    <div class="highlight-title">
+                        <i class="fas fa-star me-2"></i> O que você recebe:
                     </div>
                     
-                    <div class="my-4">
-                        ${isDailyCredits ? `
-                            <div class="feature-item">
-                                <i class="fas fa-calendar-day"></i>
-                                <span><strong>${plan.credits_per_day || 1} crédito novo</strong> por dia</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-layer-group"></i>
-                                <span><strong>${plan.total_credits || 30} créditos</strong> no total (30 dias)</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-chart-line"></i>
-                                <span>Máximo de <strong>${plan.max_credits_balance || 3} créditos</strong> acumulados</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-clock"></i>
-                                <span>Expira em <strong>${plan.duration_days || 30} dias</strong></span>
-                            </div>
-                        ` : `
-                            <div class="feature-item">
-                                <i class="fas fa-bolt"></i>
-                                <span><strong>${plan.credits} créditos</strong> imediatos</span>
-                            </div>
-                        `}
-                        <div class="feature-item">
-                            <i class="fas fa-robot"></i>
-                            <span>Modelos <strong>Scikit-Learn + IA</strong></span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-headset"></i>
-                            <span>Suporte <strong>24/7</strong></span>
-                        </div>
-                        ${isDailyCredits ? `
-                            <div class="feature-item text-warning">
-                                <i class="fas fa-info-circle"></i>
-                                <span class="small">⚠️ Créditos não acumulam acima de ${plan.max_credits_balance || 3}</span>
-                            </div>
-                        ` : ''}
+                    <div class="bronze-feature">
+                        <i class="fas fa-brain"></i>
+                        <span><strong>IA Avançada (Gemini + Scikit-Learn)</strong> - Análises preditivas</span>
                     </div>
-                    
-                    <div class="d-grid gap-3 mt-4">
-                        <button class="btn btn-gradient" onclick="selectPlan('${key}', 'pix')">
-                            <i class="fas fa-qrcode me-2"></i>
-                            Comprar com PIX
-                        </button>
+                    <div class="bronze-feature">
+                        <i class="fas fa-file-alt"></i>
+                        <span><strong>Relatórios Completos em PDF</strong> - Exporte análises</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-chart-line"></i>
+                        <span><strong>Dashboard Interativo</strong> - Métricas em tempo real</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-calendar-day"></i>
+                        <span><strong>1 crédito novo por dia</strong> - Para novas análises</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-layer-group"></i>
+                        <span><strong>Até 3 arquivos por vez</strong> - Processamento em lote</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-chart-pie"></i>
+                        <span><strong>Gráficos automáticos</strong> - Visualização inteligente</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-download"></i>
+                        <span><strong>Exportação CSV/Excel</strong> - Seus dados sempre disponíveis</span>
+                    </div>
+                    <div class="bronze-feature">
+                        <i class="fas fa-headset"></i>
+                        <span><strong>Suporte Prioritário 24/7</strong> - Atendimento exclusivo</span>
                     </div>
                 </div>
+                
+                <div class="plan-info">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <i class="fas fa-coins fa-lg"></i>
+                            <div class="small fw-bold mt-1">30 Créditos</div>
+                            <div class="small text-muted">Total do plano</div>
+                        </div>
+                        <div class="col-4">
+                            <i class="fas fa-clock fa-lg"></i>
+                            <div class="small fw-bold mt-1">30 Dias</div>
+                            <div class="small text-muted">Duração</div>
+                        </div>
+                        <div class="col-4">
+                            <i class="fas fa-tachometer-alt fa-lg"></i>
+                            <div class="small fw-bold mt-1">3 Máx.</div>
+                            <div class="small text-muted">Créditos acumulados</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="limit-warning">
+                    <i class="fas fa-info-circle"></i>
+                    <small>⚠️ Limite máximo de <strong>3 créditos acumulados</strong>. Use-os para continuar recebendo novos créditos diários!</small>
+                </div>
+                
+                <div class="d-grid gap-3 mt-4">
+                    <button class="btn btn-bronze btn-lg" id="buyButton" onclick="window.selectPlan('premium_mensal', 'pix')" ${isSoldOut ? 'disabled' : ''}>
+                        <i class="fas fa-bolt me-2"></i>
+                        ${isSoldOut ? 'PROMOÇÃO ESGOTADA' : `GARANTIR MINHA VAGA POR R$ ${precoAtual.toFixed(2).replace('.', ',')}`}
+                        <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                    </button>
+                </div>
+                
+                <div class="security-seals">
+                    <span class="badge me-2">
+                        <i class="fas fa-lock"></i> Pagamento 100% Seguro
+                    </span>
+                    <span class="badge me-2">
+                        <i class="fas fa-undo-alt"></i> 7 Dias de Garantia
+                    </span>
+                    <span class="badge">
+                        <i class="fas fa-clock"></i> Ativação Imediata
+                    </span>
+                </div>
+                
+                <p class="text-center small mt-4 mb-0" style="color: rgba(255,255,255,0.6);">
+                    <i class="fas fa-check-circle text-warning me-1"></i>
+                    Após o pagamento, você receberá 1 crédito por dia durante 30 dias
+                </p>
             </div>
-        `;
-    }
+        </div>
+    `;
     
     container.innerHTML = html;
 }
@@ -195,25 +307,25 @@ function renderPlans(plans, premiumInfo = null) {
 // ==============================================
 
 async function selectPlan(planId, method) {
-    // Admin não precisa comprar
     if (isAdmin()) {
         showNotification('👑 Como administrador, você tem acesso ilimitado.', 'info');
         return;
     }
     
-    // Mostrar loading
-    const btn = event?.target?.closest('button');
+    const btn = document.getElementById('buyButton');
+    let originalText = '';
+    
     if (btn) {
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processando...';
+        originalText = btn.innerHTML;
         btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processando...';
         
         setTimeout(() => {
             if (btn) {
-                btn.innerHTML = originalText;
                 btn.disabled = false;
+                btn.innerHTML = originalText;
             }
-        }, 5000);
+        }, 30000);
     }
     
     try {
@@ -229,7 +341,6 @@ async function selectPlan(planId, method) {
                 if (data.payment_id) {
                     showPixModalSecure(data.payment_id, data);
                 } else if (data.checkout_url) {
-                    // Redirecionar para checkout do Mercado Pago
                     window.location.href = data.checkout_url;
                 } else {
                     showNotification('Pagamento iniciado. Verifique o status no dashboard.', 'info');
@@ -248,6 +359,11 @@ async function selectPlan(planId, method) {
     } catch (error) {
         console.error('Erro ao criar pagamento:', error);
         showNotification('Erro de conexão. Tente novamente.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
     }
 }
 
@@ -333,7 +449,6 @@ async function showPixModalSecure(paymentId, paymentData) {
                 `;
             }
             
-            // Iniciar polling para verificar status do pagamento
             startPaymentPollingSecure(paymentId);
         } else {
             modalContent.innerHTML = `
@@ -354,7 +469,7 @@ async function showPixModalSecure(paymentId, paymentData) {
             <div class="alert alert-danger text-center">
                 <i class="fas fa-wifi fa-2x mb-2 d-block"></i>
                 <p>Erro de conexão. Tente novamente mais tarde.</p>
-                <p class="small text-muted">${error.message || 'Erro desconhecido'}</p>
+                <p class="small text-muted">${sanitizeHTML(error.message || 'Erro desconhecido')}</p>
             </div>
         `;
     }
@@ -362,12 +477,11 @@ async function showPixModalSecure(paymentId, paymentData) {
 
 function copyPixCodeSecure() {
     const codeElement = document.getElementById('pixCodeText');
-    if (codeElement) {
+    if (codeElement && codeElement.textContent) {
         const code = codeElement.textContent.trim();
         navigator.clipboard.writeText(code)
             .then(() => showNotification('✅ Código PIX copiado!', 'success'))
             .catch(() => {
-                // Fallback para navegadores antigos
                 const textarea = document.createElement('textarea');
                 textarea.value = code;
                 document.body.appendChild(textarea);
@@ -389,12 +503,11 @@ function startPaymentPollingSecure(paymentId) {
     if (paymentPollingInterval) clearInterval(paymentPollingInterval);
     
     let attempts = 0;
-    const maxAttempts = 60; // ~3 minutos (60 * 3s = 180s)
+    const maxAttempts = 60;
     
     paymentPollingInterval = setInterval(async () => {
         attempts++;
         
-        // Verificar se o modal ainda está aberto
         const modalElement = document.getElementById('pixModal');
         const isModalOpen = modalElement && modalElement.classList.contains('show');
         
@@ -451,100 +564,52 @@ function startPaymentPollingSecure(paymentId) {
                         `;
                     }
                     
-                    // Atualizar display de créditos
                     await updateCreditsDisplay();
                     
-                    // Aguardar 2 segundos e redirecionar
                     setTimeout(() => {
                         const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
                         if (modal) modal.hide();
                         window.location.href = '/dashboard?payment=success';
                     }, 2000);
-                } else if (data.payment && data.payment.status === 'rejected') {
-                    clearInterval(paymentPollingInterval);
-                    paymentPollingInterval = null;
-                    
-                    const statusDiv = document.getElementById('paymentStatus');
-                    if (statusDiv) {
-                        statusDiv.innerHTML = `
-                            <div class="alert alert-danger text-center">
-                                <i class="fas fa-times-circle fa-2x mb-2 d-block"></i>
-                                <strong>❌ Pagamento recusado</strong><br>
-                                O pagamento não foi aprovado. Tente novamente.
-                                <div class="mt-3">
-                                    <button class="btn btn-outline-danger" onclick="location.reload()">
-                                        <i class="fas fa-redo me-2"></i>
-                                        Tentar novamente
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-                    }
-                } else if (data.payment && data.payment.status === 'pending' && attempts % 10 === 0) {
-                    // Atualizar mensagem a cada 30 segundos (10 tentativas)
-                    const statusDiv = document.getElementById('paymentStatus');
-                    if (statusDiv && !statusDiv.innerHTML.includes('Aguardando')) {
-                        statusDiv.innerHTML = `
-                            <div class="alert alert-info text-center">
-                                <i class="fas fa-hourglass-half me-2"></i>
-                                Aguardando confirmação do pagamento...
-                                <div class="progress mt-2" style="height: 4px;">
-                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                         style="width: ${Math.min(100, (attempts / maxAttempts) * 100)}%"></div>
-                                </div>
-                            </div>
-                        `;
-                    }
                 }
             }
         } catch (error) {
             console.error('Erro no polling:', error);
-            if (attempts % 10 === 0) {
-                const statusDiv = document.getElementById('paymentStatus');
-                if (statusDiv) {
-                    statusDiv.innerHTML = `
-                        <div class="alert alert-warning text-center">
-                            <i class="fas fa-sync-alt fa-spin me-2"></i>
-                            Verificando status do pagamento...
-                        </div>
-                    `;
-                }
-            }
         }
-    }, 3000); // Verificar a cada 3 segundos
+    }, 3000);
 }
 
 // ==============================================
-// NOTIFICAÇÕES
+// NOTIFICAÇÕES SEGURAS
 // ==============================================
 
 function showNotification(message, type = 'info') {
-    const sanitizedMessage = sanitizeHTML(message);
+    const safeMessage = sanitizeHTML(message);
     
     if (window.toastr) {
         const options = {
             closeButton: true,
             progressBar: true,
             positionClass: 'toast-top-right',
-            timeOut: 5000
+            timeOut: 5000,
+            escapeHtml: true
         };
         
         switch (type) {
             case 'success':
-                toastr.success(sanitizedMessage, '✅ Sucesso!', options);
+                toastr.success(safeMessage, '✅ Sucesso!', options);
                 break;
             case 'error':
-                toastr.error(sanitizedMessage, '❌ Erro', options);
+                toastr.error(safeMessage, '❌ Erro', options);
                 break;
             case 'warning':
-                toastr.warning(sanitizedMessage, '⚠️ Atenção', options);
+                toastr.warning(safeMessage, '⚠️ Atenção', options);
                 break;
             default:
-                toastr.info(sanitizedMessage, 'ℹ️ Informação', options);
+                toastr.info(safeMessage, 'ℹ️ Informação', options);
         }
     } else {
-        // Fallback para alert
-        alert(sanitizedMessage);
+        alert(safeMessage);
     }
 }
 
@@ -568,9 +633,7 @@ async function fetchWithAuth(url, options = {}) {
     try {
         const response = await fetch(url, { ...options, headers });
         
-        // Token expirado
         if (response.status === 401) {
-            // Tentar renovar token
             const refreshToken = localStorage.getItem('refresh_token');
             if (refreshToken) {
                 try {
@@ -586,7 +649,6 @@ async function fetchWithAuth(url, options = {}) {
                         if (refreshData.refresh_token) {
                             localStorage.setItem('refresh_token', refreshData.refresh_token);
                         }
-                        // Tentar novamente com o novo token
                         headers['Authorization'] = `Bearer ${refreshData.access_token}`;
                         return fetch(url, { ...options, headers });
                     }
@@ -595,7 +657,6 @@ async function fetchWithAuth(url, options = {}) {
                 }
             }
             
-            // Se não conseguiu renovar, redirecionar para login
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
             window.location.href = '/login.html?session=expired';
@@ -613,32 +674,26 @@ async function fetchWithAuth(url, options = {}) {
 // INICIALIZAÇÃO
 // ==============================================
 
-// Verificar se é página de planos
 function isPlansPage() {
     return window.location.pathname.includes('planos.html') || 
            window.location.pathname === '/planos' ||
            document.getElementById('plansContainer') !== null;
 }
 
-// Inicializar quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function() {
-    // Carregar planos se estiver na página correta
     if (isPlansPage()) {
         setTimeout(() => {
             loadPlans();
-            console.log('✅ payment.js inicializado (versão premium com limite de 3 créditos)');
+            console.log('✅ payment.js inicializado - Layout Bronze ativo');
         }, 200);
     }
     
-    // Configurar atualização automática de créditos
     const creditsElement = document.getElementById('creditsDisplay');
     if (creditsElement) {
         updateCreditsDisplay();
-        // Atualizar a cada 30 segundos
         setInterval(updateCreditsDisplay, 30000);
     }
     
-    // Fechar modal ao clicar fora
     const pixModal = document.getElementById('pixModal');
     if (pixModal) {
         pixModal.addEventListener('hidden.bs.modal', function() {
@@ -649,24 +704,21 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Verificar parâmetro de sucesso na URL
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success') {
         showNotification('Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
-        // Limpar parâmetro da URL
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 });
 
 // ==============================================
-// EXPOSIÇÃO DE FUNÇÕES GLOBAIS (SEGURA)
+// EXPOSIÇÃO DE FUNÇÕES GLOBAIS
 // ==============================================
 
-// Expor apenas funções necessárias para o HTML
 window.selectPlan = selectPlan;
 window.copyPixCodeSecure = copyPixCodeSecure;
 window.updateCreditsDisplay = updateCreditsDisplay;
 window.formatCreditsDisplay = formatCreditsDisplay;
 window.showNotification = showNotification;
 
-console.log('✅ payment.js carregado - Modo Premium com limite de 3 créditos');
+console.log('✅ payment.js carregado - Layout Bronze com gradiente escuro');

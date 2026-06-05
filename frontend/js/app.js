@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO FINAL CORRIGIDA
+// frontend/js/app.js - VERSÃO CORRIGIDA (rotas sem .html)
 // Sistema de créditos com proteção contra redirecionamento infinito
 
 class AutoAnalytics {
@@ -71,7 +71,7 @@ class AutoAnalytics {
     
     isLoginPage() {
         return window.location.pathname.includes('login.html') || 
-               window.location.pathname.includes('/login') ||
+               window.location.pathname === '/login' ||
                window.location.pathname === '/';
     }
     
@@ -100,25 +100,21 @@ class AutoAnalytics {
         if (!this.isLoginPage() && !this.isRegisterPage() && 
             !this.isPlanosPage() && !this.isCheckoutPage()) {
             console.log('🔄 Redirecionando para login...');
-            window.location.href = '/login.html';
+            window.location.href = '/login';
         }
     }
     
-    // 🔥 REDIRECIONAR PARA PLANOS (APENAS UMA VEZ)
     redirectToPlanos() {
-        // SÓ REDIRECIONA SE NÃO ESTIVER JÁ NA PÁGINA DE PLANOS
         if (!this.isPlanosPage() && !this.isLoginPage() && !this.isRegisterPage()) {
             console.log('💰 Redirecionando para planos (créditos insuficientes)...');
             this.showNotification('💰 Créditos insuficientes! Adquira o plano premium.', 'warning');
             setTimeout(() => {
-                window.location.href = '/planos.html';
+                window.location.href = '/planos';
             }, 1500);
         } else {
             console.log('📱 Usuário já está na página de planos - evitando loop');
         }
     }
-    
-    // ===== FUNÇÕES DE CRÉDITOS =====
     
     isAdmin() {
         return window.appAuth && window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
@@ -231,11 +227,9 @@ class AutoAnalytics {
         bsModal.show();
     }
     
-    // 🔥 VERIFICAÇÃO DE CRÉDITOS COM PROTEÇÃO DE LOOP
     async checkCreditsForAnalysis() {
         if (this.isAdmin()) return true;
         
-        // SE JÁ ESTIVER NA PÁGINA DE PLANOS, NÃO REDIRECIONA
         if (this.isPlanosPage()) {
             console.log('📱 Usuário já está na página de planos');
             return false;
@@ -249,10 +243,9 @@ class AutoAnalytics {
                     return true;
                 } else {
                     this.showNotification(`💰 ${data.message || 'Créditos insuficientes!'}`, 'warning');
-                    // SÓ REDIRECIONA SE NÃO ESTIVER NA PÁGINA DE PLANOS
                     if (!this.isPlanosPage()) {
                         setTimeout(() => {
-                            window.location.href = '/planos.html';
+                            window.location.href = '/planos';
                         }, 1500);
                     }
                     return false;
@@ -262,13 +255,12 @@ class AutoAnalytics {
             console.error('Erro ao verificar créditos:', error);
         }
         
-        // FALLBACK: verificar localmente
         const credits = this.getCredits();
         if (credits <= 0) {
             this.showNotification('❌ Você não tem créditos disponíveis!', 'error');
             if (!this.isPlanosPage()) {
                 setTimeout(() => {
-                    window.location.href = '/planos.html';
+                    window.location.href = '/planos';
                 }, 1500);
             }
             return false;
@@ -280,8 +272,6 @@ class AutoAnalytics {
     buyCredits() {
         this.redirectToPlanos();
     }
-    
-    // ===== MONITORAMENTO DE TOKEN =====
     
     startTokenMonitoring() {
         if (this.tokenExpiryTimer) {
@@ -458,7 +448,7 @@ class AutoAnalytics {
                 window.appAuth.logout();
             } else {
                 localStorage.clear();
-                window.location.href = '/login.html';
+                window.location.href = '/login';
             }
         }, 1500);
     }
@@ -478,8 +468,6 @@ class AutoAnalytics {
         }
     }
     
-    // ===== INICIALIZAÇÃO PRINCIPAL =====
-    
     async init() {
         console.log('🚀 Inicializando AutoAnalytics App...');
         console.log(`📁 Limite máximo: ${this.MAX_FILE_SIZE_KB}KB por arquivo`);
@@ -489,7 +477,8 @@ class AutoAnalytics {
             return;
         }
         
-        const isAuth = window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated();
+        // 🔧 CORRIGIDO: isAuthenticated é propriedade, não função
+        const isAuth = window.appAuth && window.appAuth.isAuthenticated;
         
         if (!isAuth) {
             console.log('❌ Não autenticado');
@@ -570,8 +559,6 @@ class AutoAnalytics {
             warningEl.classList.remove('show');
         }
     }
-    
-    // ===== UPLOAD =====
     
     async handleUpload(e) {
         e.preventDefault();
@@ -672,8 +659,6 @@ class AutoAnalytics {
             this.uploadButton.innerHTML = `${icon} Iniciar Análise Automática <span class="credit-badge">${creditText}</span>`;
         }
     }
-    
-    // ===== DRAG & DROP =====
     
     handleDragEnter(e) {
         e.preventDefault();
@@ -947,8 +932,6 @@ class AutoAnalytics {
         div.textContent = text;
         return div.innerHTML;
     }
-    
-    // ===== PROGRESSO =====
     
     showProgress() {
         let container = document.getElementById('progressContainer');
@@ -1238,8 +1221,6 @@ class AutoAnalytics {
         }
     }
     
-    // ===== UTILIDADES =====
-    
     initializeElements() {
         this.uploadForm = document.getElementById('uploadForm');
         this.fileInput = document.getElementById('fileInput');
@@ -1328,7 +1309,7 @@ class AutoAnalytics {
                     window.appAuth.logout();
                 } else {
                     localStorage.clear();
-                    window.location.href = '/login.html';
+                    window.location.href = '/login';
                 }
             });
         }
@@ -1468,80 +1449,83 @@ window.getApp = () => window.app;
 window.claimDailyCredit = () => window.app?.claimDailyCredit();
 window.showCreditsModal = () => window.app?.showCreditsModal();
 
-// CSS
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideInRight {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes fadeOut {
-        from { opacity: 1; }
-        to { opacity: 0; }
-    }
-    .dragover-glow {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        border: 2px dashed #667eea !important;
-        transform: scale(1.02);
-        transition: all 0.2s ease;
-    }
-    .credit-badge {
-        background: rgba(255,255,255,0.3);
-        padding: 0.2rem 0.5rem;
-        border-radius: 50px;
-        font-size: 0.75rem;
-        margin-left: 0.5rem;
-    }
-    .timeline {
-        position: relative;
-        padding-left: 1.5rem;
-    }
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
-    .timeline-item {
-        position: relative;
-        padding-bottom: 1rem;
-    }
-    .timeline-item:last-child {
-        padding-bottom: 0;
-    }
-    .timeline-marker {
-        position: absolute;
-        left: -1.5rem;
-        top: 0.25rem;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #667eea;
-        border: 2px solid white;
-        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
-    }
-    .timeline-marker.bg-success {
-        background: #48bb78;
-        box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
-    }
-    .timeline-content {
-        padding-left: 0.5rem;
-    }
-    .btn-gradient {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        transition: all 0.3s;
-    }
-    .btn-gradient:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-        color: white;
-    }
-`;
-document.head.appendChild(style);
+// 🔧 CSS - Verificar se já existe para não duplicar
+if (!document.getElementById('appStyles')) {
+    const appStyles = document.createElement('style');
+    appStyles.id = 'appStyles';
+    appStyles.textContent = `
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .dragover-glow {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px dashed #667eea !important;
+            transform: scale(1.02);
+            transition: all 0.2s ease;
+        }
+        .credit-badge {
+            background: rgba(255,255,255,0.3);
+            padding: 0.2rem 0.5rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+        .timeline {
+            position: relative;
+            padding-left: 1.5rem;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        }
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1rem;
+        }
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+        .timeline-marker {
+            position: absolute;
+            left: -1.5rem;
+            top: 0.25rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #667eea;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+        .timeline-marker.bg-success {
+            background: #48bb78;
+            box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
+        }
+        .timeline-content {
+            padding-left: 0.5rem;
+        }
+        .btn-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            transition: all 0.3s;
+        }
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+    `;
+    document.head.appendChild(appStyles);
+}
 
-console.log('✅ app.js carregado - Versão final com proteção contra loop de redirecionamento');
+console.log('✅ app.js carregado - Rotas corrigidas (sem .html)');

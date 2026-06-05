@@ -1,7 +1,7 @@
-# backend/models.py - COM extend_existing EM TODAS AS CLASSES
+# backend/models.py - CORREÇÃO DE DATETIME
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, date
 import enum
 
 from backend.database import Base
@@ -32,7 +32,7 @@ class UserPlan(str, enum.Enum):
 
 class User(Base):
     __tablename__ = 'users'
-    __table_args__ = {'extend_existing': True}  # 🔥 CORREÇÃO AQUI
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
@@ -43,21 +43,27 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.USER)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.now)
-    last_login = Column(DateTime)
     
-    # ✅ CAMPO ADMIN ADICIONADO AQUI
+    # 🔧 CORRIGIDO: usar função lambda para executar no momento da inserção
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    last_login = Column(DateTime, onupdate=lambda: datetime.utcnow())
+    
     is_admin = Column(Boolean, default=False)
     
     # Créditos
     credits = Column(Integer, default=0)
     total_purchased = Column(Integer, default=0)
-    last_payment_date = Column(DateTime)
+    last_payment_date = Column(DateTime, onupdate=lambda: datetime.utcnow())
     
     # Plano premium
     plan = Column(Enum(UserPlan), default=UserPlan.BASICO)
     premium_activated_at = Column(DateTime, nullable=True)
     premium_expires_at = Column(Date, nullable=True)
+    
+    # 🔥 CAMPOS PARA PROMOÇÃO BRONZE
+    promotional_price_locked = Column(Boolean, default=False)
+    promotional_price = Column(Float, nullable=True)
+    purchased_at_promotion = Column(DateTime, nullable=True)
     
     # Refresh token
     refresh_token = Column(Text, nullable=True)
@@ -78,13 +84,11 @@ class User(Base):
         self.hashed_password = hasher.hash_password(password)
     
     def has_credits(self, required: int = 1) -> bool:
-        # ✅ ADMIN sempre tem créditos
         if self.is_admin:
             return True
         return self.credits >= required
     
     def deduct_credit(self, amount: int = 1) -> bool:
-        # ✅ ADMIN não deduz créditos
         if self.is_admin:
             return True
         if self.credits >= amount:
@@ -95,10 +99,9 @@ class User(Base):
     def add_credits(self, amount: int):
         self.credits += amount
         self.total_purchased += amount
-        self.last_payment_date = datetime.now()
+        self.last_payment_date = datetime.utcnow()
     
     def is_premium(self) -> bool:
-        from datetime import date
         if self.plan != UserPlan.PREMIUM_MENSAL:
             return False
         if not self.premium_expires_at:
@@ -106,13 +109,11 @@ class User(Base):
         return self.premium_expires_at >= date.today()
     
     def get_premium_days_left(self) -> int:
-        from datetime import date
         if not self.is_premium():
             return 0
         return (self.premium_expires_at - date.today()).days
     
     def get_premium_progress(self) -> float:
-        from datetime import date
         if not self.premium_activated_at or not self.premium_expires_at:
             return 0
         
@@ -124,6 +125,11 @@ class User(Base):
             days_passed = total_days
         
         return round((days_passed / total_days) * 100, 1)
+    
+    def get_current_price(self) -> float:
+        if self.promotional_price_locked and self.promotional_price:
+            return self.promotional_price
+        return 97.00
     
     # ===== MÉTODOS PARA REFRESH TOKEN =====
     def set_refresh_token(self, token: str, jti: str, expires_days: int = 7):
@@ -152,7 +158,7 @@ class User(Base):
 
 class Payment(Base):
     __tablename__ = 'payments'
-    __table_args__ = {'extend_existing': True}  # 🔥 CORREÇÃO AQUI
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -174,9 +180,10 @@ class Payment(Base):
     description = Column(String)
     payment_metadata = Column(JSON, default={})
     
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    approved_at = Column(DateTime)
+    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    approved_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="payments")
     daily_credit_logs = relationship("DailyCreditLog", back_populates="payment", cascade="all, delete-orphan")
@@ -200,19 +207,19 @@ class Payment(Base):
 
 class DailyCreditLog(Base):
     __tablename__ = 'daily_credit_logs'
-    __table_args__ = {'extend_existing': True}  # 🔥 CORREÇÃO AQUI
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
     
     credits_added = Column(Integer, default=1)
-    date = Column(Date, default=datetime.now().date)
+    date = Column(Date, default=lambda: date.today())
     day_number = Column(Integer)
     total_after = Column(Integer)
-    source = Column(String, default="daily_upload")  # ✅ ADICIONADO CAMPO SOURCE
+    source = Column(String, default="daily_upload")
     
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
     
     user = relationship("User", back_populates="daily_credits")
     payment = relationship("Payment", back_populates="daily_credit_logs")
@@ -232,7 +239,7 @@ class DailyCreditLog(Base):
 
 class Analysis(Base):
     __tablename__ = 'analyses'
-    __table_args__ = {'extend_existing': True}  # 🔥 CORREÇÃO AQUI
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -244,7 +251,54 @@ class Analysis(Base):
     columns_processed = Column(Integer, default=0)
     ai_report = Column(Text)
     report_path = Column(String)
-    uploaded_at = Column(DateTime, default=datetime.now)
-    processed_at = Column(DateTime)
+    
+    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
+    uploaded_at = Column(DateTime, default=lambda: datetime.utcnow())
+    processed_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="analyses")
+
+
+# ==============================================
+# 🔥 MODELO: PROMOTION CONTROL (VAGAS BRONZE)
+# ==============================================
+
+class PromotionControl(Base):
+    """Controle de vagas promocionais do plano Bronze"""
+    __tablename__ = 'promotion_control'
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    total_slots = Column(Integer, default=100)
+    used_slots = Column(Integer, default=0)
+    promotional_price = Column(Float, default=97.00)
+    regular_price = Column(Float, default=149.90)
+    is_active = Column(Boolean, default=True)
+    
+    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    
+    def get_remaining_slots(self) -> int:
+        return max(0, self.total_slots - self.used_slots)
+    
+    def has_available_slots(self) -> bool:
+        return self.get_remaining_slots() > 0 and self.is_active
+    
+    def get_current_price(self) -> float:
+        return self.promotional_price if self.has_available_slots() else self.regular_price
+    
+    def use_slot(self) -> bool:
+        if self.has_available_slots():
+            self.used_slots += 1
+            self.updated_at = datetime.utcnow()
+            return True
+        return False
+    
+    def reset_promotion(self):
+        self.used_slots = 0
+        self.is_active = True
+        self.updated_at = datetime.utcnow()
+
+
+print("✅ models.py carregado - Datetimes corrigidos (UTC)")

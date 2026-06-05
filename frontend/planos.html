@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planos - AutoAnalytics Pro</title>
+    <title>AutoAnalytics Pro - Plano Bronze</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -34,92 +34,256 @@
             -webkit-text-fill-color: transparent;
         }
         
-        .plan-card {
-            background: white;
-            border-radius: 30px;
+        /* 🔥 PLANO BRONZE - ESTILO EXCLUSIVO */
+        .bronze-card {
+            background: linear-gradient(145deg, #2c1a0a 0%, #3d2614 100%);
+            border-radius: 40px;
             padding: 3rem;
-            box-shadow: 0 30px 60px rgba(102, 126, 234, 0.25);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(205, 127, 50, 0.3);
             position: relative;
             overflow: hidden;
-            max-width: 500px;
+            max-width: 650px;
             margin: 0 auto;
-            transition: transform 0.3s;
+            transition: all 0.3s ease;
+            border: 1px solid #cd7f32;
         }
         
-        .plan-card:hover {
-            transform: translateY(-5px);
+        .bronze-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 40px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(205, 127, 50, 0.5);
         }
         
-        .plan-card::before {
-            content: '';
+        .bronze-badge {
             position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 70%);
-            animation: rotate 20s linear infinite;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #cd7f32, #b8681e);
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            z-index: 10;
+            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
         }
         
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+        .bronze-badge i {
+            margin-right: 0.5rem;
+        }
+        
+        .bronze-title {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .bronze-title h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f5a623, #cd7f32);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        
+        .price-container {
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        .old-price {
+            text-decoration: line-through;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 1.3rem;
+            display: block;
         }
         
         .price-tag {
             font-size: 4rem;
             font-weight: 800;
-            color: #1e3c72;
+            color: #f5a623;
             line-height: 1;
-            margin: 1.5rem 0;
+            margin: 0.5rem 0;
+            text-shadow: 0 0 20px rgba(245, 166, 35, 0.3);
         }
         
         .price-tag small {
             font-size: 1rem;
             font-weight: 400;
-            color: #718096;
+            color: rgba(255, 255, 255, 0.6);
         }
         
-        .feature-item {
+        .economy-badge {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
+            color: white;
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+        
+        .bronze-feature {
             display: flex;
             align-items: center;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid #f0f0f0;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid rgba(205, 127, 50, 0.2);
+            color: white;
         }
         
-        .feature-item:last-child {
+        .bronze-feature:last-child {
             border-bottom: none;
         }
         
-        .feature-item i {
-            color: #48bb78;
-            width: 30px;
+        .bronze-feature i {
+            color: #f5a623;
+            width: 35px;
             font-size: 1.2rem;
         }
         
-        .btn-gradient {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .bronze-feature strong {
+            color: #f5a623;
+        }
+        
+        .highlight-title {
+            font-size: 1.1rem;
+            color: #f5a623;
+            border-bottom: 2px solid #cd7f32;
+            display: inline-block;
+            padding-bottom: 0.3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .plan-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border: 1px solid rgba(205, 127, 50, 0.3);
+        }
+        
+        .plan-info .col-4 {
+            border-right: 1px solid rgba(205, 127, 50, 0.2);
+        }
+        
+        .plan-info .col-4:last-child {
+            border-right: none;
+        }
+        
+        .plan-info i {
+            color: #f5a623;
+        }
+        
+        .limit-warning {
+            background: rgba(245, 166, 35, 0.15);
+            border-left: 4px solid #f5a623;
+            padding: 0.75rem;
+            border-radius: 12px;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .limit-warning i {
+            color: #f5a623;
+            margin-right: 0.5rem;
+        }
+        
+        .btn-bronze {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
             border: none;
             padding: 1rem 2rem;
             border-radius: 50px;
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 1.2rem;
             transition: all 0.3s;
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 10px 30px rgba(245, 166, 35, 0.4);
             width: 100%;
-            font-size: 1.1rem;
         }
         
-        .btn-gradient:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+        .btn-bronze:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(245, 166, 35, 0.6);
             color: white;
+        }
+        
+        .btn-bronze:disabled {
+            opacity: 0.6;
+            transform: none;
+            cursor: not-allowed;
+        }
+        
+        .vagas-counter {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 60px;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            text-align: center;
+            border: 1px solid rgba(205, 127, 50, 0.5);
+        }
+        
+        .vagas-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #f5a623;
+            display: inline-block;
+            margin: 0 0.5rem;
+        }
+        
+        .vagas-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .vagas-progress {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            margin-top: 0.8rem;
+            overflow: hidden;
+        }
+        
+        .vagas-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #f5a623, #e67e22);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+        
+        .vagas-urgent {
+            animation: urgent-pulse 1s ease-in-out infinite;
+        }
+        
+        @keyframes urgent-pulse {
+            0%, 100% { 
+                background: rgba(245, 166, 35, 0.2);
+                border-color: #f5a623;
+            }
+            50% { 
+                background: rgba(245, 166, 35, 0.4);
+                border-color: #ff7e00;
+            }
+        }
+        
+        .security-seals {
+            margin-top: 1.5rem;
+            text-align: center;
+        }
+        
+        .security-seals .badge {
+            background: rgba(0, 0, 0, 0.4);
+            color: rgba(255, 255, 255, 0.8);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            border: 1px solid rgba(205, 127, 50, 0.3);
         }
         
         .btn-outline-gradient {
             background: transparent;
-            border: 2px solid #667eea;
-            color: #667eea;
+            border: 2px solid #cd7f32;
+            color: #cd7f32;
             padding: 0.75rem 2rem;
             border-radius: 50px;
             font-weight: 600;
@@ -127,39 +291,19 @@
         }
         
         .btn-outline-gradient:hover {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #cd7f32, #b8681e);
             color: white;
             border-color: transparent;
         }
         
-        .guarantee-badge {
-            background: #f0fff4;
+        .credits-badge {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
+            padding: 0.5rem 1.5rem;
             border-radius: 50px;
-            padding: 0.5rem 1rem;
-            display: inline-block;
-            color: #38a169;
-            font-weight: 500;
-            font-size: 0.9rem;
-        }
-        
-        .badge-scikit {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.9rem;
             font-weight: 600;
-            display: inline-block;
-            margin-bottom: 1rem;
-        }
-        
-        .file-format-badge {
-            background: #f8f9fa;
-            border-radius: 50px;
-            padding: 0.25rem 0.75rem;
-            font-size: 0.8rem;
-            color: #2c3e50;
-            border: 1px solid #dee2e6;
+            box-shadow: 0 4px 15px rgba(245, 166, 35, 0.3);
+            cursor: pointer;
         }
         
         .admin-badge {
@@ -173,77 +317,47 @@
             margin-left: 0.5rem;
         }
         
-        .admin-badge i {
-            margin-right: 0.3rem;
-        }
-        
         .admin-message {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
             color: white;
             padding: 2rem;
             border-radius: 30px;
             text-align: center;
+            border: 1px solid #cd7f32;
         }
         
         .admin-message i {
             font-size: 4rem;
             margin-bottom: 1rem;
+            color: #f5a623;
         }
         
-        .infinity-symbol {
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #f39c12;
+        .fs-10 {
+            font-size: 0.7rem;
+            opacity: 0.8;
         }
         
-        /* Animação de pulso para o aviso de vagas */
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-                transform: scale(1);
+        @media (max-width: 768px) {
+            .bronze-card {
+                padding: 2rem;
+                margin: 0 1rem;
             }
-            50% {
-                opacity: 0.9;
-                transform: scale(1.02);
+            .price-tag {
+                font-size: 3rem;
             }
-        }
-        
-        .animate-pulse {
-            animation: pulse 2s ease-in-out infinite;
-        }
-        
-        .popular-badge {
-            position: absolute;
-            top: 20px;
-            right: -30px;
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-            padding: 8px 40px;
-            font-weight: bold;
-            font-size: 0.8rem;
-            transform: rotate(45deg);
-            z-index: 10;
-        }
-        
-        .limit-warning {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 0.75rem;
-            border-radius: 8px;
-            margin-top: 1rem;
-            font-size: 0.85rem;
-        }
-        
-        .limit-warning i {
-            color: #ffc107;
-            margin-right: 0.5rem;
+            .bronze-title h2 {
+                font-size: 1.8rem;
+            }
+            .vagas-number {
+                font-size: 1.8rem;
+            }
         }
     </style>
 </head>
 <body>
     <nav class="navbar-modern">
         <div class="container">
-            <a class="brand-text text-decoration-none" href="/">
+            <a class="brand-text text-decoration-none" href="/dashboard">
                 <i class="fas fa-robot me-2"></i>
                 AutoAnalytics<span class="text-primary">Pro</span>
             </a>
@@ -256,7 +370,7 @@
                     <i class="fas fa-crown"></i>
                     Admin
                 </span>
-                <a href="/" class="btn btn-outline-gradient">
+                <a href="/dashboard" class="btn btn-outline-gradient">
                     <i class="fas fa-arrow-left me-2"></i>
                     Voltar
                 </a>
@@ -266,35 +380,29 @@
 
     <div class="container py-5">
         <div class="row justify-content-center">
-            <div class="col-lg-8 text-center mb-5">
+            <div class="col-lg-8 text-center mb-4">
                 <h1 class="display-4 fw-bold mb-3">
-                    <span class="gradient-text">Análise Preditiva com Scikit-Learn</span>
+                    <span style="background: linear-gradient(135deg, #cd7f32, #f5a623); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">🔥 Plano Bronze 🔥</span>
                 </h1>
-                <p class="lead text-muted">Carregue seus arquivos CSV ou Excel e obtenha insights poderosos</p>
-                <div class="mt-3">
-                    <span class="badge-scikit">
-                        <i class="fas fa-brain me-2"></i>
-                        Powered by Scikit-Learn
-                    </span>
-                </div>
+                <p class="lead text-muted">A escolha inteligente para sua oficina mecânica</p>
             </div>
         </div>
         
-        <!-- CONTAINER DE PLANOS -->
+        <!-- CONTAINER ONDE O payment.js VAI RENDERIZAR -->
         <div class="row justify-content-center" id="plansContainer">
             <div class="text-center py-5">
-                <div class="spinner-border text-primary" role="status">
+                <div class="spinner-border text-warning" role="status">
                     <span class="visually-hidden">Carregando...</span>
                 </div>
-                <p class="mt-2">Carregando planos...</p>
+                <p class="mt-2 text-muted">Carregando plano Bronze...</p>
             </div>
         </div>
         
-        <div class="row justify-content-center mt-5">
+        <div class="row justify-content-center mt-4">
             <div class="col-lg-8">
                 <div class="bg-white rounded-4 p-4 shadow-sm">
                     <h5 class="fw-bold mb-4">
-                        <i class="fas fa-upload me-2 text-primary"></i>
+                        <i class="fas fa-upload me-2 text-warning"></i>
                         Formatos suportados
                     </h5>
                     <div class="row g-3">
@@ -303,7 +411,7 @@
                                 <i class="fas fa-file-csv fa-2x text-success me-3"></i>
                                 <div>
                                     <h6 class="fw-bold mb-1">Arquivos CSV</h6>
-                                    <p class="text-muted small mb-0">Delimitados por vírgula, ponto e vírgula ou tabulação</p>
+                                    <p class="text-muted small mb-0">Delimitados por vírgula, ponto e vírgula</p>
                                 </div>
                             </div>
                         </div>
@@ -312,14 +420,14 @@
                                 <i class="fas fa-file-excel fa-2x text-success me-3"></i>
                                 <div>
                                     <h6 class="fw-bold mb-1">Arquivos Excel</h6>
-                                    <p class="text-muted small mb-0">Formatos .xlsx e .xls com múltiplas planilhas</p>
+                                    <p class="text-muted small mb-0">Formatos .xlsx e .xls</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div class="mt-3 text-center text-muted small">
                         <i class="fas fa-layer-group me-1"></i>
-                        Máximo de 3 arquivos por vez | Limite de 15KB por arquivo
+                        Máximo de 3 arquivos por vez | <strong class="text-success">Limite de 200KB por arquivo</strong>
                     </div>
                 </div>
             </div>
@@ -344,37 +452,21 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="/static/js/payment.js"></script>
     
     <script>
         AOS.init();
         
-        const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:8000/api'
-            : '/api';
-        
-        // ==============================================
-        // FUNÇÕES DE AUTENTICAÇÃO E ADMIN
-        // ==============================================
-        
-        function isAdmin() {
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            return user.is_admin === true;
-        }
-        
-        function getCreditsDisplay() {
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            if (user.is_admin) return '∞';
-            return user.credits || 0;
-        }
-        
-        async function fetchWithAuth(url, options = {}) {
+        // Aguardar o payment.js carregar
+        document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('access_token');
-            const headers = { 'Content-Type': 'application/json', ...options.headers };
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-            return fetch(url, { ...options, headers });
-        }
-        
-        async function loadUserData() {
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // O payment.js já vai carregar os planos automaticamente
+            // Só precisamos verificar se o usuário é admin
             const user = JSON.parse(localStorage.getItem('user') || '{}');
             
             const adminBadge = document.getElementById('adminBadge');
@@ -384,453 +476,8 @@
             
             const creditsSpan = document.querySelector('#navbarCredits span');
             if (creditsSpan) {
-                creditsSpan.textContent = getCreditsDisplay();
+                creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
             }
-            
-            if (user.is_admin) {
-                showAdminMessage();
-            } else {
-                await loadPlans();
-                await loadPremiumSubscribersCount();
-            }
-        }
-        
-        // ==============================================
-        // 🔥 CONTAGEM REGRESSIVA DE VAGAS
-        // ==============================================
-        
-        async function loadPremiumSubscribersCount() {
-            try {
-                const response = await fetch(`${API_URL}/payments/premium/subscribers-count`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        const totalSubscribers = data.subscribers_count;
-                        const totalVagasLote = data.batch_limit || 100;
-                        const vagasRestantes = data.remaining_slots;
-                        
-                        // Atualizar o aviso no card do plano premium
-                        const avisoVagasElement = document.getElementById('avisoVagas');
-                        const precoElement = document.getElementById('planoPreco');
-                        const vagaElement = document.getElementById('vagaNumero');
-                        
-                        if (vagasRestantes > 0) {
-                            if (precoElement) precoElement.innerText = "R$ 97,00";
-                            if (vagaElement) vagaElement.innerHTML = `<span class="badge bg-warning text-dark me-2"><i class="fas fa-ticket-alt"></i> Vaga #${totalSubscribers + 1}</span>`;
-                            
-                            if (avisoVagasElement) {
-                                avisoVagasElement.innerHTML = `
-                                    <div class="alert alert-danger py-2 mt-3 border-0 shadow-sm text-center fw-bold animate-pulse" style="animation: pulse 2s infinite; background: linear-gradient(135deg, #fff5f5, #fed7d7);">
-                                        <i class="fas fa-fire text-danger me-2"></i>
-                                        🔥 URGENTE! Restam apenas <span class="badge bg-danger fs-6 px-3 py-2">${vagasRestantes}</span> vagas neste lote promocional!
-                                        <br>
-                                        <small class="text-muted mt-1">Próximas vagas terão reajuste no valor</small>
-                                    </div>
-                                `;
-                            }
-                        } else {
-                            if (avisoVagasElement) {
-                                avisoVagasElement.innerHTML = `
-                                    <div class="alert alert-secondary py-2 mt-3 border-0 shadow-sm text-center fw-bold">
-                                        <i class="fas fa-exclamation-triangle text-warning me-2"></i>
-                                        ⚠️ As vagas do lote promocional esgotaram!
-                                        <br>
-                                        <small>Novas promoções em breve</small>
-                                    </div>
-                                `;
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao carregar contagem de vagas:', error);
-            }
-        }
-        
-        // ==============================================
-        // CARREGAR PLANOS DO BACKEND
-        // ==============================================
-        
-        async function loadPlans() {
-            try {
-                const response = await fetch(`${API_URL}/payments/plans`);
-                if (response.ok) {
-                    const data = await response.json();
-                    renderPlans(data.plans);
-                } else {
-                    renderSinglePlan();
-                }
-            } catch (error) {
-                console.error('Erro ao carregar planos:', error);
-                renderSinglePlan();
-            }
-        }
-        
-        function renderPlans(plans) {
-            const container = document.getElementById('plansContainer');
-            if (!container) return;
-            
-            let html = '';
-            
-            for (const [key, plan] of Object.entries(plans)) {
-                if (key === 'gratuito') {
-                    html += `
-                        <div class="col-lg-4 mb-4">
-                            <div class="plan-card" data-aos="fade-up" data-aos-delay="100">
-                                <div class="text-center">
-                                    <span class="guarantee-badge mb-3">
-                                        <i class="fas fa-gift me-2"></i>
-                                        Grátis
-                                    </span>
-                                    <h3 class="h4 mb-3">${plan.name}</h3>
-                                    <div class="price-tag">
-                                        Grátis
-                                    </div>
-                                    <p class="mb-4">${plan.credits} créditos para testar</p>
-                                </div>
-                                
-                                <div class="my-4">
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span><strong>${plan.credits}</strong> análises grátis</span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Modelos <strong>Scikit-Learn</strong></span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Relatórios com <strong>IA</strong></span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Dashboard <strong>interativo</strong></span>
-                                    </div>
-                                    <div class="limit-warning">
-                                        <i class="fas fa-info-circle"></i>
-                                        <small>Limite máximo de ${plan.max_credits_balance || 3} créditos acumulados</small>
-                                    </div>
-                                </div>
-                                
-                                <div class="d-grid">
-                                    <button class="btn btn-outline-gradient" onclick="window.location.href='/dashboard'">
-                                        <i class="fas fa-rocket me-2"></i>
-                                        Usar Agora
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    html += `
-                        <div class="col-lg-4 mb-4">
-                            <div class="plan-card ${plan.popular ? 'popular' : ''}" data-aos="fade-up" data-aos-delay="200">
-                                ${plan.popular ? '<div class="popular-badge">🔥 MAIS POPULAR 🔥</div>' : ''}
-                                <div class="text-center">
-                                    <span class="guarantee-badge mb-3">
-                                        <i class="fas fa-shield-alt me-2"></i>
-                                        Garantia de 7 dias
-                                    </span>
-                                    <h3 class="h4 mb-3">${plan.name}</h3>
-                                    <h3 class="display-4 fw-bold text-primary mb-0">
-                                        <span id="planoPreco">R$ ${plan.price.toFixed(2).replace('.', ',')}</span>
-                                    </h3>
-                                    <p class="text-muted">ou ${(plan.price / 30).toFixed(2).replace('.', ',')}/dia</p>
-                                    <div id="vagaNumero"></div>
-                                </div>
-                                
-                                <div class="my-4">
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span><strong>${plan.credits_per_day} crédito novo</strong> por dia</span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span><strong>${plan.total_credits} créditos</strong> no total</span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Modelos avançados com <strong>Scikit-Learn</strong></span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Relatórios com <strong>IA generativa</strong></span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Dashboard <strong>interativo</strong> em tempo real</span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Importação de <strong>múltiplos arquivos</strong> (até 3 por vez)</span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Exportação <strong>CSV/Excel</strong></span>
-                                    </div>
-                                    <div class="feature-item">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span><strong>Suporte prioritário</strong> 24/7</span>
-                                    </div>
-                                    <div class="limit-warning">
-                                        <i class="fas fa-info-circle"></i>
-                                        <small>⚠️ Limite máximo de ${plan.max_credits_balance || 3} créditos acumulados. Use-os para continuar recebendo!</small>
-                                    </div>
-                                </div>
-                                
-                                <div id="avisoVagas"></div>
-                                
-                                <div class="d-grid gap-3 mt-4">
-                                    <button class="btn btn-gradient" onclick="selectPlan('${key}', 'pix')">
-                                        <i class="fas fa-qrcode me-2"></i>
-                                        Comprar com PIX - R$ ${plan.price.toFixed(2).replace('.', ',')}
-                                    </button>
-                                </div>
-                                
-                                <p class="text-center text-muted small mt-4">
-                                    <i class="fas fa-lock me-1"></i>
-                                    Pagamento 100% seguro via PIX<br>
-                                    <i class="fas fa-credit-card me-1"></i>
-                                    Créditos válidos por 30 dias
-                                </p>
-                            </div>
-                        </div>
-                    `;
-                }
-            }
-            
-            container.innerHTML = html;
-        }
-        
-        function renderSinglePlan() {
-            const container = document.getElementById('plansContainer');
-            if (!container) return;
-            
-            container.innerHTML = `
-                <div class="col-lg-6">
-                    <div class="plan-card" data-aos="fade-up">
-                        <div class="text-center">
-                            <span class="guarantee-badge mb-3">
-                                <i class="fas fa-shield-alt me-2"></i>
-                                Garantia de 7 dias
-                            </span>
-                            <h2 class="h3 fw-bold">AutoAnalytics Pro</h2>
-                            <div class="price-tag">
-                                R$ 97<span class="small">/mês</span>
-                            </div>
-                            <div id="vagaNumero"></div>
-                        </div>
-                        
-                        <div id="avisoVagas"></div>
-                        
-                        <div class="my-4">
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span><strong>1 crédito novo</strong> por dia</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Modelos avançados com <strong>Scikit-Learn</strong></span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Relatórios com <strong>IA generativa</strong></span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Dashboard <strong>interativo</strong> em tempo real</span>
-                            </div>
-                            <div class="feature-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Importação de <strong>múltiplos arquivos</strong> (até 3 por vez)</span>
-                            </div>
-                            <div class="limit-warning">
-                                <i class="fas fa-info-circle"></i>
-                                <small>⚠️ Limite máximo de 3 créditos acumulados. Use-os para continuar recebendo!</small>
-                            </div>
-                        </div>
-                        
-                        <div class="d-grid gap-3">
-                            <button class="btn btn-gradient" onclick="selectPlan('premium_mensal', 'pix')">
-                                <i class="fas fa-qrcode me-2"></i>
-                                Comprar com PIX - R$ 97,00
-                            </button>
-                        </div>
-                        
-                        <p class="text-center text-muted small mt-4">
-                            <i class="fas fa-lock me-1"></i>
-                            Pagamento 100% seguro via PIX<br>
-                            <i class="fas fa-credit-card me-1"></i>
-                            Créditos válidos por 30 dias
-                        </p>
-                    </div>
-                </div>
-            `;
-            
-            loadPremiumSubscribersCount();
-        }
-        
-        function showAdminMessage() {
-            const container = document.getElementById('plansContainer');
-            if (!container) return;
-            
-            container.innerHTML = `
-                <div class="col-lg-8">
-                    <div class="admin-message">
-                        <i class="fas fa-crown"></i>
-                        <h2 class="h3 mb-3">👑 Você é Administrador</h2>
-                        <p class="lead mb-4">Como admin, você tem acesso ilimitado a todas as funcionalidades do AutoAnalytics Pro.</p>
-                        <div class="row justify-content-center">
-                            <div class="col-md-4 mb-3">
-                                <div class="bg-white bg-opacity-25 rounded-4 p-3">
-                                    <i class="fas fa-infinity fa-2x mb-2"></i>
-                                    <h4>Créditos Ilimitados</h4>
-                                    <p class="small opacity-75">Sem limites de análise</p>
-                                </div>
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <div class="bg-white bg-opacity-25 rounded-4 p-3">
-                                    <i class="fas fa-layer-group fa-2x mb-2"></i>
-                                    <h4>Múltiplos Arquivos</h4>
-                                    <p class="small opacity-75">Até 3 arquivos por vez</p>
-                                </div>
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <div class="bg-white bg-opacity-25 rounded-4 p-3">
-                                    <i class="fas fa-file-export fa-2x mb-2"></i>
-                                    <h4>Exportação Livre</h4>
-                                    <p class="small opacity-75">CSV, Excel, relatórios</p>
-                                </div>
-                            </div>
-                        </div>
-                        <a href="/dashboard" class="btn btn-light btn-lg mt-3">
-                            <i class="fas fa-arrow-left me-2"></i>
-                            Voltar ao Dashboard
-                        </a>
-                    </div>
-                </div>
-            `;
-        }
-        
-        // ==============================================
-        // PAGAMENTO PIX
-        // ==============================================
-        
-        async function selectPlan(planId, method) {
-            if (isAdmin()) {
-                alert('👑 Como administrador, você tem acesso ilimitado. Não é necessário comprar planos.');
-                return;
-            }
-            
-            try {
-                const response = await fetchWithAuth(`${API_URL}/payments/create-${method}`, {
-                    method: 'POST',
-                    body: JSON.stringify({ plan_id: planId })
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (method === 'pix') {
-                        showPixModal(data);
-                    }
-                } else {
-                    const error = await response.json();
-                    alert(error.detail || 'Erro ao criar pagamento');
-                }
-            } catch (error) {
-                console.error('Erro:', error);
-                alert('Erro de conexão com o servidor');
-            }
-        }
-        
-        function showPixModal(data) {
-            const modalContent = document.getElementById('pixContent');
-            const mensagemPromocional = data.promotional_message || '';
-            
-            modalContent.innerHTML = `
-                ${mensagemPromocional ? `<div class="alert alert-warning mb-3">${mensagemPromocional}</div>` : ''}
-                
-                ${data.qr_code_base64 ? `
-                    <img src="data:image/png;base64,${data.qr_code_base64}" class="img-fluid mb-3" style="max-width: 200px;">
-                ` : ''}
-                
-                <div class="bg-light p-3 rounded-3 mb-3" style="word-break: break-all;">
-                    <code id="pixCodeText">${data.qr_code || 'Código indisponível'}</code>
-                </div>
-                
-                <button class="btn btn-outline-primary w-100 mb-3" onclick="copyPixCode()">
-                    <i class="fas fa-copy me-2"></i>
-                    Copiar código PIX
-                </button>
-                
-                <div class="alert alert-info small">
-                    <i class="fas fa-info-circle me-2"></i>
-                    Após o pagamento, aguarde até 1 minuto para os créditos serem adicionados.
-                </div>
-                
-                <div id="paymentStatus"></div>
-            `;
-            
-            const modal = new bootstrap.Modal(document.getElementById('pixModal'));
-            modal.show();
-            startPaymentPolling(data.payment_id);
-        }
-        
-        function copyPixCode() {
-            const codeElement = document.getElementById('pixCodeText');
-            if (codeElement) {
-                navigator.clipboard.writeText(codeElement.textContent.trim());
-                alert('✅ Código PIX copiado!');
-            }
-        }
-        
-        let paymentPolling = null;
-        
-        function startPaymentPolling(paymentId) {
-            if (paymentPolling) clearInterval(paymentPolling);
-            
-            paymentPolling = setInterval(async () => {
-                const response = await fetchWithAuth(`${API_URL}/payments/status/${paymentId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.payment && data.payment.status === 'approved') {
-                        clearInterval(paymentPolling);
-                        const statusDiv = document.getElementById('paymentStatus');
-                        if (statusDiv) {
-                            statusDiv.innerHTML = `
-                                <div class="alert alert-success">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    Pagamento aprovado! Redirecionando...
-                                </div>
-                            `;
-                        }
-                        setTimeout(() => {
-                            const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
-                            if (modal) modal.hide();
-                            window.location.href = '/dashboard?payment=success';
-                        }, 2000);
-                    }
-                }
-            }, 3000);
-            
-            setTimeout(() => {
-                if (paymentPolling) clearInterval(paymentPolling);
-            }, 120000);
-        }
-        
-        // ==============================================
-        // INICIALIZAÇÃO
-        // ==============================================
-        
-        document.addEventListener('DOMContentLoaded', async () => {
-            const token = localStorage.getItem('access_token');
-            if (!token) {
-                window.location.href = '/login.html';
-                return;
-            }
-            
-            await loadUserData();
         });
     </script>
 </body>

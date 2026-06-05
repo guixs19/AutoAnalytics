@@ -30,7 +30,7 @@ router = APIRouter(tags=["upload"])
 processing_status = {}
 
 # Limites
-MAX_FILE_SIZE = 15 * 1024  # 15KB
+MAX_FILE_SIZE = 200 * 1024  # 200KB 🔥 ALTERADO: 15 → 200KB
 MAX_FILES_PER_BATCH = 3     # Máximo de 3 arquivos por vez
 ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls']
 

@@ -1,11 +1,12 @@
-# main.py (na raiz) - VERSÃO COMPLETA CORRIGIDA
+# main.py (na raiz) - VERSÃO COMPLETA COM PROMOÇÃO BRONZE
 import sys
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 import secrets
 import string
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import time
 import asyncio
 
@@ -215,7 +216,7 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ==============================================
-# CARREGAR MÓDULOS (ANTES DAS ROTAS HTML)
+# CARREGAR MÓDULOS
 # ==============================================
 print("\n📦 Carregando módulos...")
 
@@ -242,7 +243,7 @@ try:
         get_current_user, get_current_active_user, get_current_admin_user,
         set_auth_cookies, clear_auth_cookies
     )
-    from backend.models import User
+    from backend.models import User, Analysis, PromotionControl
     print("✅ Módulos de segurança carregados")
     
     from backend.services.daily_credits_service import DailyCreditsService
@@ -407,31 +408,51 @@ if frontend_available:
         
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
+    # ==============================================
+    # REDIRECIONAMENTOS PARA ROTAS SEM .html
+    # ==============================================
+    @app.get("/planos.html", include_in_schema=False)
+    async def redirect_planos_html():
+        return RedirectResponse(url="/planos", status_code=301)
+    
+    @app.get("/dashboard.html", include_in_schema=False)
+    async def redirect_dashboard_html():
+        return RedirectResponse(url="/dashboard", status_code=301)
+    
+    @app.get("/login.html", include_in_schema=False)
+    async def redirect_login_html():
+        return RedirectResponse(url="/login", status_code=301)
+    
+    @app.get("/checkout.html", include_in_schema=False)
+    async def redirect_checkout_html():
+        return RedirectResponse(url="/checkout", status_code=301)
+    
     print("✅ Rotas HTML configuradas: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
-# 🔥 ROTA CAPTCHA DIRETA
+# 🔥 ROTA CAPTCHA DIRETA - CORRIGIDA
 # ==============================================
 print("\n🔢 Configurando rota CAPTCHA direta...")
 
 @app.get("/api/auth/captcha/generate")
 async def generate_captcha_direct(request: Request, session_type: str = "login"):
+    """
+    Gera imagem CAPTCHA com números distorcidos
+    """
+    print(f"🔢 [CAPTCHA] Solicitado para {session_type}")
+    
     try:
         client_ip = request.client.host if request.client else "unknown"
-        
-        allowed = await rate_limiter.check_rate_limit(f"captcha:{client_ip}", 30, 300)
-        
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail="Muitas solicitações de CAPTCHA. Aguarde alguns minutos."
-            )
+        print(f"🔢 [CAPTCHA] IP: {client_ip}")
         
         img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
         
-        content_type = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/svg+xml"
+        if img_bytes and img_bytes.startswith(b'\x89PNG'):
+            content_type = "image/png"
+        else:
+            content_type = "image/svg+xml"
         
-        print(f"🔢 CAPTCHA gerado para {session_type}: {captcha_id[:16]}...")
+        print(f"🔢 [CAPTCHA] Gerado: {captcha_id[:16]}... ({content_type}, {len(img_bytes)} bytes)")
         
         return Response(
             content=img_bytes,
@@ -443,13 +464,32 @@ async def generate_captcha_direct(request: Request, session_type: str = "login")
                 "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"
             }
         )
-    except HTTPException:
-        raise
+        
     except Exception as e:
-        print(f"❌ Erro ao gerar CAPTCHA: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar desafio: {str(e)}")
+        print(f"❌ [CAPTCHA] Erro: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar CAPTCHA: {str(e)}")
 
-print("✅ Rota CAPTCHA direta configurada em /api/auth/captcha/generate")
+
+@app.get("/api/auth/captcha/test", include_in_schema=False)
+async def test_captcha():
+    """Endpoint de teste para verificar se o CAPTCHA está funcionando"""
+    try:
+        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(None, "test")
+        
+        return {
+            "success": True,
+            "message": "CAPTCHA funcionando",
+            "captcha_id": captcha_id[:16],
+            "size_bytes": len(img_bytes)
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 
 # ==============================================
 # 🔥 ROTA DE LOGIN DIRETA
@@ -474,23 +514,22 @@ async def login_direct(
         
         print(f"🔐 Tentativa de login: {email}")
         
-        # Validar CAPTCHA
-        if captcha_id and captcha_text and captcha_text != "1234":
-            valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "login")
-            if not valid:
-                raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        if captcha_id and captcha_text:
+            if captcha_text != "1234":
+                valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "login")
+                if not valid:
+                    raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        else:
+            raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
         
-        # Buscar usuário
         user = crud.get_user_by_email(db, email)
         
         if not user:
             raise HTTPException(status_code=401, detail="Email ou senha incorretos")
         
-        # Verificar senha
         if not hasher.verify_password(password, user.hashed_password):
             raise HTTPException(status_code=401, detail="Email ou senha incorretos")
         
-        # Gerar tokens
         user_data = {
             "sub": user.email,
             "email": user.email,
@@ -504,14 +543,12 @@ async def login_direct(
         
         tokens = jwt_manager.create_token_pair(user_data)
         
-        # Salvar refresh token
         if hasattr(user, 'set_refresh_token') and tokens.get("refresh_token") and tokens.get("refresh_jti"):
             user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
         db.commit()
         
         print(f"✅ Login bem-sucedido: {email}")
         
-        # Criar resposta com cookies
         response_data = {
             "success": True,
             "access_token": tokens["access_token"],
@@ -574,25 +611,24 @@ async def register_direct(
         
         print(f"📝 Tentativa de registro: {email}")
         
-        # Validar CAPTCHA
-        if captcha_id and captcha_text and captcha_text != "1234":
-            valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "register")
-            if not valid:
-                raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        if captcha_id and captcha_text:
+            if captcha_text != "1234":
+                valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, "register")
+                if not valid:
+                    raise HTTPException(status_code=400, detail="❌ Código CAPTCHA incorreto")
+        else:
+            raise HTTPException(status_code=400, detail="CAPTCHA obrigatório")
         
-        # Validar dados
         if not name or not email or not password or not workshop_name:
             raise HTTPException(status_code=400, detail="Preencha todos os campos")
         
         if len(password) < 6:
             raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
         
-        # Verificar se email já existe
         existing_user = crud.get_user_by_email(db, email)
         if existing_user:
             raise HTTPException(status_code=400, detail="Email já cadastrado")
         
-        # Criar usuário
         hashed_password = hasher.hash_password(password)
         
         new_user = User(
@@ -740,11 +776,9 @@ try:
     from backend.api import routes
     from backend.api import payment_routes
     
-    # Rotas de pagamento
     app.include_router(payment_routes.router, prefix="/api/payments", tags=["payments"])
     print("✅ Rotas de PAGAMENTO: /api/payments/*")
     
-    # Rotas gerais da API
     app.include_router(routes.router, prefix="/api", tags=["api"])
     print("✅ Rotas GERAIS: /api/upload, /api/status, /api/health")
     
@@ -821,19 +855,15 @@ async def captcha_stats(current_user = Depends(get_current_admin_user)):
     stats = captcha_manager.get_stats()
     return {"success": True, "stats": stats}
 
-
 # ==============================================
-# 🔥 ENDPOINTS PARA COMPATIBILIDADE COM FRONTEND (CORRIGIDOS)
+# ENDPOINTS DE CRÉDITOS
 # ==============================================
 
-# 1. Verificar se usuário tem créditos para análise
 @app.get("/api/payments/check-analysis")
 async def check_analysis_credits(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Verifica se usuário tem créditos para realizar análise"""
-    
     if current_user.is_admin:
         return {"has_credits": True, "message": "Admin tem acesso ilimitado"}
     
@@ -842,14 +872,12 @@ async def check_analysis_credits(
     
     has_credits = status.get("current_credits", 0) >= 1
     
-    if not has_credits:
-        # Verificar se é premium e pode ganhar crédito hoje
-        if status.get("is_premium") and status.get("can_receive_more"):
-            return {
-                "has_credits": False,
-                "message": "Você está sem créditos, mas pode receber 1 crédito hoje! Clique em 'Receber crédito'.",
-                "can_claim_today": True
-            }
+    if not has_credits and status.get("is_premium") and status.get("can_receive_more"):
+        return {
+            "has_credits": False,
+            "message": "Você está sem créditos, mas pode receber 1 crédito hoje!",
+            "can_claim_today": True
+        }
     
     return {
         "has_credits": has_credits,
@@ -859,23 +887,13 @@ async def check_analysis_credits(
         "message": f"Você tem {status.get('current_credits', 0)} crédito(s)" if has_credits else "Créditos insuficientes"
     }
 
-
-# 2. Buscar créditos do usuário
 @app.get("/api/users/me/credits")
 async def get_my_credits(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna informações de créditos do usuário atual"""
-    
     if current_user.is_admin:
-        return {
-            "credits": 999999,
-            "credits_display": "∞",
-            "is_premium": False,
-            "max_credits": 3,
-            "is_admin": True
-        }
+        return {"credits": 999999, "credits_display": "∞", "is_premium": False, "max_credits": 3, "is_admin": True}
     
     daily_service = DailyCreditsService()
     status = daily_service.get_user_credit_status(db, current_user.id)
@@ -889,23 +907,13 @@ async def get_my_credits(
         "is_admin": False
     }
 
-
-# 3. Saldo/status do plano premium
 @app.get("/api/payments/balance")
 async def get_premium_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna saldo e status do plano premium"""
-    
     if current_user.is_admin:
-        return {
-            "plan": {
-                "is_premium": False,
-                "message": "Admin tem acesso ilimitado"
-            },
-            "credits": 999999
-        }
+        return {"plan": {"is_premium": False, "message": "Admin tem acesso ilimitado"}, "credits": 999999}
     
     daily_service = DailyCreditsService()
     summary = daily_service.get_premium_summary(db, current_user.id)
@@ -925,43 +933,113 @@ async def get_premium_balance(
         }
     else:
         return {
-            "plan": {
-                "is_premium": False,
-                "message": "Assine o plano premium"
-            },
+            "plan": {"is_premium": False, "message": "Assine o plano premium"},
             "credits": summary.get("credits", {}).get("current_balance", 0)
         }
 
-
-# 4. Receber crédito diário (para usuários premium)
 @app.post("/api/payments/premium/check-daily")
 async def claim_daily_credit(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Usuário premium solicita crédito diário"""
-    
     if current_user.is_admin:
-        return {
-            "success": False,
-            "credits_added": 0,
-            "message": "Admin tem créditos ilimitados"
-        }
+        return {"success": False, "credits_added": 0, "message": "Admin tem créditos ilimitados"}
     
     daily_service = DailyCreditsService()
     result = daily_service.check_and_add_daily_credit(db, current_user.id)
-    
     return result
 
-
-# 5. Listar planos disponíveis (fallback se o router não tiver)
 @app.get("/api/payments/plans")
 async def get_plans():
-    """Retorna lista de planos disponíveis"""
     from backend.services.payment_service import MercadoPagoService
-    
     mp_service = MercadoPagoService()
     return mp_service.get_all_plans()
+
+# ==============================================
+# ENDPOINTS DO DASHBOARD
+# ==============================================
+
+@app.get("/api/analyses/history", tags=["analyses"])
+async def get_analysis_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0
+):
+    from backend import crud
+    
+    analyses = crud.get_user_analyses(db, current_user.id, offset, limit)
+    total = db.query(Analysis).filter(Analysis.user_id == current_user.id).count()
+    
+    return {
+        "success": True,
+        "analyses": [
+            {
+                "id": a.id,
+                "filename": a.filename,
+                "status": a.status,
+                "created_at": a.uploaded_at.isoformat() if a.uploaded_at else None,
+                "uploaded_at": a.uploaded_at.isoformat() if a.uploaded_at else None,
+                "analysis_type": a.analysis_type,
+                "ai_used": a.ai_used,
+                "rows_processed": a.rows_processed,
+                "columns_processed": a.columns_processed,
+                "file_size": None
+            }
+            for a in analyses
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@app.get("/api/stats", tags=["stats"])
+async def get_dashboard_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    today = date.today()
+    total_analyses = db.query(Analysis).filter(Analysis.user_id == current_user.id).count()
+    analyses_today = db.query(Analysis).filter(
+        Analysis.user_id == current_user.id,
+        func.date(Analysis.uploaded_at) == today
+    ).count()
+    completed_analyses = db.query(Analysis).filter(
+        Analysis.user_id == current_user.id,
+        Analysis.status == "completed"
+    ).count()
+    ai_analyses = db.query(Analysis).filter(
+        Analysis.user_id == current_user.id,
+        Analysis.ai_used == True
+    ).count()
+    
+    return {
+        "success": True,
+        "total_analises": total_analyses,
+        "analises_hoje": analyses_today,
+        "analises_concluidas": completed_analyses,
+        "analises_com_ia": ai_analyses,
+        "credits_remaining": current_user.credits if hasattr(current_user, 'credits') else 0,
+        "status": "success",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# ==============================================
+# 🔥 FUNÇÃO PARA INICIALIZAR PROMOÇÃO
+# ==============================================
+
+def init_promotion(db: Session):
+    """Inicializa a promoção Bronze no banco de dados se não existir"""
+    from backend.models import PromotionControl
+    
+    promo = db.query(PromotionControl).first()
+    if not promo:
+        promo = PromotionControl()
+        db.add(promo)
+        db.commit()
+        print("✅ Promoção Bronze inicializada (100 vagas a R$ 97,00)")
+    else:
+        print(f"✅ Promoção Bronze já existe: {promo.get_remaining_slots()} vagas restantes")
 
 # ==============================================
 # EVENTO DE INICIALIZAÇÃO
@@ -969,6 +1047,14 @@ async def get_plans():
 @app.on_event("startup")
 async def startup_event():
     print("\n🚀 Inicializando sistema...")
+    
+    # 🔥 INICIALIZAR PROMOÇÃO BRONZE
+    try:
+        db = SessionLocal()
+        init_promotion(db)
+        db.close()
+    except Exception as e:
+        print(f"⚠️ Erro ao inicializar promoção: {e}")
     
     print("\n📋 Rotas HTML configuradas:")
     print("   🌐 http://localhost:8000/")
@@ -991,6 +1077,19 @@ async def startup_event():
     
     gemini_status = "✅ CONFIGURADO" if (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]) else "❌ NÃO CONFIGURADO"
     
+    # Buscar status da promoção para mostrar
+    try:
+        db = SessionLocal()
+        from backend.models import PromotionControl
+        promo = db.query(PromotionControl).first()
+        if promo:
+            vagas_restantes = promo.get_remaining_slots()
+            preco_atual = promo.get_current_price()
+            print(f"\n💎 PROMOÇÃO BRONZE: {vagas_restantes} vagas restantes - Preço: R$ {preco_atual:.2f}")
+        db.close()
+    except:
+        pass
+    
     print(f"""
     ╔══════════════════════════════════════════════════════════════════════════════╗
     ║                    🎉 {settings.APP_NAME} v3.2 INICIADO!                              ║
@@ -998,10 +1097,16 @@ async def startup_event():
     ║  🤖 GOOGLE GEMINI: {gemini_status:<59} ║
     ║  🔐 SEGURANÇA:                                                                ║
     ║     🔢 CAPTCHA: ✅ (Números Rabiscados)                                       ║
-    ║     🎫 JWT: ✅ (15min access, 7d refresh)                                     ║
+    ║     🎫 JWT: ✅ ({settings.ACCESS_TOKEN_EXPIRE_MINUTES}min access, {settings.REFRESH_TOKEN_EXPIRE_DAYS}d refresh)  ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  💎 PLANO BRONZE:                                                             ║
+    ║     🎟️ Vagas totais: 100                                                      ║
+    ║     💰 Preço promocional: R$ 97,00                                            ║
+    ║     💰 Preço regular: R$ 149,90                                               ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🔗 ENDPOINTS:                                                               ║
     ║     🎯 CAPTCHA: GET  /api/auth/captcha/generate                               ║
+    ║     🧪 CAPTCHA TEST: GET /api/auth/captcha/test                               ║
     ║     🔐 LOGIN:   POST /api/auth/login                                          ║
     ║     📝 REGISTRO: POST /api/auth/register                                      ║
     ║     ✅ CHECK:   GET  /api/auth/check-token                                    ║
@@ -1014,6 +1119,11 @@ async def startup_event():
     ║     💳 /api/payments/balance - Status premium                                ║
     ║     ⭐ /api/payments/premium/check-daily - Receber crédito diário            ║
     ║     📋 /api/payments/plans - Listar planos                                   ║
+    ║     🎟️ /api/payments/promotion-status - Status da promoção                   ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  📊 ENDPOINTS DO DASHBOARD:                                                  ║
+    ║     📜 /api/analyses/history - Histórico de análises                         ║
+    ║     📈 /api/stats - Estatísticas do dashboard                                ║
     ╠══════════════════════════════════════════════════════════════════════════════╣
     ║  🌐 PÁGINAS:                                                                 ║
     ║     🏠 HOME:    http://localhost:{settings.PORT}/                            ║
@@ -1054,7 +1164,10 @@ async def not_found_exception_handler(request: Request, exc):
                     "/api/auth/login", 
                     "/api/auth/register",
                     "/api/auth/captcha/generate",
-                    "/api/auth/check-token"
+                    "/api/auth/check-token",
+                    "/api/analyses/history",
+                    "/api/stats",
+                    "/api/payments/promotion-status"
                 ]
             }
         )
@@ -1080,11 +1193,13 @@ if __name__ == "__main__":
     print(f"🤖 IA: Google Gemini")
     print(f"🔢 CAPTCHA: Números Rabiscados ({settings.CAPTCHA_CODE_LENGTH} dígitos - 2min validade)")
     print(f"📍 CAPTCHA URL: http://localhost:{settings.PORT}/api/auth/captcha/generate")
+    print(f"📍 CAPTCHA TEST: http://localhost:{settings.PORT}/api/auth/captcha/test")
     print(f"📍 LOGIN URL: http://localhost:{settings.PORT}/api/auth/login")
     print(f"📍 REGISTER URL: http://localhost:{settings.PORT}/api/auth/register")
     print(f"📍 CHECK-TOKEN URL: http://localhost:{settings.PORT}/api/auth/check-token")
     print(f"📍 DASHBOARD: http://localhost:{settings.PORT}/dashboard")
     print(f"📍 PLANOS: http://localhost:{settings.PORT}/planos")
+    print(f"📍 PROMOÇÃO STATUS: http://localhost:{settings.PORT}/api/payments/promotion-status")
     print("🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(

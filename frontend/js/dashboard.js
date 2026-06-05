@@ -1,4 +1,4 @@
-// frontend/js/dashboard.js - VERSÃO ATUALIZADA COM ANÁLISES INDIVIDUAIS POR ARQUIVO
+// frontend/js/dashboard.js - VERSÃO CORRIGIDA E OTIMIZADA
 // Suporte a múltiplos arquivos (até 3 por vez) com cards individuais
 
 document.addEventListener('DOMContentLoaded', async function() {
@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         : '/api';
     
     const MAX_FILES_PER_BATCH = 3;
-    const MAX_FILE_SIZE_KB = 15;
+    const MAX_FILE_SIZE_KB = 200;  // 🔥 ALTERADO: 15 → 200KB
     
     // Armazenar análises ativas
     let activeAnalyses = [];
@@ -22,7 +22,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     function redirectToLogin() {
-        window.location.href = 'login.html';
+        // 🔥 CORRIGIDO: Verificar se está em produção ou desenvolvimento
+        const loginPath = window.location.hostname.includes('localhost') 
+            ? '/login.html'  // Desenvolvimento local
+            : '/login';       // Produção (FastAPI route)
+        window.location.href = loginPath;
     }
     
     // Verifica autenticação
@@ -111,7 +115,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         localStorage.clear();
         sessionStorage.clear();
-        window.location.href = 'login.html';
+        redirectToLogin();
     }
     
     // ===== FUNÇÕES DE CRÉDITOS =====
@@ -126,7 +130,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 
                 const creditElements = document.querySelectorAll('.credits-display, .user-credits, #creditsCount');
                 creditElements.forEach(el => {
-                    el.textContent = credits;
+                    if (el) el.textContent = credits;
                 });
                 
                 // Atualizar badge de limite
@@ -154,16 +158,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         const creditsSpan = document.querySelector('.credits-display');
         let credits = creditsSpan ? creditsSpan.textContent : '0';
         
-        if (credits === '0' || credits === '∞') {
-            if (credits === '0') {
-                showCreditsModal();
-                return false;
-            }
-        }
+        if (credits === '∞') return true;
         
         const numericCredits = parseInt(credits);
-        if (numericCredits < filesCount) {
-            showNotification(`❌ Você precisa de ${filesCount} crédito(s) para processar ${filesCount} arquivo(s). Você tem apenas ${numericCredits}.`, 'warning');
+        if (isNaN(numericCredits) || numericCredits < filesCount) {
+            showNotification(`❌ Você precisa de ${filesCount} crédito(s) para processar ${filesCount} arquivo(s). Você tem apenas ${numericCredits || 0}.`, 'warning');
             showCreditsModal();
             return false;
         }
@@ -268,22 +267,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         return div.innerHTML;
     }
     
-    // ===== 🔥 NOVO: DASHBOARD COM CARDS INDIVIDUAIS POR ARQUIVO =====
+    // ===== DASHBOARD COM CARDS INDIVIDUAIS POR ARQUIVO =====
     
     function createAnalysisCard(processId, filename, index) {
-        const cardId = `analysis-card-${processId}`;
-        const statusId = `status-${processId}`;
-        const progressId = `progress-${processId}`;
+        const statusText = 'Aguardando';
+        const statusIcon = '⏳';
         
         return `
-            <div class="analysis-card mb-4" id="${cardId}" data-process-id="${processId}" data-filename="${filename}">
+            <div class="analysis-card mb-4" id="analysis-card-${processId}" data-process-id="${processId}" data-filename="${filename}">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
                     <div class="card-header bg-gradient-primary text-white py-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <i class="fas fa-chart-line me-2"></i>
                                 <strong>Análise #${index + 1}</strong>
-                                <span class="badge bg-light text-dark ms-2" id="${statusId}">Aguardando</span>
+                                <span class="badge bg-light text-dark ms-2" id="status-${processId}">${statusIcon} ${statusText}</span>
                             </div>
                             <div>
                                 <i class="fas fa-file-excel me-1"></i>
@@ -299,7 +297,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                                 <span id="progress-text-${processId}" class="text-muted">0%</span>
                             </div>
                             <div class="progress" style="height: 10px;">
-                                <div id="${progressId}" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                                <div id="progress-${processId}" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
                             </div>
                         </div>
                         
@@ -341,13 +339,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                             
                             <!-- Botões de ação -->
                             <div class="d-flex gap-2 mt-3">
-                                <button class="btn btn-sm btn-outline-primary" onclick="downloadReport('${processId}')">
+                                <button class="btn btn-sm btn-outline-primary" onclick="window.downloadReport('${processId}')">
                                     <i class="fas fa-download me-1"></i> Relatório
                                 </button>
-                                <button class="btn btn-sm btn-outline-success" onclick="exportCsv('${processId}')">
+                                <button class="btn btn-sm btn-outline-success" onclick="window.exportCsv('${processId}')">
                                     <i class="fas fa-file-csv me-1"></i> Exportar CSV
                                 </button>
-                                <button class="btn btn-sm btn-outline-info" onclick="viewDetails('${processId}')">
+                                <button class="btn btn-sm btn-outline-info" onclick="window.viewDetails('${processId}')">
                                     <i class="fas fa-chart-bar me-1"></i> Detalhes
                                 </button>
                             </div>
@@ -402,6 +400,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (statusBadge) {
             let statusClass = 'bg-secondary';
             let statusIcon = '⏳';
+            let statusText = status || 'Processando';
             
             if (status === 'completed') {
                 statusClass = 'bg-success';
@@ -419,8 +418,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 statusClass = 'bg-primary';
                 statusIcon = '🔍';
                 statusText = 'Analisando';
-            } else {
-                statusText = status || 'Processando';
             }
             
             statusBadge.innerHTML = `${statusIcon} ${statusText}`;
@@ -720,7 +717,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                                 <i class="far fa-clock ms-2 me-1"></i>${date.toLocaleTimeString('pt-BR')}
                             </small>
                         </div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="viewAnalysisDetails('${analysis.id || analysis.process_id}')">
+                        <button class="btn btn-sm btn-outline-primary" onclick="window.viewAnalysisDetails('${analysis.id || analysis.process_id}')">
                             <i class="fas fa-eye"></i>
                         </button>
                     </div>
@@ -848,24 +845,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
     
-    // ===== FUNÇÕES GLOBAIS PARA OS CARDS =====
-    
-    window.downloadReport = function(processId) {
-        showNotification(`Download do relatório para ${processId} em breve`, 'info');
-    };
-    
-    window.exportCsv = function(processId) {
-        showNotification(`Exportação CSV para ${processId} em breve`, 'info');
-    };
-    
-    window.viewDetails = function(processId) {
-        showNotification(`Detalhes da análise ${processId} em breve`, 'info');
-    };
-    
-    window.viewAnalysisDetails = function(analysisId) {
-        showNotification(`Detalhes da análise ${analysisId} em breve`, 'info');
-    };
-    
     // ===== SETUP LOGOUT =====
     
     function setupLogout() {
@@ -938,79 +917,111 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log(`📦 Limite por arquivo: ${MAX_FILE_SIZE_KB}KB`);
 });
 
-// Adiciona CSS para animações e cards
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideInRight {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes fadeOut {
-        from { opacity: 1; }
-        to { opacity: 0; }
-    }
-    @keyframes pulse-green {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4); }
-        50% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); }
-    }
+// ===== ESTILOS GLOBAIS (fora do DOMContentLoaded para não duplicar) =====
+(function addDashboardStyles() {
+    if (document.getElementById('dashboardStyles')) return;
     
-    .drag-over {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        border: 2px dashed #667eea !important;
-        transform: scale(1.02);
-        transition: all 0.2s ease;
+    const dashboardStyles = document.createElement('style');
+    dashboardStyles.id = 'dashboardStyles';
+    dashboardStyles.textContent = `
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); }
+        }
+        
+        .drag-over {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px dashed #667eea !important;
+            transform: scale(1.02);
+            transition: all 0.2s ease;
+        }
+        
+        .analysis-card {
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        .analysis-card .card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .analysis-card .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15) !important;
+        }
+        
+        .metric-box {
+            transition: all 0.2s;
+        }
+        
+        .metric-box:hover {
+            transform: translateY(-2px);
+            background: #e9ecef !important;
+        }
+        
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .analyses-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .list-group-item {
+            border-radius: 12px !important;
+            margin-bottom: 8px;
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s;
+        }
+        
+        .list-group-item:hover {
+            background: #f8fafc;
+            transform: translateX(4px);
+        }
+        
+        #activeAnalysesContainer {
+            min-height: 200px;
+        }
+    `;
+    document.head.appendChild(dashboardStyles);
+})();
+
+// ===== FUNÇÕES GLOBAIS (acessíveis via onclick) =====
+window.downloadReport = function(processId) {
+    showNotificationFallback(`Download do relatório para ${processId} em breve`, 'info');
+};
+
+window.exportCsv = function(processId) {
+    showNotificationFallback(`Exportação CSV para ${processId} em breve`, 'info');
+};
+
+window.viewDetails = function(processId) {
+    showNotificationFallback(`Detalhes da análise ${processId} em breve`, 'info');
+};
+
+window.viewAnalysisDetails = function(analysisId) {
+    showNotificationFallback(`Detalhes da análise ${analysisId} em breve`, 'info');
+};
+
+// Fallback para notificações em funções globais
+function showNotificationFallback(message, type = 'info') {
+    if (window.toastr) {
+        window.toastr[type](message);
+    } else {
+        console.log(`[${type}] ${message}`);
+        alert(message);
     }
-    
-    .analysis-card {
-        animation: slideInRight 0.3s ease-out;
-    }
-    
-    .analysis-card .card {
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
-    
-    .analysis-card .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 30px rgba(0,0,0,0.15) !important;
-    }
-    
-    .metric-box {
-        transition: all 0.2s;
-    }
-    
-    .metric-box:hover {
-        transform: translateY(-2px);
-        background: #e9ecef !important;
-    }
-    
-    .progress-bar {
-        transition: width 0.5s ease;
-    }
-    
-    .bg-gradient-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    .analyses-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-    
-    .list-group-item {
-        border-radius: 12px !important;
-        margin-bottom: 8px;
-        border: 1px solid #e2e8f0;
-        transition: all 0.2s;
-    }
-    
-    .list-group-item:hover {
-        background: #f8fafc;
-        transform: translateX(4px);
-    }
-    
-    #activeAnalysesContainer {
-        min-height: 200px;
-    }
-`;
-document.head.appendChild(style);
+}

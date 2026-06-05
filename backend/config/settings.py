@@ -44,7 +44,8 @@ class Settings:
     # ==============================================
     # FILE UPLOAD
     # ==============================================
-    MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
+    # backend/config/settings.py - LINHA 44
+    MAX_FILE_SIZE: int = 200 * 1024  # 200KB (igual aos outros)
     ALLOWED_EXTENSIONS: list = [".csv", ".xlsx", ".xls"]
     
     # ==============================================

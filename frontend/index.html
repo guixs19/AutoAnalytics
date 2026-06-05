@@ -258,78 +258,22 @@
             padding-left: 0.5rem;
         }
 
-        /* Dashboard Comparativo */
-        .comparison-dashboard {
+        /* Métricas */
+        .metric-card {
             background: white;
-            border-radius: 30px;
-            padding: 2rem;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-            margin-top: 3rem;
-        }
-
-        .comparison-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .model-badge {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        /* Métricas do Modelo */
-        .model-metrics {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .metric-box {
-            background: #f8fafc;
             border-radius: 15px;
-            padding: 1rem;
-            text-align: center;
-            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
 
-        .metric-box:hover {
-            transform: translateY(-2px);
-            background: #e9ecef;
-        }
-
-        .metric-box .value {
-            font-size: 1.5rem;
+        .metric-value {
+            font-size: 1.8rem;
             font-weight: 700;
             color: #2d3748;
         }
 
-        .metric-box .label {
-            font-size: 0.85rem;
+        .metric-label {
+            font-size: 0.75rem;
             color: #718096;
-        }
-
-        /* Progress Bars */
-        .progress-modern {
-            height: 10px;
-            background: #e2e8f0;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .progress-modern-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
-            transition: width 1s ease;
         }
 
         /* Limite Info Bar */
@@ -376,75 +320,6 @@
             75% { transform: translateX(5px); }
         }
 
-        /* Análises em Andamento - Cards Individuais */
-        .analysis-card {
-            animation: slideInUp 0.3s ease-out;
-            margin-bottom: 1rem;
-        }
-
-        .analysis-card:last-child {
-            margin-bottom: 0;
-        }
-
-        @keyframes slideInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .analysis-card .card {
-            transition: all 0.2s;
-            border-radius: 20px !important;
-            border: none;
-        }
-
-        .analysis-card .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(0,0,0,0.15);
-        }
-
-        .card-header-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        .progress-bar-custom {
-            transition: width 0.5s ease;
-        }
-
-        /* File Preview */
-        .file-preview-container {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .file-list-item {
-            transition: all 0.2s;
-        }
-
-        .file-list-item:hover {
-            background: #f8fafc;
-        }
-
-        /* Responsividade */
-        @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2.5rem;
-            }
-            
-            .upload-card {
-                padding: 1.5rem;
-            }
-            
-            .model-metrics {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
         /* Admin Badge */
         .admin-badge {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
@@ -478,39 +353,54 @@
             background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
         }
 
-        /* Metric Card */
-        .metric-card {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-
-        .metric-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #2d3748;
-        }
-
-        .metric-label {
-            font-size: 0.75rem;
-            color: #718096;
-        }
-
         .gradient-text {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        /* Animações */
-        @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        /* Análises em Andamento */
+        .analysis-card {
+            animation: slideInUp 0.3s ease-out;
+            margin-bottom: 1rem;
         }
 
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .analysis-card .card {
+            transition: all 0.2s;
+            border-radius: 20px !important;
+            border: none;
+        }
+
+        .analysis-card .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+        }
+
+        /* File Preview */
+        .file-preview-container {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+            .upload-card {
+                padding: 1.5rem;
+            }
         }
     </style>
 </head>
@@ -521,7 +411,7 @@
             <div class="d-flex justify-content-between align-items-center w-100">
                 <a class="brand-text text-decoration-none" href="/dashboard">
                     <i class="fas fa-robot me-2"></i>
-                    AutoAnalytics<span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Pro</span>
+                    AutoAnalytics<span class="gradient-text">Pro</span>
                 </a>
                 
                 <div class="d-flex align-items-center gap-3">
@@ -578,7 +468,6 @@
                         O sistema detecta automaticamente os padrões e gera insights poderosos.
                     </p>
                     
-                    <!-- Benefícios do upload automático -->
                     <div class="row g-3 mb-4">
                         <div class="col-6">
                             <div class="d-flex align-items-center">
@@ -622,8 +511,8 @@
                         </div>
                         <div class="col-4">
                             <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="iaUtilizada">AutoML</div>
-                                <div class="metric-label">Tecnologia</div>
+                                <div class="metric-value" id="creditsDisplay">0</div>
+                                <div class="metric-label">Créditos</div>
                             </div>
                         </div>
                     </div>
@@ -645,12 +534,12 @@
                                     </span>
                                 </div>
                                 
-                                <!-- Limites -->
+                                <!-- Limites - ATUALIZADO PARA 200KB -->
                                 <div class="limit-info">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
                                         <div>
                                             <i class="fas fa-hard-drive"></i>
-                                            <span>Limite: <strong class="limit-value">15 KB</strong>/arquivo</span>
+                                            <span>Limite: <strong class="limit-value">200 KB</strong>/arquivo</span>
                                         </div>
                                         <div>
                                             <i class="fas fa-layer-group"></i>
@@ -664,7 +553,6 @@
                                 </div>
                                 
                                 <form id="uploadForm">
-                                    <!-- Área de Upload -->
                                     <div class="upload-area mb-4" id="dropArea">
                                         <div class="upload-icon">
                                             <i class="fas fa-file-excel"></i>
@@ -677,7 +565,7 @@
                                         </p>
                                         <div class="text-muted small mb-2">
                                             <i class="fas fa-info-circle me-1"></i>
-                                            Limite de <strong>15KB</strong> por arquivo (aprox. 200-500 linhas)
+                                            Limite de <strong class="text-success">200KB</strong> por arquivo
                                         </div>
                                         <div>
                                             <label for="fileInput" class="btn btn-gradient btn-sm">
@@ -688,16 +576,13 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Aviso de tamanho excedido -->
                                     <div class="size-warning" id="sizeWarning">
                                         <i class="fas fa-exclamation-triangle me-2"></i>
-                                        <span id="sizeWarningText">Arquivo excede o limite de 15KB!</span>
+                                        <span id="sizeWarningText">Arquivo excede o limite de 200KB!</span>
                                     </div>
                                     
-                                    <!-- Container para preview dos arquivos selecionados -->
                                     <div id="filePreviewContainer" class="mt-3"></div>
                                     
-                                    <!-- Indicador de Processamento Automático -->
                                     <div class="processing-indicator mb-3">
                                         <div class="processing-icon">
                                             <i class="fas fa-robot"></i>
@@ -713,7 +598,6 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Botão de Upload -->
                                     <div class="d-grid">
                                         <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
                                             <i class="fas fa-play-circle me-2"></i>
@@ -725,7 +609,7 @@
                             </div>
                         </div>
                         
-                        <!-- Container para Análises em Andamento (Cards Individuais) -->
+                        <!-- Análises em Andamento -->
                         <div class="col-12 mb-4">
                             <div class="upload-card">
                                 <div class="d-flex align-items-center justify-content-between mb-4">
@@ -734,31 +618,13 @@
                                         <h3 class="h5 mb-0 fw-bold">Análises em Andamento</h3>
                                         <span class="badge bg-primary ms-2" id="activeAnalysesCount">0</span>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-secondary" id="clearCompletedBtn" style="display: none;">
-                                        <i class="fas fa-trash-alt me-1"></i>Limpar concluídas
-                                    </button>
                                 </div>
                                 
-                                <!-- Container onde os cards individuais serão inseridos -->
                                 <div id="activeAnalysesContainer">
                                     <div class="text-center text-muted py-5">
                                         <i class="fas fa-cloud-upload-alt fa-3x mb-3 opacity-50"></i>
                                         <h6>Nenhuma análise em andamento</h6>
                                         <p class="small">Selecione até 3 arquivos para começar</p>
-                                        <div class="d-flex justify-content-center gap-3 mt-3">
-                                            <span class="badge bg-light text-dark">
-                                                <i class="fas fa-file-csv me-1"></i> CSV
-                                            </span>
-                                            <span class="badge bg-light text-dark">
-                                                <i class="fas fa-file-excel me-1"></i> Excel
-                                            </span>
-                                            <span class="badge bg-light text-dark">
-                                                <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
-                                            </span>
-                                            <span class="badge bg-light text-dark">
-                                                <i class="fas fa-hard-drive me-1"></i> 15KB max
-                                            </span>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -817,12 +683,12 @@
                         • Você começa com 3 créditos gratuitos<br>
                         • ⭐ Premium ganha 1 crédito por dia<br>
                         • Cada análise consome 1 crédito<br>
-                        • 📁 Até 3 arquivos por vez<br>
+                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
                         • 🔥 Limite máximo de 3 créditos acumulados
                     </div>
                 </div>
                 <div class="modal-footer border-0">
-                    <a href="/planos.html" class="btn btn-gradient w-100">
+                    <a href="/planos" class="btn btn-gradient w-100">
                         <i class="fas fa-credit-card me-2"></i>
                         Comprar mais créditos
                     </a>
@@ -843,20 +709,16 @@
                 </div>
                 <div class="col-md-6 text-md-end">
                     <span class="badge bg-light text-dark py-2 px-3">
-                        <i class="fas fa-brain me-1"></i>
-                        AutoML
+                        <i class="fas fa-brain me-1"></i> AutoML
                     </span>
                     <span class="badge bg-light text-dark py-2 px-3 ms-2">
-                        <i class="fas fa-chart-line me-1"></i>
-                        Scikit-learn
+                        <i class="fas fa-chart-line me-1"></i> Scikit-learn
                     </span>
                     <span class="badge bg-light text-dark py-2 px-3 ms-2">
-                        <i class="fas fa-layer-group me-1"></i>
-                        Até 3 arquivos
+                        <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
                     </span>
                     <span class="badge bg-light text-dark py-2 px-3 ms-2">
-                        <i class="fas fa-hard-drive me-1"></i>
-                        15KB Limit
+                        <i class="fas fa-hard-drive me-1"></i> 200KB Limit
                     </span>
                 </div>
             </div>
@@ -879,21 +741,13 @@
             progressBar: true,
             positionClass: "toast-top-right",
             timeOut: 5000,
-            extendedTimeOut: 1000,
-            showEasing: "swing",
-            hideEasing: "linear",
-            showMethod: "fadeIn",
-            hideMethod: "fadeOut"
+            extendedTimeOut: 1000
         };
     </script>
     
-    <!-- Script principal de autenticação -->
+    <!-- Scripts do sistema -->
     <script src="/static/js/auth.js?v=2.0"></script>
-    
-    <!-- Script principal do Dashboard -->
     <script src="/static/js/app.js?v=2.0"></script>
-    
-    <!-- Script do Dashboard específico -->
     <script src="/static/js/dashboard.js?v=2.0"></script>
     
     <!-- Inicialização -->
@@ -901,15 +755,11 @@
         document.addEventListener('DOMContentLoaded', function() {
             const token = localStorage.getItem('access_token');
             if (!token) {
-                window.location.href = '/login.html';
+                window.location.href = '/login';
                 return;
             }
             
-            AOS.init({
-                once: true,
-                duration: 1000
-            });
-
+            AOS.init({ once: true, duration: 1000 });
             gsap.registerPlugin(ScrollTrigger);
 
             window.addEventListener('scroll', function() {
@@ -940,7 +790,6 @@
                 ease: 'power3.out'
             });
             
-            // Aguardar app carregar
             setTimeout(() => {
                 if (window.app) {
                     console.log('✅ App inicializado');
