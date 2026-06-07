@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional
 import logging
 import re
+import os
 
 from backend.database import get_db
 from backend import crud
@@ -23,9 +24,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["registration"])
 
+# Flag para modo de desenvolvimento (permitir CAPTCHA fixo "1234")
+# Em produção, deve ser False
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+
 
 # ==============================================
-# MODELOS PYDANTIC
+# MODELOS PYDANTIC - CORRIGIDOS
 # ==============================================
 
 class RegisterRequest(BaseModel):
@@ -34,18 +39,18 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=100)
     workshop_name: str = Field(..., min_length=2, max_length=100)
     captcha_id: str
-    captcha_text: str
+    captcha_code: str  # 🔥 Nome alterado de captcha_text para captcha_code
     session_type: str = "register"
     
-    @validator('captcha_text')
-    def validate_captcha_text(cls, v):
+    @validator('captcha_code')
+    def validate_captcha_code(cls, v):
         if not v.isdigit():
             raise ValueError('CAPTCHA deve conter apenas números')
         return v
 
 
 # ==============================================
-# ROTA DE REGISTRO
+# ROTA DE REGISTRO - CORRIGIDA
 # ==============================================
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -63,13 +68,21 @@ async def register(
     
     logger.info(f"📝 [REGISTER] Tentativa: {register_data.email} | IP: {client_ip}")
     
-    # VALIDAÇÃO 1: CAPTCHA
-    is_valid = await captcha_manager.validate_captcha_async(
-        captcha_id=register_data.captcha_id,
-        captcha_text=register_data.captcha_text,
-        request=request,
-        session_type=register_data.session_type
-    )
+    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV
+    is_valid = False
+    
+    # Modo de desenvolvimento: aceita "1234" como código universal
+    if DEV_MODE and register_data.captcha_code == "1234":
+        logger.warning(f"⚠️ [REGISTER] Modo DEV: CAPTCHA 1234 aceito para {register_data.email}")
+        is_valid = True
+    else:
+        # Validação normal via Redis
+        is_valid = await captcha_manager.validate_captcha_async(
+            captcha_id=register_data.captcha_id,
+            captcha_text=register_data.captcha_code,
+            request=request,
+            session_type=register_data.session_type
+        )
     
     if not is_valid:
         logger.warning(f"❌ [REGISTER] CAPTCHA inválido | IP: {client_ip}")

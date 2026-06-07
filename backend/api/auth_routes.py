@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional
 import logging
+import os
 
 from backend.database import get_db
 from backend import crud
@@ -29,20 +30,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authentication"])
 
+# Flag para modo de desenvolvimento (permitir CAPTCHA fixo "1234")
+# Em produção, deve ser False
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+
 
 # ==============================================
-# MODELOS PYDANTIC
+# MODELOS PYDANTIC - CORRIGIDOS
 # ==============================================
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     captcha_id: Optional[str] = None
-    captcha_text: Optional[str] = None
+    captcha_code: Optional[str] = None  # 🔥 Nome alterado de captcha_text para captcha_code
     session_type: str = "login"
     
-    @validator('captcha_text')
-    def validate_captcha_text(cls, v):
+    @validator('captcha_code')
+    def validate_captcha_code(cls, v):
         if v and not v.isdigit():
             raise ValueError('CAPTCHA deve conter apenas números')
         return v
@@ -54,7 +59,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 # ==============================================
-# ROTA DE LOGIN
+# ROTA DE LOGIN - CORRIGIDA
 # ==============================================
 
 @router.post("/login", status_code=status.HTTP_200_OK)
@@ -73,9 +78,9 @@ async def login(
     
     logger.info(f"🔐 [LOGIN] Tentativa: {login_data.email} | IP: {client_ip}")
     
-    # Extrair CAPTCHA
+    # Extrair CAPTCHA (prioriza captcha_code do body)
     captcha_id = request.headers.get("X-Captcha-ID") or login_data.captcha_id
-    captcha_text = login_data.captcha_text
+    captcha_text = login_data.captcha_code  # 🔥 Usa captcha_code
     
     if not captcha_id:
         raise HTTPException(
@@ -89,13 +94,21 @@ async def login(
             detail="Digite os números que aparecem na imagem."
         )
     
-    # VALIDAÇÃO 1: CAPTCHA
-    is_valid = await captcha_manager.validate_captcha_async(
-        captcha_id=captcha_id,
-        captcha_text=captcha_text,
-        request=request,
-        session_type=login_data.session_type
-    )
+    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV
+    is_valid = False
+    
+    # Modo de desenvolvimento: aceita "1234" como código universal
+    if DEV_MODE and captcha_text == "1234":
+        logger.warning(f"⚠️ [LOGIN] Modo DEV: CAPTCHA 1234 aceito para {login_data.email}")
+        is_valid = True
+    else:
+        # Validação normal via Redis
+        is_valid = await captcha_manager.validate_captcha_async(
+            captcha_id=captcha_id,
+            captcha_text=captcha_text,
+            request=request,
+            session_type=login_data.session_type
+        )
     
     if not is_valid:
         logger.warning(f"❌ [LOGIN] CAPTCHA inválido | IP: {client_ip}")

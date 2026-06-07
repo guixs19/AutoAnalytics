@@ -1,6 +1,6 @@
-# backend/api/payment_routes.py - VERSÃO COMPLETA COM PROMOÇÃO BRONZE
+# backend/api/payment_routes.py - VERSÃO COMPLETA COM PROMOÇÃO BRONZE E SEGURANÇA REFORÇADA
 
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -10,7 +10,9 @@ import logging
 import re
 import html
 import asyncio
+import secrets
 from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field, validator
 
 from backend.database import get_db
 from backend import crud
@@ -33,24 +35,99 @@ MAX_CREDITS_BALANCE = 3
 DAYS_PREMIUM = 30
 CREDITS_PER_DAY = 1
 INITIAL_FREE_CREDITS = 3
+MAX_PAYMENT_ATTEMPTS_PER_DAY = 3
+PIX_QR_CODE_EXPIRY_MINUTES = 15
 
-# Função de sanitização anti-XSS
+# ==============================================
+# MODELOS PYDANTIC PARA VALIDAÇÃO
+# ==============================================
+
+class CreatePaymentRequest(BaseModel):
+    """Modelo validado para criação de pagamento"""
+    plan_id: str = Field(..., description="ID do plano", regex="^(premium_mensal|gratuito)$")
+    
+    @validator('plan_id')
+    def validate_plan_id(cls, v):
+        allowed = ['premium_mensal', 'gratuito']
+        if v not in allowed:
+            raise ValueError(f'Plano inválido. Permitidos: {allowed}')
+        return v
+
+
+class PaymentStatusResponse(BaseModel):
+    """Resposta padronizada para status de pagamento"""
+    success: bool
+    payment: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class PixQRCodeResponse(BaseModel):
+    """Resposta padronizada para QR Code PIX"""
+    success: bool
+    qr_code_base64: Optional[str] = None
+    qr_code: Optional[str] = None
+    status: str
+    max_credits_balance: int = MAX_CREDITS_BALANCE
+    expires_in: int = PIX_QR_CODE_EXPIRY_MINUTES * 60
+    message: str = ""
+
+
+class PromotionStatusResponse(BaseModel):
+    """Resposta padronizada para status da promoção"""
+    success: bool
+    total_slots: int
+    used_slots: int
+    remaining_slots: int
+    promotional_price: float
+    regular_price: float
+    current_price: float
+    is_active: bool
+    user_locked_price: Optional[float] = None
+    message: str
+
+
+# ==============================================
+# FUNÇÕES DE SANITIZAÇÃO REFORÇADAS
+# ==============================================
+
 def sanitize_string(text: str) -> str:
+    """Sanitização robusta anti-XSS e injeção"""
     if not text:
         return ""
+    if not isinstance(text, str):
+        text = str(text)
+    
+    # Remove tags HTML
     text = re.sub(r'<[^>]*>', '', text)
+    # Escapa caracteres HTML
     text = html.escape(text)
+    # Remove caracteres perigosos
     text = re.sub(r'[<>\"\'\/\\;`]', '', text)
-    return text[:500]
+    # Remove possíveis expressões JavaScript
+    text = re.sub(r'(?i)javascript\s*:', '', text)
+    text = re.sub(r'(?i)on\w+\s*=', '', text)
+    # Limita tamanho
+    text = text[:500]
+    
+    return text
+
 
 def sanitize_response(data: Any) -> Any:
+    """Sanitiza recursivamente uma resposta JSON"""
     if isinstance(data, dict):
-        return {k: sanitize_response(v) for k, v in data.items()}
+        return {sanitize_string(k): sanitize_response(v) for k, v in data.items()}
     elif isinstance(data, str):
         return sanitize_string(data)
     elif isinstance(data, list):
         return [sanitize_response(item) for item in data]
+    elif isinstance(data, float):
+        return round(data, 2)
     return data
+
+
+def validate_payment_id(payment_id: int) -> bool:
+    """Valida ID de pagamento"""
+    return isinstance(payment_id, int) and payment_id > 0
 
 
 # ==============================================
@@ -87,7 +164,8 @@ def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
             db.add(log)
             db.commit()
             
-            logger.info(f"🎉 Usuário novo {user.email} ganhou {INITIAL_FREE_CREDITS} créditos gratuitos!")
+            # Log seguro (sem email exposto)
+            logger.info(f"🎉 Usuário ID {user.id} ganhou {INITIAL_FREE_CREDITS} créditos gratuitos!")
             
             return {
                 "success": True,
@@ -120,11 +198,26 @@ def get_or_create_promotion(db: Session) -> PromotionControl:
     return promo
 
 
+def check_payment_rate_limit(user_id: int, db: Session) -> bool:
+    """Verifica rate limit para criação de pagamentos"""
+    today = date.today()
+    payments_today = db.query(Payment).filter(
+        Payment.user_id == user_id,
+        func.date(Payment.created_at) == today,
+        Payment.status == "pending"
+    ).count()
+    
+    if payments_today >= MAX_PAYMENT_ATTEMPTS_PER_DAY:
+        logger.warning(f"⚠️ Rate limit excedido para usuário {user_id}: {payments_today} tentativas")
+        return False
+    return True
+
+
 # ==============================================
 # 🔥 ROTA: STATUS DA PROMOÇÃO (VAGAS)
 # ==============================================
 
-@router.get("/promotion-status")
+@router.get("/promotion-status", response_model=PromotionStatusResponse)
 async def get_promotion_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -137,18 +230,18 @@ async def get_promotion_status(
     user_locked = current_user.promotional_price_locked
     user_price = current_user.promotional_price if user_locked else None
     
-    return sanitize_response({
-        "success": True,
-        "total_slots": promo.total_slots,
-        "used_slots": promo.used_slots,
-        "remaining_slots": promo.get_remaining_slots(),
-        "promotional_price": promo.promotional_price,
-        "regular_price": promo.regular_price,
-        "current_price": promo.get_current_price(),
-        "is_active": promo.has_available_slots(),
-        "user_locked_price": user_price,
-        "message": f"🔥 {promo.get_remaining_slots()} vagas restantes!" if promo.has_available_slots() else "⛔ Promoção esgotada! Preço regular: R$ 149,90"
-    })
+    return PromotionStatusResponse(
+        success=True,
+        total_slots=promo.total_slots,
+        used_slots=promo.used_slots,
+        remaining_slots=promo.get_remaining_slots(),
+        promotional_price=float(promo.promotional_price),
+        regular_price=float(promo.regular_price),
+        current_price=float(promo.get_current_price()),
+        is_active=promo.has_available_slots(),
+        user_locked_price=float(user_price) if user_price else None,
+        message=f"🔥 {promo.get_remaining_slots()} vagas restantes!" if promo.has_available_slots() else "⛔ Promoção esgotada! Preço regular: R$ 149,90"
+    )
 
 
 # ==============================================
@@ -267,7 +360,7 @@ async def check_analysis_credits(
             db.refresh(user)
             current_credits = user.credits or 0
             has_credits = current_credits > 0
-            logger.info(f"🔄 Crédito diário automático adicionado para {user.email}")
+            logger.info(f"🔄 Crédito diário automático adicionado para usuário ID {user.id}")
     
     return sanitize_response({
         "success": True,
@@ -368,7 +461,7 @@ async def check_daily_credit(
 
 
 # ==============================================
-# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM PREÇO DINÂMICO)
+# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM PREÇO DINÂMICO E SEGURANÇA)
 # ==============================================
 
 @router.post("/create-pix")
@@ -382,24 +475,24 @@ async def create_pix_payment(
     user = db.query(User).filter(User.id == current_user.id).first()
     
     if not user:
-        return sanitize_response({
-            "success": False,
-            "error": "Usuário não encontrado"
-        })
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     if user.is_admin:
-        return sanitize_response({
-            "success": False,
-            "error": "Administradores têm acesso ilimitado"
-        })
+        raise HTTPException(status_code=400, detail="Administradores têm acesso ilimitado")
+    
+    # 🔥 RATE LIMIT: Evita spam de criação de pagamentos
+    if not check_payment_rate_limit(user.id, db):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Muitas tentativas de pagamento. Aguarde até amanhã."
+        )
     
     if user.plan == UserPlan.PREMIUM_MENSAL and user.premium_expires_at and user.premium_expires_at >= date.today():
         days_left = (user.premium_expires_at - date.today()).days
-        return sanitize_response({
-            "success": False,
-            "error": f"Você já possui plano premium ativo por mais {days_left} dias!",
-            "days_left": days_left
-        })
+        raise HTTPException(
+            status_code=400,
+            detail=f"Você já possui plano premium ativo por mais {days_left} dias!"
+        )
     
     # 🔥 PEGAR PREÇO DINÂMICO BASEADO NAS VAGAS
     promo = get_or_create_promotion(db)
@@ -409,10 +502,14 @@ async def create_pix_payment(
         price = user.promotional_price
         price_type = "locked_promotional"
     else:
-        price = promo.get_current_price()  # 97 se tem vaga, 149 se não tem
+        price = promo.get_current_price()
         price_type = "promotional" if promo.has_available_slots() else "regular"
     
+    # 🔥 QR CODE SEGURO (NÃO USA DADOS PESSOAIS DO USUÁRIO)
     payment_uuid = str(uuid.uuid4())
+    
+    # Gerar QR Code sem dados sensíveis
+    pix_code = f"00020126360014BR.GOV.BCB.PIX0114{payment_uuid[:14]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
     
     payment = Payment(
         user_id=user.id,
@@ -422,6 +519,7 @@ async def create_pix_payment(
         payment_method="pix",
         status="pending",
         created_at=datetime.now(),
+        expires_at=datetime.now() + timedelta(minutes=PIX_QR_CODE_EXPIRY_MINUTES),
         description=f"Plano Bronze - {'Promocional' if price_type != 'regular' else 'Regular'}",
         payment_metadata={
             "plan_id": "premium_mensal",
@@ -439,14 +537,11 @@ async def create_pix_payment(
     db.commit()
     db.refresh(payment)
     
-    logger.info(f"💰 Pagamento criado: {payment.id} para {user.email} - Valor: R$ {price:.2f}")
+    # Log seguro (sem email)
+    logger.info(f"💰 Pagamento criado: ID {payment.id} para usuário ID {user.id} - Valor: R$ {price:.2f}")
     
-    alert_payment_pending(user_email=user.email, amount=price, method="pix")
-    
+    # Notificação segura (não enviar dados sensíveis)
     background_tasks.add_task(simulate_payment_approval, payment.id, user.id, db)
-    
-    # Gerar código PIX simulado
-    pix_code = f"00020126360014BR.GOV.BCB.PIX0114{user.email[:20]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
     
     return sanitize_response({
         "success": True,
@@ -458,6 +553,7 @@ async def create_pix_payment(
         "remaining_slots": promo.get_remaining_slots(),
         "qr_code": pix_code,
         "qr_code_base64": None,
+        "expires_in": PIX_QR_CODE_EXPIRY_MINUTES * 60,
         "message": f"💰 Pagamento PIX gerado! Valor: R$ {price:.2f}",
         "plan_details": {
             "credits_per_day": CREDITS_PER_DAY,
@@ -466,6 +562,59 @@ async def create_pix_payment(
             "initial_free_credits": INITIAL_FREE_CREDITS
         }
     })
+
+
+# ==============================================
+# 🔥 ROTA: BUSCAR QR CODE PIX
+# ==============================================
+
+@router.get("/pix-qrcode/{payment_id}", response_model=PixQRCodeResponse)
+async def get_pix_qrcode(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna QR Code do pagamento PIX com validação de segurança"""
+    
+    # Validação do payment_id (evita SQL injection)
+    if not validate_payment_id(payment_id):
+        raise HTTPException(status_code=400, detail="ID de pagamento inválido")
+    
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    
+    if not payment:
+        return PixQRCodeResponse(
+            success=False,
+            status="not_found",
+            message="Pagamento não encontrado"
+        )
+    
+    # Verificar se o usuário tem permissão
+    if payment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    # Verificar se o QR Code expirou
+    if payment.expires_at and payment.expires_at < datetime.now():
+        return PixQRCodeResponse(
+            success=False,
+            status="expired",
+            message="QR Code expirado. Crie um novo pagamento.",
+            max_credits_balance=MAX_CREDITS_BALANCE,
+            expires_in=0
+        )
+    
+    # Gerar QR Code seguro (sem dados sensíveis)
+    qr_code_base64 = None  # Em produção, gerar QR code real aqui
+    
+    return PixQRCodeResponse(
+        success=True,
+        qr_code_base64=qr_code_base64,
+        qr_code=payment.mp_id,
+        status=payment.status,
+        max_credits_balance=MAX_CREDITS_BALANCE,
+        expires_in=max(0, int((payment.expires_at - datetime.now()).total_seconds())) if payment.expires_at else PIX_QR_CODE_EXPIRY_MINUTES * 60,
+        message="QR Code gerado com sucesso"
+    )
 
 
 # ==============================================
@@ -506,8 +655,8 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
                 
                 db.commit()
                 
-                alert_payment_approved(user_email=user.email, amount=payment.amount, method="pix")
-                logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para {user.email}")
+                # Notificação segura (sem email exposto em produção)
+                logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para usuário ID {user.id}")
                 
     except Exception as e:
         logger.error(f"❌ Erro na simulação: {e}")
@@ -558,7 +707,7 @@ async def get_plans(db: Session = Depends(get_db)):
 
 
 # ==============================================
-# ROTA: STATUS DO PAGAMENTO
+# 🔥 ROTA: STATUS DO PAGAMENTO (COM VALIDAÇÃO)
 # ==============================================
 
 @router.get("/status/{payment_id}")
@@ -567,7 +716,11 @@ async def check_payment_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Verifica status do pagamento"""
+    """Verifica status do pagamento com validação de acesso"""
+    
+    # Validação do payment_id (evita SQL injection)
+    if not validate_payment_id(payment_id):
+        raise HTTPException(status_code=400, detail="ID de pagamento inválido")
     
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     
@@ -575,18 +728,56 @@ async def check_payment_status(
         return sanitize_response({"success": False, "error": "Pagamento não encontrado"})
     
     if payment.user_id != current_user.id and not current_user.is_admin:
-        return sanitize_response({"success": False, "error": "Acesso negado"})
+        raise HTTPException(status_code=403, detail="Acesso negado")
     
     return sanitize_response({
         "success": True,
         "payment": {
             "id": payment.id,
             "status": payment.status,
-            "amount": payment.amount,
+            "amount": float(payment.amount),
             "credits": payment.credits,
             "created_at": payment.created_at.isoformat() if payment.created_at else None,
-            "approved_at": payment.approved_at.isoformat() if payment.approved_at else None
+            "approved_at": payment.approved_at.isoformat() if payment.approved_at else None,
+            "expires_at": payment.expires_at.isoformat() if payment.expires_at else None
         }
+    })
+
+
+# ==============================================
+# 🔥 ROTA: CANCELAR PAGAMENTO PENDENTE
+# ==============================================
+
+@router.post("/cancel/{payment_id}")
+async def cancel_payment(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancela um pagamento pendente"""
+    
+    if not validate_payment_id(payment_id):
+        raise HTTPException(status_code=400, detail="ID de pagamento inválido")
+    
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    
+    if not payment:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+    
+    if payment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    if payment.status != "pending":
+        raise HTTPException(status_code=400, detail="Apenas pagamentos pendentes podem ser cancelados")
+    
+    payment.status = "cancelled"
+    db.commit()
+    
+    logger.info(f"💰 Pagamento {payment_id} cancelado pelo usuário {current_user.id}")
+    
+    return sanitize_response({
+        "success": True,
+        "message": "Pagamento cancelado com sucesso"
     })
 
 
@@ -614,4 +805,4 @@ async def mercadopago_webhook(
         return {"status": "error"}
 
 
-print("✅ payment_routes.py carregado com promoção Bronze (100 vagas)")
+print("✅ payment_routes.py carregado - Segurança reforçada | Promoção Bronze (100 vagas)")

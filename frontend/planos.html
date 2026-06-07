@@ -332,6 +332,68 @@
             color: #f5a623;
         }
         
+        /* 🔥 SEÇÃO DE SUPORTE - ESTILOS NOVOS */
+        .support-card {
+            background: white;
+            border-radius: 30px;
+            transition: all 0.3s ease;
+        }
+        
+        .support-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .support-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+        }
+        
+        .support-email-link {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 1.2rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .support-email-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        .faq-item {
+            border-left: 3px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+        
+        .faq-item:hover {
+            border-left-color: #f5a623;
+            background: #f8f9fa;
+        }
+        
+        .faq-question {
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .faq-question:hover {
+            color: #f5a623;
+        }
+        
+        .quick-contact-form {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 20px;
+        }
+        
         .fs-10 {
             font-size: 0.7rem;
             opacity: 0.8;
@@ -350,6 +412,11 @@
             }
             .vagas-number {
                 font-size: 1.8rem;
+            }
+            .support-icon {
+                width: 50px;
+                height: 50px;
+                font-size: 1.2rem;
             }
         }
     </style>
@@ -432,6 +499,166 @@
                 </div>
             </div>
         </div>
+
+        <!-- 🔥 NOVA SEÇÃO DE SUPORTE -->
+        <div class="row justify-content-center mt-5 pt-4">
+            <div class="col-lg-10">
+                <div class="support-card bg-white rounded-4 p-4 p-md-5 shadow-sm">
+                    <div class="text-center mb-4">
+                        <div class="support-icon mx-auto mb-3">
+                            <i class="fas fa-headset"></i>
+                        </div>
+                        <h3 class="fw-bold mb-2">Precisa de Ajuda?</h3>
+                        <p class="text-muted">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
+                    </div>
+                    
+                    <div class="row g-4">
+                        <!-- Coluna do Email -->
+                        <div class="col-md-6">
+                            <div class="h-100 p-4 rounded-4" style="background: #f8f9fa;">
+                                <div class="d-flex align-items-start mb-3">
+                                    <i class="fas fa-envelope fa-2x text-primary me-3"></i>
+                                    <div>
+                                        <h5 class="fw-bold mb-1">Email de Suporte</h5>
+                                        <a href="mailto:autonalytics@gmail.com" class="support-email-link">
+                                            autonalytics@gmail.com
+                                        </a>
+                                        <p class="text-muted small mt-2 mb-0">
+                                            <i class="fas fa-clock me-1"></i>
+                                            Respondemos em até 24h úteis
+                                        </p>
+                                        <p class="text-muted small mb-0">
+                                            <i class="fas fa-shield-alt me-1"></i>
+                                            Atendimento prioritário para clientes Premium
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-4 pt-2">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-check-circle text-success me-2"></i>
+                                        <span class="small">Dúvidas sobre o plano Bronze</span>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-check-circle text-success me-2"></i>
+                                        <span class="small">Problemas com pagamento</span>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-check-circle text-success me-2"></i>
+                                        <span class="small">Suporte técnico para análises</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-check-circle text-success me-2"></i>
+                                        <span class="small">Sugestões e feedbacks</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Coluna do FAQ e Contato Rápido -->
+                        <div class="col-md-6">
+                            <div class="h-100">
+                                <!-- FAQ Toggle -->
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center justify-content-between cursor-pointer faq-question" 
+                                         onclick="toggleFaq()" style="cursor: pointer;">
+                                        <h5 class="fw-bold mb-0">
+                                            <i class="fas fa-question-circle text-warning me-2"></i>
+                                            Perguntas Frequentes
+                                        </h5>
+                                        <i class="fas fa-chevron-down" id="faqIcon"></i>
+                                    </div>
+                                    
+                                    <div id="faqContent" style="display: none;" class="mt-3">
+                                        <div class="faq-item p-3 mb-2 rounded-3">
+                                            <strong><i class="fas fa-coins text-primary me-2"></i>Como funcionam os créditos?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Cada análise consome 1 crédito. Usuários gratuitos começam com 3 créditos. Premium recebe 1 crédito NOVO por dia durante 30 dias!</p>
+                                        </div>
+                                        <div class="faq-item p-3 mb-2 rounded-3">
+                                            <strong><i class="fas fa-chart-line text-primary me-2"></i>O que acontece quando meus créditos acabam?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Você pode assinar o plano Bronze (R$ 97,00) e receber 30 créditos totais, ou aguardar o próximo mês para novos créditos.</p>
+                                        </div>
+                                        <div class="faq-item p-3 mb-2 rounded-3">
+                                            <strong><i class="fas fa-mobile-alt text-primary me-2"></i>Posso usar no celular?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Sim! O sistema é responsivo e funciona em qualquer dispositivo com acesso à internet.</p>
+                                        </div>
+                                        <div class="faq-item p-3 mb-2 rounded-3">
+                                            <strong><i class="fas fa-credit-card text-primary me-2"></i>Como faço para comprar o plano?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Clique no botão "Assinar Agora" acima, escolha PIX e finalize o pagamento. O plano é ativado automaticamente!</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Contato Rápido -->
+                                <div class="quick-contact-form p-4 rounded-4">
+                                    <h5 class="fw-bold mb-3">
+                                        <i class="fas fa-paper-plane me-2 text-primary"></i>
+                                        Mensagem Rápida
+                                    </h5>
+                                    <form id="quickSupportForm">
+                                        <div class="mb-3">
+                                            <input type="text" class="form-control" id="supportName" 
+                                                   placeholder="Seu nome" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <input type="email" class="form-control" id="supportEmail" 
+                                                   placeholder="Seu email" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <select class="form-select" id="supportSubject">
+                                                <option value="Dúvida sobre o plano">Dúvida sobre o plano</option>
+                                                <option value="Problema no pagamento">Problema no pagamento</option>
+                                                <option value="Suporte técnico">Suporte técnico</option>
+                                                <option value="Sugestão">Sugestão</option>
+                                                <option value="Outro">Outro</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <textarea class="form-control" rows="3" id="supportMessage" 
+                                                      placeholder="Sua mensagem..." required></textarea>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="fas fa-envelope me-2"></i>
+                                            Enviar Mensagem
+                                        </button>
+                                    </form>
+                                    <div class="text-center mt-3">
+                                        <small class="text-muted">
+                                            <i class="fas fa-lock me-1"></i>
+                                            Suas informações são seguras
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Horário de Atendimento -->
+                    <div class="text-center mt-4 pt-3 border-top">
+                        <div class="row justify-content-center">
+                            <div class="col-auto">
+                                <span class="badge bg-light text-dark p-2 me-2">
+                                    <i class="fas fa-calendar-alt text-primary me-1"></i>
+                                    Segunda a Sexta
+                                </span>
+                            </div>
+                            <div class="col-auto">
+                                <span class="badge bg-light text-dark p-2 me-2">
+                                    <i class="fas fa-clock text-primary me-1"></i>
+                                    9h às 18h
+                                </span>
+                            </div>
+                            <div class="col-auto">
+                                <span class="badge bg-light text-dark p-2">
+                                    <i class="fas fa-tachometer-alt text-primary me-1"></i>
+                                    Resposta em até 24h
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Modal PIX -->
@@ -457,6 +684,51 @@
     <script>
         AOS.init();
         
+        // Toggle FAQ
+        window.toggleFaq = function() {
+            const faqContent = document.getElementById('faqContent');
+            const faqIcon = document.getElementById('faqIcon');
+            
+            if (faqContent.style.display === 'none') {
+                faqContent.style.display = 'block';
+                faqIcon.classList.remove('fa-chevron-down');
+                faqIcon.classList.add('fa-chevron-up');
+            } else {
+                faqContent.style.display = 'none';
+                faqIcon.classList.remove('fa-chevron-up');
+                faqIcon.classList.add('fa-chevron-down');
+            }
+        };
+        
+        // Formulário de contato rápido
+        document.getElementById('quickSupportForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('supportName').value;
+            const email = document.getElementById('supportEmail').value;
+            const subject = document.getElementById('supportSubject').value;
+            const message = document.getElementById('supportMessage').value;
+            
+            // Abre o cliente de email padrão
+            const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
+                `Nome: ${name}\n` +
+                `Email: ${email}\n` +
+                `Assunto: ${subject}\n\n` +
+                `Mensagem:\n${message}\n\n` +
+                `---\nEnviado via AutoAnalytics Planos`
+            )}`;
+            
+            window.location.href = mailtoLink;
+            
+            // Mostrar feedback
+            alert('📧 Seu email será aberto! Envie a mensagem para entrarmos em contato o mais breve possível.');
+            
+            // Limpar formulário
+            document.getElementById('supportName').value = '';
+            document.getElementById('supportEmail').value = '';
+            document.getElementById('supportMessage').value = '';
+        });
+        
         // Aguardar o payment.js carregar
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('access_token');
@@ -465,18 +737,41 @@
                 return;
             }
             
-            // O payment.js já vai carregar os planos automaticamente
-            // Só precisamos verificar se o usuário é admin
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            
-            const adminBadge = document.getElementById('adminBadge');
-            if (adminBadge) {
-                adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
-            }
-            
-            const creditsSpan = document.querySelector('#navbarCredits span');
-            if (creditsSpan) {
-                creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
+            // Carregar informações do usuário
+            try {
+                const response = await fetch('/api/auth/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const user = data.data || data;
+                    
+                    const adminBadge = document.getElementById('adminBadge');
+                    if (adminBadge) {
+                        adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
+                    }
+                    
+                    const creditsSpan = document.getElementById('creditsDisplay');
+                    if (creditsSpan) {
+                        creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
+                    }
+                    
+                    // Preencher nome no formulário se disponível
+                    const nameInput = document.getElementById('supportName');
+                    if (nameInput && user.name) {
+                        nameInput.value = user.name;
+                    }
+                    
+                    const emailInput = document.getElementById('supportEmail');
+                    if (emailInput && user.email) {
+                        emailInput.value = user.email;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar usuário:', error);
             }
         });
     </script>

@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO COMPLETA COM PROMOÇÃO BRONZE
+# main.py (na raiz) - VERSÃO COMPLETA COM PROMOÇÃO BRONZE - OTIMIZADO PARA NGINX
 import sys
 import os
 from pathlib import Path
@@ -337,16 +337,20 @@ if frontend_available:
         token = await extract_token(request)
         
         if not token:
-            print(f"🔴 [DASHBOARD] Sem token - redirecionando para login")
-            return RedirectResponse(url="/login", status_code=302)
+            print(f"🔴 [DASHBOARD] Sem token - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Não autenticado", "redirect": "/login"}
+            )
         
         payload = await jwt_manager.verify_token_async(token, "access")
         
         if not payload:
-            print(f"🔴 [DASHBOARD] Token inválido - redirecionando para login")
-            response = RedirectResponse(url="/login", status_code=302)
-            response = clear_auth_cookies(response)
-            return response
+            print(f"🔴 [DASHBOARD] Token inválido - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Token inválido", "redirect": "/login"}
+            )
         
         if dashboard_available:
             print(f"✅ [DASHBOARD] Token válido - servindo dashboard")
@@ -364,16 +368,20 @@ if frontend_available:
         token = await extract_token(request)
         
         if not token:
-            print(f"🔴 [PLANOS] Sem token - redirecionando para login")
-            return RedirectResponse(url="/login", status_code=302)
+            print(f"🔴 [PLANOS] Sem token - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Não autenticado", "redirect": "/login"}
+            )
         
         payload = await jwt_manager.verify_token_async(token, "access")
         
         if not payload:
-            print(f"🔴 [PLANOS] Token inválido - redirecionando para login")
-            response = RedirectResponse(url="/login", status_code=302)
-            response = clear_auth_cookies(response)
-            return response
+            print(f"🔴 [PLANOS] Token inválido - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Token inválido", "redirect": "/login"}
+            )
         
         if planos_available:
             print(f"✅ [PLANOS] Token válido - servindo planos.html")
@@ -391,16 +399,20 @@ if frontend_available:
         token = await extract_token(request)
         
         if not token:
-            print(f"🔴 [CHECKOUT] Sem token - redirecionando para login")
-            return RedirectResponse(url="/login", status_code=302)
+            print(f"🔴 [CHECKOUT] Sem token - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Não autenticado", "redirect": "/login"}
+            )
         
         payload = await jwt_manager.verify_token_async(token, "access")
         
         if not payload:
-            print(f"🔴 [CHECKOUT] Token inválido - redirecionando para login")
-            response = RedirectResponse(url="/login", status_code=302)
-            response = clear_auth_cookies(response)
-            return response
+            print(f"🔴 [CHECKOUT] Token inválido - retornando 401")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Token inválido", "redirect": "/login"}
+            )
         
         if checkout_available:
             print(f"✅ [CHECKOUT] Token válido - servindo checkout.html")
@@ -409,7 +421,7 @@ if frontend_available:
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
     # ==============================================
-    # REDIRECIONAMENTOS PARA ROTAS SEM .html
+    # REDIRECIONAMENTOS PARA ROTAS SEM .html (mantidos para compatibilidade)
     # ==============================================
     @app.get("/planos.html", include_in_schema=False)
     async def redirect_planos_html():
@@ -1147,17 +1159,24 @@ async def shutdown_event():
     print("👋 Sistema desligado!")
 
 # ==============================================
-# EXCEPTION HANDLERS
+# EXCEPTION HANDLERS - OTIMIZADOS PARA NGINX
 # ==============================================
 
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, exc):
-    if request.url.path.startswith('/api/'):
+    """
+    Exception handler para 404 - Retorna apenas JSON para APIs
+    O Nginx cuida do frontend e das páginas estáticas
+    """
+    path = request.url.path
+    
+    # Para rotas da API, retorna JSON com detalhes
+    if path.startswith('/api/'):
         return JSONResponse(
             status_code=404,
             content={
                 "error": "Endpoint não encontrado",
-                "path": request.url.path,
+                "path": path,
                 "suggestions": [
                     "/api/docs", 
                     "/api/health", 
@@ -1171,15 +1190,44 @@ async def not_found_exception_handler(request: Request, exc):
                 ]
             }
         )
-    if login_available and not request.url.path.startswith('/static'):
-        return RedirectResponse(url="/login")
-    return JSONResponse(status_code=404, content={"error": "Página não encontrada"})
+    
+    # Para rotas que não são da API, retorna JSON simples
+    # O Nginx já deve ter servido o frontend, então se chegou aqui é 404 real
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Página não encontrada",
+            "path": path,
+            "message": "Verifique o caminho ou acesse /login para autenticação"
+        }
+    )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 401:
-        if not request.url.path.startswith(('/api', '/static')):
-            return RedirectResponse(url="/login")
+    """
+    Exception handler para HTTPExceptions - Sem redirecionamentos automáticos
+    O frontend (JavaScript) deve tratar os redirecionamentos baseado no status
+    """
+    path = request.url.path
+    
+    # Para erros 401 (não autenticado) em rotas não-API
+    if exc.status_code == 401 and not path.startswith('/api/'):
+        # Retorna JSON para que o frontend possa redirecionar via JS
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": exc.detail,
+                "message": "Não autenticado",
+                "path": path,
+                "redirect": "/login"
+            },
+            headers={
+                "X-Auth-Required": "true",
+                "X-Redirect-To": "/login"
+            }
+        )
+    
+    # Para rotas da API, retorna JSON padrão
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.detail}

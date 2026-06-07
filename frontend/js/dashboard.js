@@ -1,15 +1,14 @@
-// frontend/js/dashboard.js - VERSÃO CORRIGIDA E OTIMIZADA
+// frontend/js/dashboard.js - VERSÃO CORRIGIDA PARA PRODUÇÃO COM NGINX
 // Suporte a múltiplos arquivos (até 3 por vez) com cards individuais
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Inicializando Dashboard...');
     
-    const API_URL = window.location.hostname.includes('localhost') 
-        ? 'http://localhost:8000/api'
-        : '/api';
+    // 🔥 URLs relativas - Nginx cuidará do proxy
+    const API_URL = '/api';
     
     const MAX_FILES_PER_BATCH = 3;
-    const MAX_FILE_SIZE_KB = 200;  // 🔥 ALTERADO: 15 → 200KB
+    const MAX_FILE_SIZE_KB = 200;
     
     // Armazenar análises ativas
     let activeAnalyses = [];
@@ -22,11 +21,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     function redirectToLogin() {
-        // 🔥 CORRIGIDO: Verificar se está em produção ou desenvolvimento
-        const loginPath = window.location.hostname.includes('localhost') 
-            ? '/login.html'  // Desenvolvimento local
-            : '/login';       // Produção (FastAPI route)
-        window.location.href = loginPath;
+        // 🔥 URL sem .html - Nginx cuida do resto
+        window.location.href = '/login';
     }
     
     // Verifica autenticação
@@ -133,7 +129,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     if (el) el.textContent = credits;
                 });
                 
-                // Atualizar badge de limite
                 const limitBadge = document.getElementById('creditLimitBadge');
                 if (limitBadge) {
                     if (credits === '∞') {
@@ -193,7 +188,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                                     <i class="fas fa-info-circle me-1"></i>
                                     Limite máximo de 3 créditos acumulados. Use-os para continuar recebendo!
                                 </div>
-                                <a href="/planos.html" class="btn btn-primary mt-2">
+                                <!-- 🔥 URL sem .html -->
+                                <a href="/planos" class="btn btn-primary mt-2">
                                     <i class="fas fa-credit-card me-2"></i> Comprar Créditos
                                 </a>
                             </div>
@@ -220,7 +216,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                      type === 'error' ? 'fa-exclamation-circle' :
                      type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
         
-        // Verificar se toastr está disponível
         if (window.toastr) {
             toastr[type](message);
             return;
@@ -270,9 +265,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // ===== DASHBOARD COM CARDS INDIVIDUAIS POR ARQUIVO =====
     
     function createAnalysisCard(processId, filename, index) {
-        const statusText = 'Aguardando';
-        const statusIcon = '⏳';
-        
         return `
             <div class="analysis-card mb-4" id="analysis-card-${processId}" data-process-id="${processId}" data-filename="${filename}">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
@@ -281,7 +273,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                             <div>
                                 <i class="fas fa-chart-line me-2"></i>
                                 <strong>Análise #${index + 1}</strong>
-                                <span class="badge bg-light text-dark ms-2" id="status-${processId}">${statusIcon} ${statusText}</span>
+                                <span class="badge bg-light text-dark ms-2" id="status-${processId}">⏳ Aguardando</span>
                             </div>
                             <div>
                                 <i class="fas fa-file-excel me-1"></i>
@@ -290,7 +282,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                         </div>
                     </div>
                     <div class="card-body">
-                        <!-- Progresso -->
                         <div class="progress-container mb-4" id="progress-container-${processId}">
                             <div class="d-flex justify-content-between small mb-1">
                                 <span><i class="fas fa-spinner fa-spin me-1"></i> Processando...</span>
@@ -301,9 +292,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                             </div>
                         </div>
                         
-                        <!-- Resultados (inicialmente ocultos) -->
                         <div id="results-${processId}" style="display: none;">
-                            <!-- Métricas -->
                             <div class="row g-3 mb-4" id="metrics-${processId}">
                                 <div class="col-md-3 col-6">
                                     <div class="metric-box text-center p-3 bg-light rounded-3">
@@ -331,13 +320,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                                 </div>
                             </div>
                             
-                            <!-- Informações da análise -->
                             <div class="alert alert-info small" id="analysis-info-${processId}">
                                 <i class="fas fa-info-circle me-2"></i>
                                 Aguardando conclusão da análise...
                             </div>
                             
-                            <!-- Botões de ação -->
                             <div class="d-flex gap-2 mt-3">
                                 <button class="btn btn-sm btn-outline-primary" onclick="window.downloadReport('${processId}')">
                                     <i class="fas fa-download me-1"></i> Relatório
@@ -351,7 +338,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                             </div>
                         </div>
                         
-                        <!-- Mensagem de erro -->
                         <div id="error-${processId}" style="display: none;" class="alert alert-danger">
                             <i class="fas fa-exclamation-triangle me-2"></i>
                             <span id="error-msg-${processId}"></span>
@@ -428,7 +414,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (progressContainer) progressContainer.style.display = 'none';
             if (resultsDiv) resultsDiv.style.display = 'block';
             
-            // Preencher métricas
             const totalRows = document.getElementById(`total-rows-${processId}`);
             const accuracy = document.getElementById(`accuracy-${processId}`);
             const features = document.getElementById(`features-${processId}`);
@@ -486,7 +471,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     
                     if (data.status === 'completed' || data.status === 'error') {
                         clearInterval(interval);
-                        // Remover do índice de polling
                         const intervalIndex = pollingIntervals.findIndex(i => i.processId === processId);
                         if (intervalIndex !== -1) {
                             pollingIntervals.splice(intervalIndex, 1);
@@ -522,7 +506,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
         
-        // Validar tamanho de cada arquivo
         const invalidFiles = [];
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
@@ -537,7 +520,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
         
-        // Validar formatos
         const validExtensions = ['.xlsx', '.xls', '.csv'];
         const invalidFormatFiles = [];
         for (const file of files) {
@@ -552,11 +534,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
         
-        // Verificar créditos
         const hasCredits = await checkCreditsBeforeUpload(totalFiles);
         if (!hasCredits) return;
         
-        // Criar cards para cada arquivo antes do upload
         const newAnalyses = [];
         for (let i = 0; i < files.length; i++) {
             const tempId = `temp_${Date.now()}_${i}`;
@@ -593,11 +573,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             const data = await response.json();
             
             if (response.ok && data.processed_files && data.processed_files.length > 0) {
-                // Atualizar os processIds reais
                 const successCount = data.processed_files.length;
                 const failCount = data.failed_files?.length || 0;
                 
-                // Substituir IDs temporários pelos reais
                 for (let i = 0; i < data.processed_files.length; i++) {
                     const processed = data.processed_files[i];
                     const tempAnalysis = activeAnalyses[i];
@@ -607,7 +585,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     }
                 }
                 
-                // Adicionar arquivos com erro
                 if (data.failed_files && data.failed_files.length > 0) {
                     for (const failed of data.failed_files) {
                         activeAnalyses.push({
@@ -625,23 +602,19 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (failCount > 0) message += ` ⚠️ ${failCount} falharam.`;
                 showNotification(message, successCount > 0 ? 'success' : 'warning');
                 
-                // Iniciar polling para cada arquivo processado
                 for (const processed of data.processed_files) {
                     pollAnalysisStatus(processed.process_id, processed.filename);
                 }
                 
-                // Atualizar créditos
                 await loadUserCredits();
                 await loadHistory();
                 
                 fileInput.value = '';
                 
-                // Limpar preview
                 const filePreviewContainer = document.getElementById('filePreviewContainer');
                 if (filePreviewContainer) filePreviewContainer.innerHTML = '';
                 
             } else {
-                // Remover análises temporárias
                 activeAnalyses = activeAnalyses.filter(a => !a.processId.toString().startsWith('temp_'));
                 displayActiveAnalyses();
                 
@@ -656,7 +629,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.error('Erro no upload:', error);
             showNotification(error.message || 'Erro ao processar arquivo(s)', 'error');
             
-            // Remover análises temporárias
             activeAnalyses = activeAnalyses.filter(a => !a.processId.toString().startsWith('temp_'));
             displayActiveAnalyses();
         } finally {
@@ -760,7 +732,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     return;
                 }
                 
-                // Validar tamanhos
                 const oversized = files.filter(f => f.size > MAX_FILE_SIZE_KB * 1024);
                 if (oversized.length > 0) {
                     showNotification(`${oversized.length} arquivo(s) excedem o limite de ${MAX_FILE_SIZE_KB}KB`, 'error');
@@ -862,7 +833,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // ===== INICIALIZAÇÃO =====
     
-    // Carrega informações do usuário
     const userStr = localStorage.getItem('user');
     if (userStr) {
         try {
@@ -878,13 +848,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         } catch (e) {}
     }
     
-    // Carrega créditos
     await loadUserCredits();
-    
-    // Carrega histórico
     await loadHistory();
     
-    // Setup eventos
     setupDragAndDrop();
     setupLogout();
     
@@ -915,9 +881,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('✅ Dashboard inicializado com suporte a múltiplos arquivos!');
     console.log(`📁 Máximo de arquivos por vez: ${MAX_FILES_PER_BATCH}`);
     console.log(`📦 Limite por arquivo: ${MAX_FILE_SIZE_KB}KB`);
+    console.log(`🔗 API_URL: ${API_URL} (relativa - Nginx fará proxy)`);
 });
 
-// ===== ESTILOS GLOBAIS (fora do DOMContentLoaded para não duplicar) =====
+// ===== ESTILOS GLOBAIS =====
 (function addDashboardStyles() {
     if (document.getElementById('dashboardStyles')) return;
     
@@ -999,7 +966,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.head.appendChild(dashboardStyles);
 })();
 
-// ===== FUNÇÕES GLOBAIS (acessíveis via onclick) =====
+// ===== FUNÇÕES GLOBAIS =====
 window.downloadReport = function(processId) {
     showNotificationFallback(`Download do relatório para ${processId} em breve`, 'info');
 };
@@ -1016,7 +983,6 @@ window.viewAnalysisDetails = function(analysisId) {
     showNotificationFallback(`Detalhes da análise ${analysisId} em breve`, 'info');
 };
 
-// Fallback para notificações em funções globais
 function showNotificationFallback(message, type = 'info') {
     if (window.toastr) {
         window.toastr[type](message);

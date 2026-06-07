@@ -1,4 +1,4 @@
-// payment.js - VERSÃO COMPLETA COM LAYOUT BRONZE
+// payment.js - VERSÃO CORRIGIDA COM PROMOÇÃO "DE R$149 POR R$97"
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
@@ -80,7 +80,7 @@ async function updateCreditsDisplay() {
 }
 
 // ==============================================
-// 🔥 CARREGAMENTO DE PLANOS (LAYOUT BRONZE)
+// 🔥 CARREGAMENTO DE PLANOS (LAYOUT BRONZE COM PROMOÇÃO)
 // ==============================================
 
 async function loadPlans() {
@@ -99,7 +99,7 @@ async function loadPlans() {
     }
 }
 
-// 🔥 RENDERIZAÇÃO EXCLUSIVA DO PLANO BRONZE
+// 🔥 RENDERIZAÇÃO EXCLUSIVA DO PLANO BRONZE COM PROMOÇÃO
 async function renderBronzePlan(plans, fullData = null) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
@@ -131,9 +131,10 @@ async function renderBronzePlan(plans, fullData = null) {
     // Buscar status da promoção
     let vagasRestantes = 100;
     let totalVagas = 100;
-    let precoPromocional = plan.price || 97.00;
-    let precoRegular = plan.regular_price || 149.90;
+    let precoPromocional = 97.00;
+    let precoRegular = 149.90;
     let isUserLocked = false;
+    let currentPrice = precoPromocional;
     
     try {
         const promoResponse = await fetchWithAuth(`${API_URL}/payments/promotion-status`);
@@ -144,6 +145,7 @@ async function renderBronzePlan(plans, fullData = null) {
             precoPromocional = promoData.promotional_price;
             precoRegular = promoData.regular_price;
             isUserLocked = promoData.user_locked_price !== null;
+            currentPrice = promoData.current_price;
         }
     } catch (error) {
         console.warn('Erro ao buscar status da promoção:', error);
@@ -156,31 +158,44 @@ async function renderBronzePlan(plans, fullData = null) {
     const percentual = (vagasUsadas / totalVagas) * 100;
     const isUrgent = vagasRestantes <= 20 && vagasRestantes > 0;
     
-    // 🔥 HTML DO PLANO BRONZE COM LAYOUT ESCURO
+    // Se o usuário já tem preço travado, mostrar mensagem especial
+    const userHasLockedPrice = isUserLocked;
+    
+    // 🔥 HTML DO PLANO BRONZE COM LAYOUT DE PROMOÇÃO
     const html = `
         <div class="col-lg-8 mx-auto">
             <div class="bronze-card" data-aos="fade-up" data-aos-duration="800">
                 <div class="bronze-badge">
-                    <i class="fas fa-trophy"></i> PLANO BRONZE
+                    <i class="fas fa-fire"></i> ${isSoldOut ? 'PROMOÇÃO ENCERRADA' : (userHasLockedPrice ? 'SEU PREÇO PROMOCIONAL' : 'PROMOÇÃO POR TEMPO LIMITADO')}
                 </div>
                 
                 <div class="bronze-title">
                     <h2>
                         <i class="fas fa-crown me-2"></i>
-                        AutoAnalytics Pro
+                        Plano Bronze
                     </h2>
                     <p><i class="fas fa-check-circle me-1"></i> A escolha dos profissionais</p>
                 </div>
                 
                 <div class="price-container">
-                    <span class="old-price">De R$ ${precoRegular.toFixed(2).replace('.', ',')}</span>
+                    ${!isSoldOut && !userHasLockedPrice ? `
+                        <span class="old-price">De R$ ${precoRegular.toFixed(2).replace('.', ',')}</span>
+                    ` : ''}
                     <div class="price-tag" id="planoPreco">
                         R$ ${precoAtual.toFixed(2).replace('.', ',')}<small>/mês</small>
                     </div>
-                    ${!isSoldOut ? `<span class="economy-badge">🔥 ECONOMIZE R$ ${economia.toFixed(2).replace('.', ',')} 🔥</span>` : ''}
+                    ${!isSoldOut && !userHasLockedPrice ? `
+                        <span class="economy-badge">🔥 ECONOMIZE R$ ${economia.toFixed(2).replace('.', ',')} 🔥</span>
+                    ` : ''}
+                    ${userHasLockedPrice ? `
+                        <span class="economy-badge" style="background: linear-gradient(135deg, #28a745, #20c997);">
+                            <i class="fas fa-gem me-1"></i> PREÇO BLOQUEADO - R$ ${precoAtual.toFixed(2).replace('.', ',')}
+                        </span>
+                    ` : ''}
                 </div>
                 
-                <!-- DIV DE VAGAS -->
+                <!-- DIV DE VAGAS - SÓ MOSTRA SE NÃO ESGOTOU E USUÁRIO NÃO TEM PREÇO TRAVADO -->
+                ${!isSoldOut && !userHasLockedPrice ? `
                 <div class="vagas-counter ${isUrgent ? 'vagas-urgent' : ''}">
                     <div class="d-flex align-items-center justify-content-center flex-wrap">
                         <i class="fas fa-ticket-alt fa-2x me-3" style="color: #f5a623;"></i>
@@ -198,14 +213,51 @@ async function renderBronzePlan(plans, fullData = null) {
                     ${isUrgent ? `
                         <div class="mt-2 text-center">
                             <strong style="color: #f5a623;">🔥 URGENTE! ÚLTIMAS ${vagasRestantes} VAGAS! 🔥</strong>
-                            <br><small>Após esgotar, valor volta para R$ ${precoRegular.toFixed(2).replace('.', ',')}</small>
+                            <br><small>Garanta o preço promocional de R$ ${precoPromocional.toFixed(2).replace('.', ',')}</small>
                         </div>
                     ` : `
                         <div class="mt-2 text-center small text-muted">
-                            ${isSoldOut ? 'Promoção esgotada!' : `Garanta sua vaga por R$ ${precoPromocional.toFixed(2).replace('.', ',')}`}
+                            ${isSoldOut ? 'Promoção esgotada!' : `Apenas as primeiras ${totalVagas} pessoas pagam R$ ${precoPromocional.toFixed(2).replace('.', ',')}`}
                         </div>
                     `}
                 </div>
+                ` : ''}
+                
+                ${userHasLockedPrice ? `
+                <div class="vagas-counter" style="background: rgba(40, 167, 69, 0.2); border-color: #28a745;">
+                    <div class="d-flex align-items-center justify-content-center flex-wrap">
+                        <i class="fas fa-lock fa-2x me-3" style="color: #28a745;"></i>
+                        <div>
+                            <span class="vagas-label">PREÇO GARANTIDO</span>
+                            <div>
+                                <span class="vagas-number" style="color: #28a745;">R$ ${precoAtual.toFixed(2).replace('.', ',')}</span>
+                                <span class="vagas-label">para sempre!</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center small text-success">
+                        <i class="fas fa-check-circle me-1"></i> Você comprou na promoção e teve o preço bloqueado!
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${isSoldOut && !userHasLockedPrice ? `
+                <div class="vagas-counter" style="background: rgba(220, 53, 69, 0.2); border-color: #dc3545;">
+                    <div class="d-flex align-items-center justify-content-center flex-wrap">
+                        <i class="fas fa-exclamation-triangle fa-2x me-3" style="color: #dc3545;"></i>
+                        <div>
+                            <span class="vagas-label">PROMOÇÃO ESGOTADA</span>
+                            <div>
+                                <span class="vagas-number" style="color: #dc3545;">0</span>
+                                <span class="vagas-label">vagas restantes</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center small text-danger">
+                        As 100 vagas promocionais já foram preenchidas. Valor volta para R$ ${precoRegular.toFixed(2).replace('.', ',')}
+                    </div>
+                </div>
+                ` : ''}
                 
                 <div class="my-3">
                     <div class="highlight-title">
@@ -272,9 +324,9 @@ async function renderBronzePlan(plans, fullData = null) {
                 </div>
                 
                 <div class="d-grid gap-3 mt-4">
-                    <button class="btn btn-bronze btn-lg" id="buyButton" onclick="window.selectPlan('premium_mensal', 'pix')" ${isSoldOut ? 'disabled' : ''}>
+                    <button class="btn btn-bronze btn-lg" id="buyButton" onclick="window.selectPlan('premium_mensal', 'pix')">
                         <i class="fas fa-bolt me-2"></i>
-                        ${isSoldOut ? 'PROMOÇÃO ESGOTADA' : `GARANTIR MINHA VAGA POR R$ ${precoAtual.toFixed(2).replace('.', ',')}`}
+                        ${userHasLockedPrice ? 'RENOVAR MEU PLANO' : (isSoldOut ? `COMPRAR POR R$ ${precoAtual.toFixed(2).replace('.', ',')}` : `GARANTIR PREÇO PROMOCIONAL POR R$ ${precoAtual.toFixed(2).replace('.', ',')}`)}
                         <small class="d-block fs-10">Pagamento seguro via PIX</small>
                     </button>
                 </div>
@@ -398,11 +450,15 @@ async function showPixModalSecure(paymentId, paymentData) {
                 const maxCredits = qrData.max_credits_balance || 3;
                 const isPremiumPlan = paymentData.plan_type === 'daily_credits';
                 
+                // Mostrar se foi promoção
+                const wasPromotional = paymentData.price_type === 'promotional';
+                
                 modalContent.innerHTML = `
-                    ${paymentData.promotional_message ? `
-                        <div class="alert alert-warning mb-3 text-center">
+                    ${wasPromotional ? `
+                        <div class="alert alert-success mb-3 text-center">
                             <i class="fas fa-gift me-2"></i>
-                            ${sanitizeHTML(paymentData.promotional_message)}
+                            <strong>🎉 VOCÊ GARANTIU O PREÇO PROMOCIONAL!</strong><br>
+                            <small>R$ 97,00 - Preço bloqueado para futuras renovações!</small>
                         </div>
                     ` : ''}
                     
@@ -427,6 +483,7 @@ async function showPixModalSecure(paymentId, paymentData) {
                         <i class="fas fa-info-circle me-2"></i>
                         <strong>Informações do pagamento:</strong><br>
                         Valor: R$ ${paymentData.amount?.toFixed(2) || '0,00'}<br>
+                        ${wasPromotional ? '<span class="text-success">✅ Você está comprando na promoção! Preço R$ 97,00 garantido para sempre.</span><br>' : ''}
                         Créditos: ${paymentData.credits || 0}
                         ${isPremiumPlan ? `<br>⚠️ <strong>Plano Premium:</strong> máximo de ${maxCredits} créditos acumulados por vez.` : ''}
                         <br><br>
@@ -684,7 +741,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isPlansPage()) {
         setTimeout(() => {
             loadPlans();
-            console.log('✅ payment.js inicializado - Layout Bronze ativo');
+            console.log('✅ payment.js inicializado - Layout Bronze com promoção de R$149 por R$97');
         }, 200);
     }
     
@@ -721,4 +778,4 @@ window.updateCreditsDisplay = updateCreditsDisplay;
 window.formatCreditsDisplay = formatCreditsDisplay;
 window.showNotification = showNotification;
 
-console.log('✅ payment.js carregado - Layout Bronze com gradiente escuro');
+console.log('✅ payment.js carregado - Promoção: R$149 por R$97 (primeiras 100 pessoas)');

@@ -1,70 +1,138 @@
+version: '3.8'
+
 services:
-  # Backend API
+  # Backend API (já tem Gemini integrado)
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/models:/app/models
-      - ./backend/temp:/app/temp
-      - ./backend/outputs:/app/outputs
-      - ./backend/.env:/app/.env
+      - backend_models:/app/models
+      - backend_temp:/app/temp
+      - backend_outputs:/app/outputs
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/autoanalytics
-      - REDIS_HOST=redis      # ← ADICIONADO
-      - REDIS_PORT=6379       # ← ADICIONADO
+      - DATABASE_URL=postgresql://OqYi5uKzP47d0s3G:O3a9z6mdhq7X1qLUuS3IGcsE1YGGkboK@db:5432/y1nALfd0R8O3cupv
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      
+      # 🔥 Google Gemini (direto, sem Flowise)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-2.5-flash
+      
+      # 🔥 Ambiente
+      - DOCKER_ENV=true
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DEV_MODE=false
+      
+      # 🔥 Limites
+      - MAX_FILE_SIZE=204800
+      - MAX_UPLOAD_SIZE=204800
+      
+      # 🔥 Segurança
+      - SECRET_KEY=${SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      
+      # 🔥 Opcionais
+      - MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN}
+      - MP_PUBLIC_KEY=${MP_PUBLIC_KEY}
+      - DISCORD_WEBHOOK=${DISCORD_WEBHOOK}
+      - GMAIL_EMAIL=${GMAIL_EMAIL}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
     depends_on:
-      - db
-      - flowise
-      - redis                 # ← ADICIONADO
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - autoanalytics_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Frontend (nginx para servir arquivos estáticos)
+  # Frontend
   frontend:
     image: nginx:alpine
-    ports:
-      - "80:80"
+    restart: unless-stopped
     volumes:
-      - ./frontend:/usr/share/nginx/html
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=Host(`srv1736719.hstgr.cloud`)
+      - traefik.http.routers.frontend.entrypoints=websecure
+      - traefik.http.routers.frontend.tls=true
+      - traefik.http.services.frontend.loadbalancer.server.port=80
+    depends_on:
+      - api
+    networks:
+      - autoanalytics_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Banco de dados PostgreSQL
+  # Banco de dados
   db:
     image: postgres:15
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: autoanalytics
+      POSTGRES_USER: OqYi5uKzP47d0s3G
+      POSTGRES_PASSWORD: O3a9z6mdhq7X1qLUuS3IGcsE1YGGkboK
+      POSTGRES_DB: y1nALfd0R8O3cupv
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U OqYi5uKzP47d0s3G -d y1nALfd0R8O3cupv"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - autoanalytics_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Flowise (IA)
-  flowise:
-    image: flowiseai/flowise
-    ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-      - FLOWISE_USERNAME=admin
-      - FLOWISE_PASSWORD=senha_forte
-    volumes:
-      - flowise_data:/root/.flowise
-
-  # Redis
+  # Redis (cache e blacklist de tokens)
   redis:
-    image: redis:alpine
-    container_name: redis-server
-    ports:
-      - "6379:6379"
+    image: redis:7.2-alpine
     restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 10s
+    networks:
+      - autoanalytics_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
-  flowise_data:
   redis_data:
+  backend_models:
+  backend_temp:
+  backend_outputs:
+
+networks:
+  autoanalytics_network:
+    driver: bridge
+    name: autoanalytics_network
