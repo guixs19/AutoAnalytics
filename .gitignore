@@ -1,32 +1,42 @@
-# Environment variables
-.env
-.env.local
-*.env
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.python-version
+*.py[cod]
+*.so
+.Python
 
-# Docker volumes (dados)
-postgres_data/
-redis_data/
-pgdata/
+# Banco de dados
+*.db
+*.sqlite
+*.sqlite3
 
-# Application data
-temp/
-outputs/
-models/
+# Ambiente e secrets
+.env
+.env.*
+!.env.example
+
+# Docker
+*.log
+*.pid
+
+# Backend temporários
+backend/temp/
+backend/outputs/
+backend/models/
+backend/data/
+
+# Uploads
 uploads/
+temp/
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
+logs/
 *.log
-npm-debug.log*
