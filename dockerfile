@@ -27,7 +27,7 @@ EXPOSE 8000
 
 # Healthcheck para o container
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Criar usuário não-root por segurança
 RUN useradd -m appuser && chown -R appuser:appuser /app
