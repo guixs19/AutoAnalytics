@@ -1,97 +1,7 @@
 version: '3.8'
 
 services:
-  # Backend API
-  api:
-    build:
-      context: .
-      dockerfile: dockerfile
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - backend_models:/app/backend/models
-      - backend_temp:/app/backend/temp
-      - backend_outputs:/app/backend/outputs
-    environment:
-      # 🔥 Banco de dados - usar .env
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-      
-      # 🔥 Redis
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      
-      # 🔥 Google Gemini
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
-      
-      # 🔥 Ambiente
-      - DOCKER_ENV=true
-      - ENVIRONMENT=${ENVIRONMENT:-production}
-      - DEBUG=${DEBUG:-false}
-      - DEV_MODE=false
-      
-      # 🔥 Limites
-      - MAX_FILE_SIZE=204800
-      - MAX_UPLOAD_SIZE=204800
-      
-      # 🔥 Segurança
-      - SECRET_KEY=${SECRET_KEY}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=15
-      - REFRESH_TOKEN_EXPIRE_DAYS=7
-      
-      # 🔥 CAPTCHA (configurar no .env)
-      - CAPTCHA_TYPE=${CAPTCHA_TYPE:-custom_numbers}
-      - CAPTCHA_SITE_KEY=${CAPTCHA_SITE_KEY:-}
-      - CAPTCHA_SECRET_KEY=${CAPTCHA_SECRET_KEY:-}
-      
-      # 🔥 Opcionais
-      - MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN:-}
-      - MP_PUBLIC_KEY=${MP_PUBLIC_KEY:-}
-      - DISCORD_WEBHOOK=${DISCORD_WEBHOOK:-}
-      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
-      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD:-}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-    networks:
-      - autoanalytics_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Frontend com Nginx
-  frontend:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "8080:80"  # Para testes locais (opcional, pode remover em produção)
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - autoanalytics_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Banco de dados PostgreSQL
+  # Banco de dados
   db:
     image: postgres:15
     restart: unless-stopped
@@ -102,48 +12,46 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    networks:
-      - autoanalytics_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  # Redis (cache e blacklist de tokens)
+  # Redis
   redis:
-    image: redis:7.2-alpine
+    image: redis:alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    networks:
-      - autoanalytics_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+
+  # API + Frontend (tudo em um)
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "80:8000"   # 🔥 Porta 80 direto
+    volumes:
+      - ./autoanalytics.db:/app/autoanalytics.db
+      - ./backend/temp:/app/backend/temp
+      - ./backend/outputs:/app/backend/outputs
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=false
+      - ENVIRONMENT=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
 
 volumes:
   postgres_data:
-  redis_data:
-  backend_models:
-  backend_temp:
-  backend_outputs:
-
-networks:
-  autoanalytics_network:
-    driver: bridge
-    name: autoanalytics_network
