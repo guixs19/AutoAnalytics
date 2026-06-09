@@ -14,6 +14,7 @@ psycopg2-binary==2.9.9  # 🔥 ESSENCIAL PARA POSTGRESQL
 # Autenticação & Segurança
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+argon2-cffi              # 🔥 ADICIONE ESTE
 
 # Validação de Dados
 pydantic==2.5.0
@@ -30,7 +31,10 @@ scikit-learn==1.4.0
 
 # IA e Integrações
 google-generativeai==0.3.0  # 🔥 Gemini API
-tenacity==8.2.3              # 🔥 Retry logic (usado no gemini.py)
+tenacity==8.2.3              # 🔥 Retry logic
+
+# Cache & Rate Limiting
+redis                    # 🔥 ADICIONE ESTE
 
 # Requisições HTTP
 requests==2.31.0
@@ -42,5 +46,6 @@ psutil==5.9.6
 # Serialização de modelos
 joblib==1.3.2
 
-# Utilitários
+# Utilitários e Geração de Imagens
 pytz==2023.3
+Pillow                   # 🔥 ADICIONE ESTE (Para o CAPTCHA do security.py)
