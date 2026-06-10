@@ -465,6 +465,11 @@
             </div>
         </div>
         
+        <!-- 🔥 SEÇÃO DE STATUS DO PLANO (MOSTRA DATA COMPRA E EXPIRAÇÃO) -->
+        <div class="row justify-content-center mt-4" id="subscriptionStatusContainer">
+            <!-- Será preenchido dinamicamente pelo JavaScript -->
+        </div>
+        
         <div class="row justify-content-center mt-4">
             <div class="col-lg-8">
                 <div class="bg-white rounded-4 p-4 shadow-sm">
@@ -769,11 +774,30 @@
                     if (emailInput && user.email) {
                         emailInput.value = user.email;
                     }
+                    
+                    // 🔥 CARREGAR STATUS DA ASSINATURA (MOSTRA DATAS)
+                    if (window.loadSubscriptionStatus) {
+                        await window.loadSubscriptionStatus();
+                    }
+                    
+                    // Verificar se precisa notificar sobre renovação
+                    if (window.checkAndNotifyRenewal) {
+                        await window.checkAndNotifyRenewal();
+                    }
                 }
             } catch (error) {
                 console.error('Erro ao carregar usuário:', error);
             }
         });
+        
+        // 🔥 Recarregar status após pagamento bem-sucedido (quando voltar do dashboard)
+        if (window.location.search.includes('payment=success')) {
+            setTimeout(() => {
+                if (window.loadSubscriptionStatus) {
+                    window.loadSubscriptionStatus();
+                }
+            }, 500);
+        }
     </script>
 </body>
 </html>

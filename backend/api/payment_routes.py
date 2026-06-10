@@ -803,6 +803,97 @@ async def mercadopago_webhook(
     except Exception as e:
         logger.error(f"❌ Erro no webhook: {e}")
         return {"status": "error"}
+# ==============================================
+# 🔥 ROTA: STATUS DA ASSINATURA (DIAS RESTANTES)
+# ==============================================
 
+@router.get("/subscription-status")
+async def get_subscription_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica status da assinatura premium do usuário
+    Retorna quantos dias faltam, se precisa renovar, etc.
+    """
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user:
+        return sanitize_response({
+            "success": False,
+            "error": "Usuário não encontrado"
+        })
+    
+    # Admin tem acesso ilimitado
+    if user.is_admin:
+        return sanitize_response({
+            "success": True,
+            "has_subscription": True,
+            "is_admin": True,
+            "days_left": 999,
+            "is_active": True,
+            "needs_renewal": False,
+            "is_expired": False,
+            "message": "👑 Administrador - acesso ilimitado"
+        })
+    
+    # Verificar se tem plano premium
+    is_premium = user.plan == UserPlan.PREMIUM_MENSAL
+    
+    if not is_premium or not user.premium_expires_at:
+        return sanitize_response({
+            "success": True,
+            "has_subscription": False,
+            "is_premium": False,
+            "days_left": 0,
+            "is_active": False,
+            "needs_renewal": False,
+            "is_expired": False,
+            "message": "Você não possui um plano premium ativo"
+        })
+    
+    # Calcular dias restantes
+    today = date.today()
+    days_left = (user.premium_expires_at - today).days
+    
+    # Verificar se expirou
+    is_expired = days_left <= 0
+    is_active = not is_expired
+    
+    # Precisa renovar? (últimos 5 dias)
+    needs_renewal = 0 < days_left <= 5
+    
+    # Se expirou, rebaixar automaticamente
+    if is_expired:
+        user.plan = UserPlan.BASICO
+        db.commit()
+        logger.info(f"⏰ Plano expirado e rebaixado: {user.email}")
+    
+    # Mensagem personalizada
+    if is_expired:
+        message = "❌ Seu plano premium expirou! Renove agora para continuar usando."
+    elif needs_renewal:
+        message = f"⚠️ Seu plano expira em {days_left} dias! Renove para não perder o acesso."
+    else:
+        message = f"✅ Seu plano está ativo! Expira em {days_left} dias."
+    
+    return sanitize_response({
+        "success": True,
+        "has_subscription": is_active,
+        "is_premium": is_active,
+        "days_left": max(0, days_left),
+        "is_active": is_active,
+        "needs_renewal": needs_renewal,
+        "is_expired": is_expired,
+        "expires_at": user.premium_expires_at.isoformat() if user.premium_expires_at else None,
+        "activated_at": user.premium_activated_at.isoformat() if user.premium_activated_at else None,
+        "renewal_price": user.get_current_price() if hasattr(user, 'get_current_price') else 97.00,
+        "message": message,
+        "plan_details": {
+            "name": "Plano Bronze",
+            "credits_per_day": CREDITS_PER_DAY,
+            "max_credits": MAX_CREDITS_BALANCE
+        }
+    })
 
 print("✅ payment_routes.py carregado - Segurança reforçada | Promoção Bronze (100 vagas)")

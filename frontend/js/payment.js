@@ -623,6 +623,13 @@ function startPaymentPollingSecure(paymentId) {
                     
                     await updateCreditsDisplay();
                     
+                    // 🔥 Recarregar status da assinatura após pagamento aprovado
+                    if (window.loadSubscriptionStatus) {
+                        setTimeout(() => {
+                            window.loadSubscriptionStatus();
+                        }, 500);
+                    }
+                    
                     setTimeout(() => {
                         const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
                         if (modal) modal.hide();
@@ -728,6 +735,200 @@ async function fetchWithAuth(url, options = {}) {
 }
 
 // ==============================================
+// 🔥 FUNÇÕES DE STATUS DO PLANO (DATA COMPRA/EXPIRAÇÃO)
+// ==============================================
+
+async function loadSubscriptionStatus() {
+    /**
+     * Carrega o status da assinatura do usuário
+     * Mostra data de compra e expiração se for premium
+     */
+    try {
+        const response = await fetchWithAuth(`${API_URL}/payments/subscription-status`);
+        
+        if (response && response.ok) {
+            const data = await response.json();
+            
+            // Atualizar o card de status do plano
+            updatePlanStatusCard(data);
+            
+            return data;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar status da assinatura:', error);
+    }
+    return null;
+}
+
+function updatePlanStatusCard(subscriptionData) {
+    /**
+     * Atualiza o card de status do plano na página
+     * Mostra se é premium, datas, dias restantes
+     */
+    const statusContainer = document.getElementById('subscriptionStatusContainer');
+    if (!statusContainer) return;
+    
+    // Se não tem plano premium ativo, esconde o card ou mostra mensagem
+    if (!subscriptionData.has_subscription && !subscriptionData.is_admin) {
+        statusContainer.innerHTML = `
+            <div class="col-lg-8 mx-auto">
+                <div class="alert alert-info text-center mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Você ainda não possui um plano premium ativo.
+                    <a href="#plansContainer" class="alert-link">Adquira agora!</a>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Admin tem acesso ilimitado
+    if (subscriptionData.is_admin) {
+        statusContainer.innerHTML = `
+            <div class="col-lg-8 mx-auto">
+                <div class="alert alert-warning text-center mb-0" style="background: linear-gradient(135deg, #fff3e0, #ffe0b3);">
+                    <i class="fas fa-crown me-2 text-warning"></i>
+                    <strong>👑 Administrador</strong> - Você tem acesso ilimitado a todas as funcionalidades!
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Usuário premium - mostrar card com datas
+    const daysLeft = subscriptionData.days_left;
+    const expiresAt = subscriptionData.expires_at ? new Date(subscriptionData.expires_at) : null;
+    const activatedAt = subscriptionData.activated_at ? new Date(subscriptionData.activated_at) : null;
+    
+    // Formatar datas para exibição
+    const formattedActivation = activatedAt ? activatedAt.toLocaleDateString('pt-BR') : '—';
+    const formattedExpiration = expiresAt ? expiresAt.toLocaleDateString('pt-BR') : '—';
+    
+    // Definir cor baseada nos dias restantes
+    let statusColor = '#28a745'; // verde
+    let statusIcon = '✅';
+    let statusText = 'Ativo';
+    
+    if (daysLeft <= 5 && daysLeft > 0) {
+        statusColor = '#f5a623'; // laranja
+        statusIcon = '⚠️';
+        statusText = 'Próximo do vencimento';
+    } else if (daysLeft <= 0) {
+        statusColor = '#dc3545'; // vermelho
+        statusIcon = '❌';
+        statusText = 'Expirado';
+    }
+    
+    // Calcular progresso (dias passados / total de 30 dias)
+    let progressPercent = 0;
+    if (activatedAt && expiresAt) {
+        const totalDays = 30;
+        const daysPassed = Math.max(0, Math.min(totalDays, totalDays - daysLeft));
+        progressPercent = (daysPassed / totalDays) * 100;
+    }
+    
+    statusContainer.innerHTML = `
+        <div class="col-lg-8 mx-auto">
+            <div class="premium-status-card" style="background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%); border-radius: 20px; padding: 1.5rem; border: 1px solid #cd7f32;">
+                <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
+                    <div>
+                        <h4 class="mb-1" style="color: #f5a623;">
+                            <i class="fas fa-crown me-2"></i>
+                            Plano Bronze Ativo
+                        </h4>
+                        <p class="small mb-0" style="color: rgba(255,255,255,0.7);">
+                            <i class="fas fa-check-circle me-1" style="color: #28a745;"></i>
+                            Você tem acesso a todos os benefícios premium
+                        </p>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge" style="background: ${statusColor}; padding: 0.5rem 1rem;">
+                            ${statusIcon} ${statusText}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: rgba(0,0,0,0.3);">
+                            <small style="color: rgba(255,255,255,0.6);">
+                                <i class="fas fa-calendar-plus me-1"></i> DATA DA COMPRA
+                            </small>
+                            <div class="fw-bold" style="color: #f5a623; font-size: 1.1rem;">
+                                ${formattedActivation}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: rgba(0,0,0,0.3);">
+                            <small style="color: rgba(255,255,255,0.6);">
+                                <i class="fas fa-calendar-times me-1"></i> DATA DE EXPIRAÇÃO
+                            </small>
+                            <div class="fw-bold" style="color: ${daysLeft <= 5 ? '#f5a623' : '#28a745'}; font-size: 1.1rem;">
+                                ${formattedExpiration}
+                                ${daysLeft > 0 ? `<small class="ms-2" style="color: rgba(255,255,255,0.5);">(em ${daysLeft} dias)</small>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                ${progressPercent > 0 ? `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1" style="color: rgba(255,255,255,0.7);">
+                        <span><i class="fas fa-hourglass-half me-1"></i> Progresso do plano</span>
+                        <span>${Math.round(progressPercent)}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px; background: rgba(255,255,255,0.2);">
+                        <div class="progress-bar" role="progressbar" style="width: ${progressPercent}%; background: linear-gradient(90deg, #f5a623, #cd7f32);"></div>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="alert alert-info small mb-0" style="background: rgba(245, 166, 35, 0.15); border-color: #f5a623; color: #f5a623;">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Benefícios ativos:</strong> Você recebe <strong>1 crédito novo por dia</strong> (máximo de 3 acumulados) e tem acesso a todas as análises da IA.
+                    ${daysLeft <= 5 && daysLeft > 0 ? '<br><i class="fas fa-clock me-1"></i> <strong>Não esqueça de renovar para não perder os benefícios!</strong>' : ''}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Se estiver expirado, mostrar botão de renovação destacado
+    if (daysLeft <= 0 && !subscriptionData.is_expired_fallback) {
+        const buyButton = document.getElementById('buyButton');
+        if (buyButton) {
+            buyButton.style.animation = 'urgent-pulse 1s ease-in-out infinite';
+            buyButton.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> RENOVAR PLANO AGORA <small class="d-block fs-10">Seu plano expirou! Clique aqui para renovar</small>';
+        }
+    }
+}
+
+// Função para mostrar notificação de renovação
+async function checkAndNotifyRenewal() {
+    try {
+        const status = await loadSubscriptionStatus();
+        
+        if (status && status.needs_renewal && !status.is_expired) {
+            showNotification(
+                `⚠️ Seu plano premium expira em ${status.days_left} dias! Renove agora para não perder o acesso.`,
+                'warning'
+            );
+        }
+        
+        if (status && status.is_expired) {
+            showNotification(
+                '❌ Seu plano premium expirou! Renove agora para voltar a ter todos os benefícios.',
+                'error'
+            );
+        }
+        
+        return status;
+    } catch (error) {
+        console.error('Erro ao verificar renovação:', error);
+    }
+}
+
+// ==============================================
 // INICIALIZAÇÃO
 // ==============================================
 
@@ -765,6 +966,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (urlParams.get('payment') === 'success') {
         showNotification('Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
         window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // 🔥 Recarregar status da assinatura após sucesso
+        setTimeout(() => {
+            if (window.loadSubscriptionStatus) {
+                window.loadSubscriptionStatus();
+            }
+        }, 1000);
     }
 });
 
@@ -777,5 +985,7 @@ window.copyPixCodeSecure = copyPixCodeSecure;
 window.updateCreditsDisplay = updateCreditsDisplay;
 window.formatCreditsDisplay = formatCreditsDisplay;
 window.showNotification = showNotification;
+window.loadSubscriptionStatus = loadSubscriptionStatus;
+window.checkAndNotifyRenewal = checkAndNotifyRenewal;
 
 console.log('✅ payment.js carregado - Promoção: R$149 por R$97 (primeiras 100 pessoas)');
