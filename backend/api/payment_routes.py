@@ -1,4 +1,4 @@
-# backend/api/payment_routes.py - VERSÃO COMPLETA COM PROMOÇÃO BRONZE E SEGURANÇA REFORÇADA
+# backend/api/payment_routes.py - VERSÃO COMPLETA COM MERCADO PAGO REAL E PROMOÇÃO BRONZE
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
 from fastapi.responses import JSONResponse
@@ -11,17 +11,18 @@ import re
 import html
 import asyncio
 import secrets
+import os
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field, validator
 
 from backend.database import get_db
 from backend import crud
 from backend.api.auth_routes import get_current_user
-from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis, PromotionControl
+from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis, PromotionControl, PaymentStatus
 from backend.services.daily_credits_service import DailyCreditsService
 from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
-from backend.services.payment_service import MercadoPagoService
-from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, get_webhook
+from backend.services.payment_service import MercadoPagoService, get_mp_service
+from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, alert_payment_failed, get_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ DAYS_PREMIUM = 30
 CREDITS_PER_DAY = 1
 INITIAL_FREE_CREDITS = 3
 MAX_PAYMENT_ATTEMPTS_PER_DAY = 3
-PIX_QR_CODE_EXPIRY_MINUTES = 15
+PIX_QR_CODE_EXPIRY_MINUTES = 30  # Aumentado para 30 minutos
+USE_REAL_MERCADO_PAGO = os.getenv("USE_REAL_MERCADO_PAGO", "true").lower() == "true"
 
 # ==============================================
 # MODELOS PYDANTIC PARA VALIDAÇÃO
@@ -44,7 +46,7 @@ PIX_QR_CODE_EXPIRY_MINUTES = 15
 
 class CreatePaymentRequest(BaseModel):
     """Modelo validado para criação de pagamento"""
-    plan_id: str = Field(..., description="ID do plano", regex="^(premium_mensal|gratuito)$")
+    plan_id: str = Field(..., description="ID do plano")
     
     @validator('plan_id')
     def validate_plan_id(cls, v):
@@ -135,7 +137,7 @@ def validate_payment_id(payment_id: int) -> bool:
 # ==============================================
 
 daily_credits_service = DailyCreditsService()
-mp_service = MercadoPagoService()
+mp_service = get_mp_service() or MercadoPagoService()
 webhook = get_webhook()
 
 
@@ -164,7 +166,6 @@ def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
             db.add(log)
             db.commit()
             
-            # Log seguro (sem email exposto)
             logger.info(f"🎉 Usuário ID {user.id} ganhou {INITIAL_FREE_CREDITS} créditos gratuitos!")
             
             return {
@@ -461,7 +462,7 @@ async def check_daily_credit(
 
 
 # ==============================================
-# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM PREÇO DINÂMICO E SEGURANÇA)
+# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM MERCADO PAGO REAL)
 # ==============================================
 
 @router.post("/create-pix")
@@ -470,7 +471,10 @@ async def create_pix_payment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Cria pagamento PIX com preço automático baseado nas vagas"""
+    """
+    Cria pagamento PIX - PRIORIZA MERCADO PAGO REAL
+    Fallback para simulação se configurado
+    """
     
     user = db.query(User).filter(User.id == current_user.id).first()
     
@@ -480,24 +484,24 @@ async def create_pix_payment(
     if user.is_admin:
         raise HTTPException(status_code=400, detail="Administradores têm acesso ilimitado")
     
-    # 🔥 RATE LIMIT: Evita spam de criação de pagamentos
+    # 🔥 RATE LIMIT: Evita spam
     if not check_payment_rate_limit(user.id, db):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Muitas tentativas de pagamento. Aguarde até amanhã."
+            detail="Muitas tentativas de pagamento. Aguarde até amanhã."
         )
     
-    if user.plan == UserPlan.PREMIUM_MENSAL and user.premium_expires_at and user.premium_expires_at >= date.today():
+    # Verificar se já tem plano premium ativo
+    if user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium():
         days_left = (user.premium_expires_at - date.today()).days
         raise HTTPException(
             status_code=400,
             detail=f"Você já possui plano premium ativo por mais {days_left} dias!"
         )
     
-    # 🔥 PEGAR PREÇO DINÂMICO BASEADO NAS VAGAS
+    # 🔥 PEGAR PREÇO DINÂMICO
     promo = get_or_create_promotion(db)
     
-    # Verificar se usuário já tem preço travado
     if user.promotional_price_locked and user.promotional_price:
         price = user.promotional_price
         price_type = "locked_promotional"
@@ -505,22 +509,133 @@ async def create_pix_payment(
         price = promo.get_current_price()
         price_type = "promotional" if promo.has_available_slots() else "regular"
     
-    # 🔥 QR CODE SEGURO (NÃO USA DADOS PESSOAIS DO USUÁRIO)
+    # 🔥 🔥 🔄 TENTAR MERCADO PAGO REAL PRIMEIRO
+    if USE_REAL_MERCADO_PAGO and mp_service and mp_service.sdk:
+        try:
+            logger.info(f"💰 Criando pagamento PIX REAL para {user.email} - R$ {price}")
+            
+            result = mp_service.create_real_pix_payment(
+                plan_id="premium_mensal",
+                user_email=user.email,
+                user_id=user.id,
+                user_name=user.name or "Cliente",
+                price=price
+            )
+            
+            if result.get("success"):
+                # Salvar pagamento REAL no banco
+                payment = Payment(
+                    user_id=user.id,
+                    mp_id=result["payment_id"],
+                    amount=result["amount"],
+                    credits=result["credits"],
+                    payment_method="pix",
+                    status=result["status"],
+                    qr_code=result.get("qr_code"),
+                    qr_code_base64=result.get("qr_code_base64"),
+                    created_at=datetime.now(),
+                    expires_at=datetime.now() + timedelta(minutes=PIX_QR_CODE_EXPIRY_MINUTES),
+                    description=f"Plano Bronze - {'Promocional' if price_type != 'regular' else 'Regular'}",
+                    payment_metadata={
+                        "plan_id": "premium_mensal",
+                        "external_reference": result.get("external_reference"),
+                        "days": DAYS_PREMIUM,
+                        "credits_per_day": CREDITS_PER_DAY,
+                        "max_credits": MAX_CREDITS_BALANCE,
+                        "price_type": price_type,
+                        "promotional_used": price_type == "promotional",
+                        "remaining_slots": promo.get_remaining_slots(),
+                        "real_payment": True,
+                        "mp_payment_id": result["payment_id"]
+                    }
+                )
+                
+                db.add(payment)
+                db.commit()
+                db.refresh(payment)
+                
+                logger.info(f"✅ Pagamento PIX REAL criado: ID {payment.id} - MP ID: {result['payment_id']}")
+                
+                # Registrar alerta de pending
+                alert_payment_pending(user.email, price)
+                
+                return sanitize_response({
+                    "success": True,
+                    "payment_id": payment.id,
+                    "mp_payment_id": result["payment_id"],
+                    "status": result["status"],
+                    "amount": price,
+                    "price_type": price_type,
+                    "promotional_available": promo.has_available_slots(),
+                    "remaining_slots": promo.get_remaining_slots(),
+                    "qr_code_base64": result.get("qr_code_base64"),
+                    "qr_code": result.get("qr_code"),
+                    "expires_in": PIX_QR_CODE_EXPIRY_MINUTES * 60,
+                    "message": f"💰 Pagamento PIX gerado! Valor: R$ {price:.2f} - Escaneie o QR Code no seu banco",
+                    "real_payment": True,
+                    "plan_details": {
+                        "credits_per_day": CREDITS_PER_DAY,
+                        "total_days": DAYS_PREMIUM,
+                        "max_credits_balance": MAX_CREDITS_BALANCE,
+                        "initial_free_credits": INITIAL_FREE_CREDITS
+                    }
+                })
+            else:
+                logger.error(f"❌ Erro no Mercado Pago: {result.get('error')}")
+                
+                # Se falhou e fallback está habilitado, usar simulação
+                if os.getenv("MP_FALLBACK_SIMULATED", "false").lower() == "true":
+                    logger.warning("⚠️ Usando fallback simulado para pagamento PIX")
+                    return await create_simulated_pix_payment(
+                        user, db, background_tasks, promo, price, price_type
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Erro ao criar pagamento: {result.get('error')}"
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Exceção no Mercado Pago: {e}")
+            if os.getenv("MP_FALLBACK_SIMULATED", "false").lower() == "true":
+                return await create_simulated_pix_payment(
+                    user, db, background_tasks, promo, price, price_type
+                )
+            raise HTTPException(status_code=400, detail=str(e))
+    
+    # 🔄 FALLBACK: Modo simulado
+    else:
+        logger.info("🔄 Usando modo SIMULADO para pagamento PIX")
+        return await create_simulated_pix_payment(
+            user, db, background_tasks, promo, price, price_type
+        )
+
+
+async def create_simulated_pix_payment(
+    user: User, 
+    db: Session, 
+    background_tasks: BackgroundTasks,
+    promo: PromotionControl, 
+    price: float, 
+    price_type: str
+) -> Dict:
+    """Cria pagamento PIX simulado (para testes/fallback)"""
+    
     payment_uuid = str(uuid.uuid4())
     
-    # Gerar QR Code sem dados sensíveis
+    # QR Code simulado
     pix_code = f"00020126360014BR.GOV.BCB.PIX0114{payment_uuid[:14]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
     
     payment = Payment(
         user_id=user.id,
-        mp_id=f"PIX_{payment_uuid[:8].upper()}",
+        mp_id=f"SIM_{payment_uuid[:8].upper()}",
         amount=price,
         credits=DAYS_PREMIUM,
         payment_method="pix",
         status="pending",
         created_at=datetime.now(),
-        expires_at=datetime.now() + timedelta(minutes=PIX_QR_CODE_EXPIRY_MINUTES),
-        description=f"Plano Bronze - {'Promocional' if price_type != 'regular' else 'Regular'}",
+        expires_at=datetime.now() + timedelta(minutes=15),
+        description=f"Plano Bronze - SIMULADO - {'Promocional' if price_type != 'regular' else 'Regular'}",
         payment_metadata={
             "plan_id": "premium_mensal",
             "uuid": payment_uuid,
@@ -529,7 +644,9 @@ async def create_pix_payment(
             "max_credits": MAX_CREDITS_BALANCE,
             "price_type": price_type,
             "promotional_used": price_type == "promotional",
-            "remaining_slots": promo.get_remaining_slots()
+            "remaining_slots": promo.get_remaining_slots(),
+            "real_payment": False,
+            "simulated": True
         }
     )
     
@@ -537,10 +654,9 @@ async def create_pix_payment(
     db.commit()
     db.refresh(payment)
     
-    # Log seguro (sem email)
-    logger.info(f"💰 Pagamento criado: ID {payment.id} para usuário ID {user.id} - Valor: R$ {price:.2f}")
+    logger.info(f"🔄 Pagamento SIMULADO criado: ID {payment.id} para usuário ID {user.id}")
     
-    # Notificação segura (não enviar dados sensíveis)
+    # Simulação de aprovação automática
     background_tasks.add_task(simulate_payment_approval, payment.id, user.id, db)
     
     return sanitize_response({
@@ -553,8 +669,9 @@ async def create_pix_payment(
         "remaining_slots": promo.get_remaining_slots(),
         "qr_code": pix_code,
         "qr_code_base64": None,
-        "expires_in": PIX_QR_CODE_EXPIRY_MINUTES * 60,
-        "message": f"💰 Pagamento PIX gerado! Valor: R$ {price:.2f}",
+        "expires_in": 15 * 60,
+        "message": f"🔄 PAGAMENTO SIMULADO - Valor: R$ {price:.2f}",
+        "simulated": True,
         "plan_details": {
             "credits_per_day": CREDITS_PER_DAY,
             "total_days": DAYS_PREMIUM,
@@ -576,7 +693,6 @@ async def get_pix_qrcode(
 ):
     """Retorna QR Code do pagamento PIX com validação de segurança"""
     
-    # Validação do payment_id (evita SQL injection)
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID de pagamento inválido")
     
@@ -589,11 +705,9 @@ async def get_pix_qrcode(
             message="Pagamento não encontrado"
         )
     
-    # Verificar se o usuário tem permissão
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
-    # Verificar se o QR Code expirou
     if payment.expires_at and payment.expires_at < datetime.now():
         return PixQRCodeResponse(
             success=False,
@@ -603,26 +717,27 @@ async def get_pix_qrcode(
             expires_in=0
         )
     
-    # Gerar QR Code seguro (sem dados sensíveis)
-    qr_code_base64 = None  # Em produção, gerar QR code real aqui
+    # Para pagamentos reais, usar o QR Code salvo
+    qr_code_base64 = payment.qr_code_base64
+    qr_code = payment.qr_code or payment.mp_id
     
     return PixQRCodeResponse(
         success=True,
         qr_code_base64=qr_code_base64,
-        qr_code=payment.mp_id,
+        qr_code=qr_code,
         status=payment.status,
         max_credits_balance=MAX_CREDITS_BALANCE,
         expires_in=max(0, int((payment.expires_at - datetime.now()).total_seconds())) if payment.expires_at else PIX_QR_CODE_EXPIRY_MINUTES * 60,
-        message="QR Code gerado com sucesso"
+        message="QR Code recuperado com sucesso"
     )
 
 
 # ==============================================
-# SIMULAÇÃO DE APROVAÇÃO DE PAGAMENTO (COM VAGA)
+# SIMULAÇÃO DE APROVAÇÃO DE PAGAMENTO (FALLBACK)
 # ==============================================
 
 async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
-    """Simula aprovação de pagamento, ativa premium e usa vaga promocional"""
+    """Simula aprovação de pagamento (apenas para modo simulado)"""
     await asyncio.sleep(3)
     
     try:
@@ -637,14 +752,14 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
                 user.premium_activated_at = datetime.now()
                 user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
                 
-                # 🔥 VERIFICAR SE FOI COMPRA PROMOCIONAL
+                # Verificar se foi compra promocional
                 price_type = payment.payment_metadata.get("price_type", "regular")
                 was_promotional = price_type == "promotional"
                 
                 if was_promotional and not user.promotional_price_locked:
                     promo = get_or_create_promotion(db)
                     if promo.has_available_slots():
-                        promo.use_slot()  # ← DECREMENTA VAGA
+                        promo.use_slot()
                         user.promotional_price_locked = True
                         user.promotional_price = payment.amount
                         user.purchased_at_promotion = datetime.now()
@@ -655,8 +770,7 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
                 
                 db.commit()
                 
-                # Notificação segura (sem email exposto em produção)
-                logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para usuário ID {user.id}")
+                logger.info(f"✅ Pagamento SIMULADO {payment_id} APROVADO! Premium ativado para usuário ID {user.id}")
                 
     except Exception as e:
         logger.error(f"❌ Erro na simulação: {e}")
@@ -702,7 +816,8 @@ async def get_plans(db: Session = Depends(get_db)):
         },
         "max_credits_balance": MAX_CREDITS_BALANCE,
         "max_files_per_batch": 3,
-        "initial_free_credits": INITIAL_FREE_CREDITS
+        "initial_free_credits": INITIAL_FREE_CREDITS,
+        "real_payment_enabled": USE_REAL_MERCADO_PAGO and mp_service and mp_service.sdk is not None
     })
 
 
@@ -718,7 +833,6 @@ async def check_payment_status(
 ):
     """Verifica status do pagamento com validação de acesso"""
     
-    # Validação do payment_id (evita SQL injection)
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID de pagamento inválido")
     
@@ -730,6 +844,20 @@ async def check_payment_status(
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
+    # Para pagamentos reais, consultar status atualizado no Mercado Pago
+    if payment.payment_metadata.get("real_payment") and mp_service and mp_service.sdk:
+        try:
+            mp_status = mp_service.get_payment_status_real(payment.mp_id)
+            if mp_status.get("success") and mp_status.get("status") != payment.status:
+                # Atualizar status se mudou
+                payment.status = mp_status["status"]
+                if mp_status["status"] == "approved" and not payment.approved_at:
+                    payment.approved_at = datetime.now()
+                db.commit()
+                logger.info(f"🔄 Status do pagamento {payment_id} atualizado via consulta: {payment.status}")
+        except Exception as e:
+            logger.error(f"Erro ao consultar status no MP: {e}")
+    
     return sanitize_response({
         "success": True,
         "payment": {
@@ -739,7 +867,8 @@ async def check_payment_status(
             "credits": payment.credits,
             "created_at": payment.created_at.isoformat() if payment.created_at else None,
             "approved_at": payment.approved_at.isoformat() if payment.approved_at else None,
-            "expires_at": payment.expires_at.isoformat() if payment.expires_at else None
+            "expires_at": payment.expires_at.isoformat() if payment.expires_at else None,
+            "real_payment": payment.payment_metadata.get("real_payment", False)
         }
     })
 
@@ -782,7 +911,7 @@ async def cancel_payment(
 
 
 # ==============================================
-# ROTA: WEBHOOK MERCADO PAGO
+# 🔥 ROTA: WEBHOOK MERCADO PAGO (ATUALIZADO)
 # ==============================================
 
 @router.post("/webhook")
@@ -791,18 +920,121 @@ async def mercadopago_webhook(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Webhook para receber notificações do Mercado Pago"""
+    """
+    Webhook para receber notificações REAIS do Mercado Pago
+    Processa pagamentos aprovados e atualiza o sistema
+    """
     try:
+        # Receber dados do webhook
         data = await request.json()
-        logger.info(f"🔔 Webhook recebido")
+        logger.info(f"🔔 Webhook recebido: {json.dumps(data)[:500]}")
         
-        await webhook.process_webhook(data, db, background_tasks)
+        # Verificar tipo de notificação
+        notification_type = data.get("type") or data.get("action")
+        
+        if notification_type == "payment":
+            payment_id = data.get("data", {}).get("id")
+            if payment_id:
+                background_tasks.add_task(process_payment_webhook, payment_id, db)
+        
+        elif notification_type == "payment.created" or notification_type == "payment.updated":
+            payment_id = data.get("data", {}).get("id")
+            if payment_id:
+                background_tasks.add_task(process_payment_webhook, payment_id, db)
         
         return {"status": "received"}
         
     except Exception as e:
         logger.error(f"❌ Erro no webhook: {e}")
         return {"status": "error"}
+
+
+async def process_payment_webhook(payment_id: str, db: Session):
+    """
+    Processa notificação de pagamento do Mercado Pago
+    """
+    import json
+    
+    await asyncio.sleep(2)  # Aguardar processamento do MP
+    
+    try:
+        # Buscar status no Mercado Pago
+        payment_info = mp_service.get_payment_status_real(payment_id)
+        
+        if not payment_info.get("success"):
+            logger.error(f"❌ Não foi possível consultar pagamento {payment_id}")
+            return
+        
+        status = payment_info.get("status")
+        external_reference = payment_info.get("external_reference")
+        
+        # Buscar pagamento no banco
+        db_payment = db.query(Payment).filter(Payment.mp_id == str(payment_id)).first()
+        
+        if not db_payment:
+            logger.warning(f"⚠️ Pagamento {payment_id} não encontrado no banco")
+            return
+        
+        # Se já foi processado, ignorar
+        if db_payment.status != PaymentStatus.PENDING:
+            logger.info(f"ℹ️ Pagamento {payment_id} já processado: {db_payment.status}")
+            return
+        
+        # Processar conforme status
+        if status == "approved":
+            db_payment.status = PaymentStatus.APPROVED
+            db_payment.approved_at = datetime.now()
+            
+            # Ativar plano premium para o usuário
+            user = db.query(User).filter(User.id == db_payment.user_id).first()
+            
+            if user:
+                # Ativar plano
+                user.plan = UserPlan.PREMIUM_MENSAL
+                user.premium_activated_at = datetime.now()
+                user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
+                
+                # Verificar se foi compra promocional
+                price_type = db_payment.payment_metadata.get("price_type", "regular")
+                was_promotional = price_type == "promotional"
+                
+                if was_promotional and not user.promotional_price_locked:
+                    promo = get_or_create_promotion(db)
+                    if promo.has_available_slots():
+                        promo.use_slot()
+                        user.promotional_price_locked = True
+                        user.promotional_price = db_payment.amount
+                        user.purchased_at_promotion = datetime.now()
+                        logger.info(f"🎟️ Vaga promocional utilizada! Restam: {promo.get_remaining_slots()}")
+                
+                # Adicionar crédito inicial
+                user.credits = (user.credits or 0) + 1
+                
+                db.commit()
+                
+                logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para {user.email}")
+                
+                # Alerta de sucesso
+                alert_payment_approved(user.email, db_payment.amount)
+            else:
+                logger.error(f"❌ Usuário não encontrado para pagamento {payment_id}")
+        
+        elif status == "rejected":
+            db_payment.status = PaymentStatus.REJECTED
+            db.commit()
+            logger.warning(f"⚠️ Pagamento {payment_id} REJEITADO")
+            alert_payment_failed(db_payment.user_id, db_payment.amount)
+        
+        elif status == "cancelled":
+            db_payment.status = PaymentStatus.CANCELLED
+            db.commit()
+            logger.info(f"ℹ️ Pagamento {payment_id} CANCELADO")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao processar webhook: {e}")
+        db.rollback()
+
+
 # ==============================================
 # 🔥 ROTA: STATUS DA ASSINATURA (DIAS RESTANTES)
 # ==============================================
@@ -896,4 +1128,5 @@ async def get_subscription_status(
         }
     })
 
-print("✅ payment_routes.py carregado - Segurança reforçada | Promoção Bronze (100 vagas)")
+
+print("✅ payment_routes.py carregado - Mercado Pago REAL | Promoção Bronze (100 vagas)")

@@ -23,235 +23,137 @@ logger = logging.getLogger(__name__)
 
 
 class MercadoPagoService:
-    """Serviço para integração com Mercado Pago"""
+    """Serviço para integração REAL com Mercado Pago"""
     
     def __init__(self):
         # Pegar credenciais do ambiente
         self.access_token = os.getenv("MP_ACCESS_TOKEN", "")
         self.public_key = os.getenv("MP_PUBLIC_KEY", "")
         self.webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "")
-        self.webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+        self.webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "https://seu-dominio.com")
         
-        # Inicializar SDK
-        self.sdk = mercadopago.SDK(self.access_token)
+        # Inicializar SDK apenas se tiver token
+        if self.access_token:
+            self.sdk = mercadopago.SDK(self.access_token)
+            logger.info("✅ Mercado Pago SDK inicializado")
+        else:
+            self.sdk = None
+            logger.warning("⚠️ MP_ACCESS_TOKEN não configurado - PIX real não funcionará")
         
-        # 🔧 CORREÇÃO: usar get_webhook() com segurança
         self.webhook = get_webhook()
-        
-        # Planos disponíveis
-        self.plans = {
-            "basico": {
-                "id": "basico",
-                "name": "Básico",
-                "credits": 10,
-                "price": 29.90,
-                "description": "10 análises - Ideal para começar",
-                "popular": False,
-                "savings": "0%",
-                "type": "one_time"
-            },
-            "profissional": {
-                "id": "profissional",
-                "name": "Profissional",
-                "credits": 30,
-                "price": 79.90,
-                "description": "30 análises - Para uso regular",
-                "popular": True,
-                "savings": "11%",
-                "type": "one_time"
-            },
-            "empresarial": {
-                "id": "empresarial",
-                "name": "Empresarial",
-                "credits": 100,
-                "price": 199.90,
-                "description": "100 análises - Uso intensivo",
-                "popular": False,
-                "savings": "33%",
-                "type": "one_time"
-            },
-            "premium_mensal": {
-                "id": "premium_mensal",
-                "name": "Premium Mensal",
-                "credits": 30,
-                "price": 58.90,
-                "description": "1 crédito por dia durante 30 dias",
-                "popular": True,
-                "savings": "26%",
-                "type": "daily_credits",
-                "credits_per_day": 1,
-                "duration_days": 30,
-                "max_credits_balance": 3  # 🔥 Limite de créditos acumulados
-            }
-        }
     
-    def create_payment_preference(self, plan_id: str, user_email: str, user_id: int) -> Dict[str, Any]:
+    def create_real_pix_payment(self, plan_id: str, user_email: str, user_id: int, 
+                                 user_name: str = "", price: float = None) -> Dict[str, Any]:
         """
-        Cria preferência de pagamento no Mercado Pago
+        CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
         
-        Suporta:
-        - Planos avulsos (créditos únicos)
-        - Premium Mensal (créditos diários)
+        Args:
+            plan_id: ID do plano (premium_mensal)
+            user_email: Email do usuário
+            user_id: ID do usuário
+            user_name: Nome do usuário
+            price: Preço (opcional, usa do plano se não informado)
         """
-        if plan_id not in self.plans:
+        if not self.sdk:
             return {
                 "success": False,
-                "error": "Plano não encontrado"
+                "error": "Mercado Pago não configurado. Configure MP_ACCESS_TOKEN no .env",
+                "simulated": True
             }
         
-        plan = self.plans[plan_id]
-        
-        # ID único para a preferência
-        external_reference = f"{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
-        
-        # Criar preferência
-        preference_data = {
-            "items": [
-                {
-                    "title": plan["name"],
-                    "description": plan["description"],
-                    "quantity": 1,
-                    "currency_id": "BRL",
-                    "unit_price": plan["price"]
-                }
-            ],
-            "payer": {
-                "email": user_email
-            },
-            "back_urls": {
-                "success": f"{self.webhook_base_url}/payment/success",
-                "failure": f"{self.webhook_base_url}/payment/failure",
-                "pending": f"{self.webhook_base_url}/payment/pending"
-            },
-            "auto_return": "approved",
-            "external_reference": external_reference,
-            "notification_url": f"{self.webhook_base_url}/api/payments/webhook",
-            "statement_descriptor": "ANALISE DE OFICINA",
-            "metadata": {
-                "plan_id": plan_id,
-                "user_id": user_id,
-                "plan_type": plan["type"],
-                "credits": plan["credits"]
-            }
-        }
-        
-        # Para planos premium, adicionar metadados extras
-        if plan["type"] == "daily_credits":
-            preference_data["metadata"].update({
-                "credits_per_day": plan.get("credits_per_day", 1),
-                "duration_days": plan.get("duration_days", 30),
-                "max_credits_balance": plan.get("max_credits_balance", 3)
-            })
-        
-        try:
-            response = self.sdk.preference().create(preference_data)
-            
-            if response["status"] == 201:
-                preference = response["response"]
-                return {
-                    "success": True,
-                    "preference_id": preference["id"],
-                    "checkout_url": preference["init_point"],
-                    "external_reference": external_reference,
-                    "plan": plan
-                }
-            else:
-                logger.error(f"Erro ao criar preferência: {response}")
-                return {
-                    "success": False,
-                    "error": "Erro ao criar preferência de pagamento",
-                    "details": response
-                }
-        except Exception as e:
-            logger.error(f"Exceção ao criar preferência: {e}")
+        # Configurações do plano
+        if plan_id == "premium_mensal":
+            plan_name = "Plano Bronze - AutoAnalytics Pro"
+            if price is None:
+                price = 97.00  # Preço promocional padrão
+            description = "Plano Bronze - 30 dias de acesso premium com 1 crédito por dia"
+            credits = 30
+        else:
             return {
                 "success": False,
-                "error": str(e)
-            }
-    
-    def create_pix_payment(self, plan_id: str, user_email: str, user_id: int) -> Dict[str, Any]:
-        """
-        Cria pagamento PIX para plano selecionado
-        """
-        if plan_id not in self.plans:
-            return {
-                "success": False,
-                "error": "Plano não encontrado"
+                "error": f"Plano {plan_id} não suportado para PIX real"
             }
         
-        plan = self.plans[plan_id]
+        # ID único para o pagamento (external_reference)
+        external_reference = f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
         
-        # ID único para o pagamento
-        external_reference = f"{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
+        # Data de expiração (30 minutos)
+        expiration_date = (datetime.now() + timedelta(minutes=30)).isoformat()
         
-        # Criar pagamento PIX
+        # Dados do pagamento PIX
         payment_data = {
-            "transaction_amount": plan["price"],
-            "description": plan["description"],
+            "transaction_amount": price,
+            "description": description,
             "payment_method_id": "pix",
             "payer": {
                 "email": user_email,
-                "first_name": user_email.split("@")[0],
+                "first_name": user_name[:50] if user_name else "Cliente",
                 "identification": {
                     "type": "CPF",
-                    "number": "00000000000"  # Placeholder
+                    "number": "00000000000"  # Placeholder - idealmente pedir CPF
                 }
             },
             "external_reference": external_reference,
+            "date_of_expiration": expiration_date,
+            "notification_url": f"{self.webhook_base_url}/api/payments/webhook",
             "metadata": {
                 "plan_id": plan_id,
                 "user_id": user_id,
-                "plan_type": plan["type"],
-                "credits": plan["credits"]
-            },
-            "notification_url": f"{self.webhook_base_url}/api/payments/webhook"
+                "plan_type": "daily_credits",
+                "credits": credits,
+                "credits_per_day": 1,
+                "duration_days": 30,
+                "max_credits_balance": 3
+            }
         }
         
-        # Para planos premium, adicionar metadados extras
-        if plan["type"] == "daily_credits":
-            payment_data["metadata"].update({
-                "credits_per_day": plan.get("credits_per_day", 1),
-                "duration_days": plan.get("duration_days", 30),
-                "max_credits_balance": plan.get("max_credits_balance", 3)
-            })
-        
         try:
+            logger.info(f"💰 Criando pagamento PIX real para {user_email} - Valor: R$ {price}")
+            
+            # Chamar API do Mercado Pago
             response = self.sdk.payment().create(payment_data)
             
             if response["status"] == 201:
                 payment = response["response"]
                 
-                # Gerar QR Code
+                # Extrair QR Code
                 qr_code_base64 = None
+                qr_code_text = None
+                
                 if "point_of_interaction" in payment and "transaction_data" in payment["point_of_interaction"]:
-                    qr_code = payment["point_of_interaction"]["transaction_data"].get("qr_code")
-                    qr_code_base64 = payment["point_of_interaction"]["transaction_data"].get("qr_code_base64")
+                    transaction_data = payment["point_of_interaction"]["transaction_data"]
+                    qr_code_text = transaction_data.get("qr_code")
+                    qr_code_base64 = transaction_data.get("qr_code_base64")
                     
                     # Se não veio base64, gerar a partir do código
-                    if qr_code and not qr_code_base64:
-                        qr_code_base64 = self.generate_qr_code_base64(qr_code)
+                    if qr_code_text and not qr_code_base64:
+                        qr_code_base64 = self.generate_qr_code_base64(qr_code_text)
+                
+                logger.info(f"✅ Pagamento PIX criado: {payment['id']} - QR Code gerado")
                 
                 return {
                     "success": True,
-                    "payment_id": payment["id"],
+                    "payment_id": str(payment["id"]),
                     "external_reference": external_reference,
                     "qr_code_base64": qr_code_base64,
-                    "qr_code": payment.get("point_of_interaction", {}).get("transaction_data", {}).get("qr_code"),
+                    "qr_code": qr_code_text,
                     "expiration_date": payment.get("date_of_expiration"),
                     "status": payment["status"],
-                    "amount": plan["price"],
-                    "credits": plan["credits"],
-                    "plan": plan
+                    "amount": price,
+                    "credits": credits,
+                    "plan_type": "daily_credits",
+                    "price_type": "real"
                 }
             else:
-                logger.error(f"Erro ao criar pagamento PIX: {response}")
+                logger.error(f"❌ Erro ao criar pagamento PIX: {response}")
                 return {
                     "success": False,
-                    "error": "Erro ao criar pagamento PIX",
+                    "error": response.get("message", "Erro ao criar pagamento PIX"),
                     "details": response
                 }
+                
         except Exception as e:
-            logger.error(f"Exceção ao criar pagamento PIX: {e}")
+            logger.error(f"❌ Exceção ao criar pagamento PIX: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -274,8 +176,14 @@ class MercadoPagoService:
             logger.error(f"Erro ao gerar QR Code: {e}")
             return ""
     
-    def get_payment_status(self, payment_id: str) -> Dict[str, Any]:
-        """Consulta status de um pagamento"""
+    def get_payment_status_real(self, payment_id: str) -> Dict[str, Any]:
+        """Consulta status REAL de um pagamento no Mercado Pago"""
+        if not self.sdk:
+            return {
+                "success": False,
+                "error": "Mercado Pago não configurado"
+            }
+        
         try:
             response = self.sdk.payment().get(payment_id)
             
@@ -287,7 +195,8 @@ class MercadoPagoService:
                     "external_reference": payment.get("external_reference"),
                     "amount": payment.get("transaction_amount"),
                     "payment_method": payment.get("payment_method_id"),
-                    "metadata": payment.get("metadata", {})
+                    "metadata": payment.get("metadata", {}),
+                    "approved_at": payment.get("date_approved")
                 }
             else:
                 return {
@@ -301,90 +210,27 @@ class MercadoPagoService:
                 "error": str(e)
             }
     
-    def process_webhook_notification(self, payment_id: str, payment_status: str) -> Dict[str, Any]:
-        """
-        Processa notificação do webhook do Mercado Pago
-        """
-        logger.info(f"📢 Webhook recebido - Payment ID: {payment_id}, Status: {payment_status}")
-        
-        # Consultar detalhes do pagamento
-        payment_info = self.get_payment_status(payment_id)
-        
-        if not payment_info.get("success"):
-            return {
-                "success": False,
-                "error": "Não foi possível obter informações do pagamento"
-            }
-        
-        return {
-            "success": True,
-            "payment_id": payment_id,
-            "status": payment_status,
-            "external_reference": payment_info.get("external_reference"),
-            "amount": payment_info.get("amount"),
-            "metadata": payment_info.get("metadata", {})
-        }
-    
-    def calculate_premium_benefits(self) -> Dict[str, Any]:
-        """Calcula benefícios do plano premium"""
-        plan = self.plans["premium_mensal"]
-        
-        return {
-            "total_credits": plan["credits"],
-            "daily_credits": plan["credits_per_day"],
-            "duration_days": plan["duration_days"],
-            "max_credits_balance": plan.get("max_credits_balance", 3),
-            "price_per_credit": round(plan["price"] / plan["credits"], 2),
-            "price_per_day": round(plan["price"] / plan["duration_days"], 2),
-            "savings_vs_profissional": {
-                "profissional_price": 79.90,
-                "premium_price": plan["price"],
-                "savings": round(79.90 - plan["price"], 2),
-                "savings_percentage": round((79.90 - plan["price"]) / 79.90 * 100, 1)
-            }
-        }
-    
-    def get_plan_recommendation(self, user_usage: Dict = None) -> Dict[str, Any]:
-        """Recomenda plano baseado no uso do usuário"""
-        benefits = self.calculate_premium_benefits()
-        
-        return {
+    def get_plan_details(self, plan_id: str) -> Dict[str, Any]:
+        """Retorna detalhes do plano"""
+        plans = {
             "premium_mensal": {
-                "best_for": "Uso diário consistente",
-                "daily_cost": benefits["price_per_day"],
-                "price_per_analysis": benefits["price_per_credit"],
-                "max_credits_balance": benefits["max_credits_balance"],
-                "comparison": f"Economia de R$ {benefits['savings_vs_profissional']['savings']} comparado ao Profissional",
-                "message": "Perfeito para quem usa todo dia! 🎯"
-            },
-            "one_time_plans": {
-                "best_for": "Uso esporádico",
-                "message": "Compre créditos avulsos quando precisar"
+                "name": "Plano Bronze",
+                "price": 97.00,
+                "regular_price": 149.90,
+                "credits": 30,
+                "description": "1 crédito por dia durante 30 dias",
+                "credits_per_day": 1,
+                "duration_days": 30,
+                "max_credits_balance": 3
             }
         }
-    
-    def get_all_plans(self) -> Dict[str, Any]:
-        """Retorna todos os planos disponíveis com benefícios"""
-        benefits = self.calculate_premium_benefits()
-        
-        plans = {}
-        for plan_id, plan in self.plans.items():
-            plans[plan_id] = {
-                **plan,
-                "benefits": benefits if plan["type"] == "daily_credits" else None
-            }
-        
-        return {
-            "success": True,
-            "plans": plans,
-            "premium_info": benefits
-        }
+        return plans.get(plan_id, {})
 
 
-# Instância global do serviço (opcional)
-mp_service = MercadoPagoService() if os.getenv("MP_ACCESS_TOKEN") else None
+# Instância global
+mp_service = MercadoPagoService()
 
 
 def get_mp_service() -> Optional[MercadoPagoService]:
-    """Retorna instância do MercadoPagoService se configurado"""
+    """Retorna instância do MercadoPagoService"""
     return mp_service
