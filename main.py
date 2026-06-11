@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO COMPLETA COM TODAS AS ROTAS INTEGRADAS
+# main.py (na raiz) - VERSÃO CORRIGIDA COM CAMINHOS ABSOLUTOS
 import sys
 import os
 from pathlib import Path
@@ -107,36 +107,61 @@ checkout_available = False
 if FRONTEND_DIR.exists():
     print(f"   ✅ Frontend encontrado em: {FRONTEND_DIR}")
     
-    if (FRONTEND_DIR / "index.html").exists():
+    # Verificar arquivos HTML principais
+    index_html = FRONTEND_DIR / "index.html"
+    login_html = FRONTEND_DIR / "login.html"
+    planos_html = FRONTEND_DIR / "planos.html"
+    checkout_html = FRONTEND_DIR / "checkout.html"
+    
+    if index_html.exists():
         dashboard_available = True
         frontend_available = True
         print(f"   ✅ index.html (dashboard)")
+    else:
+        print(f"   ❌ index.html não encontrado em {index_html}")
     
-    if (FRONTEND_DIR / "login.html").exists():
+    if login_html.exists():
         login_available = True
         frontend_available = True
         print(f"   ✅ login.html")
+    else:
+        print(f"   ❌ login.html não encontrado em {login_html}")
     
-    if (FRONTEND_DIR / "planos.html").exists():
+    if planos_html.exists():
         planos_available = True
         frontend_available = True
         print(f"   ✅ planos.html")
     
-    if (FRONTEND_DIR / "checkout.html").exists():
+    if checkout_html.exists():
         checkout_available = True
         frontend_available = True
         print(f"   ✅ checkout.html")
     
+    # Verificar diretório JS
     js_dir = FRONTEND_DIR / "js"
     if js_dir.exists():
-        if (js_dir / "auth.js").exists():
-            print(f"   ✅ js/auth.js")
-        if (js_dir / "app.js").exists():
-            print(f"   ✅ js/app.js")
-        if (js_dir / "dashboard.js").exists():
-            print(f"   ✅ js/dashboard.js")
+        js_files = ["auth.js", "app.js", "dashboard.js", "payment.js", "pow-client.js", "pow-worker.js"]
+        for js_file in js_files:
+            if (js_dir / js_file).exists():
+                print(f"   ✅ js/{js_file}")
+            else:
+                print(f"   ⚠️ js/{js_file} não encontrado")
+    else:
+        print(f"   ❌ Pasta js não encontrada em {js_dir}")
+    
+    # Verificar diretório CSS
+    css_dir = FRONTEND_DIR / "css"
+    if css_dir.exists():
+        if (css_dir / "style.css").exists():
+            print(f"   ✅ css/style.css")
+    else:
+        print(f"   ⚠️ Pasta css não encontrada")
 else:
     print(f"   ❌ Frontend NÃO encontrado em: {FRONTEND_DIR}")
+    print(f"   🔧 Criando frontend/js para você...")
+    # Criar diretórios se não existirem
+    os.makedirs(FRONTEND_DIR / "js", exist_ok=True)
+    os.makedirs(FRONTEND_DIR / "css", exist_ok=True)
 
 # ==============================================
 # IMPORTAR FASTAPI
@@ -203,7 +228,7 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# MIDDLEWARE DE LOG
+# MIDDLEWARE DE LOG E DEBUG DE STATIC
 # ==============================================
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -216,6 +241,23 @@ async def log_requests(request: Request, call_next):
     
     response = await call_next(request)
     
+    # DEBUG: Log de erros 404 em arquivos estáticos
+    if response.status_code == 404 and path.startswith('/static'):
+        print(f"   ❌ ERRO 404 - Arquivo estático não encontrado: {path}")
+        # Tentar encontrar onde está o arquivo
+        relative_path = path.replace('/static/', '')
+        possible_paths = [
+            FRONTEND_DIR / relative_path,
+            FRONTEND_DIR / "js" / relative_path,
+            FRONTEND_DIR / "css" / relative_path,
+            FRONTEND_DIR / "assets" / relative_path,
+        ]
+        for p in possible_paths:
+            if p.exists():
+                print(f"      ✓ Arquivo encontrado em: {p}")
+            else:
+                print(f"      ✗ Não encontrado: {p}")
+    
     if response.status_code >= 400 and not path.startswith('/static'):
         process_time = (datetime.now() - start_time).total_seconds() * 1000
         print(f"   ⚠️ Status: {response.status_code} | Tempo: {process_time:.2f}ms")
@@ -224,6 +266,176 @@ async def log_requests(request: Request, call_next):
         response.headers[header] = value
     
     return response
+
+# ==============================================
+# ARQUIVOS ESTÁTICOS - CORRIGIDO COM CAMINHO ABSOLUTO
+# ==============================================
+if frontend_available:
+    print("\n📁 Configurando arquivos estáticos...")
+    
+    # 🔥 CORREÇÃO CRÍTICA: Usar caminho absoluto com resolve()
+    static_dir = FRONTEND_DIR.absolute()
+    print(f"   📂 Servindo arquivos estáticos de: {static_dir}")
+    
+    # Verificar se o diretório existe antes de montar
+    if static_dir.exists():
+        try:
+            app.mount("/static", StaticFiles(directory=str(static_dir), html=False), name="static")
+            print(f"   ✅ Arquivos estáticos montados em /static")
+            
+            # Listar arquivos disponíveis para debug
+            print(f"\n   📋 Arquivos disponíveis em /static:")
+            for item in static_dir.iterdir():
+                if item.is_dir():
+                    print(f"      📁 {item.name}/")
+                    for subitem in item.iterdir():
+                        print(f"         📄 {subitem.name}")
+                else:
+                    print(f"      📄 {item.name}")
+        except Exception as e:
+            print(f"   ❌ Erro ao montar arquivos estáticos: {e}")
+    else:
+        print(f"   ❌ Diretório não encontrado: {static_dir}")
+else:
+    print("\n⚠️ Frontend não disponível, apenas API será servida")
+
+# ==============================================
+# ROTAS HTML (sem .html)
+# ==============================================
+if frontend_available:
+    print("\n🌐 Configurando rotas HTML...")
+    
+    @app.get("/", include_in_schema=False)
+    async def home(request: Request):
+        """Página inicial - redireciona para dashboard ou login"""
+        from backend.security import jwt_manager
+        
+        token = request.cookies.get("access_token")
+        if token and token.startswith("Bearer "):
+            token = token.replace("Bearer ", "")
+        
+        if token:
+            payload = await jwt_manager.verify_token_async(token, "access")
+            if payload and dashboard_available:
+                return FileResponse(str(FRONTEND_DIR / "index.html"))
+        
+        if login_available:
+            return FileResponse(str(FRONTEND_DIR / "login.html"))
+        
+        return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+    
+    @app.get("/login", include_in_schema=False)
+    async def login_page():
+        """Página de login"""
+        if login_available:
+            return FileResponse(str(FRONTEND_DIR / "login.html"))
+        return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
+    
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard_page(request: Request):
+        """Página do dashboard (protegida)"""
+        from backend.security import jwt_manager
+        
+        token = request.cookies.get("access_token")
+        if token and token.startswith("Bearer "):
+            token = token.replace("Bearer ", "")
+        
+        if not token:
+            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        if not payload:
+            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
+        
+        if dashboard_available:
+            return FileResponse(str(FRONTEND_DIR / "index.html"))
+        
+        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
+    
+    @app.get("/planos", include_in_schema=False)
+    async def planos_page(request: Request):
+        """Página de planos (protegida)"""
+        from backend.security import jwt_manager
+        
+        token = request.cookies.get("access_token")
+        if token and token.startswith("Bearer "):
+            token = token.replace("Bearer ", "")
+        
+        if not token:
+            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        if not payload:
+            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
+        
+        if planos_available:
+            return FileResponse(str(FRONTEND_DIR / "planos.html"))
+        
+        raise HTTPException(status_code=404, detail="Planos não encontrado")
+    
+    @app.get("/checkout", include_in_schema=False)
+    async def checkout_page(request: Request):
+        """Página de checkout (protegida)"""
+        from backend.security import jwt_manager
+        
+        token = request.cookies.get("access_token")
+        if token and token.startswith("Bearer "):
+            token = token.replace("Bearer ", "")
+        
+        if not token:
+            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+        
+        payload = await jwt_manager.verify_token_async(token, "access")
+        if not payload:
+            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
+        
+        if checkout_available:
+            return FileResponse(str(FRONTEND_DIR / "checkout.html"))
+        
+        raise HTTPException(status_code=404, detail="Checkout não encontrado")
+    
+    # Redirecionamentos para URLs sem .html
+    @app.get("/planos.html", include_in_schema=False)
+    async def redirect_planos_html():
+        return RedirectResponse(url="/planos", status_code=301)
+    
+    @app.get("/dashboard.html", include_in_schema=False)
+    async def redirect_dashboard_html():
+        return RedirectResponse(url="/dashboard", status_code=301)
+    
+    @app.get("/login.html", include_in_schema=False)
+    async def redirect_login_html():
+        return RedirectResponse(url="/login", status_code=301)
+    
+    @app.get("/checkout.html", include_in_schema=False)
+    async def redirect_checkout_html():
+        return RedirectResponse(url="/checkout", status_code=301)
+    
+    print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
+
+# ==============================================
+# FUNÇÃO AUXILIAR PARA EXTRAIR TOKEN
+# ==============================================
+async def extract_token(request: Request) -> str:
+    token = request.cookies.get("access_token")
+    if token and token.startswith("Bearer "):
+        token = token.replace("Bearer ", "")
+    if token:
+        return token
+    
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.replace("Bearer ", "")
+    
+    token = request.headers.get("X-Access-Token", "")
+    if token:
+        return token
+    
+    token = request.query_params.get("token", "")
+    if token:
+        return token
+    
+    return None
 
 # ==============================================
 # CARREGAR MÓDULOS DO BACKEND
@@ -289,110 +501,6 @@ AUTH_ENABLED = True
 print("   ✅ Autenticação habilitada")
 
 time.sleep(1)
-
-# ==============================================
-# FUNÇÃO AUXILIAR PARA EXTRAIR TOKEN
-# ==============================================
-async def extract_token(request: Request) -> str:
-    token = request.cookies.get("access_token")
-    if token and token.startswith("Bearer "):
-        token = token.replace("Bearer ", "")
-    if token:
-        return token
-    
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header.replace("Bearer ", "")
-    
-    token = request.headers.get("X-Access-Token", "")
-    if token:
-        return token
-    
-    token = request.query_params.get("token", "")
-    if token:
-        return token
-    
-    return None
-
-# ==============================================
-# ARQUIVOS ESTÁTICOS E ROTAS HTML
-# ==============================================
-if frontend_available:
-    print("\n🌐 Configurando rotas HTML...")
-    
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-    print("   ✅ Arquivos estáticos montados em /static")
-    
-    @app.get("/", include_in_schema=False)
-    async def home(request: Request):
-        token = await extract_token(request)
-        if token:
-            payload = await jwt_manager.verify_token_async(token, "access")
-            if payload and dashboard_available:
-                return FileResponse(str(FRONTEND_DIR / "index.html"))
-        if login_available:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
-    
-    @app.get("/login", include_in_schema=False)
-    async def login_page():
-        if login_available:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
-    
-    @app.get("/dashboard", include_in_schema=False)
-    async def dashboard_page(request: Request):
-        token = await extract_token(request)
-        if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        if dashboard_available:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
-        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
-    
-    @app.get("/planos", include_in_schema=False)
-    async def planos_page(request: Request):
-        token = await extract_token(request)
-        if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        if planos_available:
-            return FileResponse(str(FRONTEND_DIR / "planos.html"))
-        raise HTTPException(status_code=404, detail="Planos não encontrado")
-    
-    @app.get("/checkout", include_in_schema=False)
-    async def checkout_page(request: Request):
-        token = await extract_token(request)
-        if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        if checkout_available:
-            return FileResponse(str(FRONTEND_DIR / "checkout.html"))
-        raise HTTPException(status_code=404, detail="Checkout não encontrado")
-    
-    @app.get("/planos.html", include_in_schema=False)
-    async def redirect_planos_html():
-        return RedirectResponse(url="/planos", status_code=301)
-    
-    @app.get("/dashboard.html", include_in_schema=False)
-    async def redirect_dashboard_html():
-        return RedirectResponse(url="/dashboard", status_code=301)
-    
-    @app.get("/login.html", include_in_schema=False)
-    async def redirect_login_html():
-        return RedirectResponse(url="/login", status_code=301)
-    
-    @app.get("/checkout.html", include_in_schema=False)
-    async def redirect_checkout_html():
-        return RedirectResponse(url="/checkout", status_code=301)
-    
-    print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
 # 🔥 ROTA CAPTCHA
@@ -480,7 +588,7 @@ async def health_check():
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "environment": settings.ENVIRONMENT,
         "debug": settings.DEBUG,
-        "frontend": {"available": frontend_available}
+        "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())}
     }
 
 # ==============================================
@@ -540,6 +648,9 @@ async def startup_event():
     ║     http://localhost:{settings.PORT}/dashboard                    ║
     ║     http://localhost:{settings.PORT}/planos                       ║
     ║     http://localhost:{settings.PORT}/api/docs                     ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  📁 Frontend: {FRONTEND_DIR.absolute()}                              ║
+    ║  🗄️  Database: {db_path}                                           ║
     ╚══════════════════════════════════════════════════════════════════╝
     """)
 

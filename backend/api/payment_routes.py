@@ -14,7 +14,7 @@ import secrets
 import os
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field, validator
-
+import json
 from backend.database import get_db
 from backend import crud
 from backend.api.auth_routes import get_current_user
