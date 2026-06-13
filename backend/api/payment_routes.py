@@ -1,4 +1,5 @@
-# backend/api/payment_routes.py - VERSÃO COMPLETA COM MERCADO PAGO REAL E PROMOÇÃO BRONZE
+# backend/api/payment_routes.py - VERSÃO COMPLETA CORRIGIDA
+# CORREÇÕES: request_data no create-pix + webhook robusto
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
 from fastapi.responses import JSONResponse
@@ -37,7 +38,7 @@ DAYS_PREMIUM = 30
 CREDITS_PER_DAY = 1
 INITIAL_FREE_CREDITS = 3
 MAX_PAYMENT_ATTEMPTS_PER_DAY = 3
-PIX_QR_CODE_EXPIRY_MINUTES = 30  # Aumentado para 30 minutos
+PIX_QR_CODE_EXPIRY_MINUTES = 30
 USE_REAL_MERCADO_PAGO = os.getenv("USE_REAL_MERCADO_PAGO", "true").lower() == "true"
 
 # ==============================================
@@ -99,16 +100,11 @@ def sanitize_string(text: str) -> str:
     if not isinstance(text, str):
         text = str(text)
     
-    # Remove tags HTML
     text = re.sub(r'<[^>]*>', '', text)
-    # Escapa caracteres HTML
     text = html.escape(text)
-    # Remove caracteres perigosos
     text = re.sub(r'[<>\"\'\/\\;`]', '', text)
-    # Remove possíveis expressões JavaScript
     text = re.sub(r'(?i)javascript\s*:', '', text)
     text = re.sub(r'(?i)on\w+\s*=', '', text)
-    # Limita tamanho
     text = text[:500]
     
     return text
@@ -148,7 +144,7 @@ webhook = get_webhook()
 def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
     """Usuário novo ganha 3 créditos gratuitos para teste"""
     try:
-        user = db.query(User).filter(User.id == user_id).first()
+        user = crud.get_user_by_id(db, user_id)
         if not user:
             return {"success": False, "error": "Usuário não encontrado"}
         
@@ -227,7 +223,6 @@ async def get_promotion_status(
     
     promo = get_or_create_promotion(db)
     
-    # Verificar se usuário já tem preço travado
     user_locked = current_user.promotional_price_locked
     user_price = current_user.promotional_price if user_locked else None
     
@@ -256,7 +251,7 @@ async def get_user_balance(
     request: Request = None
 ):
     """Retorna saldo de créditos do usuário"""
-    user = db.query(User).filter(User.id == current_user.id).first()
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         return sanitize_response({
@@ -266,7 +261,6 @@ async def get_user_balance(
             "error": "Usuário não encontrado"
         })
     
-    # Verificar se é usuário novo e adicionar créditos
     is_new_user = (user.credits is None or user.credits == 0) and not user.is_admin
     welcome_message = None
     
@@ -276,15 +270,12 @@ async def get_user_balance(
         if result.get("success"):
             welcome_message = result.get("message")
     
-    # Verificar status premium
     is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
     
-    # Calcular dias restantes
     days_left = 0
     if is_premium and user.premium_expires_at:
         days_left = max(0, (user.premium_expires_at - date.today()).days)
     
-    # Verificar se pode receber crédito diário
     can_receive_daily = False
     if is_premium and (user.credits or 0) < MAX_CREDITS_BALANCE:
         today = date.today()
@@ -298,7 +289,7 @@ async def get_user_balance(
     response = {
         "success": True,
         "credits": user.credits or 0,
-        "credits_display": get_credits_display(user),
+        "credits_display": crud.get_credits_display(user),
         "is_admin": user.is_admin,
         "max_credits_balance": MAX_CREDITS_BALANCE,
         "is_new_user": is_new_user,
@@ -328,7 +319,7 @@ async def check_analysis_credits(
 ):
     """Verifica se usuário tem créditos para realizar análise"""
     
-    user = db.query(User).filter(User.id == current_user.id).first()
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         return sanitize_response({
@@ -386,7 +377,7 @@ async def consume_credit(
 ):
     """Consome 1 crédito do usuário após análise bem-sucedida"""
     
-    user = db.query(User).filter(User.id == current_user.id).first()
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         return sanitize_response({
@@ -433,7 +424,7 @@ async def check_daily_credit(
 ):
     """Endpoint para usuário premium receber crédito diário"""
     
-    user = db.query(User).filter(User.id == current_user.id).first()
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         return sanitize_response({
@@ -462,12 +453,13 @@ async def check_daily_credit(
 
 
 # ==============================================
-# 🔥 ROTA: CRIAR PAGAMENTO PIX (COM MERCADO PAGO REAL)
+# 🔥 ROTA: CRIAR PAGAMENTO PIX (CORRIGIDA)
 # ==============================================
 
 @router.post("/create-pix")
 async def create_pix_payment(
     background_tasks: BackgroundTasks,
+    request_data: CreatePaymentRequest,  # ✅ CORRIGIDO: adicionado o parâmetro
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -476,7 +468,7 @@ async def create_pix_payment(
     Fallback para simulação se configurado
     """
     
-    user = db.query(User).filter(User.id == current_user.id).first()
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -484,14 +476,16 @@ async def create_pix_payment(
     if user.is_admin:
         raise HTTPException(status_code=400, detail="Administradores têm acesso ilimitado")
     
-    # 🔥 RATE LIMIT: Evita spam
+    # Validação do plan_id (opcional, mas útil)
+    if request_data.plan_id != "premium_mensal":
+        raise HTTPException(status_code=400, detail="Plano inválido. Use premium_mensal")
+    
     if not check_payment_rate_limit(user.id, db):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Muitas tentativas de pagamento. Aguarde até amanhã."
         )
     
-    # Verificar se já tem plano premium ativo
     if user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium():
         days_left = (user.premium_expires_at - date.today()).days
         raise HTTPException(
@@ -499,7 +493,6 @@ async def create_pix_payment(
             detail=f"Você já possui plano premium ativo por mais {days_left} dias!"
         )
     
-    # 🔥 PEGAR PREÇO DINÂMICO
     promo = get_or_create_promotion(db)
     
     if user.promotional_price_locked and user.promotional_price:
@@ -509,7 +502,6 @@ async def create_pix_payment(
         price = promo.get_current_price()
         price_type = "promotional" if promo.has_available_slots() else "regular"
     
-    # 🔥 🔥 🔄 TENTAR MERCADO PAGO REAL PRIMEIRO
     if USE_REAL_MERCADO_PAGO and mp_service and mp_service.sdk:
         try:
             logger.info(f"💰 Criando pagamento PIX REAL para {user.email} - R$ {price}")
@@ -523,7 +515,6 @@ async def create_pix_payment(
             )
             
             if result.get("success"):
-                # Salvar pagamento REAL no banco
                 payment = Payment(
                     user_id=user.id,
                     mp_id=result["payment_id"],
@@ -556,7 +547,6 @@ async def create_pix_payment(
                 
                 logger.info(f"✅ Pagamento PIX REAL criado: ID {payment.id} - MP ID: {result['payment_id']}")
                 
-                # Registrar alerta de pending
                 alert_payment_pending(user.email, price)
                 
                 return sanitize_response({
@@ -583,7 +573,6 @@ async def create_pix_payment(
             else:
                 logger.error(f"❌ Erro no Mercado Pago: {result.get('error')}")
                 
-                # Se falhou e fallback está habilitado, usar simulação
                 if os.getenv("MP_FALLBACK_SIMULATED", "false").lower() == "true":
                     logger.warning("⚠️ Usando fallback simulado para pagamento PIX")
                     return await create_simulated_pix_payment(
@@ -603,7 +592,6 @@ async def create_pix_payment(
                 )
             raise HTTPException(status_code=400, detail=str(e))
     
-    # 🔄 FALLBACK: Modo simulado
     else:
         logger.info("🔄 Usando modo SIMULADO para pagamento PIX")
         return await create_simulated_pix_payment(
@@ -623,7 +611,6 @@ async def create_simulated_pix_payment(
     
     payment_uuid = str(uuid.uuid4())
     
-    # QR Code simulado
     pix_code = f"00020126360014BR.GOV.BCB.PIX0114{payment_uuid[:14]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
     
     payment = Payment(
@@ -656,7 +643,6 @@ async def create_simulated_pix_payment(
     
     logger.info(f"🔄 Pagamento SIMULADO criado: ID {payment.id} para usuário ID {user.id}")
     
-    # Simulação de aprovação automática
     background_tasks.add_task(simulate_payment_approval, payment.id, user.id, db)
     
     return sanitize_response({
@@ -717,7 +703,6 @@ async def get_pix_qrcode(
             expires_in=0
         )
     
-    # Para pagamentos reais, usar o QR Code salvo
     qr_code_base64 = payment.qr_code_base64
     qr_code = payment.qr_code or payment.mp_id
     
@@ -744,15 +729,13 @@ async def simulate_payment_approval(payment_id: int, user_id: int, db: Session):
         payment = db.query(Payment).filter(Payment.id == payment_id).first()
         
         if payment and payment.status == "pending":
-            user = db.query(User).filter(User.id == user_id).first()
+            user = crud.get_user_by_id(db, user_id)
             
             if user:
-                # Ativar plano premium
                 user.plan = UserPlan.PREMIUM_MENSAL
                 user.premium_activated_at = datetime.now()
                 user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
                 
-                # Verificar se foi compra promocional
                 price_type = payment.payment_metadata.get("price_type", "regular")
                 was_promotional = price_type == "promotional"
                 
@@ -822,7 +805,7 @@ async def get_plans(db: Session = Depends(get_db)):
 
 
 # ==============================================
-# 🔥 ROTA: STATUS DO PAGAMENTO (COM VALIDAÇÃO)
+# 🔥 ROTA: STATUS DO PAGAMENTO
 # ==============================================
 
 @router.get("/status/{payment_id}")
@@ -844,12 +827,10 @@ async def check_payment_status(
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
-    # Para pagamentos reais, consultar status atualizado no Mercado Pago
     if payment.payment_metadata.get("real_payment") and mp_service and mp_service.sdk:
         try:
             mp_status = mp_service.get_payment_status_real(payment.mp_id)
             if mp_status.get("success") and mp_status.get("status") != payment.status:
-                # Atualizar status se mudou
                 payment.status = mp_status["status"]
                 if mp_status["status"] == "approved" and not payment.approved_at:
                     payment.approved_at = datetime.now()
@@ -911,7 +892,7 @@ async def cancel_payment(
 
 
 # ==============================================
-# 🔥 ROTA: WEBHOOK MERCADO PAGO (ATUALIZADO)
+# 🔥 ROTA: WEBHOOK MERCADO PAGO (CORRIGIDO - ROBUSTO)
 # ==============================================
 
 @router.post("/webhook")
@@ -922,12 +903,36 @@ async def mercadopago_webhook(
 ):
     """
     Webhook para receber notificações REAIS do Mercado Pago
-    Processa pagamentos aprovados e atualiza o sistema
+    Versão robusta que aceita JSON ou texto/x-www-form-urlencoded
     """
     try:
-        # Receber dados do webhook
-        data = await request.json()
-        logger.info(f"🔔 Webhook recebido: {json.dumps(data)[:500]}")
+        # 🔥 LER BODY DE FORMA SEGURA
+        body = await request.body()
+        
+        if not body:
+            logger.warning("⚠️ Webhook recebido sem corpo")
+            return {"status": "ignored", "reason": "empty body"}
+        
+        # Tentar parsear como JSON
+        try:
+            data = json.loads(body)
+            logger.info(f"🔔 Webhook JSON recebido: {json.dumps(data)[:500]}")
+        except json.JSONDecodeError:
+            # Pode ser notificação em formato x-www-form-urlencoded
+            text_body = body.decode('utf-8')
+            logger.info(f"🔔 Webhook não-JSON recebido: {text_body[:200]}")
+            
+            # Tentar extrair payment_id de query string ou formulário
+            import re
+            match = re.search(r'id=(\d+)', text_body)
+            if match:
+                payment_id = match.group(1)
+                logger.info(f"📥 Extraído payment_id: {payment_id}")
+                background_tasks.add_task(process_payment_webhook, payment_id, db)
+            else:
+                logger.warning(f"⚠️ Não foi possível extrair payment_id do webhook")
+            
+            return {"status": "received"}
         
         # Verificar tipo de notificação
         notification_type = data.get("type") or data.get("action")
@@ -935,30 +940,35 @@ async def mercadopago_webhook(
         if notification_type == "payment":
             payment_id = data.get("data", {}).get("id")
             if payment_id:
-                background_tasks.add_task(process_payment_webhook, payment_id, db)
+                background_tasks.add_task(process_payment_webhook, str(payment_id), db)
         
-        elif notification_type == "payment.created" or notification_type == "payment.updated":
+        elif notification_type in ["payment.created", "payment.updated"]:
             payment_id = data.get("data", {}).get("id")
             if payment_id:
-                background_tasks.add_task(process_payment_webhook, payment_id, db)
+                background_tasks.add_task(process_payment_webhook, str(payment_id), db)
+        
+        # 🔥 MERCADO PAGO TAMBÉM ENVIA APENAS { "id": 123 } EM ALGUNS CASOS
+        elif data.get("id"):
+            payment_id = str(data["id"])
+            background_tasks.add_task(process_payment_webhook, payment_id, db)
+        
+        else:
+            logger.info(f"ℹ️ Webhook ignorado (tipo não reconhecido): {notification_type}")
         
         return {"status": "received"}
         
     except Exception as e:
         logger.error(f"❌ Erro no webhook: {e}")
-        return {"status": "error"}
+        return {"status": "error", "detail": str(e)}
 
 
 async def process_payment_webhook(payment_id: str, db: Session):
     """
     Processa notificação de pagamento do Mercado Pago
     """
-    import json
-    
     await asyncio.sleep(2)  # Aguardar processamento do MP
     
     try:
-        # Buscar status no Mercado Pago
         payment_info = mp_service.get_payment_status_real(payment_id)
         
         if not payment_info.get("success"):
@@ -968,33 +978,27 @@ async def process_payment_webhook(payment_id: str, db: Session):
         status = payment_info.get("status")
         external_reference = payment_info.get("external_reference")
         
-        # Buscar pagamento no banco
         db_payment = db.query(Payment).filter(Payment.mp_id == str(payment_id)).first()
         
         if not db_payment:
             logger.warning(f"⚠️ Pagamento {payment_id} não encontrado no banco")
             return
         
-        # Se já foi processado, ignorar
         if db_payment.status != PaymentStatus.PENDING:
             logger.info(f"ℹ️ Pagamento {payment_id} já processado: {db_payment.status}")
             return
         
-        # Processar conforme status
         if status == "approved":
             db_payment.status = PaymentStatus.APPROVED
             db_payment.approved_at = datetime.now()
             
-            # Ativar plano premium para o usuário
-            user = db.query(User).filter(User.id == db_payment.user_id).first()
+            user = crud.get_user_by_id(db, db_payment.user_id)
             
             if user:
-                # Ativar plano
                 user.plan = UserPlan.PREMIUM_MENSAL
                 user.premium_activated_at = datetime.now()
                 user.premium_expires_at = date.today() + timedelta(days=DAYS_PREMIUM)
                 
-                # Verificar se foi compra promocional
                 price_type = db_payment.payment_metadata.get("price_type", "regular")
                 was_promotional = price_type == "promotional"
                 
@@ -1007,14 +1011,12 @@ async def process_payment_webhook(payment_id: str, db: Session):
                         user.purchased_at_promotion = datetime.now()
                         logger.info(f"🎟️ Vaga promocional utilizada! Restam: {promo.get_remaining_slots()}")
                 
-                # Adicionar crédito inicial
                 user.credits = (user.credits or 0) + 1
                 
                 db.commit()
                 
                 logger.info(f"✅ Pagamento {payment_id} APROVADO! Premium ativado para {user.email}")
                 
-                # Alerta de sucesso
                 alert_payment_approved(user.email, db_payment.amount)
             else:
                 logger.error(f"❌ Usuário não encontrado para pagamento {payment_id}")
@@ -1036,7 +1038,7 @@ async def process_payment_webhook(payment_id: str, db: Session):
 
 
 # ==============================================
-# 🔥 ROTA: STATUS DA ASSINATURA (DIAS RESTANTES)
+# 🔥 ROTA: STATUS DA ASSINATURA
 # ==============================================
 
 @router.get("/subscription-status")
@@ -1044,11 +1046,9 @@ async def get_subscription_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Verifica status da assinatura premium do usuário
-    Retorna quantos dias faltam, se precisa renovar, etc.
-    """
-    user = db.query(User).filter(User.id == current_user.id).first()
+    """Verifica status da assinatura premium do usuário"""
+    
+    user = crud.get_user_by_id(db, current_user.id)
     
     if not user:
         return sanitize_response({
@@ -1056,7 +1056,6 @@ async def get_subscription_status(
             "error": "Usuário não encontrado"
         })
     
-    # Admin tem acesso ilimitado
     if user.is_admin:
         return sanitize_response({
             "success": True,
@@ -1069,7 +1068,6 @@ async def get_subscription_status(
             "message": "👑 Administrador - acesso ilimitado"
         })
     
-    # Verificar se tem plano premium
     is_premium = user.plan == UserPlan.PREMIUM_MENSAL
     
     if not is_premium or not user.premium_expires_at:
@@ -1084,24 +1082,18 @@ async def get_subscription_status(
             "message": "Você não possui um plano premium ativo"
         })
     
-    # Calcular dias restantes
     today = date.today()
     days_left = (user.premium_expires_at - today).days
     
-    # Verificar se expirou
     is_expired = days_left <= 0
     is_active = not is_expired
-    
-    # Precisa renovar? (últimos 5 dias)
     needs_renewal = 0 < days_left <= 5
     
-    # Se expirou, rebaixar automaticamente
     if is_expired:
         user.plan = UserPlan.BASICO
         db.commit()
         logger.info(f"⏰ Plano expirado e rebaixado: {user.email}")
     
-    # Mensagem personalizada
     if is_expired:
         message = "❌ Seu plano premium expirou! Renove agora para continuar usando."
     elif needs_renewal:
@@ -1119,7 +1111,7 @@ async def get_subscription_status(
         "is_expired": is_expired,
         "expires_at": user.premium_expires_at.isoformat() if user.premium_expires_at else None,
         "activated_at": user.premium_activated_at.isoformat() if user.premium_activated_at else None,
-        "renewal_price": user.get_current_price() if hasattr(user, 'get_current_price') else 97.00,
+        "renewal_price": user.promotional_price if user.promotional_price_locked else 97.00,
         "message": message,
         "plan_details": {
             "name": "Plano Bronze",
@@ -1129,4 +1121,4 @@ async def get_subscription_status(
     })
 
 
-print("✅ payment_routes.py carregado - Mercado Pago REAL | Promoção Bronze (100 vagas)")
+print("✅ payment_routes.py carregado - Versão CORRIGIDA com request_data e webhook robusto")
