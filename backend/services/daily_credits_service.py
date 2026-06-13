@@ -1,6 +1,7 @@
-# backend/services/daily_credits_job.py
+# backend/services/daily_credits_service.py
 from sqlalchemy.orm import Session
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from sqlalchemy import cast, Date
 from backend.models import User, DailyCreditLog, Payment, Analysis, UserPlan
 from backend.observability.sentinel import alert_daily_credits_distributed
 import logging
@@ -16,11 +17,36 @@ class DailyCreditsService:
     - 💰 Usuários comuns começam com 3 créditos (compram mais quando acabam)
     - 👑 Admin tem créditos ilimitados
     - 🔥 LIMITE MÁXIMO DE 3 CRÉDITOS ACUMULADOS
+    - 🕐 TODAS as datas são baseadas no fuso horário de Brasília (UTC-3)
     """
     
     def __init__(self):
         self.credits_per_day = 1
         self.max_credits_balance = 3  # 🔥 Limite máximo de créditos acumulados
+        
+        # 🔥 CORREÇÃO: Definir fuso horário de Brasília (UTC-3)
+        # Horário de Brasília: 3 horas atrás do UTC
+        self.tz_brasil = timezone(timedelta(hours=-3))
+        logger.info(f"🕐 DailyCreditsService inicializado com fuso UTC-3 (Brasília)")
+    
+    def _get_today_brasil(self) -> date:
+        """
+        Retorna data atual no fuso horário de Brasília (UTC-3)
+        🚨 CRÍTICO: Não usar date.today() sem timezone em containers Docker!
+        """
+        return datetime.now(self.tz_brasil).date()
+    
+    def _get_now_brasil(self) -> datetime:
+        """
+        Retorna datetime atual no fuso horário de Brasília (UTC-3)
+        """
+        return datetime.now(self.tz_brasil)
+    
+    def _get_next_credit_date_brasil(self, days_ahead: int = 1) -> date:
+        """
+        Retorna data futura no fuso horário de Brasília
+        """
+        return self._get_today_brasil() + timedelta(days=days_ahead)
     
     def check_and_add_daily_credit(self, db: Session, user_id: int) -> Dict:
         """
@@ -30,6 +56,8 @@ class DailyCreditsService:
         ✅ Usuário comum: não ganha nada (volta status)
         ⭐ Usuário premium: ganha 1 crédito por dia (se saldo < 3)
         👑 Admin: retorno especial
+        
+        🕐 Todas as verificações de data usam fuso horário de Brasília (UTC-3)
         """
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -68,12 +96,16 @@ class DailyCreditsService:
         # ⭐ Verificar se é PREMIUM
         is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
         
-        today = date.today()
+        # 🔥 CORREÇÃO: Usar data baseada no fuso de Brasília (UTC-3)
+        today = self._get_today_brasil()
+        
+        # Log para debug do fuso horário
+        logger.debug(f"🕐 Verificando crédito para user {user_id} - Data Brasília: {today}")
         
         # Verificar se já ganhou crédito hoje (apenas para premium)
         already_got = db.query(DailyCreditLog).filter(
             DailyCreditLog.user_id == user_id,
-            DailyCreditLog.date == today
+            cast(DailyCreditLog.date, Date) == today
         ).first()
         
         # ⭐ Se for PREMIUM e ainda não ganhou hoje, adicionar crédito
@@ -87,7 +119,7 @@ class DailyCreditsService:
                 credits_added=self.credits_per_day,
                 date=today,
                 total_after=user.credits,
-                source="premium_daily"  # IMPORTANTE: veio do plano premium
+                source="premium_daily"
             )
             db.add(log)
             db.commit()
@@ -108,7 +140,7 @@ class DailyCreditsService:
                 total=user.credits
             )
             
-            logger.info(f"⭐ Crédito premium para {user.email} - Dia {streak}/30")
+            logger.info(f"⭐ Crédito premium para {user.email} - Dia {streak}/30 - Data Brasília: {today}")
             
             # Verificar se atingiu o limite após adicionar
             warning_message = ""
@@ -126,22 +158,27 @@ class DailyCreditsService:
                 "is_premium": True,
                 "premium_days_left": user.get_premium_days_left(),
                 "max_credits_reached": user.credits >= self.max_credits_balance,
-                "max_credits": self.max_credits_balance
+                "max_credits": self.max_credits_balance,
+                "timezone": "America/Sao_Paulo (UTC-3)",
+                "date_processed": today.isoformat()
             }
         
         # ⭐ Se for PREMIUM mas já ganhou hoje
         if is_premium and already_got:
+            next_credit_date = self._get_next_credit_date_brasil(1)
             return {
                 "success": True,
                 "credits_added": 0,
                 "current_credits": user.credits or 0,
                 "message": "Você já ganhou seu crédito premium hoje! Volte amanhã.",
                 "next_credit": "Amanhã você ganha mais 1 crédito",
+                "next_credit_date": next_credit_date.isoformat(),
                 "already_received_today": True,
                 "is_admin": False,
                 "is_premium": True,
                 "premium_days_left": user.get_premium_days_left(),
-                "max_credits": self.max_credits_balance
+                "max_credits": self.max_credits_balance,
+                "timezone": "America/Sao_Paulo (UTC-3)"
             }
         
         # ✅ Usuário comum (não premium) - apenas retorna status
@@ -154,19 +191,23 @@ class DailyCreditsService:
             "already_received_today": False,
             "is_admin": False,
             "is_premium": False,
-            "max_credits": self.max_credits_balance
+            "max_credits": self.max_credits_balance,
+            "timezone": "America/Sao_Paulo (UTC-3)"
         }
     
     def get_user_credit_status(self, db: Session, user_id: int) -> Dict:
         """
         Retorna status completo dos créditos do usuário
         Inclui informações do plano premium e limite máximo
+        
+        🕐 Todas as datas usam fuso horário de Brasília (UTC-3)
         """
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return {"error": "Usuário não encontrado"}
         
-        today = date.today()
+        # 🔥 CORREÇÃO: Usar data baseada no fuso de Brasília (UTC-3)
+        today = self._get_today_brasil()
         
         # 👑 ADMIN
         if user.is_admin:
@@ -177,7 +218,9 @@ class DailyCreditsService:
                 "message": "👑 Admin - créditos ilimitados",
                 "is_admin": True,
                 "is_premium": False,
-                "max_credits": self.max_credits_balance
+                "max_credits": self.max_credits_balance,
+                "timezone": "America/Sao_Paulo (UTC-3)",
+                "today_date": today.isoformat()
             }
         
         # ⭐ Verificar se é premium
@@ -188,7 +231,7 @@ class DailyCreditsService:
         if is_premium:
             got_today = db.query(DailyCreditLog).filter(
                 DailyCreditLog.user_id == user_id,
-                DailyCreditLog.date == today,
+                cast(DailyCreditLog.date, Date) == today,
                 DailyCreditLog.source == "premium_daily"
             ).first()
         
@@ -215,6 +258,8 @@ class DailyCreditsService:
             "max_credits": self.max_credits_balance,
             "can_receive_more": current_credits < self.max_credits_balance,
             "credits_needed_to_receive": max(0, self.max_credits_balance - current_credits),
+            "timezone": "America/Sao_Paulo (UTC-3)",
+            "today_date": today.isoformat(),
             "premium_info": {
                 "active": is_premium,
                 "days_left": premium_days_left,
@@ -233,6 +278,8 @@ class DailyCreditsService:
         """
         ⭐ Verifica especificamente o crédito diário do premium
         Útil para chamadas AJAX no frontend
+        
+        🕐 Todas as verificações usam fuso horário de Brasília (UTC-3)
         """
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -249,7 +296,8 @@ class DailyCreditsService:
                 "can_receive_today": False
             }
         
-        today = date.today()
+        # 🔥 CORREÇÃO: Usar data baseada no fuso de Brasília (UTC-3)
+        today = self._get_today_brasil()
         current_credits = user.credits or 0
         
         # Verificar limite de créditos
@@ -264,13 +312,15 @@ class DailyCreditsService:
                 "next_credit_date": None,
                 "days_left": user.get_premium_days_left(),
                 "credits_balance": current_credits,
-                "max_credits": self.max_credits_balance
+                "max_credits": self.max_credits_balance,
+                "timezone": "America/Sao_Paulo (UTC-3)",
+                "today_date": today.isoformat()
             }
         
         # Verificar se já recebeu hoje
         received_today = db.query(DailyCreditLog).filter(
             DailyCreditLog.user_id == user_id,
-            DailyCreditLog.date == today,
+            cast(DailyCreditLog.date, Date) == today,
             DailyCreditLog.source == "premium_daily"
         ).first() is not None
         
@@ -281,7 +331,7 @@ class DailyCreditsService:
         else:
             # Verificar se ainda tem dias restantes
             if user.get_premium_days_left() > 0:
-                next_credit_date = today + timedelta(days=1)
+                next_credit_date = self._get_next_credit_date_brasil(1)
         
         return {
             "success": True,
@@ -292,12 +342,16 @@ class DailyCreditsService:
             "days_left": user.get_premium_days_left(),
             "credits_balance": current_credits,
             "max_credits": self.max_credits_balance,
-            "credits_until_limit": max(0, self.max_credits_balance - current_credits)
+            "credits_until_limit": max(0, self.max_credits_balance - current_credits),
+            "timezone": "America/Sao_Paulo (UTC-3)",
+            "today_date": today.isoformat()
         }
     
     def get_premium_summary(self, db: Session, user_id: int) -> Dict:
         """
         Retorna resumo completo do plano premium
+        
+        🕐 Todas as datas usam fuso horário de Brasília (UTC-3)
         """
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -311,6 +365,7 @@ class DailyCreditsService:
                 "has_premium": False,
                 "message": "Usuário não possui plano premium",
                 "max_credits": self.max_credits_balance,
+                "timezone": "America/Sao_Paulo (UTC-3)",
                 "plans_available": {
                     "premium_mensal": {
                         "name": "Premium Mensal",
@@ -328,13 +383,15 @@ class DailyCreditsService:
                 }
             }
         
-        # Logs de créditos premium
+        # Logs de créditos premium (ordenados do MAIS ANTIGO para o MAIS NOVO)
+        # 🔥 CORREÇÃO: Ordem ASC para histórico cronológico correto
         logs = db.query(DailyCreditLog).filter(
             DailyCreditLog.user_id == user_id,
             DailyCreditLog.source == "premium_daily"
-        ).order_by(DailyCreditLog.date.desc()).all()
+        ).order_by(DailyCreditLog.date.asc()).all()
         
-        today = date.today()
+        # 🔥 CORREÇÃO: Usar data baseada no fuso de Brasília (UTC-3)
+        today = self._get_today_brasil()
         days_received = len(logs)
         days_left = user.get_premium_days_left()
         current_credits = user.credits or 0
@@ -343,17 +400,37 @@ class DailyCreditsService:
         upcoming_credits = []
         credits_to_receive = min(days_left, self.max_credits_balance - current_credits)
         for i in range(1, min(credits_to_receive + 1, 5)):  # Próximos 5 dias (ou até o limite)
-            next_date = today + timedelta(days=i)
+            next_date = self._get_next_credit_date_brasil(i)
             upcoming_credits.append({
                 "date": next_date.isoformat(),
                 "credits": 1,
                 "day": days_received + i
             })
         
+        # 🔥 CORREÇÃO: next_credit_today com lógica limpa e sem erro de sintaxe
+        # Condições para receber crédito hoje:
+        # 1. Ainda tem dias restantes de premium (days_left > 0)
+        # 2. Saldo atual está abaixo do limite máximo (current_credits < max_credits_balance)
+        # 3. Ainda NÃO recebeu o crédito de hoje (logs vazio OU último log não é de hoje)
+        
+        has_days_left = days_left > 0
+        has_room_for_more = current_credits < self.max_credits_balance
+        
+        # Verificar se já recebeu hoje
+        if logs:
+            last_log_date = logs[-1].date  # Último log (mais recente, pois ordem é ASC)
+            already_received_today = (last_log_date == today)
+        else:
+            already_received_today = False
+        
+        next_credit_today = has_days_left and has_room_for_more and not already_received_today
+        
         return {
             "success": True,
             "has_premium": True,
             "max_credits": self.max_credits_balance,
+            "timezone": "America/Sao_Paulo (UTC-3)",
+            "today_date": today.isoformat(),
             "plan": {
                 "name": "Premium Mensal",
                 "activated_at": user.premium_activated_at.isoformat() if user.premium_activated_at else None,
@@ -368,17 +445,17 @@ class DailyCreditsService:
                 "current_balance": current_credits,
                 "used": (days_received + 3) - current_credits,  # 3 é o inicial
                 "max_balance": self.max_credits_balance,
-                "can_receive_more": current_credits < self.max_credits_balance,
-                "next_credit_today": not logs or logs[0].date != today if days_left > 0 and current_credits < self.max_credits_balance else False,
+                "can_receive_more": has_room_for_more,
+                "next_credit_today": next_credit_today,
                 "upcoming_credits": upcoming_credits
             },
             "history": [
                 {
                     "date": log.date.isoformat(),
                     "credits": log.credits_added,
-                    "day": i+1,
+                    "day": i + 1,  # 🔥 CORREÇÃO: i+1 funciona porque ordem é ASC (dia 1, 2, 3...)
                     "balance_after": log.total_after
                 }
-                for i, log in enumerate(logs[:10])  # Últimos 10
+                for i, log in enumerate(logs)  # 🔥 Ordem cronológica correta
             ]
         }

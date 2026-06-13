@@ -1,9 +1,14 @@
-// payment.js - VERSÃO CORRIGIDA COM PROMOÇÃO "DE R$149 POR R$97"
+// payment.js - VERSÃO CORRIGIDA E SINCRONIZADA COM BACKEND
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
 
 const API_URL = window.API_URL || 'http://localhost:8000/api';
+
+// Constantes de limite (sincronizadas com backend)
+const MAX_CREDITS_BALANCE = 3;
+const INITIAL_FREE_CREDITS = 3;
+const PIX_EXPIRY_MINUTES = 30;
 
 // ==============================================
 // 🔒 FUNÇÕES DE SEGURANÇA CONTRA XSS
@@ -28,6 +33,16 @@ function sanitizeNumber(value, defaultValue = 0) {
     return isNaN(num) ? defaultValue : num;
 }
 
+function sanitizeCPF(cpf) {
+    if (!cpf) return '';
+    return cpf.replace(/\D/g, '');
+}
+
+function formatCPFDisplay(cpf) {
+    if (!cpf || cpf.length !== 11) return cpf || '';
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}
+
 // ==============================================
 // FUNÇÕES DE AUTENTICAÇÃO E USUÁRIO
 // ==============================================
@@ -48,9 +63,9 @@ function getCreditsDisplay() {
     }
 }
 
-function formatCreditsDisplay(credits, isPremiumUser = false, maxCredits = 3) {
+function formatCreditsDisplay(credits, isPremiumUser = false, maxCredits = MAX_CREDITS_BALANCE) {
     const safeCredits = sanitizeNumber(credits, 0);
-    const safeMaxCredits = sanitizeNumber(maxCredits, 3);
+    const safeMaxCredits = sanitizeNumber(maxCredits, MAX_CREDITS_BALANCE);
     
     if (isAdmin()) return '∞';
     if (isPremiumUser) {
@@ -69,7 +84,7 @@ async function updateCreditsDisplay() {
                 const displayText = formatCreditsDisplay(
                     data.current_credits || 0,
                     data.is_premium || false,
-                    data.max_credits || 3
+                    data.max_credits || MAX_CREDITS_BALANCE
                 );
                 creditsElement.textContent = displayText;
             }
@@ -157,8 +172,6 @@ async function renderBronzePlan(plans, fullData = null) {
     const vagasUsadas = totalVagas - vagasRestantes;
     const percentual = (vagasUsadas / totalVagas) * 100;
     const isUrgent = vagasRestantes <= 20 && vagasRestantes > 0;
-    
-    // Se o usuário já tem preço travado, mostrar mensagem especial
     const userHasLockedPrice = isUserLocked;
     
     // 🔥 HTML DO PLANO BRONZE COM LAYOUT DE PROMOÇÃO
@@ -254,7 +267,7 @@ async function renderBronzePlan(plans, fullData = null) {
                         </div>
                     </div>
                     <div class="mt-2 text-center small text-danger">
-                        As 100 vagas promocionais já foram preenchidas. Valor volta para R$ ${precoRegular.toFixed(2).replace('.', ',')}
+                        As ${totalVagas} vagas promocionais já foram preenchidas. Valor volta para R$ ${precoRegular.toFixed(2).replace('.', ',')}
                     </div>
                 </div>
                 ` : ''}
@@ -312,7 +325,7 @@ async function renderBronzePlan(plans, fullData = null) {
                         </div>
                         <div class="col-4">
                             <i class="fas fa-tachometer-alt fa-lg"></i>
-                            <div class="small fw-bold mt-1">3 Máx.</div>
+                            <div class="small fw-bold mt-1">${MAX_CREDITS_BALANCE} Máx.</div>
                             <div class="small text-muted">Créditos acumulados</div>
                         </div>
                     </div>
@@ -320,11 +333,11 @@ async function renderBronzePlan(plans, fullData = null) {
                 
                 <div class="limit-warning">
                     <i class="fas fa-info-circle"></i>
-                    <small>⚠️ Limite máximo de <strong>3 créditos acumulados</strong>. Use-os para continuar recebendo novos créditos diários!</small>
+                    <small>⚠️ Limite máximo de <strong>${MAX_CREDITS_BALANCE} créditos acumulados</strong>. Use-os para continuar recebendo novos créditos diários!</small>
                 </div>
                 
                 <div class="d-grid gap-3 mt-4">
-                    <button class="btn btn-bronze btn-lg" id="buyButton" onclick="window.selectPlan('premium_mensal', 'pix')">
+                    <button class="btn btn-bronze btn-lg" id="buyButton" onclick="window.openCpfModal('premium_mensal')">
                         <i class="fas fa-bolt me-2"></i>
                         ${userHasLockedPrice ? 'RENOVAR MEU PLANO' : (isSoldOut ? `COMPRAR POR R$ ${precoAtual.toFixed(2).replace('.', ',')}` : `GARANTIR PREÇO PROMOCIONAL POR R$ ${precoAtual.toFixed(2).replace('.', ',')}`)}
                         <small class="d-block fs-10">Pagamento seguro via PIX</small>
@@ -355,10 +368,112 @@ async function renderBronzePlan(plans, fullData = null) {
 }
 
 // ==============================================
-// SELEÇÃO E PAGAMENTO
+// 🔥 MODAL DE CPF (ANTIFRAUDE)
 // ==============================================
 
-async function selectPlan(planId, method) {
+function openCpfModal(planId) {
+    if (isAdmin()) {
+        showNotification('👑 Como administrador, você tem acesso ilimitado.', 'info');
+        return;
+    }
+    
+    // Verificar se já tem modal de CPF
+    let cpfModal = document.getElementById('cpfModal');
+    if (!cpfModal) {
+        cpfModal = document.createElement('div');
+        cpfModal.id = 'cpfModal';
+        cpfModal.className = 'modal fade';
+        cpfModal.setAttribute('tabindex', '-1');
+        cpfModal.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
+                    <div class="modal-header border-0">
+                        <h5 class="modal-title" style="color: #f5a623;">
+                            <i class="fas fa-id-card me-2"></i>Confirme seu CPF
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-white-50 mb-3">
+                            <i class="fas fa-shield-alt me-2"></i>
+                            O CPF é obrigatório para geração do PIX e protege sua compra contra fraudes.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label text-white">CPF</label>
+                            <input type="text" 
+                                   class="form-control form-control-lg" 
+                                   id="cpfInput" 
+                                   placeholder="000.000.000-00"
+                                   maxlength="14"
+                                   style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white;">
+                            <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
+                        </div>
+                        <div id="cpfError" class="alert alert-danger d-none"></div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-bronze" id="confirmCpfBtn" onclick="window.proceedWithCpf('${planId}')">
+                            <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(cpfModal);
+        
+        // Adicionar máscara de CPF
+        const cpfInput = document.getElementById('cpfInput');
+        if (cpfInput) {
+            cpfInput.addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\D/g, '');
+                if (value.length > 11) value = value.slice(0, 11);
+                if (value.length > 9) {
+                    value = value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+                } else if (value.length > 6) {
+                    value = value.replace(/^(\d{3})(\d{3})(\d{0,3})$/, '$1.$2.$3');
+                } else if (value.length > 3) {
+                    value = value.replace(/^(\d{3})(\d{0,3})$/, '$1.$2');
+                }
+                e.target.value = value;
+            });
+        }
+    }
+    
+    const modal = new bootstrap.Modal(cpfModal);
+    modal.show();
+}
+
+async function proceedWithCpf(planId) {
+    const cpfInput = document.getElementById('cpfInput');
+    const cpfError = document.getElementById('cpfError');
+    const confirmBtn = document.getElementById('confirmCpfBtn');
+    
+    if (!cpfInput) return;
+    
+    const cpf = sanitizeCPF(cpfInput.value);
+    
+    // Validar CPF (11 dígitos)
+    if (cpf.length !== 11) {
+        if (cpfError) {
+            cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
+            cpfError.classList.remove('d-none');
+        }
+        return;
+    }
+    
+    // Ocultar modal de CPF
+    const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
+    if (cpfModal) cpfModal.hide();
+    
+    // Prosseguir com pagamento
+    await selectPlan(planId, 'pix', cpf);
+}
+
+// ==============================================
+// SELEÇÃO E PAGAMENTO (COM CPF)
+// ==============================================
+
+async function selectPlan(planId, method, cpf = null) {
     if (isAdmin()) {
         showNotification('👑 Como administrador, você tem acesso ilimitado.', 'info');
         return;
@@ -380,14 +495,27 @@ async function selectPlan(planId, method) {
         }, 30000);
     }
     
+    // 🔥 CORREÇÃO: Enviar CPF no body
+    const requestBody = { plan_id: planId };
+    if (cpf) {
+        requestBody.cpf = cpf;
+    }
+    
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/create-${method}`, {
             method: 'POST',
-            body: JSON.stringify({ plan_id: planId })
+            body: JSON.stringify(requestBody)
         });
         
         if (response && response.ok) {
             const data = await response.json();
+            
+            // Verificar se precisa de CPF (resposta do backend)
+            if (data.requires_cpf) {
+                showNotification(data.error || 'CPF é obrigatório para gerar o pagamento.', 'warning');
+                openCpfModal(planId);
+                return;
+            }
             
             if (method === 'pix') {
                 if (data.payment_id) {
@@ -404,7 +532,14 @@ async function selectPlan(planId, method) {
         } else if (response) {
             const error = await response.json();
             const errorMsg = error.detail || error.message || 'Erro ao criar pagamento';
-            showNotification(sanitizeHTML(errorMsg), 'error');
+            
+            // Se erro for por CPF, abrir modal
+            if (errorMsg.toLowerCase().includes('cpf')) {
+                showNotification('CPF obrigatório. Por favor, informe seu CPF.', 'warning');
+                openCpfModal(planId);
+            } else {
+                showNotification(sanitizeHTML(errorMsg), 'error');
+            }
         } else {
             showNotification('Erro de conexão. Tente novamente.', 'error');
         }
@@ -447,18 +582,18 @@ async function showPixModalSecure(paymentId, paymentData) {
             const qrData = await response.json();
             
             if (qrData.success && qrData.qr_code_base64) {
-                const maxCredits = qrData.max_credits_balance || 3;
+                const maxCredits = qrData.max_credits_balance || MAX_CREDITS_BALANCE;
                 const isPremiumPlan = paymentData.plan_type === 'daily_credits';
-                
-                // Mostrar se foi promoção
                 const wasPromotional = paymentData.price_type === 'promotional';
+                const expiresInSeconds = qrData.expires_in || (PIX_EXPIRY_MINUTES * 60);
+                const expiresMinutes = Math.floor(expiresInSeconds / 60);
                 
                 modalContent.innerHTML = `
                     ${wasPromotional ? `
                         <div class="alert alert-success mb-3 text-center">
                             <i class="fas fa-gift me-2"></i>
                             <strong>🎉 VOCÊ GARANTIU O PREÇO PROMOCIONAL!</strong><br>
-                            <small>R$ 97,00 - Preço bloqueado para futuras renovações!</small>
+                            <small>R$ ${paymentData.amount?.toFixed(2).replace('.', ',')} - Preço bloqueado para futuras renovações!</small>
                         </div>
                     ` : ''}
                     
@@ -487,11 +622,15 @@ async function showPixModalSecure(paymentId, paymentData) {
                         Créditos: ${paymentData.credits || 0}
                         ${isPremiumPlan ? `<br>⚠️ <strong>Plano Premium:</strong> máximo de ${maxCredits} créditos acumulados por vez.` : ''}
                         <br><br>
+                        ⏰ Este QR Code expira em <strong id="countdownTimer">${expiresMinutes}:00</strong> minutos.<br>
                         Após o pagamento, os créditos são adicionados automaticamente.
                     </div>
                     
                     <div id="paymentStatus"></div>
                 `;
+                
+                // Iniciar contador regressivo
+                startCountdown(expiresInSeconds);
             } else {
                 modalContent.innerHTML = `
                     <div class="alert alert-info text-center">
@@ -530,6 +669,34 @@ async function showPixModalSecure(paymentId, paymentData) {
             </div>
         `;
     }
+}
+
+// Contador regressivo para expiração do PIX
+let countdownInterval = null;
+
+function startCountdown(seconds) {
+    if (countdownInterval) clearInterval(countdownInterval);
+    
+    let remaining = seconds;
+    const timerElement = document.getElementById('countdownTimer');
+    
+    countdownInterval = setInterval(() => {
+        if (remaining <= 0) {
+            clearInterval(countdownInterval);
+            if (timerElement) {
+                timerElement.textContent = 'Expirado!';
+                timerElement.style.color = '#dc3545';
+            }
+            showNotification('⏰ QR Code expirado. Por favor, gere um novo pagamento.', 'warning');
+        } else {
+            const minutes = Math.floor(remaining / 60);
+            const secs = remaining % 60;
+            if (timerElement) {
+                timerElement.textContent = `${minutes}:${secs.toString().padStart(2, '0')}`;
+            }
+            remaining--;
+        }
+    }, 1000);
 }
 
 function copyPixCodeSecure() {
@@ -605,6 +772,11 @@ function startPaymentPollingSecure(paymentId) {
                     clearInterval(paymentPollingInterval);
                     paymentPollingInterval = null;
                     
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    
                     const statusDiv = document.getElementById('paymentStatus');
                     if (statusDiv) {
                         statusDiv.innerHTML = `
@@ -623,7 +795,7 @@ function startPaymentPollingSecure(paymentId) {
                     
                     await updateCreditsDisplay();
                     
-                    // 🔥 Recarregar status da assinatura após pagamento aprovado
+                    // Recarregar status da assinatura após pagamento aprovado
                     if (window.loadSubscriptionStatus) {
                         setTimeout(() => {
                             window.loadSubscriptionStatus();
@@ -805,16 +977,16 @@ function updatePlanStatusCard(subscriptionData) {
     const formattedExpiration = expiresAt ? expiresAt.toLocaleDateString('pt-BR') : '—';
     
     // Definir cor baseada nos dias restantes
-    let statusColor = '#28a745'; // verde
+    let statusColor = '#28a745';
     let statusIcon = '✅';
     let statusText = 'Ativo';
     
     if (daysLeft <= 5 && daysLeft > 0) {
-        statusColor = '#f5a623'; // laranja
+        statusColor = '#f5a623';
         statusIcon = '⚠️';
         statusText = 'Próximo do vencimento';
     } else if (daysLeft <= 0) {
-        statusColor = '#dc3545'; // vermelho
+        statusColor = '#dc3545';
         statusIcon = '❌';
         statusText = 'Expirado';
     }
@@ -886,7 +1058,7 @@ function updatePlanStatusCard(subscriptionData) {
                 
                 <div class="alert alert-info small mb-0" style="background: rgba(245, 166, 35, 0.15); border-color: #f5a623; color: #f5a623;">
                     <i class="fas fa-info-circle me-2"></i>
-                    <strong>Benefícios ativos:</strong> Você recebe <strong>1 crédito novo por dia</strong> (máximo de 3 acumulados) e tem acesso a todas as análises da IA.
+                    <strong>Benefícios ativos:</strong> Você recebe <strong>1 crédito novo por dia</strong> (máximo de ${MAX_CREDITS_BALANCE} acumulados) e tem acesso a todas as análises da IA.
                     ${daysLeft <= 5 && daysLeft > 0 ? '<br><i class="fas fa-clock me-1"></i> <strong>Não esqueça de renovar para não perder os benefícios!</strong>' : ''}
                 </div>
             </div>
@@ -943,6 +1115,8 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             loadPlans();
             console.log('✅ payment.js inicializado - Layout Bronze com promoção de R$149 por R$97');
+            console.log(`📊 Limite de créditos: ${MAX_CREDITS_BALANCE}`);
+            console.log(`⏰ Expiração PIX: ${PIX_EXPIRY_MINUTES} minutos`);
         }, 200);
     }
     
@@ -959,6 +1133,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(paymentPollingInterval);
                 paymentPollingInterval = null;
             }
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
         });
     }
     
@@ -967,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
         window.history.replaceState({}, document.title, window.location.pathname);
         
-        // 🔥 Recarregar status da assinatura após sucesso
+        // Recarregar status da assinatura após sucesso
         setTimeout(() => {
             if (window.loadSubscriptionStatus) {
                 window.loadSubscriptionStatus();
@@ -981,6 +1159,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // ==============================================
 
 window.selectPlan = selectPlan;
+window.openCpfModal = openCpfModal;
+window.proceedWithCpf = proceedWithCpf;
 window.copyPixCodeSecure = copyPixCodeSecure;
 window.updateCreditsDisplay = updateCreditsDisplay;
 window.formatCreditsDisplay = formatCreditsDisplay;
@@ -989,3 +1169,4 @@ window.loadSubscriptionStatus = loadSubscriptionStatus;
 window.checkAndNotifyRenewal = checkAndNotifyRenewal;
 
 console.log('✅ payment.js carregado - Promoção: R$149 por R$97 (primeiras 100 pessoas)');
+console.log(`🔒 Proteção antifraude: CPF obrigatório para PIX`);

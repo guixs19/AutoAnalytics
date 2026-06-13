@@ -5,13 +5,56 @@ COM SUPORTE PARA PLANO PREMIUM E LIMITE DE 3 CRÉDITOS
 """
 import logging
 from sqlalchemy.orm import Session
-from backend.models import User
+from backend.models import User, UserPlan
 from backend.services.daily_credits_service import DailyCreditsService
+from backend.crud import safe_commit
 
 logger = logging.getLogger(__name__)
 
 # Instância do serviço de créditos diários
 daily_credits_service = DailyCreditsService()
+
+
+def _is_premium_user(user: User) -> bool:
+    """
+    🔥 FUNÇÃO AUXILIAR: Verifica se usuário tem plano premium ativo
+    Lida corretamente com Enum do SQLAlchemy, comparando valor ou objeto
+    """
+    if not user:
+        return False
+    
+    # Se user.is_premium() existe e é confiável, usar ele primeiro
+    if hasattr(user, 'is_premium') and callable(user.is_premium):
+        return user.is_premium()
+    
+    # Caso contrário, verificar o plan manualmente
+    plan = user.plan
+    
+    # Se for Enum do SQLAlchemy
+    if hasattr(plan, 'value'):
+        return plan.value == "premium_mensal"
+    elif hasattr(plan, 'name'):
+        return plan.name == "PREMIUM_MENSAL"
+    else:
+        return plan == "premium_mensal"
+
+
+def _get_plan_value(user: User) -> str:
+    """
+    🔥 FUNÇÃO AUXILIAR: Retorna o valor do plano como string
+    Normaliza Enum para string de forma segura
+    """
+    if not user:
+        return "basico"
+    
+    plan = user.plan
+    
+    if hasattr(plan, 'value'):
+        return plan.value
+    elif hasattr(plan, 'name'):
+        return plan.name.lower()
+    else:
+        return str(plan).lower()
 
 
 def can_perform_analysis(db: Session, user: User, required_credits: int = 1) -> bool:
@@ -31,15 +74,14 @@ def can_perform_analysis(db: Session, user: User, required_credits: int = 1) -> 
     has_credits = user.credits >= required_credits
     
     if not has_credits:
-        # Verificar se é premium e pode ganhar crédito hoje
-        is_premium = user.plan.value == "premium_mensal" and user.is_premium() if hasattr(user, 'is_premium') else False
+        is_premium = _is_premium_user(user)
         
         if is_premium:
             # Verificar status do crédito premium
             status = daily_credits_service.check_premium_daily_credit(db, user.id)
             if status.get('can_receive_today'):
                 logger.info(f"⭐ Premium {user.email} pode ganhar crédito hoje - sugerir ação")
-                return False  # Ainda não tem crédito, mas poderia ganhar
+                return False
             elif status.get('max_credits_reached'):
                 logger.warning(f"⚠️ Premium {user.email} atingiu limite de 3 créditos")
         
@@ -55,6 +97,8 @@ def consume_analysis_credit(user: User, db: Session, required_credits: int = 1) 
     ✅ Admin não consome nada
     ⭐ Premium consome normalmente
     💰 Usuário comum consome normalmente
+    
+    🔥 safe_commit já trata rollback automático em caso de erro
     """
     # Admin não consome créditos
     if user.is_admin:
@@ -66,16 +110,20 @@ def consume_analysis_credit(user: User, db: Session, required_credits: int = 1) 
         logger.warning(f"❌ Usuário {user.email} tentou consumir {required_credits} créditos mas só tem {user.credits}")
         return False
     
-    # Consumir crédito
     old_credits = user.credits
     user.credits -= required_credits
-    db.commit()
     
+    try:
+        # safe_commit já faz rollback interno em caso de erro
+        safe_commit(db, f"Erro ao consumir créditos de análise para o usuário {user.email}")
+    except Exception as e:
+        logger.error(f"❌ Falha crítica no banco ao consumir crédito para {user.email}: {e}")
+        return False
+
+    # Executado APENAS se o commit correu bem
     logger.info(f"💰 Usuário {user.email} consumiu {required_credits} crédito(s). Antes: {old_credits}, Agora: {user.credits}")
     
-    # Se for premium, verificar se atingiu limite após consumo
-    is_premium = user.plan.value == "premium_mensal" if hasattr(user.plan, 'value') else False
-    if is_premium and user.credits < 3:
+    if _is_premium_user(user) and user.credits < 3:
         logger.info(f"⭐ Premium {user.email} agora tem {user.credits}/3 créditos - pode receber mais")
     
     return True
@@ -92,8 +140,7 @@ def get_credits_display(user: User) -> str:
     if user.is_admin:
         return "∞"
     
-    # Verificar se é premium (tem limite de 3)
-    is_premium = user.plan.value == "premium_mensal" if hasattr(user.plan, 'value') else False
+    is_premium = _is_premium_user(user)
     
     if is_premium:
         return f"{user.credits}/3"
@@ -120,8 +167,7 @@ def can_receive_daily_credit(db: Session, user: User) -> dict:
             "is_premium": False
         }
     
-    # Verificar se é premium
-    is_premium = user.plan.value == "premium_mensal" and user.is_premium() if hasattr(user, 'is_premium') else False
+    is_premium = _is_premium_user(user)
     
     if not is_premium:
         return {
@@ -141,7 +187,8 @@ def can_receive_daily_credit(db: Session, user: User) -> dict:
         "max_credits_reached": status.get('max_credits_reached', False),
         "credits_balance": status.get('credits_balance', user.credits),
         "max_credits": status.get('max_credits', 3),
-        "days_left": status.get('days_left', 0)
+        "days_left": status.get('days_left', 0),
+        "timezone": status.get('timezone', 'America/Sao_Paulo (UTC-3)')
     }
 
 
@@ -152,3 +199,44 @@ def award_daily_credit(db: Session, user: User) -> dict:
     """
     result = daily_credits_service.check_and_add_daily_credit(db, user.id)
     return result
+
+
+def add_credits_safe(db: Session, user: User, amount: int, description: str = "") -> bool:
+    """
+    Adiciona créditos ao usuário com commit seguro
+    
+    Args:
+        db: Sessão do banco
+        user: Usuário
+        amount: Quantidade de créditos a adicionar
+        description: Descrição do motivo (para log)
+    
+    Returns:
+        bool: True se sucesso, False se erro
+    """
+    if not user or amount <= 0:
+        logger.warning(f"⚠️ Tentativa inválida de adicionar {amount} créditos")
+        return False
+    
+    if user.is_admin:
+        logger.info(f"👑 Admin {user.email} - créditos ilimitados (operação ignorada)")
+        return True
+    
+    # Verificar limite para premium
+    is_premium = _is_premium_user(user)
+    max_credits = 3 if is_premium else float('inf')
+    
+    if user.credits + amount > max_credits:
+        logger.warning(f"⚠️ {user.email} excederia limite de {max_credits} créditos")
+        return False
+    
+    old_credits = user.credits
+    user.credits += amount
+    
+    try:
+        safe_commit(db, f"Erro ao adicionar {amount} créditos para {user.email}")
+        logger.info(f"💰 {user.email} recebeu +{amount} créditos ({description}). Antes: {old_credits}, Agora: {user.credits}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Falha crítica ao adicionar créditos para {user.email}: {e}")
+        return False

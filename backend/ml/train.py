@@ -1,4 +1,4 @@
-# backend/ml/train.py - VERSÃO ATUALIZADA
+# backend/ml/train.py - VERSÃO CORRIGIDA COM PADRONIZAÇÃO DE CHAVES
 """
 Módulo de treinamento de modelos com extração de métricas para Gemini
 """
@@ -85,11 +85,12 @@ class ModelTrainer:
             feature_importance = dict(zip(X.columns, model.feature_importances_))
             feature_importance = dict(sorted(feature_importance.items(), key=lambda x: x[1], reverse=True))
             
+            # 🔥 CORREÇÃO: Padronizar nomes das chaves (português consistente)
             metrics = {
                 "tipo_modelo": "RandomForest Classifier",
-                "acuraciA": float(accuracy),
-                "acuraciA_cv_media": float(cv_scores.mean()),
-                "acuraciA_cv_desvio": float(cv_scores.std()),
+                "acuracia": float(accuracy),           # 🔥 Padrão: "acuracia" (sem acento? com acento?)
+                "acuracia_cv_media": float(cv_scores.mean()),
+                "acuracia_cv_desvio": float(cv_scores.std()),
                 "relatorio_classificacao": class_report,
                 "matriz_confusao": conf_matrix,
                 "features_importantes": feature_importance,
@@ -97,7 +98,10 @@ class ModelTrainer:
                 "amostras_treino": len(X_train),
                 "amostras_teste": len(X_test),
                 "classes_encontradas": sorted(map(int, np.unique(y))),
-                "balanceamento_classes": {int(k): int(v) for k, v in zip(*np.unique(y, return_counts=True))}
+                "balanceamento_classes": {int(k): int(v) for k, v in zip(*np.unique(y, return_counts=True))},
+                # 🔥 Campos adicionais para compatibilidade (inglês e português)
+                "accuracy": float(accuracy),           # Compatibilidade com inglês
+                "acurácia": float(accuracy)            # Compatibilidade com acento
             }
             
         else:  # Regressor
@@ -119,6 +123,7 @@ class ModelTrainer:
             feature_importance = dict(zip(X.columns, model.feature_importances_))
             feature_importance = dict(sorted(feature_importance.items(), key=lambda x: x[1], reverse=True))
             
+            # 🔥 CORREÇÃO: Padronizar nomes das chaves
             metrics = {
                 "tipo_modelo": "RandomForest Regressor",
                 "mse": float(mse),
@@ -135,7 +140,9 @@ class ModelTrainer:
                     "max": float(y.max()),
                     "media": float(y.mean()),
                     "mediana": float(y.median())
-                }
+                },
+                # 🔥 Campos adicionais para compatibilidade
+                "r2": float(r2)
             }
         
         # Salvar modelo
@@ -151,33 +158,102 @@ class ModelTrainer:
         with open(model_path, 'wb') as f:
             pickle.dump(model_data, f)
         
-        # Adicionar ao histórico
+        # 🔥 CORREÇÃO: Adicionar ao histórico com chaves consistentes
+        # Extrair métrica principal de forma robusta
+        main_metric = metrics.get('acuracia', metrics.get('accuracy', metrics.get('r2_score', metrics.get('r2', 0))))
+        
         self.training_history.append({
             'timestamp': datetime.now().isoformat(),
             'model_type': model_type,
-            'accuracy': metrics.get('acurácia', metrics.get('r2_score', 0)),
-            'model_path': model_path
+            'main_metric': main_metric,      # 🔥 Padrão: "main_metric"
+            'acuracia': main_metric,          # 🔥 Compatibilidade com português
+            'accuracy': main_metric,          # 🔥 Compatibilidade com inglês
+            'r2_score': main_metric if model_type == 'regressor' else None,
+            'model_path': model_path,
+            'total_amostras': len(X),
+            'features_count': len(X.columns)
         })
         
         print(f"\n✅ Modelo treinado e salvo em: {model_path}")
-        print(f"📊 Métricas principais: {metrics.get('acurácia', metrics.get('r2_score', 0)):.3f}")
+        print(f"📊 Métrica principal: {main_metric:.3f}")
         
         return metrics
     
     def get_training_summary_for_gemini(self) -> Dict[str, Any]:
-        """Retorna resumo do histórico de treinamentos para o Gemini"""
+        """
+        Retorna resumo do histórico de treinamentos para o Gemini
+        🔥 CORREÇÃO: Estrutura padronizada para o Gemini consumir
+        """
         if not self.training_history:
-            return {"status": "nenhum_treinamento", "mensagem": "Nenhum modelo foi treinado ainda"}
+            return {
+                "status": "nenhum_treinamento",
+                "mensagem": "Nenhum modelo foi treinado ainda",
+                "total_treinamentos": 0,
+                "historico": [],
+                "melhor_acuracia": 0,
+                "media_acuracia": 0,
+                "recomendacao": "Treine um modelo primeiro para obter insights"
+            }
         
-        return {
+        # 🔥 Extrair métricas de forma robusta
+        accuracies = []
+        for h in self.training_history:
+            # Tentar várias chaves possíveis
+            metric = h.get('main_metric', h.get('acuracia', h.get('accuracy', 0)))
+            accuracies.append(metric)
+        
+        best_metric = max(accuracies) if accuracies else 0
+        avg_metric = np.mean(accuracies) if accuracies else 0
+        
+        # 🔥 Identificar o melhor treinamento
+        best_index = accuracies.index(best_metric) if accuracies else -1
+        best_training = self.training_history[best_index] if best_index >= 0 else None
+        
+        # 🔥 Criar resumo enriquecido para o Gemini
+        summary = {
+            "status": "sucesso",
             "total_treinamentos": len(self.training_history),
             "historico": self.training_history[-5:],  # Últimos 5
-            "melhor_acuracia": max([h.get('accuracy', 0) for h in self.training_history]),
-            "media_acuracia": np.mean([h.get('accuracy', 0) for h in self.training_history])
+            "melhor_acuracia": best_metric,
+            "melhor_accuracy": best_metric,  # Compatibilidade inglês
+            "media_acuracia": avg_metric,
+            "media_accuracy": avg_metric,    # Compatibilidade inglês
+            "melhor_treinamento": best_training,
+            "tipos_modelos": list(set([h.get('model_type') for h in self.training_history])),
+            "recomendacao": self._generate_recommendation(best_metric, avg_metric, len(self.training_history))
         }
+        
+        return summary
+    
+    def _generate_recommendation(self, best_metric: float, avg_metric: float, total_count: int) -> str:
+        """
+        Gera recomendação baseada nas métricas
+        """
+        if best_metric >= 0.9:
+            return "✅ Modelo excelente! Pode ser utilizado em produção com confiança."
+        elif best_metric >= 0.8:
+            return "📈 Bom modelo. Considere aumentar a quantidade de dados para melhorar ainda mais."
+        elif best_metric >= 0.7:
+            return "⚠️ Modelo razoável. Recomenda-se mais engenharia de features e validação cruzada."
+        elif best_metric >= 0.6:
+            return "🔧 Modelo precisa de melhorias. Tente diferentes algoritmos ou mais dados de treino."
+        else:
+            return "❌ Modelo com baixa performance. Revise a qualidade dos dados e seleção de features."
+    
+    def get_best_model_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Retorna informações do melhor modelo treinado
+        """
+        if not self.training_history:
+            return None
+        
+        # Encontrar melhor pelo main_metric
+        best = max(self.training_history, key=lambda x: x.get('main_metric', 0))
+        return best
 
 
 # Instância global
 trainer = ModelTrainer()
 
 print("✅ ModelTrainer pronto para treinamento com extração de métricas")
+print("   📊 Chaves padronizadas: 'acuracia', 'main_metric', 'accuracy'")
