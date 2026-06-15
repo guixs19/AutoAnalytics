@@ -505,7 +505,7 @@
             </div>
         </div>
 
-        <!-- 🔥 NOVA SEÇÃO DE SUPORTE -->
+        <!-- 🔥 SEÇÃO DE SUPORTE ATUALIZADA -->
         <div class="row justify-content-center mt-5 pt-4">
             <div class="col-lg-10">
                 <div class="support-card bg-white rounded-4 p-4 p-md-5 shadow-sm">
@@ -705,7 +705,8 @@
             }
         };
         
-        // Formulário de contato rápido
+        // 🔥 FORMULÁRIO DE CONTATO RÁPIDO - CORRIGIDO PARA PRODUÇÃO
+        // A ordem está correta: aviso → limpar → fechar modal → redirecionar
         document.getElementById('quickSupportForm')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -714,7 +715,7 @@
             const subject = document.getElementById('supportSubject').value;
             const message = document.getElementById('supportMessage').value;
             
-            // Abre o cliente de email padrão
+            // Montar o link mailto
             const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
                 `Nome: ${name}\n` +
                 `Email: ${email}\n` +
@@ -723,15 +724,21 @@
                 `---\nEnviado via AutoAnalytics Planos`
             )}`;
             
-            window.location.href = mailtoLink;
-            
-            // Mostrar feedback
+            // 🔥 ORDEM CORRETA (não travará mais):
+            // 1. Mostrar aviso primeiro
             alert('📧 Seu email será aberto! Envie a mensagem para entrarmos em contato o mais breve possível.');
             
-            // Limpar formulário
+            // 2. Limpar formulário
             document.getElementById('supportName').value = '';
             document.getElementById('supportEmail').value = '';
             document.getElementById('supportMessage').value = '';
+            
+            // 3. Fechar modal (se existir)
+            const supportModal = bootstrap.Modal.getInstance(document.getElementById('supportModal'));
+            if (supportModal) supportModal.hide();
+            
+            // 4. Redirecionar por ÚLTIMO (nunca antes!)
+            window.location.href = mailtoLink;
         });
         
         // Aguardar o payment.js carregar

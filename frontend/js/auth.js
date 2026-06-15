@@ -1,8 +1,7 @@
-// frontend/js/auth.js - VERSÃO PRODUÇÃO
+// frontend/js/auth.js - VERSÃO PRODUÇÃO CORRIGIDA
 
 class Auth {
     constructor() {
-        // 🔥 API BASE DINÂMICA PARA PRODUÇÃO
         this.apiBase = '/api';
         
         this.currentUser = null;
@@ -162,7 +161,7 @@ class Auth {
     }
     
     // ==============================================
-    // LOGIN
+    // LOGIN - CORRIGIDO
     // ==============================================
     
     async login(email, password, captchaText, captchaId) {
@@ -207,7 +206,7 @@ class Auth {
                     email: email,
                     password: password,
                     captcha_id: captchaId,
-                    captcha_text: captchaText
+                    captcha_code: captchaText
                 })
             });
             
@@ -266,7 +265,7 @@ class Auth {
     }
     
     // ==============================================
-    // REGISTRO
+    // REGISTRO - CORRIGIDO
     // ==============================================
     
     async register(name, email, password, workshopName, captchaText, captchaId) {
@@ -311,7 +310,7 @@ class Auth {
                 email: email,
                 password: password,
                 workshop_name: workshopName,
-                captcha_text: captchaText,
+                captcha_code: captchaText,
                 captcha_id: captchaId
             };
             
@@ -359,7 +358,7 @@ class Auth {
     }
     
     // ==============================================
-    // SETUP DOS LISTENERS (COM LAZY LOADING)
+    // SETUP DOS LISTENERS
     // ==============================================
     
     setupAuthPageListeners() {
@@ -736,7 +735,6 @@ class Auth {
     }
 }
 
-// Instância global
 window.appAuth = new Auth();
 
 window.getAuth = () => window.appAuth;

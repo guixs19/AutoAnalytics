@@ -1,4 +1,4 @@
-// payment.js - VERSÃO CORRIGIDA (API_URL DINÂMICA)
+// payment.js - VERSÃO PRODUÇÃO (PIX REAL)
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
@@ -48,6 +48,7 @@ function sanitizeNumber(value, defaultValue = 0) {
 
 function sanitizeCPF(cpf) {
     if (!cpf) return '';
+    // 🔥 Remove TUDO que não for número (pontos, traços, espaços)
     return cpf.replace(/\D/g, '');
 }
 
@@ -89,7 +90,6 @@ function formatCreditsDisplay(credits, isPremiumUser = false, maxCredits = MAX_C
 
 async function updateCreditsDisplay() {
     try {
-        // 🔥 Usa fetchWithAuth do appAuth se disponível
         if (window.appAuth && window.appAuth.fetchWithAuth) {
             const response = await window.appAuth.fetchWithAuth(`${API_URL}/users/me/credits`);
             if (response && response.ok) {
@@ -135,7 +135,6 @@ async function renderBronzePlan(plans, fullData = null) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
     
-    // Admin tem acesso ilimitado
     if (isAdmin()) {
         container.innerHTML = `
             <div class="col-lg-8 mx-auto">
@@ -152,14 +151,13 @@ async function renderBronzePlan(plans, fullData = null) {
         return;
     }
     
-    // Buscar o plano premium_mensal
     const plan = plans['premium_mensal'];
     if (!plan) {
         container.innerHTML = '<div class="text-center text-danger">Erro ao carregar plano. Tente novamente.</div>';
         return;
     }
     
-    // Buscar status da promoção
+    // 🔥 BUSCAR STATUS REAL DA PROMOÇÃO NO BACKEND
     let vagasRestantes = 100;
     let totalVagas = 100;
     let precoPromocional = 97.00;
@@ -168,7 +166,6 @@ async function renderBronzePlan(plans, fullData = null) {
     let currentPrice = precoPromocional;
     
     try {
-        // 🔥 Usa fetch normal ou com auth
         const promoResponse = await fetchWithAuth(`${API_URL}/payments/promotion-status`);
         if (promoResponse && promoResponse.ok) {
             const promoData = await promoResponse.json();
@@ -191,7 +188,6 @@ async function renderBronzePlan(plans, fullData = null) {
     const isUrgent = vagasRestantes <= 20 && vagasRestantes > 0;
     const userHasLockedPrice = isUserLocked;
     
-    // 🔥 HTML DO PLANO BRONZE COM LAYOUT DE PROMOÇÃO
     const html = `
         <div class="col-lg-8 mx-auto">
             <div class="bronze-card" data-aos="fade-up" data-aos-duration="800">
@@ -463,9 +459,10 @@ async function proceedWithCpf(planId) {
     
     if (!cpfInput) return;
     
-    const cpf = sanitizeCPF(cpfInput.value);
+    // 🔥 GARANTIR QUE O CPF ESTÁ LIMPO (apenas números)
+    const cpfLimpo = sanitizeCPF(cpfInput.value);
     
-    if (cpf.length !== 11) {
+    if (cpfLimpo.length !== 11) {
         if (cpfError) {
             cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
             cpfError.classList.remove('d-none');
@@ -476,11 +473,11 @@ async function proceedWithCpf(planId) {
     const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
     if (cpfModal) cpfModal.hide();
     
-    await selectPlan(planId, 'pix', cpf);
+    await selectPlan(planId, 'pix', cpfLimpo);
 }
 
 // ==============================================
-// SELEÇÃO E PAGAMENTO (COM CPF)
+// 🔥 SELEÇÃO E PAGAMENTO (PIX REAL - SEM SIMULAÇÃO)
 // ==============================================
 
 async function selectPlan(planId, method, cpf = null) {
@@ -505,9 +502,24 @@ async function selectPlan(planId, method, cpf = null) {
         }, 30000);
     }
     
+    // 🔥 GARANTIR QUE O CPF ESTÁ LIMPO (apenas números)
     const requestBody = { plan_id: planId };
     if (cpf) {
-        requestBody.cpf = cpf;
+        // Remove tudo que não é número
+        const cpfLimpo = cpf.replace(/\D/g, '');
+        if (cpfLimpo.length === 11) {
+            requestBody.cpf = cpfLimpo;
+        } else if (cpf.length === 11 && /^\d+$/.test(cpf)) {
+            // Já está limpo
+            requestBody.cpf = cpf;
+        } else {
+            showNotification('❌ CPF inválido. Por favor, informe um CPF válido com 11 dígitos.', 'error');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+            return;
+        }
     }
     
     try {
@@ -527,6 +539,7 @@ async function selectPlan(planId, method, cpf = null) {
             
             if (method === 'pix') {
                 if (data.payment_id) {
+                    // 🔥 SUCESSO REAL: Abre modal com QR Code do Mercado Pago
                     showPixModalSecure(data.payment_id, data);
                 } else if (data.checkout_url) {
                     window.location.href = data.checkout_url;
@@ -541,18 +554,21 @@ async function selectPlan(planId, method, cpf = null) {
             const error = await response.json();
             const errorMsg = error.detail || error.message || 'Erro ao criar pagamento';
             
+            // 🔥 TRATAMENTO REAL DE ERROS - SEM FALLBACK FALSO
             if (errorMsg.toLowerCase().includes('cpf')) {
-                showNotification('CPF obrigatório. Por favor, informe seu CPF.', 'warning');
+                showNotification('⚠️ CPF obrigatório. Por favor, informe seu CPF.', 'warning');
                 openCpfModal(planId);
+            } else if (errorMsg.toLowerCase().includes('token') || errorMsg.toLowerCase().includes('mercadopago')) {
+                showNotification('⚠️ Erro no gateway de pagamento. Tente novamente em instantes.', 'error');
             } else {
-                showNotification(sanitizeHTML(errorMsg), 'error');
+                showNotification(`❌ ${errorMsg}`, 'error');
             }
         } else {
-            showNotification('Erro de conexão. Tente novamente.', 'error');
+            showNotification('❌ Erro de conexão. Tente novamente.', 'error');
         }
     } catch (error) {
         console.error('Erro ao criar pagamento:', error);
-        showNotification('Erro de conexão. Tente novamente.', 'error');
+        showNotification(`❌ Erro ao processar pagamento: ${error.message || 'Tente novamente'}`, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -854,12 +870,10 @@ function showNotification(message, type = 'info') {
 // ==============================================
 
 async function fetchWithAuth(url, options = {}) {
-    // 🔥 PRIORIZA usar window.appAuth.fetchWithAuth se disponível
     if (window.appAuth && window.appAuth.fetchWithAuth) {
         return window.appAuth.fetchWithAuth(url, options);
     }
     
-    // Fallback
     const token = localStorage.getItem('access_token');
     
     const headers = {
@@ -1101,7 +1115,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isPlansPage()) {
         setTimeout(() => {
             loadPlans();
-            console.log('✅ payment.js inicializado - Layout Bronze com promoção de R$149 por R$97');
+            console.log('✅ payment.js inicializado - PIX REAL (sem simulação)');
             console.log(`📊 Limite de créditos: ${MAX_CREDITS_BALANCE}`);
             console.log(`⏰ Expiração PIX: ${PIX_EXPIRY_MINUTES} minutos`);
             console.log(`🌐 API_URL: ${API_URL}`);
@@ -1155,5 +1169,5 @@ window.showNotification = showNotification;
 window.loadSubscriptionStatus = loadSubscriptionStatus;
 window.checkAndNotifyRenewal = checkAndNotifyRenewal;
 
-console.log('✅ payment.js carregado - API_URL dinâmica (funciona localhost e produção)');
-console.log('🔒 Proteção antifraude: CPF obrigatório para PIX');
+console.log('✅ payment.js carregado - API_URL dinâmica (PIX REAL - sem simulação)');
+console.log('🔒 Proteção antifraude: CPF obrigatório e validado');
