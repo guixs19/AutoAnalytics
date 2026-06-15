@@ -1,10 +1,9 @@
-// frontend/js/auth.js - VERSÃO COM LAZY LOADING
+// frontend/js/auth.js - VERSÃO PRODUÇÃO
 
 class Auth {
     constructor() {
-        this.apiBase = window.location.hostname.includes('localhost') 
-            ? 'http://localhost:8000/api'
-            : '/api';
+        // 🔥 API BASE DINÂMICA PARA PRODUÇÃO
+        this.apiBase = '/api';
         
         this.currentUser = null;
         this.isAuthenticated = false;
@@ -14,18 +13,16 @@ class Auth {
         this.loginCaptchaTimer = null;
         this.registerCaptchaTimer = null;
         this.initialized = false;
-        this.isRegisterCaptchaLoaded = false; // 🔥 CONTROLE DE CARGA
+        this.isRegisterCaptchaLoaded = false;
         
         this.init();
     }
     
     async init() {
-        console.log('🔐 Inicializando AuthManager...');
         await this.checkToken();
         this.setupAuthPageListeners();
         this.updateUI();
         this.initialized = true;
-        console.log(`✅ Auth Manager inicializado`);
     }
     
     // ==============================================
@@ -35,7 +32,6 @@ class Auth {
     async loadCaptcha(sessionType = 'login') {
         try {
             const url = `${this.apiBase}/auth/captcha/generate?session_type=${sessionType}&t=${Date.now()}`;
-            console.log(`🔄 Carregando CAPTCHA para ${sessionType}...`);
             
             const response = await fetch(url, {
                 method: 'GET',
@@ -55,7 +51,6 @@ class Auth {
                 throw new Error('CAPTCHA ID não recebido');
             }
             
-            // Armazena na variável correta
             if (sessionType === 'login') {
                 this.loginCaptchaId = captchaId;
             } else {
@@ -63,13 +58,10 @@ class Auth {
                 this.isRegisterCaptchaLoaded = true;
             }
             
-            // Atualiza o campo hidden
             const hiddenField = document.getElementById(`${sessionType}CaptchaId`);
             if (hiddenField) {
                 hiddenField.value = captchaId;
             }
-            
-            console.log(`✅ CAPTCHA ID para ${sessionType}: ${captchaId.substring(0, 8)}...`);
             
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
@@ -95,7 +87,7 @@ class Auth {
             return captchaId;
             
         } catch (error) {
-            console.error('❌ Erro ao carregar CAPTCHA:', error);
+            console.error('Erro ao carregar CAPTCHA:', error);
             this.showCaptchaError(sessionType);
             return null;
         }
@@ -109,7 +101,6 @@ class Auth {
     }
     
     startCaptchaTimer(sessionType) {
-        // Limpar timer anterior se existir
         if (sessionType === 'login' && this.loginCaptchaTimer) {
             clearInterval(this.loginCaptchaTimer);
         }
@@ -160,8 +151,6 @@ class Auth {
     }
     
     async refreshCaptcha(sessionType = 'login') {
-        console.log(`🔄 Atualizando CAPTCHA para ${sessionType}...`);
-        
         if (sessionType === 'login' && this.loginCaptchaTimer) {
             clearInterval(this.loginCaptchaTimer);
         }
@@ -177,8 +166,6 @@ class Auth {
     // ==============================================
     
     async login(email, password, captchaText, captchaId) {
-        console.log('🔑 Iniciando login...');
-        
         if (!captchaId) {
             const hiddenField = document.getElementById('loginCaptchaId');
             if (hiddenField && hiddenField.value) {
@@ -255,7 +242,6 @@ class Auth {
                 
                 this.currentUser = this.userData;
                 
-                console.log('✅ Login realizado');
                 this.showSuccess('Login realizado! Redirecionando...');
                 
                 setTimeout(() => {
@@ -268,7 +254,7 @@ class Auth {
             throw new Error(data.message || 'Erro no login');
             
         } catch (error) {
-            console.error('❌ Login error:', error);
+            console.error('Login error:', error);
             this.showError(error.message);
             return false;
         } finally {
@@ -284,25 +270,13 @@ class Auth {
     // ==============================================
     
     async register(name, email, password, workshopName, captchaText, captchaId) {
-        console.log('📝 Iniciando registro...');
-        
-        // 🔥 RECUPERA CAPTCHA ID SE NÃO VEIO
         if (!captchaId || captchaId === '') {
             const hiddenField = document.getElementById('registerCaptchaId');
             if (hiddenField && hiddenField.value && hiddenField.value !== '') {
                 captchaId = hiddenField.value;
-                console.log('✅ CAPTCHA ID recuperado do hidden field');
             }
         }
         
-        console.log('📋 Dados do registro:');
-        console.log('   - Nome:', name);
-        console.log('   - Email:', email);
-        console.log('   - Oficina:', workshopName);
-        console.log('   - CAPTCHA texto:', captchaText);
-        console.log('   - CAPTCHA ID:', captchaId ? captchaId.substring(0, 8) : 'NULL');
-        
-        // Validações
         if (!name || !email || !password || !workshopName) {
             this.showError('Preencha todos os campos');
             return false;
@@ -341,8 +315,6 @@ class Auth {
                 captcha_id: captchaId
             };
             
-            console.log('📤 Enviando requisição de REGISTRO...');
-            
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
                 headers: {
@@ -353,8 +325,6 @@ class Auth {
             });
             
             const data = await response.json();
-            console.log('📥 Resposta status:', response.status);
-            console.log('📥 Resposta data:', data);
             
             if (!response.ok) {
                 const errorMsg = data.detail || data.message || 'Falha no registro';
@@ -364,7 +334,6 @@ class Auth {
             }
             
             if (data.success) {
-                console.log('✅ Registro realizado com sucesso!');
                 this.showSuccess('Conta criada! Faça login para continuar.');
                 
                 setTimeout(() => {
@@ -377,7 +346,7 @@ class Auth {
             throw new Error(data.message || 'Erro no registro');
             
         } catch (error) {
-            console.error('❌ Registration error:', error);
+            console.error('Registration error:', error);
             this.showError(error.message);
             await this.refreshCaptcha('register');
             return false;
@@ -394,7 +363,6 @@ class Auth {
     // ==============================================
     
     setupAuthPageListeners() {
-        // Login form
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
             loginForm.addEventListener('submit', async (e) => {
@@ -409,7 +377,6 @@ class Auth {
                 await this.login(email, password, captchaText, captchaId);
             });
             
-            // ✅ SÓ CARREGA CAPTCHA DO LOGIN NA INICIALIZAÇÃO
             this.loadCaptcha('login');
             
             const refreshBtn = document.getElementById('refreshLoginCaptcha');
@@ -418,7 +385,6 @@ class Auth {
             }
         }
         
-        // Register form - 🔥 COM LAZY LOADING
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
             registerForm.addEventListener('submit', async (e) => {
@@ -435,29 +401,21 @@ class Auth {
                 await this.register(name, email, password, workshopName, captchaText, captchaId);
             });
             
-            // ❌ REMOVIDO: NÃO CARREGA CAPTCHA DE REGISTRO AUTOMATICAMENTE
-            // this.loadCaptcha('register'); 
-            
             const refreshBtn = document.getElementById('refreshRegisterCaptcha');
             if (refreshBtn) {
                 refreshBtn.addEventListener('click', () => this.refreshCaptcha('register'));
             }
         }
         
-        // 🔥 LAZY LOADING: CARREGA CAPTCHA DE REGISTRO APENAS QUANDO ABA É CLICADA
         const registerTab = document.querySelector('#register-tab') || document.querySelector('button[data-bs-target="#register"]');
         if (registerTab) {
             registerTab.addEventListener('click', () => {
-                console.log('🔄 Aba de cadastro ativada. Carregando CAPTCHA sob demanda...');
                 if (!this.isRegisterCaptchaLoaded) {
                     this.loadCaptcha('register');
-                } else {
-                    console.log('✅ CAPTCHA de registro já carregado anteriormente');
                 }
             });
         }
         
-        // Password visibility toggle
         document.querySelectorAll('.password-toggle').forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetId = btn.getAttribute('data-target');
@@ -479,7 +437,7 @@ class Auth {
     }
     
     // ==============================================
-    // RESTO DO CÓDIGO (MANTIDO IGUAL)
+    // TOKEN E AUTENTICAÇÃO
     // ==============================================
     
     async checkToken() {
@@ -698,7 +656,6 @@ class Auth {
         const token = localStorage.getItem('access_token');
         
         if (!token) {
-            console.log('❌ Sem token disponível');
             return null;
         }
         
@@ -713,17 +670,13 @@ class Auth {
             let response = await fetch(url, { ...options, headers });
             
             if (response.status === 401) {
-                console.log('🔄 Token expirado, tentando refresh...');
-                
                 const refreshed = await this.refreshToken();
                 
                 if (refreshed) {
                     const newToken = localStorage.getItem('access_token');
                     headers['Authorization'] = `Bearer ${newToken}`;
                     response = await fetch(url, { ...options, headers });
-                    console.log('✅ Requisição retentada com novo token');
                 } else {
-                    console.log('❌ Refresh falhou');
                     this.clearTokens();
                     this.isAuthenticated = false;
                     return null;
@@ -733,7 +686,7 @@ class Auth {
             return response;
             
         } catch (error) {
-            console.error('❌ Erro na requisição:', error);
+            console.error('Erro na requisição:', error);
             return null;
         }
     }
@@ -788,5 +741,3 @@ window.appAuth = new Auth();
 
 window.getAuth = () => window.appAuth;
 window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
-
-console.log('✅ auth.js carregado - CAPTCHA com lazy loading');
