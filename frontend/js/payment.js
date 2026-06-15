@@ -1,9 +1,22 @@
-// payment.js - VERSÃO CORRIGIDA E SINCRONIZADA COM BACKEND
+// payment.js - VERSÃO CORRIGIDA (API_URL DINÂMICA)
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
 
-const API_URL = window.API_URL || 'http://localhost:8000/api';
+// 🔥 CORRIGIDO: API_URL dinâmica (funciona em localhost e produção)
+const API_URL = (() => {
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1';
+    
+    if (isLocalhost) {
+        return 'http://localhost:8000/api';
+    }
+    
+    // Em produção, usa caminho relativo (Nginx faz proxy)
+    return '/api';
+})();
+
+console.log(`🌐 Payment.js API_URL: ${API_URL}`);
 
 // Constantes de limite (sincronizadas com backend)
 const MAX_CREDITS_BALANCE = 3;
@@ -44,7 +57,7 @@ function formatCPFDisplay(cpf) {
 }
 
 // ==============================================
-// FUNÇÕES DE AUTENTICAÇÃO E USUÁRIO
+// FUNÇÕES DE AUTENTICAÇÃO (usando window.appAuth)
 // ==============================================
 
 function isAdmin() {
@@ -76,17 +89,20 @@ function formatCreditsDisplay(credits, isPremiumUser = false, maxCredits = MAX_C
 
 async function updateCreditsDisplay() {
     try {
-        const response = await fetchWithAuth(`${API_URL}/users/me/credits`);
-        if (response && response.ok) {
-            const data = await response.json();
-            const creditsElement = document.getElementById('creditsDisplay');
-            if (creditsElement) {
-                const displayText = formatCreditsDisplay(
-                    data.current_credits || 0,
-                    data.is_premium || false,
-                    data.max_credits || MAX_CREDITS_BALANCE
-                );
-                creditsElement.textContent = displayText;
+        // 🔥 Usa fetchWithAuth do appAuth se disponível
+        if (window.appAuth && window.appAuth.fetchWithAuth) {
+            const response = await window.appAuth.fetchWithAuth(`${API_URL}/users/me/credits`);
+            if (response && response.ok) {
+                const data = await response.json();
+                const creditsElement = document.getElementById('creditsDisplay');
+                if (creditsElement) {
+                    const displayText = formatCreditsDisplay(
+                        data.current_credits || 0,
+                        data.is_premium || false,
+                        data.max_credits || MAX_CREDITS_BALANCE
+                    );
+                    creditsElement.textContent = displayText;
+                }
             }
         }
     } catch (error) {
@@ -152,6 +168,7 @@ async function renderBronzePlan(plans, fullData = null) {
     let currentPrice = precoPromocional;
     
     try {
+        // 🔥 Usa fetch normal ou com auth
         const promoResponse = await fetchWithAuth(`${API_URL}/payments/promotion-status`);
         if (promoResponse && promoResponse.ok) {
             const promoData = await promoResponse.json();
@@ -207,7 +224,6 @@ async function renderBronzePlan(plans, fullData = null) {
                     ` : ''}
                 </div>
                 
-                <!-- DIV DE VAGAS - SÓ MOSTRA SE NÃO ESGOTOU E USUÁRIO NÃO TEM PREÇO TRAVADO -->
                 ${!isSoldOut && !userHasLockedPrice ? `
                 <div class="vagas-counter ${isUrgent ? 'vagas-urgent' : ''}">
                     <div class="d-flex align-items-center justify-content-center flex-wrap">
@@ -377,7 +393,6 @@ function openCpfModal(planId) {
         return;
     }
     
-    // Verificar se já tem modal de CPF
     let cpfModal = document.getElementById('cpfModal');
     if (!cpfModal) {
         cpfModal = document.createElement('div');
@@ -421,7 +436,6 @@ function openCpfModal(planId) {
         `;
         document.body.appendChild(cpfModal);
         
-        // Adicionar máscara de CPF
         const cpfInput = document.getElementById('cpfInput');
         if (cpfInput) {
             cpfInput.addEventListener('input', function(e) {
@@ -446,13 +460,11 @@ function openCpfModal(planId) {
 async function proceedWithCpf(planId) {
     const cpfInput = document.getElementById('cpfInput');
     const cpfError = document.getElementById('cpfError');
-    const confirmBtn = document.getElementById('confirmCpfBtn');
     
     if (!cpfInput) return;
     
     const cpf = sanitizeCPF(cpfInput.value);
     
-    // Validar CPF (11 dígitos)
     if (cpf.length !== 11) {
         if (cpfError) {
             cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
@@ -461,11 +473,9 @@ async function proceedWithCpf(planId) {
         return;
     }
     
-    // Ocultar modal de CPF
     const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
     if (cpfModal) cpfModal.hide();
     
-    // Prosseguir com pagamento
     await selectPlan(planId, 'pix', cpf);
 }
 
@@ -495,7 +505,6 @@ async function selectPlan(planId, method, cpf = null) {
         }, 30000);
     }
     
-    // 🔥 CORREÇÃO: Enviar CPF no body
     const requestBody = { plan_id: planId };
     if (cpf) {
         requestBody.cpf = cpf;
@@ -510,7 +519,6 @@ async function selectPlan(planId, method, cpf = null) {
         if (response && response.ok) {
             const data = await response.json();
             
-            // Verificar se precisa de CPF (resposta do backend)
             if (data.requires_cpf) {
                 showNotification(data.error || 'CPF é obrigatório para gerar o pagamento.', 'warning');
                 openCpfModal(planId);
@@ -533,7 +541,6 @@ async function selectPlan(planId, method, cpf = null) {
             const error = await response.json();
             const errorMsg = error.detail || error.message || 'Erro ao criar pagamento';
             
-            // Se erro for por CPF, abrir modal
             if (errorMsg.toLowerCase().includes('cpf')) {
                 showNotification('CPF obrigatório. Por favor, informe seu CPF.', 'warning');
                 openCpfModal(planId);
@@ -629,7 +636,6 @@ async function showPixModalSecure(paymentId, paymentData) {
                     <div id="paymentStatus"></div>
                 `;
                 
-                // Iniciar contador regressivo
                 startCountdown(expiresInSeconds);
             } else {
                 modalContent.innerHTML = `
@@ -671,7 +677,6 @@ async function showPixModalSecure(paymentId, paymentData) {
     }
 }
 
-// Contador regressivo para expiração do PIX
 let countdownInterval = null;
 
 function startCountdown(seconds) {
@@ -716,10 +721,6 @@ function copyPixCodeSecure() {
             });
     }
 }
-
-// ==============================================
-// POLLING DE PAGAMENTO
-// ==============================================
 
 let paymentPollingInterval = null;
 
@@ -795,7 +796,6 @@ function startPaymentPollingSecure(paymentId) {
                     
                     await updateCreditsDisplay();
                     
-                    // Recarregar status da assinatura após pagamento aprovado
                     if (window.loadSubscriptionStatus) {
                         setTimeout(() => {
                             window.loadSubscriptionStatus();
@@ -845,15 +845,21 @@ function showNotification(message, type = 'info') {
                 toastr.info(safeMessage, 'ℹ️ Informação', options);
         }
     } else {
-        alert(safeMessage);
+        console.log(`[${type}] ${safeMessage}`);
     }
 }
 
 // ==============================================
-// REQUISIÇÕES AUTENTICADAS
+// REQUISIÇÕES AUTENTICADAS (PRIORIZA window.appAuth)
 // ==============================================
 
 async function fetchWithAuth(url, options = {}) {
+    // 🔥 PRIORIZA usar window.appAuth.fetchWithAuth se disponível
+    if (window.appAuth && window.appAuth.fetchWithAuth) {
+        return window.appAuth.fetchWithAuth(url, options);
+    }
+    
+    // Fallback
     const token = localStorage.getItem('access_token');
     
     const headers = {
@@ -895,7 +901,7 @@ async function fetchWithAuth(url, options = {}) {
             
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
-            window.location.href = '/login.html?session=expired';
+            window.location.href = '/login?session=expired';
             return null;
         }
         
@@ -911,19 +917,12 @@ async function fetchWithAuth(url, options = {}) {
 // ==============================================
 
 async function loadSubscriptionStatus() {
-    /**
-     * Carrega o status da assinatura do usuário
-     * Mostra data de compra e expiração se for premium
-     */
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/subscription-status`);
         
         if (response && response.ok) {
             const data = await response.json();
-            
-            // Atualizar o card de status do plano
             updatePlanStatusCard(data);
-            
             return data;
         }
     } catch (error) {
@@ -933,14 +932,9 @@ async function loadSubscriptionStatus() {
 }
 
 function updatePlanStatusCard(subscriptionData) {
-    /**
-     * Atualiza o card de status do plano na página
-     * Mostra se é premium, datas, dias restantes
-     */
     const statusContainer = document.getElementById('subscriptionStatusContainer');
     if (!statusContainer) return;
     
-    // Se não tem plano premium ativo, esconde o card ou mostra mensagem
     if (!subscriptionData.has_subscription && !subscriptionData.is_admin) {
         statusContainer.innerHTML = `
             <div class="col-lg-8 mx-auto">
@@ -954,7 +948,6 @@ function updatePlanStatusCard(subscriptionData) {
         return;
     }
     
-    // Admin tem acesso ilimitado
     if (subscriptionData.is_admin) {
         statusContainer.innerHTML = `
             <div class="col-lg-8 mx-auto">
@@ -967,16 +960,13 @@ function updatePlanStatusCard(subscriptionData) {
         return;
     }
     
-    // Usuário premium - mostrar card com datas
     const daysLeft = subscriptionData.days_left;
     const expiresAt = subscriptionData.expires_at ? new Date(subscriptionData.expires_at) : null;
     const activatedAt = subscriptionData.activated_at ? new Date(subscriptionData.activated_at) : null;
     
-    // Formatar datas para exibição
     const formattedActivation = activatedAt ? activatedAt.toLocaleDateString('pt-BR') : '—';
     const formattedExpiration = expiresAt ? expiresAt.toLocaleDateString('pt-BR') : '—';
     
-    // Definir cor baseada nos dias restantes
     let statusColor = '#28a745';
     let statusIcon = '✅';
     let statusText = 'Ativo';
@@ -991,7 +981,6 @@ function updatePlanStatusCard(subscriptionData) {
         statusText = 'Expirado';
     }
     
-    // Calcular progresso (dias passados / total de 30 dias)
     let progressPercent = 0;
     if (activatedAt && expiresAt) {
         const totalDays = 30;
@@ -1065,7 +1054,6 @@ function updatePlanStatusCard(subscriptionData) {
         </div>
     `;
     
-    // Se estiver expirado, mostrar botão de renovação destacado
     if (daysLeft <= 0 && !subscriptionData.is_expired_fallback) {
         const buyButton = document.getElementById('buyButton');
         if (buyButton) {
@@ -1075,7 +1063,6 @@ function updatePlanStatusCard(subscriptionData) {
     }
 }
 
-// Função para mostrar notificação de renovação
 async function checkAndNotifyRenewal() {
     try {
         const status = await loadSubscriptionStatus();
@@ -1117,6 +1104,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('✅ payment.js inicializado - Layout Bronze com promoção de R$149 por R$97');
             console.log(`📊 Limite de créditos: ${MAX_CREDITS_BALANCE}`);
             console.log(`⏰ Expiração PIX: ${PIX_EXPIRY_MINUTES} minutos`);
+            console.log(`🌐 API_URL: ${API_URL}`);
         }, 200);
     }
     
@@ -1145,7 +1133,6 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
         window.history.replaceState({}, document.title, window.location.pathname);
         
-        // Recarregar status da assinatura após sucesso
         setTimeout(() => {
             if (window.loadSubscriptionStatus) {
                 window.loadSubscriptionStatus();
@@ -1168,5 +1155,5 @@ window.showNotification = showNotification;
 window.loadSubscriptionStatus = loadSubscriptionStatus;
 window.checkAndNotifyRenewal = checkAndNotifyRenewal;
 
-console.log('✅ payment.js carregado - Promoção: R$149 por R$97 (primeiras 100 pessoas)');
-console.log(`🔒 Proteção antifraude: CPF obrigatório para PIX`);
+console.log('✅ payment.js carregado - API_URL dinâmica (funciona localhost e produção)');
+console.log('🔒 Proteção antifraude: CPF obrigatório para PIX');

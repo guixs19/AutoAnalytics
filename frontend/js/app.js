@@ -1,13 +1,20 @@
-// frontend/js/app.js - VERSÃO CORRIGIDA (rotas sem .html)
-// Sistema de créditos com proteção contra redirecionamento infinito
+// frontend/js/app.js - VERSÃO PRODUÇÃO (200KB) - TOTALMENTE CORRIGIDA
+// Limite: 200KB | Sistema de créditos premium | API relativa para VPS
 
 class AutoAnalytics {
     constructor() {
-        this.apiBase = window.location.hostname.includes('localhost') 
+        // 🔥 PRODUÇÃO: Detecta ambiente automaticamente
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+        
+        this.apiBase = isLocalhost 
             ? 'http://localhost:8000/api'
             : '/api';
         
-        this.MAX_FILE_SIZE_KB = 15;
+        console.log(`🌐 API Base: ${this.apiBase} (${isLocalhost ? 'localhost' : 'produção'})`);
+        
+        // 🔥 LIMITE: 200KB
+        this.MAX_FILE_SIZE_KB = 200;
         this.MAX_FILE_SIZE_BYTES = this.MAX_FILE_SIZE_KB * 1024;
         this.MAX_CREDITS_BALANCE = 3;
         
@@ -45,7 +52,13 @@ class AutoAnalytics {
                     return;
                 }
                 
-                const isAuthenticated = window.appAuth.isAuthenticated;
+                // 🔥 Suporta tanto propriedade quanto função
+                let isAuthenticated = false;
+                if (typeof window.appAuth.isAuthenticated === 'function') {
+                    isAuthenticated = window.appAuth.isAuthenticated();
+                } else {
+                    isAuthenticated = window.appAuth.isAuthenticated;
+                }
                 
                 if (!isAuthenticated) {
                     console.log('❌ Usuário não autenticado');
@@ -90,12 +103,6 @@ class AutoAnalytics {
                window.location.pathname === '/checkout';
     }
     
-    isDashboardPage() {
-        return window.location.pathname.includes('dashboard') || 
-               window.location.pathname === '/' ||
-               window.location.pathname === '/index.html';
-    }
-    
     redirectToLogin() {
         if (!this.isLoginPage() && !this.isRegisterPage() && 
             !this.isPlanosPage() && !this.isCheckoutPage()) {
@@ -111,21 +118,28 @@ class AutoAnalytics {
             setTimeout(() => {
                 window.location.href = '/planos';
             }, 1500);
-        } else {
-            console.log('📱 Usuário já está na página de planos - evitando loop');
         }
     }
     
     isAdmin() {
-        return window.appAuth && window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
+        if (window.appAuth && window.appAuth.isAdmin) {
+            return typeof window.appAuth.isAdmin === 'function' ? window.appAuth.isAdmin() : window.appAuth.isAdmin;
+        }
+        return false;
     }
     
     isPremium() {
-        return window.appAuth && window.appAuth.isPremium ? window.appAuth.isPremium() : false;
+        if (window.appAuth && window.appAuth.isPremium) {
+            return typeof window.appAuth.isPremium === 'function' ? window.appAuth.isPremium() : window.appAuth.isPremium;
+        }
+        return false;
     }
     
     getCurrentUser() {
-        return window.appAuth && window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
+        if (window.appAuth && window.appAuth.getCurrentUser) {
+            return window.appAuth.getCurrentUser();
+        }
+        return {};
     }
     
     getCredits() {
@@ -139,8 +153,18 @@ class AutoAnalytics {
         if (window.appAuth && window.appAuth.getCreditsDisplay) {
             return window.appAuth.getCreditsDisplay();
         }
+        
         const user = this.getCurrentUser();
-        if (user.is_admin) return '∞';
+        
+        if (user.is_admin || this.isAdmin()) {
+            return '∞';
+        }
+        
+        if (this.isPremium() || user.plan === 'premium_mensal') {
+            const credits = user.credits || 0;
+            return `${credits}/${this.MAX_CREDITS_BALANCE}`;
+        }
+        
         return String(user.credits || 0);
     }
     
@@ -148,10 +172,12 @@ class AutoAnalytics {
         if (window.appAuth && window.appAuth.updateCreditsDisplay) {
             window.appAuth.updateCreditsDisplay();
         }
+        
         const uploadCreditsSpan = document.getElementById('uploadCredits');
         if (uploadCreditsSpan) {
             uploadCreditsSpan.textContent = this.getCreditsDisplay();
         }
+        
         const creditsCountSpan = document.getElementById('creditsCount');
         if (creditsCountSpan) {
             creditsCountSpan.textContent = this.getCreditsDisplay();
@@ -202,10 +228,9 @@ class AutoAnalytics {
                                     <strong>Como funciona o sistema de créditos:</strong>
                                     <ul class="mt-2 mb-0 small">
                                         <li>✅ Cada análise consome <strong>1 crédito</strong></li>
-                                        <li>✅ Você pode enviar até <strong>3 arquivos por vez</strong></li>
                                         <li>✅ Limite máximo de <strong>3 créditos acumulados</strong></li>
                                         <li>⭐ <strong>Plano Premium:</strong> 1 crédito novo por dia</li>
-                                        <li>📁 Limite de <strong>15KB por arquivo</strong></li>
+                                        <li>📁 Limite de <strong>200KB por arquivo</strong></li>
                                     </ul>
                                 </div>
                             </div>
@@ -231,7 +256,6 @@ class AutoAnalytics {
         if (this.isAdmin()) return true;
         
         if (this.isPlanosPage()) {
-            console.log('📱 Usuário já está na página de planos');
             return false;
         }
         
@@ -242,7 +266,7 @@ class AutoAnalytics {
                 if (data.has_credits) {
                     return true;
                 } else {
-                    this.showNotification(`💰 ${data.message || 'Créditos insuficientes!'}`, 'warning');
+                    this.showNotification(data.message || '💰 Créditos insuficientes!', 'warning');
                     if (!this.isPlanosPage()) {
                         setTimeout(() => {
                             window.location.href = '/planos';
@@ -267,6 +291,34 @@ class AutoAnalytics {
         }
         
         return true;
+    }
+    
+    async claimDailyCredit() {
+        if (!this.isPremium()) {
+            this.showNotification('⭐ Assine o plano premium para ganhar créditos diários!', 'info');
+            return;
+        }
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium/check-daily`, {
+                method: 'POST'
+            });
+            
+            if (response && response.ok) {
+                const data = await response.json();
+                if (data.credits_added > 0) {
+                    this.showNotification(data.message || '⭐ Você ganhou 1 crédito do plano premium!', 'success');
+                    await this.loadUserCredits();
+                    await this.loadPremiumStatus();
+                    this.updateCreditsDisplay();
+                } else if (data.message) {
+                    this.showNotification(data.message, 'info');
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao receber crédito:', error);
+            this.showNotification('Erro ao receber crédito. Tente novamente.', 'error');
+        }
     }
     
     buyCredits() {
@@ -296,25 +348,17 @@ class AutoAnalytics {
                 const now = Date.now();
                 const timeUntilExpiry = expiresAt - now;
                 
-                console.log(`🔐 Token expira em ${Math.round(timeUntilExpiry / 1000)} segundos`);
-                
                 if (timeUntilExpiry <= 0) {
                     this.handleTokenExpired();
                 } else {
                     const refreshTime = Math.max(1000, timeUntilExpiry - 30000);
-                    console.log(`⏰ Agendando renovação em ${Math.round(refreshTime / 1000)} segundos`);
-                    
                     this.tokenExpiryTimer = setTimeout(() => {
-                        console.log('🔄 Token próximo de expirar, renovando...');
                         this.refreshTokenSafely();
                     }, refreshTime);
                 }
-            } else {
-                this.startPollingTokenCheck();
             }
         } catch (e) {
-            console.warn('⚠️ Não foi possível decodificar token, usando polling:', e);
-            this.startPollingTokenCheck();
+            console.warn('Erro ao decodificar token:', e);
         }
         
         this.tokenCheckInterval = setInterval(() => {
@@ -331,18 +375,8 @@ class AutoAnalytics {
             }).join(''));
             return JSON.parse(jsonPayload);
         } catch (e) {
-            console.error('Erro ao decodificar JWT:', e);
             return null;
         }
-    }
-    
-    startPollingTokenCheck() {
-        if (this.tokenCheckInterval) {
-            clearInterval(this.tokenCheckInterval);
-        }
-        this.tokenCheckInterval = setInterval(() => {
-            this.checkTokenHealth();
-        }, 30000);
     }
     
     async checkTokenHealth() {
@@ -358,30 +392,18 @@ class AutoAnalytics {
             });
             
             if (response.status === 401) {
-                console.log('🔐 Token inválido segundo o backend');
                 const refreshed = await this.refreshTokenSafely();
                 if (!refreshed) {
                     this.handleTokenExpired();
                 }
-            } else if (response.ok) {
-                const data = await response.json();
-                if (data.status === 'refreshed' && data.access_token) {
-                    console.log('🔄 Token renovado pelo backend');
-                    localStorage.setItem('access_token', data.access_token);
-                    if (data.refresh_token) {
-                        localStorage.setItem('refresh_token', data.refresh_token);
-                    }
-                    this.startTokenMonitoring();
-                }
             }
         } catch (error) {
-            console.warn('Erro ao verificar saúde do token:', error);
+            console.warn('Erro ao verificar token:', error);
         }
     }
     
     async refreshTokenSafely() {
         if (this.isRefreshing) {
-            console.log('⏳ Refresh já em andamento, aguardando...');
             return new Promise((resolve) => {
                 this.pendingRequests.push(resolve);
             });
@@ -390,13 +412,8 @@ class AutoAnalytics {
         this.isRefreshing = true;
         
         try {
-            console.log('🔄 Tentando renovar token...');
             const refreshToken = localStorage.getItem('refresh_token');
-            
-            if (!refreshToken) {
-                console.log('❌ Sem refresh token');
-                return false;
-            }
+            if (!refreshToken) return false;
             
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
@@ -410,20 +427,13 @@ class AutoAnalytics {
                 if (data.refresh_token) {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
-                
-                console.log('✅ Token renovado com sucesso');
                 this.startTokenMonitoring();
-                
                 this.pendingRequests.forEach(resolve => resolve(true));
                 this.pendingRequests = [];
-                
                 return true;
-            } else {
-                console.log('❌ Falha na renovação do token');
-                return false;
             }
+            return false;
         } catch (error) {
-            console.error('❌ Erro ao renovar token:', error);
             return false;
         } finally {
             this.isRefreshing = false;
@@ -431,17 +441,10 @@ class AutoAnalytics {
     }
     
     handleTokenExpired() {
-        console.log('🔐 Token expirado, redirecionando para login...');
         this.showNotification('⏰ Sua sessão expirou. Faça login novamente.', 'warning');
         
-        if (this.tokenExpiryTimer) {
-            clearTimeout(this.tokenExpiryTimer);
-            this.tokenExpiryTimer = null;
-        }
-        if (this.tokenCheckInterval) {
-            clearInterval(this.tokenCheckInterval);
-            this.tokenCheckInterval = null;
-        }
+        if (this.tokenExpiryTimer) clearTimeout(this.tokenExpiryTimer);
+        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
         
         setTimeout(() => {
             if (window.appAuth && window.appAuth.logout) {
@@ -454,18 +457,8 @@ class AutoAnalytics {
     }
     
     stopTokenMonitoring() {
-        if (this.tokenExpiryTimer) {
-            clearTimeout(this.tokenExpiryTimer);
-            this.tokenExpiryTimer = null;
-        }
-        if (this.tokenCheckInterval) {
-            clearInterval(this.tokenCheckInterval);
-            this.tokenCheckInterval = null;
-        }
-        if (this.authCheckInterval) {
-            clearInterval(this.authCheckInterval);
-            this.authCheckInterval = null;
-        }
+        if (this.tokenExpiryTimer) clearTimeout(this.tokenExpiryTimer);
+        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
     }
     
     async init() {
@@ -473,15 +466,19 @@ class AutoAnalytics {
         console.log(`📁 Limite máximo: ${this.MAX_FILE_SIZE_KB}KB por arquivo`);
         
         if (this.isLoginPage() || this.isRegisterPage()) {
-            console.log('🚫 App não inicializado em página de autenticação');
             return;
         }
         
-        // 🔧 CORRIGIDO: isAuthenticated é propriedade, não função
-        const isAuth = window.appAuth && window.appAuth.isAuthenticated;
+        let isAuth = false;
+        if (window.appAuth) {
+            if (typeof window.appAuth.isAuthenticated === 'function') {
+                isAuth = window.appAuth.isAuthenticated();
+            } else {
+                isAuth = window.appAuth.isAuthenticated;
+            }
+        }
         
         if (!isAuth) {
-            console.log('❌ Não autenticado');
             this.redirectToLogin();
             return;
         }
@@ -501,20 +498,15 @@ class AutoAnalytics {
             }
             
             this.setupLogout();
-            this.initAnimations();
             this.initialized = true;
             
             console.log('✅ App inicializado com sucesso');
-            const user = this.getCurrentUser();
-            console.log(`👤 Usuário: ${user.email || 'desconhecido'}`);
             console.log(`💰 Créditos: ${this.getCreditsDisplay()}`);
-            console.log(`🔐 Token monitoramento: ativo`);
             console.log(`📁 Limite: ${this.MAX_FILE_SIZE_KB}KB`);
-            
         }, 500);
     }
     
-    // ===== VALIDAÇÃO DE TAMANHO =====
+    // ===== VALIDAÇÃO DE TAMANHO (200KB) - CORRIGIDA =====
     
     validateFileSize(file) {
         const fileSizeKB = file.size / 1024;
@@ -523,9 +515,13 @@ class AutoAnalytics {
         console.log(`📊 Tamanho: ${fileSizeKB.toFixed(2)}KB / ${this.MAX_FILE_SIZE_KB}KB`);
         
         if (file.size > this.MAX_FILE_SIZE_BYTES) {
-            const exceededBy = (file.size - this.MAX_FILE_SIZE_BYTES) / 1024;
-            console.warn(`⚠️ Arquivo excede o limite! Excesso: ${exceededBy.toFixed(2)}KB`);
-            this.showFileSizeWarning(fileSizeKB);
+            this.showFileSizeWarning(file);
+            // 🔥 CORRIGIDO: NÃO chama resetFileSelection() aqui
+            this.fileData = null; // Apenas limpa os dados do arquivo
+            if (this.uploadButton) {
+                this.uploadButton.disabled = true;
+                this.uploadButton.innerHTML = `❌ Arquivo excede ${this.MAX_FILE_SIZE_KB}KB`;
+            }
             return false;
         }
         
@@ -533,14 +529,19 @@ class AutoAnalytics {
         return true;
     }
     
-    showFileSizeWarning(fileSizeKB) {
+    showFileSizeWarning(file) {
+        const fileSizeKB = (file.size / 1024).toFixed(2);
         const warningEl = document.getElementById('sizeWarning');
         
         if (warningEl) {
+            // 🔥 CORRIGIDO: Mensagem dinâmica com o limite correto de 200KB
             warningEl.innerHTML = `
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                Arquivo muito grande! (${fileSizeKB.toFixed(2)}KB) 
-                Limite máximo: ${this.MAX_FILE_SIZE_KB}KB
+                <div class="alert alert-warning py-2 mb-0 mt-2">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Arquivo muito grande!</strong> O ficheiro tem ${fileSizeKB}KB. 
+                    O limite máximo permitido é de ${this.MAX_FILE_SIZE_KB}KB.
+                    <button type="button" class="btn-close btn-sm float-end" data-bs-dismiss="alert"></button>
+                </div>
             `;
             warningEl.classList.add('show');
         }
@@ -556,6 +557,16 @@ class AutoAnalytics {
     hideFileSizeWarning() {
         const warningEl = document.getElementById('sizeWarning');
         if (warningEl) {
+            // 🔥 CORRIGIDO: Não limpa o innerHTML completamente se não for necessário
+            // Apenas remove a classe show, o conteúdo pode ser sobrescrito depois
+            warningEl.classList.remove('show');
+        }
+    }
+    
+    clearSizeWarningContent() {
+        const warningEl = document.getElementById('sizeWarning');
+        if (warningEl) {
+            warningEl.innerHTML = '';
             warningEl.classList.remove('show');
         }
     }
@@ -570,8 +581,7 @@ class AutoAnalytics {
         }
         
         if (!this.validateFileSize(file)) {
-            this.resetFileSelection();
-            return;
+            return; // 🔥 CORRIGIDO: Não continua, mas mantém o aviso visível
         }
         
         const validTypes = ['.xlsx', '.xls', '.csv'];
@@ -616,33 +626,22 @@ class AutoAnalytics {
                 
                 if (this.fileInput) this.fileInput.value = '';
                 if (this.selectedFile) this.selectedFile.classList.add('d-none');
-                this.hideFileSizeWarning();
+                this.clearSizeWarningContent();
                 
                 await this.loadAnalysisHistory();
-                
             } else {
                 const errorMsg = data?.detail || data?.error || 'Erro no upload';
-                if (errorMsg.includes('Créditos insuficientes') || errorMsg.includes('credits')) {
+                if (errorMsg.includes('Créditos insuficientes')) {
                     this.showNotification('💰 Créditos insuficientes!', 'warning');
                     this.redirectToPlanos();
-                } else if (errorMsg.includes('tamanho') || errorMsg.includes('size')) {
-                    this.showNotification(`❌ ${errorMsg} (Limite: ${this.MAX_FILE_SIZE_KB}KB)`, 'error');
                 } else {
                     this.showNotification('❌ ' + errorMsg, 'error');
                 }
                 this.setUploadLoading(false);
             }
-            
         } catch (error) {
             console.error('Erro no upload:', error);
-            
-            if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
-                this.showNotification('❌ Erro de conexão com o servidor.', 'error');
-            } else if (error.message.includes('401')) {
-                this.handleTokenExpired();
-            } else {
-                this.showNotification('❌ ' + (error.message || 'Erro ao processar arquivo'), 'error');
-            }
+            this.showNotification('❌ Erro ao processar arquivo', 'error');
             this.setUploadLoading(false);
         }
     }
@@ -656,7 +655,7 @@ class AutoAnalytics {
         } else {
             const icon = this.isAdmin() ? '👑' : (this.isPremium() ? '⭐' : '🚀');
             const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
-            this.uploadButton.innerHTML = `${icon} Iniciar Análise Automática <span class="credit-badge">${creditText}</span>`;
+            this.uploadButton.innerHTML = `${icon} Iniciar Análise <span class="credit-badge">${creditText}</span>`;
         }
     }
     
@@ -680,13 +679,15 @@ class AutoAnalytics {
         }
     }
     
+    // 🔥 CORRIGIDO: handleFileSelect sem reset prematuro
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (!file) return;
         
-        if (!this.validateFileSize(file)) {
-            this.resetFileSelection();
-            return;
+        // 🔥 CORRIGIDO: Validação sem reset que apaga o aviso
+        if (file.size > this.MAX_FILE_SIZE_BYTES) {
+            this.validateFileSize(file);
+            return; // Não continua, mantém o aviso visível
         }
         
         if (!this.validateFile(file)) return;
@@ -704,31 +705,19 @@ class AutoAnalytics {
             this.resetFileSelection();
             return false;
         }
-        
         return true;
     }
     
     displayFileInfo(file) {
         const fileSizeKB = (file.size / 1024).toFixed(2);
-        const isWithinLimit = file.size <= this.MAX_FILE_SIZE_BYTES;
         
         if (this.fileName) this.fileName.textContent = file.name;
         if (this.fileSize) {
             this.fileSize.textContent = `${this.formatFileSize(file.size)} (${fileSizeKB}KB)`;
-            
-            if (file.size > this.MAX_FILE_SIZE_BYTES * 0.8 && file.size <= this.MAX_FILE_SIZE_BYTES) {
-                this.fileSize.className = 'badge bg-warning ms-2';
-            } else if (file.size <= this.MAX_FILE_SIZE_BYTES) {
-                this.fileSize.className = 'badge bg-success ms-2';
-            }
         }
         
         if (this.selectedFile) {
             this.selectedFile.classList.remove('d-none');
-        }
-        
-        if (isWithinLimit) {
-            console.log(`✅ Arquivo OK: ${fileSizeKB}KB dentro do limite de ${this.MAX_FILE_SIZE_KB}KB`);
         }
     }
     
@@ -759,11 +748,10 @@ class AutoAnalytics {
             if (this.uploadButton) {
                 this.uploadButton.disabled = false;
                 const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
-                this.uploadButton.innerHTML = `🚀 Iniciar Análise Automática <span class="credit-badge">${creditText}</span>`;
+                this.uploadButton.innerHTML = `🚀 Iniciar Análise <span class="credit-badge">${creditText}</span>`;
             }
             
             this.showNotification('✅ Arquivo analisado! Pronto para processar.', 'success');
-            
         } catch (error) {
             console.error('Erro ao analisar arquivo:', error);
             this.showNotification('❌ Erro ao analisar arquivo', 'error');
@@ -774,7 +762,7 @@ class AutoAnalytics {
     parseCSV(file) {
         return new Promise((resolve, reject) => {
             if (typeof Papa === 'undefined') {
-                reject(new Error('Biblioteca PapaParse não carregada'));
+                reject(new Error('PapaParse não carregado'));
                 return;
             }
             
@@ -788,12 +776,12 @@ class AutoAnalytics {
                         const types = {};
                         
                         columns.forEach(col => {
-                            const values = result.data.map(row => row[col]).filter(v => v !== null && v !== undefined);
+                            const values = result.data.map(row => row[col]).filter(v => v !== null);
                             if (values.length === 0) {
                                 types[col] = 'unknown';
                             } else if (values.every(v => typeof v === 'number')) {
                                 types[col] = 'numeric';
-                            } else if (values.every(v => v instanceof Date || !isNaN(Date.parse(v)))) {
+                            } else if (values.every(v => !isNaN(Date.parse(v)))) {
                                 types[col] = 'date';
                             } else {
                                 types[col] = 'text';
@@ -817,7 +805,7 @@ class AutoAnalytics {
     parseExcel(file) {
         return new Promise((resolve, reject) => {
             if (typeof XLSX === 'undefined') {
-                reject(new Error('Biblioteca XLSX não carregada'));
+                reject(new Error('XLSX não carregado'));
                 return;
             }
             
@@ -842,7 +830,7 @@ class AutoAnalytics {
                         
                         const types = {};
                         headers.forEach(col => {
-                            const values = rows.map(row => row[col]).filter(v => v !== undefined && v !== null);
+                            const values = rows.map(row => row[col]).filter(v => v !== undefined);
                             if (values.length === 0) {
                                 types[col] = 'unknown';
                             } else if (values.every(v => typeof v === 'number')) {
@@ -878,17 +866,15 @@ class AutoAnalytics {
         
         const numericCount = columns.filter(c => types[c] === 'numeric').length;
         const textCount = columns.filter(c => types[c] === 'text').length;
-        const dateCount = columns.filter(c => types[c] === 'date').length;
         
         let html = `
             <div class="preview-container mt-3">
-                <h6><i class="fas fa-chart-line me-2"></i>Pré-visualização dos Dados</h6>
+                <h6><i class="fas fa-chart-line me-2"></i>Pré-visualização</h6>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered">
                         <thead class="table-light">
                             <tr>
                                 ${columns.slice(0, 6).map(col => `<th>${this.truncate(col, 20)}</th>`).join('')}
-                                ${columns.length > 6 ? '<th>...</th>' : ''}
                             </tr>
                         </thead>
                         <tbody>
@@ -897,23 +883,18 @@ class AutoAnalytics {
                                     ${columns.slice(0, 6).map(col => {
                                         let value = row[col];
                                         if (value === undefined || value === null) value = '—';
-                                        if (typeof value === 'number') value = value.toFixed(2);
-                                        return `<td title="${String(value)}">${this.truncate(String(value), 20)}</td>`;
+                                        return `<td>${this.truncate(String(value), 20)}</td>`;
                                     }).join('')}
-                                    ${columns.length > 6 ? '<td>...</td>' : ''}
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
                 <div class="text-muted small mt-2">
-                    <i class="fas fa-info-circle me-1"></i>
-                    Detectadas ${columns.length} colunas (${numericCount} numéricas, 
-                    ${textCount} texto, ${dateCount} data)
+                    📊 ${columns.length} colunas (${numericCount} numéricas, ${textCount} texto)
                 </div>
                 <div class="text-success small mt-1">
-                    <i class="fas fa-check-circle me-1"></i>
-                    Tamanho do arquivo dentro do limite de ${this.MAX_FILE_SIZE_KB}KB
+                    ✅ Limite: ${this.MAX_FILE_SIZE_KB}KB
                 </div>
             </div>
         `;
@@ -947,7 +928,7 @@ class AutoAnalytics {
                         <div class="progress">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" style="width: 0%"></div>
                         </div>
-                        <div class="text-muted small mt-2" id="statusText">Iniciando análise...</div>
+                        <div class="text-muted small mt-2" id="statusText">Iniciando...</div>
                     </div>
                 </div>
             `;
@@ -956,8 +937,6 @@ class AutoAnalytics {
             if (uploadCard) {
                 uploadCard.insertAdjacentElement('afterend', container);
             }
-        } else {
-            container.classList.remove('d-none');
         }
     }
     
@@ -991,9 +970,8 @@ class AutoAnalytics {
                     
                     this.setUploadLoading(false);
                 }
-                
             } catch (error) {
-                console.error('Erro no polling:', error);
+                console.error('Polling error:', error);
             }
         }, 2000);
     }
@@ -1015,7 +993,7 @@ class AutoAnalytics {
             'detecting': '🔍 Detectando padrões...',
             'analyzing': '📊 Analisando dados...',
             'training': '🧠 Treinando modelo...',
-            'completed': '✅ Análise concluída!',
+            'completed': '✅ Concluído!',
             'error': '❌ Erro no processamento'
         };
         return messages[status.status] || '⏳ Processando...';
@@ -1030,40 +1008,33 @@ class AutoAnalytics {
         const analysisInfo = result.analysis_info || {};
         const stats = result.prediction_stats || {};
         
-        let html = `
+        resultContainer.innerHTML = `
             <div class="card mt-3 border-success">
                 <div class="card-body">
-                    <h5 class="card-title text-success">📊 RESULTADO DA ANÁLISE</h5>
+                    <h5 class="card-title text-success">📊 RESULTADO</h5>
                     <div class="row mt-3">
                         <div class="col-md-4">
                             <div class="text-center">
                                 <h3>${stats.total || 0}</h3>
-                                <small class="text-muted">Total de Registros</small>
+                                <small>Registros</small>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="text-center">
                                 <h3>${analysisInfo.features_count || 0}</h3>
-                                <small class="text-muted">Features</small>
+                                <small>Features</small>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="text-center">
                                 <h3>${analysisInfo.model_used || 'AutoML'}</h3>
-                                <small class="text-muted">Modelo</small>
+                                <small>Modelo</small>
                             </div>
                         </div>
                     </div>
-                    <hr>
-                    <p class="text-muted small mb-0">
-                        <i class="fas fa-bullseye me-1"></i>
-                        Coluna alvo: <strong>${analysisInfo.target_column || 'automática'}</strong>
-                    </p>
                 </div>
             </div>
         `;
-        
-        resultContainer.innerHTML = html;
     }
     
     async loadAnalysisHistory() {
@@ -1090,8 +1061,7 @@ class AutoAnalytics {
                 <div class="timeline-item">
                     <div class="timeline-marker"></div>
                     <div class="timeline-content">
-                        <p class="mb-1 small text-muted">Nenhuma análise realizada</p>
-                        <small>Envie seu primeiro arquivo</small>
+                        <p class="mb-1 text-muted">Nenhuma análise</p>
                     </div>
                 </div>
             `;
@@ -1100,24 +1070,14 @@ class AutoAnalytics {
         
         const html = analyses.slice(0, 5).map(a => {
             const date = new Date(a.created_at);
-            const fileSizeInfo = a.file_size ? ` • ${(a.file_size/1024).toFixed(1)}KB` : '';
             const statusClass = a.status === 'completed' ? 'bg-success' : 'bg-secondary';
-            const statusIcon = a.status === 'completed' ? '✅' : '⏳';
             
             return `
                 <div class="timeline-item">
                     <div class="timeline-marker ${statusClass}"></div>
                     <div class="timeline-content">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <p class="mb-1 small fw-bold">
-                                    ${statusIcon} ${this.escapeHtml(a.filename || 'Análise')}
-                                    <small class="text-muted">${fileSizeInfo}</small>
-                                </p>
-                                <small class="text-muted">${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}</small>
-                            </div>
-                            <span class="badge ${statusClass}">${a.status === 'completed' ? 'Concluído' : a.status}</span>
-                        </div>
+                        <p class="mb-1 small fw-bold">${this.escapeHtml(a.filename || 'Análise')}</p>
+                        <small class="text-muted">${date.toLocaleDateString('pt-BR')}</small>
                     </div>
                 </div>
             `;
@@ -1147,7 +1107,6 @@ class AutoAnalytics {
     
     async loadPremiumStatus() {
         if (!this.isPremium()) return;
-        if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
@@ -1156,13 +1115,11 @@ class AutoAnalytics {
                 this.displayPremiumInfo(data);
             }
         } catch (error) {
-            console.error('Erro ao carregar status premium:', error);
+            console.error('Erro ao carregar premium:', error);
         }
     }
     
     displayPremiumInfo(data) {
-        if (!data.plan?.is_premium) return;
-        
         let premiumContainer = document.getElementById('premiumDashboardInfo');
         
         if (!premiumContainer) {
@@ -1176,49 +1133,20 @@ class AutoAnalytics {
         }
         
         const daysLeft = data.plan?.days_left || 0;
-        const creditsPerDay = data.plan?.credits_per_day || 1;
+        const currentCredits = this.getCredits();
         
         premiumContainer.innerHTML = `
             <div class="d-flex align-items-center justify-content-between flex-wrap">
-                <div class="d-flex align-items-center">
-                    <div class="me-3">
-                        <i class="fas fa-crown fa-2x text-warning"></i>
-                    </div>
-                    <div>
-                        <h6 class="mb-0 fw-bold">⭐ PLANO PREMIUM ATIVO</h6>
-                        <small>${daysLeft} dias restantes • ${creditsPerDay} crédito/dia • Limite: ${this.MAX_FILE_SIZE_KB}KB</small>
-                    </div>
+                <div>
+                    <i class="fas fa-crown text-warning me-2"></i>
+                    <strong>⭐ PREMIUM ATIVO</strong>
+                    <small class="ms-2">${daysLeft} dias • ${currentCredits}/${this.MAX_CREDITS_BALANCE} créditos</small>
                 </div>
-                <button class="btn btn-sm btn-outline-primary mt-2 mt-sm-0" onclick="window.app?.claimDailyCredit()">
-                    <i class="fas fa-gift me-1"></i> Receber crédito
+                <button class="btn btn-sm btn-outline-primary" onclick="window.app?.claimDailyCredit()" ${currentCredits >= this.MAX_CREDITS_BALANCE ? 'disabled' : ''}>
+                    <i class="fas fa-gift me-1"></i> Receber
                 </button>
             </div>
         `;
-    }
-    
-    async claimDailyCredit() {
-        if (!this.isPremium()) return;
-        
-        try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium/check-daily`, {
-                method: 'POST'
-            });
-            
-            if (response && response.ok) {
-                const data = await response.json();
-                if (data.credits_added > 0) {
-                    this.showNotification(data.message || '⭐ Você ganhou 1 crédito do plano premium!', 'success');
-                    await this.loadUserCredits();
-                    await this.loadPremiumStatus();
-                    this.updateCreditsDisplay();
-                } else if (data.message) {
-                    this.showNotification(data.message, 'info');
-                }
-            }
-        } catch (error) {
-            console.error('Erro ao receber crédito:', error);
-            this.showNotification('Erro ao receber crédito. Tente novamente.', 'error');
-        }
     }
     
     initializeElements() {
@@ -1229,13 +1157,12 @@ class AutoAnalytics {
         this.selectedFile = document.getElementById('selectedFile');
         this.fileName = document.getElementById('fileName');
         this.fileSize = document.getElementById('fileSize');
-        this.historyContainer = document.getElementById('recentAnalyses');
         this.totalAnalises = document.getElementById('totalAnalises');
         this.analisesHoje = document.getElementById('analisesHoje');
         
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro (max ${this.MAX_FILE_SIZE_KB}KB)`;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo (max ${this.MAX_FILE_SIZE_KB}KB)`;
         }
     }
     
@@ -1244,22 +1171,14 @@ class AutoAnalytics {
             this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
         }
         
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
-            if (this.dropArea) {
-                this.dropArea.addEventListener(event, this.preventDefaults.bind(this));
-            }
-        });
-        
         if (this.dropArea) {
-            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
-            this.dropArea.addEventListener('click', () => this.fileInput?.click());
             this.dropArea.addEventListener('dragenter', (e) => this.handleDragEnter(e));
-            this.dropArea.addEventListener('dragover', () => {
-                if (this.dropArea) this.dropArea.classList.add('dragover-glow');
-            });
+            this.dropArea.addEventListener('dragover', (e) => e.preventDefault());
             this.dropArea.addEventListener('dragleave', () => {
                 if (this.dropArea) this.dropArea.classList.remove('dragover-glow');
             });
+            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
+            this.dropArea.addEventListener('click', () => this.fileInput?.click());
         }
         
         if (this.fileInput) {
@@ -1277,24 +1196,18 @@ class AutoAnalytics {
         }
     }
     
-    preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
     resetFileSelection() {
         if (this.fileInput) this.fileInput.value = '';
         if (this.selectedFile) this.selectedFile.classList.add('d-none');
         if (this.uploadButton) {
             this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo primeiro (max ${this.MAX_FILE_SIZE_KB}KB)`;
+            this.uploadButton.innerHTML = `📁 Selecione um arquivo (max ${this.MAX_FILE_SIZE_KB}KB)`;
         }
         
         const preview = document.getElementById('dataPreview');
         if (preview) preview.classList.add('d-none');
         
-        this.hideFileSizeWarning();
-        
+        this.clearSizeWarningContent(); // 🔥 Usa o método específico para limpar
         this.fileData = null;
         this.columns = [];
     }
@@ -1315,13 +1228,7 @@ class AutoAnalytics {
         }
     }
     
-    initAnimations() {}
-    
     async fetchWithAuth(url, options = {}) {
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return null;
-        }
-        
         if (window.appAuth && window.appAuth.fetchWithAuth) {
             return window.appAuth.fetchWithAuth(url, options);
         }
@@ -1334,9 +1241,9 @@ class AutoAnalytics {
         
         const headers = {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
             ...options.headers
         };
-        headers['Authorization'] = `Bearer ${token}`;
         
         try {
             let response = await fetch(url, { ...options, headers });
@@ -1348,66 +1255,43 @@ class AutoAnalytics {
                     headers['Authorization'] = `Bearer ${newToken}`;
                     response = await fetch(url, { ...options, headers });
                     return response;
-                } else {
-                    this.redirectToLogin();
-                    return null;
                 }
+                this.redirectToLogin();
+                return null;
             }
             return response;
         } catch (error) {
-            console.error('Erro na requisição:', error);
+            console.error('Fetch error:', error);
             return null;
         }
     }
     
     showNotification(message, type = 'info') {
-        if (window.toastr) {
+        if (window.toastr && typeof window.toastr[type] === 'function') {
             toastr[type](message);
             return;
         }
         
         const bgColor = type === 'success' ? '#48bb78' : 
-                        type === 'error' ? '#f56565' :
-                        type === 'warning' ? '#ed8936' : '#4299e1';
+                        type === 'error' ? '#f56565' : '#4299e1';
         
         const notification = document.createElement('div');
-        notification.className = 'notification-glow';
         notification.style.cssText = `
             position: fixed;
             bottom: 20px;
             right: 20px;
-            z-index: 10000;
             background: white;
             border-left: 4px solid ${bgColor};
             padding: 12px 20px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideInRight 0.3s ease-out;
-            max-width: 350px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 10000;
+            animation: slideInRight 0.3s ease;
         `;
-        
-        notification.innerHTML = `
-            <i class="fas ${type === 'success' ? 'fa-check-circle' : 
-                          type === 'error' ? 'fa-exclamation-circle' :
-                          type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle'}" 
-               style="color: ${bgColor}; font-size: 1.2rem;"></i>
-            <span style="flex: 1;">${this.escapeHtml(message)}</span>
-            <button onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer;">
-                <i class="fas fa-times" style="color: #999;"></i>
-            </button>
-        `;
-        
+        notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>${message}`;
         document.body.appendChild(notification);
         
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.style.animation = 'fadeOut 0.3s ease-out';
-                setTimeout(() => notification.remove(), 300);
-            }
-        }, 5000);
+        setTimeout(() => notification.remove(), 5000);
     }
     
     formatFileSize(bytes) {
@@ -1425,107 +1309,67 @@ class AutoAnalytics {
             this.redirectToPlanos();
         }
     }
-    
-    async loadFullHistory() {
-        await this.loadAnalysisHistory();
-        this.showNotification('Histórico atualizado!', 'info');
-    }
 }
 
-// ===== INICIALIZAÇÃO =====
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            window.app = new AutoAnalytics();
-        }, 200);
-    });
-} else {
-    setTimeout(() => {
-        window.app = new AutoAnalytics();
-    }, 200);
+// ===== INSTANCIAÇÃO GLOBAL =====
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('📄 Inicializando app...');
+    window.app = new AutoAnalytics();
+});
+
+// Fallback
+if (document.readyState !== 'loading') {
+    window.app = new AutoAnalytics();
 }
 
+// Exportar funções globais
 window.getApp = () => window.app;
 window.claimDailyCredit = () => window.app?.claimDailyCredit();
 window.showCreditsModal = () => window.app?.showCreditsModal();
 
-// 🔧 CSS - Verificar se já existe para não duplicar
+// CSS
 if (!document.getElementById('appStyles')) {
-    const appStyles = document.createElement('style');
-    appStyles.id = 'appStyles';
-    appStyles.textContent = `
+    const style = document.createElement('style');
+    style.id = 'appStyles';
+    style.textContent = `
         @keyframes slideInRight {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
-        }
         .dragover-glow {
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            background: rgba(102,126,234,0.1);
             border: 2px dashed #667eea !important;
-            transform: scale(1.02);
-            transition: all 0.2s ease;
         }
         .credit-badge {
             background: rgba(255,255,255,0.3);
-            padding: 0.2rem 0.5rem;
-            border-radius: 50px;
-            font-size: 0.75rem;
-            margin-left: 0.5rem;
-        }
-        .timeline {
-            position: relative;
-            padding-left: 1.5rem;
-        }
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            margin-left: 8px;
         }
         .timeline-item {
             position: relative;
-            padding-bottom: 1rem;
-        }
-        .timeline-item:last-child {
-            padding-bottom: 0;
+            padding-left: 20px;
+            margin-bottom: 15px;
         }
         .timeline-marker {
             position: absolute;
-            left: -1.5rem;
-            top: 0.25rem;
+            left: 0;
+            top: 5px;
             width: 10px;
             height: 10px;
             border-radius: 50%;
             background: #667eea;
-            border: 2px solid white;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
         }
-        .timeline-marker.bg-success {
-            background: #48bb78;
-            box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
-        }
-        .timeline-content {
-            padding-left: 0.5rem;
-        }
-        .btn-gradient {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            transition: all 0.3s;
-        }
-        .btn-gradient:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-            color: white;
+        .timeline-marker.bg-success { background: #48bb78; }
+        .timeline-content { padding-left: 5px; }
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+            color: #856404;
         }
     `;
-    document.head.appendChild(appStyles);
+    document.head.appendChild(style);
 }
 
-console.log('✅ app.js carregado - Rotas corrigidas (sem .html)');
+console.log('✅ app.js carregado - Limite: 200KB - TOTALMENTE CORRIGIDO');
