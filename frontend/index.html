@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>AutoAnalytics - Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoAnalytics - Dashboard de IA para Oficinas</title>
     
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -14,993 +14,1084 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
+    <!-- AOS Animation -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Anime.js para animações -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    
+    <!-- Toastr para notificações -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+    
+    <!-- Bibliotecas para PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            font-family: 'Inter', 'Segoe UI', sans-serif;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* 🔥 NAVBAR ESTILO BRONZE */
+        .navbar-modern {
+            background: rgba(44, 26, 10, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 1rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 2px solid #cd7f32;
+        }
+
+        .navbar-modern.scrolled {
+            padding: 0.5rem 0;
+            background: rgba(44, 26, 10, 0.98);
+        }
+
+        .brand-text {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        /* 🔥 CRÉDITS BADGE ESTILO BRONZE */
+        .credits-badge {
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
+            transition: transform 0.3s;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .credits-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(205, 127, 50, 0.6);
+        }
+
+        /* Hero Section */
+        .hero-section {
             min-height: 100vh;
             display: flex;
             align-items: center;
-            padding: 1rem;
             position: relative;
-            overflow-x: hidden;
+            overflow: hidden;
+            padding: 120px 0 60px;
         }
-        
-        body::before {
-            content: '';
+
+        .hero-bg {
             position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            background-image: 
-                radial-gradient(circle at 20% 80%, rgba(255,255,255,0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 50%);
-            pointer-events: none;
+            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
+            opacity: 0.9;
         }
-        
-        .bubble {
-            position: absolute;
-            background: rgba(255,255,255,0.1);
-            border-radius: 50%;
-            pointer-events: none;
-            animation: float 8s infinite ease-in-out;
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        
-        @keyframes float {
-            0%, 100% { transform: translateY(0) translateX(0); }
-            25% { transform: translateY(-20px) translateX(10px); }
-            50% { transform: translateY(-40px) translateX(-10px); }
-            75% { transform: translateY(-20px) translateX(5px); }
+
+        .hero-subtitle {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 2rem;
+            max-width: 600px;
         }
-        
-        .card {
-            border-radius: 32px;
-            overflow: hidden;
-            border: none;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.25);
-            animation: slideUp 0.6s ease-out;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+        /* 🔥 UPLOAD CARD ESTILO BRONZE */
+        .upload-card {
+            background: linear-gradient(145deg, #2c1a0a 0%, #3d2614 100%);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            padding: 2rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            border: 1px solid #cd7f32;
+            transition: all 0.3s ease;
         }
-        
-        .card:hover {
+
+        .upload-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 35px 60px rgba(0,0,0,0.3);
+            box-shadow: 0 30px 80px rgba(205, 127, 50, 0.2);
+            border-color: #f5a623;
         }
-        
-        @keyframes slideUp {
+
+        .upload-area {
+            border: 3px dashed rgba(205, 127, 50, 0.5);
+            border-radius: 20px;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-area:hover {
+            border-color: #f5a623;
+            background: rgba(245, 166, 35, 0.1);
+        }
+
+        .upload-area.dragover {
+            border-color: #48bb78;
+            background: rgba(72, 187, 120, 0.15);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #f5a623;
+            margin-bottom: 1rem;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* ===== TELA DE CARREGAMENTO ===== */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .spinner-brain {
+            width: 80px;
+            height: 80px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #f5a623;
+            border-right: 4px solid #cd7f32;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            color: #f5a623;
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+
+        .loading-subtext {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+
+        .loading-progress {
+            width: 250px;
+            margin-top: 20px;
+        }
+
+        .loading-progress .progress {
+            height: 6px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .loading-progress .progress-bar {
+            background: linear-gradient(90deg, #f5a623, #cd7f32);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* Indicador de Processamento */
+        .processing-indicator {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            text-align: center;
+        }
+
+        .processing-icon {
+            font-size: 3rem;
+            color: #f5a623;
+            margin-bottom: 1rem;
+        }
+
+        .processing-text {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1rem;
+        }
+
+        .processing-text strong {
+            color: #f5a623;
+        }
+
+        /* Botão de Upload */
+        .btn-gradient {
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
+        }
+
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(205, 127, 50, 0.6);
+            color: white;
+        }
+
+        .btn-gradient:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-outline-danger {
+            background: transparent;
+            border: 1px solid #dc3545;
+            color: #dc3545;
+            transition: all 0.3s;
+        }
+
+        .btn-outline-danger:hover {
+            background: #dc3545;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Timeline para histórico */
+        .timeline {
+            position: relative;
+            padding-left: 1.5rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #f5a623 0%, #cd7f32 100%);
+            border-radius: 2px;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.5rem;
+        }
+
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            left: -1.5rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f5a623;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.3);
+        }
+
+        .timeline-marker.bg-success {
+            background: #48bb78;
+            box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+        }
+
+        .timeline-content {
+            padding-left: 0.5rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .timeline-content strong {
+            color: #f5a623;
+        }
+
+        /* Métricas */
+        .metric-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            padding: 1rem;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #f5a623;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* Limite Info Bar */
+        .limit-info {
+            background: rgba(245, 166, 35, 0.15);
+            border-radius: 12px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-size: 0.85rem;
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .limit-info i {
+            color: #f5a623;
+            margin-right: 0.5rem;
+        }
+
+        .limit-info .limit-value {
+            font-weight: 700;
+            color: #f5a623;
+        }
+
+        /* Size Warning */
+        .size-warning {
+            background: rgba(220, 53, 69, 0.2);
+            border: 1px solid #dc3545;
+            color: #f8d7da;
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+
+        .size-warning.show {
+            display: block;
+            animation: shake 0.3s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        /* Admin Badge */
+        .admin-badge {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: none;
+            margin-left: 0.5rem;
+        }
+
+        body.is-admin .admin-badge {
+            display: inline-block;
+        }
+
+        /* Toastr customização */
+        .toast-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
+        }
+
+        .toast-info {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
+        }
+
+        .toast-warning {
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Análises em Andamento */
+        .analysis-card {
+            animation: slideInUp 0.3s ease-out;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes slideInUp {
             from {
                 opacity: 0;
-                transform: translateY(40px);
+                transform: translateY(20px);
             }
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
-        
-        .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-bottom: none;
-            padding: 2rem 1.5rem;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .card-header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
-            animation: rotate 20s linear infinite;
-        }
-        
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        .nav-tabs {
-            border-bottom: 2px solid rgba(102, 126, 234, 0.15);
-            gap: 0.5rem;
-            padding: 0 0.5rem;
-            background: transparent;
-        }
-        
-        .nav-tabs .nav-link {
-            color: #6c757d;
-            font-weight: 600;
-            border: none;
-            padding: 0.85rem 1.25rem;
-            transition: all 0.3s ease;
-            border-radius: 16px 16px 0 0;
-            position: relative;
-            font-size: 0.95rem;
-            background: transparent;
-        }
-        
-        .nav-tabs .nav-link:hover {
-            border: none;
-            color: #667eea;
-            background: rgba(102, 126, 234, 0.08);
-            transform: translateY(-2px);
-        }
-        
-        .nav-tabs .nav-link.active {
-            color: #667eea;
-            font-weight: 700;
-            background: transparent;
-        }
-        
-        .nav-tabs .nav-link.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 3px 3px 0 0;
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from { transform: scaleX(0); }
-            to { transform: scaleX(1); }
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            padding: 0.85rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border-radius: 16px;
-            position: relative;
-            overflow: hidden;
-            font-size: 1rem;
-        }
-        
-        .btn-primary::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: left 0.5s ease;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-primary:hover::before {
-            left: 100%;
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            border: none;
-            padding: 0.85rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border-radius: 16px;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .btn-success::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: left 0.5s ease;
-        }
-        
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(72, 187, 120, 0.4);
-        }
-        
-        .btn-success:hover::before {
-            left: 100%;
-        }
-        
-        .form-control {
-            border: 2px solid #e9ecef;
-            padding: 0.85rem 1rem;
-            transition: all 0.3s ease;
-            border-radius: 14px;
-            font-size: 1rem;
-        }
-        
-        .form-control:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-        }
-        
-        .form-label {
-            font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
-        }
-        
-        .form-label i {
-            color: #667eea;
-            width: 20px;
-        }
-        
-        .password-wrapper {
-            position: relative;
-        }
-        
-        .password-wrapper .form-control {
-            padding-right: 50px;
-        }
-        
-        .password-toggle {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: transparent;
-            border: none;
-            color: #667eea;
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 50%;
-            transition: all 0.2s ease;
-            z-index: 10;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .password-toggle:hover {
-            background: rgba(102, 126, 234, 0.1);
-            color: #764ba2;
-        }
-        
-        .password-toggle i {
-            font-size: 1.1rem;
-        }
-        
-        .password-strength {
-            margin-top: 0.5rem;
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-        
-        .strength-bar {
-            flex: 1;
-            height: 4px;
-            background: #e9ecef;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-        
-        .strength-bar.active {
-            background: linear-gradient(90deg, #f56565, #ed8936, #48bb78, #38a169);
-        }
-        
-        .strength-text {
-            font-size: 0.7rem;
-            font-weight: 600;
-            min-width: 65px;
-        }
-        
-        .strength-text.weak { color: #f56565; }
-        .strength-text.medium { color: #ed8936; }
-        .strength-text.strong { color: #48bb78; }
-        .strength-text.very-strong { color: #38a169; }
-        
-        .captcha-container {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 20px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
-            border: 2px solid rgba(102, 126, 234, 0.1);
-            transition: all 0.3s ease;
-        }
-        
-        .captcha-container:hover {
-            border-color: #667eea;
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.15);
-        }
-        
-        .captcha-image-wrapper {
-            background: white;
-            border-radius: 14px;
-            padding: 0.75rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            border: 1px solid #e9ecef;
-            min-height: 100px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-        
-        .captcha-image-wrapper:hover {
-            transform: scale(1.02);
-        }
-        
-        .captcha-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 10px;
-            display: block;
-            margin: 0 auto;
-            background: #f8f9fa;
-        }
-        
-        .captcha-refresh {
-            background: white;
-            border: 2px solid #667eea;
-            color: #667eea;
-            width: 52px;
-            height: 52px;
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            font-size: 1.2rem;
-        }
-        
-        .captcha-refresh:hover {
-            background: #667eea;
+
+        .analysis-card .card {
+            transition: all 0.2s;
+            border-radius: 20px !important;
+            background: rgba(44, 26, 10, 0.9) !important;
+            border: 1px solid rgba(205, 127, 50, 0.3) !important;
             color: white;
-            transform: rotate(180deg);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
-        
-        .captcha-refresh:active {
-            transform: rotate(180deg) scale(0.95);
+
+        .analysis-card .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(205, 127, 50, 0.2);
         }
-        
-        .captcha-refresh:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
+
+        .analysis-card .metric-box {
+            background: rgba(0, 0, 0, 0.3) !important;
+            color: white;
         }
-        
-        .captcha-input {
-            border: 2px solid #e9ecef;
-            border-radius: 14px;
-            padding: 1rem;
-            font-size: 1.3rem;
-            font-weight: 700;
-            text-align: center;
-            transition: all 0.3s ease;
-            background: white;
-            letter-spacing: 6px;
-            font-family: monospace;
+
+        .analysis-card .metric-label {
+            color: rgba(255, 255, 255, 0.6);
         }
-        
-        .captcha-input:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-            outline: none;
-            letter-spacing: 8px;
+
+        .analysis-card .metric-value {
+            color: #f5a623;
         }
-        
-        .captcha-helper {
-            font-size: 0.8rem;
-            color: #6c757d;
-            margin-top: 0.75rem;
-            text-align: center;
+
+        /* File Preview */
+        .file-preview-container {
+            max-height: 200px;
+            overflow-y: auto;
         }
-        
-        .captcha-helper i {
-            color: #667eea;
-            font-size: 0.9rem;
+
+        .file-preview-container .bg-light {
+            background: rgba(0, 0, 0, 0.3) !important;
+            color: white;
         }
-        
-        .captcha-timer {
-            font-weight: 700;
-            color: #667eea;
-            background: rgba(102, 126, 234, 0.12);
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            transition: all 0.3s ease;
-            font-family: monospace;
-            font-size: 0.85rem;
+
+        .file-preview-container .text-muted {
+            color: rgba(255, 255, 255, 0.6) !important;
         }
+
+        /* ===== ESTILOS GPSA ===== */
+        .gpsa-dashboard { animation: fadeInUp 0.5s ease-out; }
         
-        .captcha-timer.expiring {
-            color: #f56565;
-            background: rgba(245, 101, 101, 0.12);
-            animation: pulse 1s infinite;
-        }
-        
-        .captcha-timer.expired {
-            color: #dc3545;
-            background: rgba(220, 53, 69, 0.12);
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        
-        .captcha-hint {
-            background: rgba(102, 126, 234, 0.08);
-            border-radius: 12px;
-            padding: 0.6rem;
-            font-size: 0.75rem;
-            color: #667eea;
-            text-align: center;
-            margin-top: 0.5rem;
-        }
-        
-        .form-check-input:checked {
-            background-color: #667eea;
-            border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
-        }
-        
-        .card-footer {
-            background: #f8f9fa;
-            border-top: 1px solid rgba(102, 126, 234, 0.1);
-            padding: 1.25rem;
-        }
-        
-        .text-muted a {
-            color: #667eea;
-            transition: color 0.3s ease;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        
-        .text-muted a:hover {
-            color: #764ba2;
-            text-decoration: underline;
-        }
-        
-        .btn .spinner-border {
-            width: 1.2rem;
-            height: 1.2rem;
-            margin-right: 0.5rem;
-        }
-        
-        .fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        @media (max-width: 768px) {
-            .card {
-                margin: 0;
-            }
-            
-            .card-header {
-                padding: 1.5rem 1rem;
-            }
-            
-            .captcha-container {
-                padding: 1rem;
-            }
-            
-            .captcha-refresh {
-                width: 46px;
-                height: 46px;
-            }
-            
-            .captcha-input {
-                font-size: 1.2rem;
-                padding: 0.85rem;
-                letter-spacing: 4px;
-            }
+        .impact-card, .trend-chart-card, .insights-card, .score-progress-card {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            transition: all 0.3s ease;
+            color: white;
         }
         
-        .security-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            padding: 0.3rem 0.8rem;
+        .impact-card:hover, .trend-chart-card:hover {
+            transform: translateY(-5px);
+            background: rgba(245, 166, 35, 0.1);
+            border-color: #f5a623;
+        }
+        
+        .impact-value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
+        .trend-indicator { font-size: 0.8rem; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 20px; display: inline-block; }
+        .insight-item { transition: all 0.2s; background: rgba(0,0,0,0.2) !important; color: white; }
+        .insight-item:hover { transform: translateX(5px); background: rgba(245, 166, 35, 0.15) !important; }
+        
+        .gpsa-score-circle { position: relative; display: inline-block; }
+        .score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.5s ease-out; }
+        .score-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        .score-number { font-size: 2rem; font-weight: bold; display: block; line-height: 1; color: #f5a623; }
+        
+        .progress-bar { transition: width 3.5s ease-out; }
+        
+        .credit-badge {
+            background: rgba(255,255,255,0.3);
+            padding: 2px 8px;
             border-radius: 20px;
             font-size: 0.7rem;
-            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .risk-summary {
+            background: rgba(0,0,0,0.3);
             backdrop-filter: blur(5px);
+            border: 1px solid rgba(205, 127, 50, 0.3);
         }
-        
-        .alert {
-            border-radius: 14px;
-            animation: slideIn 0.3s ease-out;
+
+        .risk-badge {
+            transition: all 0.3s ease;
         }
-        
-        .info-tooltip {
-            cursor: help;
-            color: #667eea;
-            margin-left: 0.25rem;
-            font-size: 0.8rem;
-            transition: all 0.2s;
+
+        .risk-badge.high {
+            background: rgba(245, 101, 101, 0.2);
+            border: 1px solid rgba(245, 101, 101, 0.5);
         }
-        
-        .info-tooltip:hover {
-            color: #764ba2;
-            transform: scale(1.1);
+
+        .risk-badge.medium {
+            background: rgba(245, 166, 35, 0.2);
+            border: 1px solid rgba(245, 166, 35, 0.5);
         }
-        
-        .forgot-link {
-            font-size: 0.8rem;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
+
+        .risk-badge.low {
+            background: rgba(72, 187, 120, 0.2);
+            border: 1px solid rgba(72, 187, 120, 0.5);
         }
-        
-        .forgot-link:hover {
-            transform: translateX(3px);
+
+        .risk-badge:hover {
+            transform: translateY(-2px);
+        }
+
+        .risk-value {
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .risk-label {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .risk-badge .fw-bold {
+            color: white;
+        }
+
+        /* Texto do modal */
+        .modal-content {
+            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%) !important;
+            border: 1px solid #cd7f32 !important;
+        }
+
+        .modal-content .modal-title {
+            color: #f5a623 !important;
+        }
+
+        .modal-content .text-muted {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .modal-content .alert-info {
+            background: rgba(245, 166, 35, 0.15) !important;
+            border-color: rgba(205, 127, 50, 0.3) !important;
+            color: rgba(255, 255, 255, 0.8) !important;
+        }
+
+        .modal-content .alert-info strong {
+            color: #f5a623 !important;
+        }
+
+        /* Footer */
+        footer {
+            background: rgba(44, 26, 10, 0.95) !important;
+            border-top: 1px solid #cd7f32 !important;
+        }
+
+        footer .text-muted {
+            color: rgba(255, 255, 255, 0.6) !important;
+        }
+
+        footer .badge.bg-light {
+            background: rgba(205, 127, 50, 0.2) !important;
+            color: #f5a623 !important;
+        }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+            .upload-card {
+                padding: 1.5rem;
+            }
+            .impact-value { font-size: 1.8rem; }
+            .score-number { font-size: 1.5rem; }
+            .gpsa-score-circle svg { width: 100px; height: 100px; }
+            .risk-value { font-size: 1.2rem; }
+            .btn-gradient, .btn-outline-danger { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
         }
     </style>
 </head>
 <body>
-    <!-- Bolhas decorativas -->
-    <div class="bubble" style="width: 150px; height: 150px; bottom: -50px; left: -50px; animation-duration: 12s;"></div>
-    <div class="bubble" style="width: 100px; height: 100px; top: 20%; right: -30px; animation-duration: 10s; animation-delay: 2s;"></div>
-    <div class="bubble" style="width: 200px; height: 200px; bottom: 10%; right: 10%; animation-duration: 15s; animation-delay: 1s;"></div>
-    <div class="bubble" style="width: 80px; height: 80px; top: 60%; left: -20px; animation-duration: 8s; animation-delay: 3s;"></div>
-
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-8 col-lg-6 col-xl-5">
-                <div class="card shadow-lg border-0">
-                    <div class="card-header text-white text-center">
-                        <div class="mb-3">
-                            <i class="fas fa-chart-line fa-4x opacity-90"></i>
-                        </div>
-                        <h1 class="h3 mb-2 fw-bold">
-                            <span class="fw-bold">Auto</span><span class="text-warning">Analytics</span><span class="fw-bold">Pro</span>
-                        </h1>
-                        <p class="small mb-0 opacity-75">
-                            <i class="fas fa-robot me-1"></i>
-                            IA para Oficinas Mecânicas
-                        </p>
-                        <div class="mt-3 d-flex justify-content-center gap-2">
-                            <span class="security-badge">
-                                <i class="fas fa-shield-alt"></i>
-                                Protegido
-                            </span>
-                            <span class="security-badge">
-                                <i class="fas fa-clock"></i>
-                                Sessão Segura
-                            </span>
-                            <span class="security-badge">
-                                <i class="fas fa-lock"></i>
-                                SSL 256-bit
-                            </span>
-                        </div>
+    <!-- Navbar Moderna -->
+    <nav class="navbar-modern" id="mainNavbar">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center w-100">
+                <a class="brand-text text-decoration-none" href="/dashboard">
+                    <i class="fas fa-robot me-2"></i>
+                    AutoAnalytics<span class="gradient-text">Pro</span>
+                </a>
+                
+                <div class="d-flex align-items-center gap-3">
+                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                        <i class="fas fa-coins me-2"></i>
+                        <span id="creditsCount">0</span> créditos
                     </div>
                     
-                    <div class="card-body p-4">
-                        <ul class="nav nav-tabs nav-justified mb-4" id="authTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="login-tab" data-bs-toggle="tab" 
-                                        data-bs-target="#login" type="button" role="tab">
-                                    <i class="fas fa-sign-in-alt me-2"></i> Entrar
-                                </button>
+                    <span class="admin-badge" id="adminBadge">
+                        <i class="fas fa-crown me-1"></i>
+                        Admin
+                    </span>
+                    
+                    <div class="dropdown">
+                        <button class="btn btn-light rounded-pill px-4" type="button" data-bs-toggle="dropdown" style="background: rgba(255,255,255,0.1); color: white; border-color: rgba(205,127,50,0.3);">
+                            <i class="fas fa-user-circle me-2"></i>
+                            <span id="userName" style="color: white;">Usuário</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" style="background: #2c1a0a; border-color: #cd7f32;">
+                            <li>
+                                <span class="dropdown-item-text text-muted small" id="workshopName" style="color: rgba(255,255,255,0.7);">
+                                    <i class="fas fa-wrench me-2"></i>Oficina
+                                </span>
                             </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="register-tab" data-bs-toggle="tab" 
-                                        data-bs-target="#register" type="button" role="tab">
-                                    <i class="fas fa-user-plus me-2"></i> Criar Conta
-                                </button>
+                            <li><hr class="dropdown-divider" style="border-color: rgba(205,127,50,0.3);"></li>
+                            <li>
+                                <a class="dropdown-item" href="#" id="logoutBtn" style="color: rgba(255,255,255,0.8);">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Sair
+                                </a>
                             </li>
                         </ul>
-                        
-                        <div class="tab-content">
-                            <!-- LOGIN TAB -->
-                            <div class="tab-pane fade show active" id="login" role="tabpanel">
-                                <form id="loginForm">
-                                    <div class="mb-3">
-                                        <label for="loginEmail" class="form-label">
-                                            <i class="fas fa-envelope me-2"></i>E-mail
-                                        </label>
-                                        <input type="email" class="form-control" id="loginEmail" 
-                                               placeholder="seu@email.com" required autocomplete="email">
-                                    </div>
-                                    
-                                    <div class="mb-2">
-                                        <label for="loginPassword" class="form-label">
-                                            <i class="fas fa-lock me-2"></i>Senha
-                                        </label>
-                                        <div class="password-wrapper">
-                                            <input type="password" class="form-control" id="loginPassword" 
-                                                   placeholder="Sua senha" required autocomplete="current-password">
-                                            <button type="button" class="password-toggle" data-target="loginPassword">
-                                                <i class="far fa-eye-slash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-end mb-4">
-                                        <a href="#" class="small text-decoration-none forgot-link" id="forgotPassword">
-                                            <i class="fas fa-question-circle me-1"></i>Esqueceu a senha?
-                                        </a>
-                                    </div>
-                                    
-                                    <!-- CAPTCHA -->
-                                    <div class="captcha-container">
-                                        <div class="row align-items-center g-2">
-                                            <div class="col-8">
-                                                <div class="captcha-image-wrapper">
-                                                    <img id="loginCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='100' viewBox='0 0 280 100'%3E%3Crect width='280' height='100' fill='%23667eea'/%3E%3Ctext x='140' y='55' font-family='monospace' font-size='20' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="Digite os números da imagem">
-                                                    <input type="hidden" id="loginCaptchaId">
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="captcha-refresh mx-auto" id="refreshLoginCaptcha" title="Nova imagem">
-                                                    <i class="fas fa-sync-alt"></i>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="mt-3">
-                                            <input type="text" 
-                                                   class="form-control captcha-input" 
-                                                   id="loginCaptchaInput" 
-                                                   placeholder="••••" 
-                                                   maxlength="4" 
-                                                   inputmode="numeric" 
-                                                   pattern="[0-9]*" 
-                                                   autocomplete="off"
-                                                   required>
-                                            <div class="captcha-hint">
-                                                <i class="fas fa-eye"></i>
-                                                Digite os <strong>4 números</strong> que aparecem na imagem
-                                            </div>
-                                            <div class="captcha-helper d-flex justify-content-between align-items-center mt-2">
-                                                <span><i class="fas fa-hourglass-half me-1"></i>Expira em</span>
-                                                <span class="captcha-timer" id="loginCaptchaTimer">02:00</span>
-                                                <span><i class="fas fa-ban me-1"></i>Uso único</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3 form-check">
-                                        <input type="checkbox" class="form-check-input" id="rememberMe">
-                                        <label class="form-check-label small" for="rememberMe">
-                                            <i class="far fa-check-circle me-1"></i>
-                                            Manter conectado por 30 dias
-                                        </label>
-                                        <i class="fas fa-info-circle info-tooltip" data-bs-toggle="tooltip" title="Ficará conectado mesmo fechando o navegador"></i>
-                                    </div>
-                                    
-                                    <button type="submit" class="btn btn-primary w-100 py-2" id="loginBtn">
-                                        <i class="fas fa-sign-in-alt me-2"></i>
-                                        Entrar na Plataforma
-                                    </button>
-                                </form>
-                            </div>
-                            
-                            <!-- REGISTER TAB -->
-                            <div class="tab-pane fade" id="register" role="tabpanel">
-                                <form id="registerForm">
-                                    <div class="mb-3">
-                                        <label for="regName" class="form-label">
-                                            <i class="fas fa-user me-2"></i>Nome Completo
-                                        </label>
-                                        <input type="text" class="form-control" id="regName" 
-                                               placeholder="Ex: João Silva" required autocomplete="name">
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label for="regEmail" class="form-label">
-                                            <i class="fas fa-envelope me-2"></i>E-mail
-                                        </label>
-                                        <input type="email" class="form-control" id="regEmail" 
-                                               placeholder="seu@email.com" required autocomplete="email">
-                                    </div>
-                                    
-                                    <div class="row g-3">
-                                        <div class="col-md-6">
-                                            <label for="regPassword" class="form-label">
-                                                <i class="fas fa-lock me-2"></i>Senha
-                                            </label>
-                                            <div class="password-wrapper">
-                                                <input type="password" class="form-control" id="regPassword" 
-                                                       minlength="6" placeholder="Mínimo 6 caracteres" 
-                                                       required autocomplete="new-password">
-                                                <button type="button" class="password-toggle" data-target="regPassword">
-                                                    <i class="far fa-eye-slash"></i>
-                                                </button>
-                                            </div>
-                                            <div class="password-strength" id="passwordStrengthContainer" style="display: none;">
-                                                <div class="strength-bar" id="strengthBar1"></div>
-                                                <div class="strength-bar" id="strengthBar2"></div>
-                                                <div class="strength-bar" id="strengthBar3"></div>
-                                                <div class="strength-bar" id="strengthBar4"></div>
-                                                <span class="strength-text" id="strengthText">Fraca</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="col-md-6">
-                                            <label for="regConfirmPassword" class="form-label">
-                                                <i class="fas fa-lock me-2"></i>Confirmar
-                                            </label>
-                                            <div class="password-wrapper">
-                                                <input type="password" class="form-control" id="regConfirmPassword" 
-                                                       placeholder="Digite novamente" required autocomplete="new-password">
-                                                <button type="button" class="password-toggle" data-target="regConfirmPassword">
-                                                    <i class="far fa-eye-slash"></i>
-                                                </button>
-                                            </div>
-                                            <div id="passwordMatchHint" class="small mt-1"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3 mt-3">
-                                        <label for="regWorkshop" class="form-label">
-                                            <i class="fas fa-wrench me-2"></i>Nome da Oficina
-                                        </label>
-                                        <input type="text" class="form-control" id="regWorkshop" 
-                                               placeholder="Ex: Oficina Central" required>
-                                    </div>
-                                    
-                                    <!-- CAPTCHA REGISTER -->
-                                    <div class="captcha-container">
-                                        <div class="row align-items-center g-2">
-                                            <div class="col-8">
-                                                <div class="captcha-image-wrapper">
-                                                    <img id="registerCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='100' viewBox='0 0 280 100'%3E%3Crect width='280' height='100' fill='%23667eea'/%3E%3Ctext x='140' y='55' font-family='monospace' font-size='20' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="Digite os números da imagem">
-                                                    <input type="hidden" id="registerCaptchaId">
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="captcha-refresh mx-auto" id="refreshRegisterCaptcha" title="Nova imagem">
-                                                    <i class="fas fa-sync-alt"></i>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="mt-3">
-                                            <input type="text" 
-                                                   class="form-control captcha-input" 
-                                                   id="registerCaptchaInput" 
-                                                   placeholder="••••" 
-                                                   maxlength="4" 
-                                                   inputmode="numeric" 
-                                                   pattern="[0-9]*" 
-                                                   autocomplete="off"
-                                                   required>
-                                            
-                                            <div class="captcha-helper d-flex justify-content-between align-items-center mt-2">
-                                                <span><i class="fas fa-hourglass-half me-1"></i>Expira em</span>
-                                                <span class="captcha-timer" id="registerCaptchaTimer">02:00</span>
-                                                <span><i class="fas fa-ban me-1"></i>Uso único</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3 form-check">
-                                        <input type="checkbox" class="form-check-input" id="terms" required>
-                                        <label class="form-check-label small" for="terms">
-                                            <i class="far fa-check-circle me-1"></i>
-                                            Aceito os <a href="#" class="text-decoration-none">Termos de Uso</a> e 
-                                            <a href="#" class="text-decoration-none">Política de Privacidade</a>
-                                        </label>
-                                    </div>
-                                    
-                                    <button type="submit" class="btn btn-success w-100 py-2" id="registerBtn">
-                                        <i class="fas fa-user-plus me-2"></i>
-                                        Criar Conta Gratuita
-                                    </button>
-                                    
-                                    <div class="text-center mt-3">
-                                        <small class="text-muted">
-                                            <i class="fas fa-gift me-1"></i>
-                                            Ao criar sua conta, você ganha <strong>3 créditos grátis</strong>!
-                                        </small>
-                                    </div>
-                                </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- TELA DE CARREGAMENTO GLOBAL -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner-brain"></div>
+        <div class="loading-text" id="loadingText">Processando sua análise...</div>
+        <div class="loading-subtext" id="loadingSubtext">A IA está analisando seus dados</div>
+        <div class="loading-progress" id="loadingProgress">
+            <div class="progress">
+                <div class="progress-bar" id="loadingProgressBar" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hero Section com Upload -->
+    <section class="hero-section">
+        <div class="hero-bg"></div>
+        <div class="container">
+            <div class="row align-items-center min-vh-100">
+                <div class="col-lg-6 mb-5 mb-lg-0" data-aos="fade-right" data-aos-duration="1000">
+                    <span class="badge mb-3 py-2 px-3" style="background: rgba(205,127,50,0.3); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                        <i class="fas fa-robot me-2"></i>Scikit-learn + IA
+                    </span>
+                    <h1 class="hero-title">
+                        Análise Inteligente para<br>
+                        <span class="gradient-text">sua oficina mecânica</span>
+                    </h1>
+                    <p class="hero-subtitle">
+                        <strong>🚀 Upload automático!</strong><br>
+                        Basta enviar seus arquivos CSV ou Excel. 
+                        O sistema detecta automaticamente os padrões e gera insights poderosos.
+                    </p>
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small style="color: rgba(255,255,255,0.7);">Sem seleção de colunas</small>
                             </div>
                         </div>
-                        
-                        <div id="authMessage" class="mt-3"></div>
-                        
-                        <div class="text-center mt-3">
-                            <small class="text-muted">
-                                <i class="fas fa-shield-alt me-1"></i>
-                                Plataforma segura com criptografia de ponta a ponta
-                            </small>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small style="color: rgba(255,255,255,0.7);">Detecção automática</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small style="color: rgba(255,255,255,0.7);">Análise completa</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                <small style="color: rgba(255,255,255,0.7);">Resultados em segundos</small>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="card-footer text-center">
-                        <div class="d-flex justify-content-center gap-3 mb-2">
-                            <small><a href="#" class="text-decoration-none"><i class="fas fa-question-circle me-1"></i>Suporte 24h</a></small>
-                            <small><a href="#" class="text-decoration-none"><i class="fas fa-shield-alt me-1"></i>Privacidade</a></small>
-                            <small><a href="#" class="text-decoration-none"><i class="fas fa-file-alt me-1"></i>Termos</a></small>
-                            <small><a href="#" class="text-decoration-none"><i class="fas fa-envelope me-1"></i>Contato</a></small>
+                    <!-- Métricas Rápidas -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-4">
+                            <div class="metric-card text-center p-3">
+                                <div class="metric-value" id="totalAnalises">0</div>
+                                <div class="metric-label">Análises</div>
+                            </div>
                         </div>
-                        <small class="text-muted">© 2026 AutoAnalyticsPro. Todos os direitos reservados.</small>
+                        <div class="col-4">
+                            <div class="metric-card text-center p-3">
+                                <div class="metric-value" id="analisesHoje">0</div>
+                                <div class="metric-label">Hoje</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="metric-card text-center p-3">
+                                <div class="metric-value" id="creditsDisplay">0</div>
+                                <div class="metric-label">Créditos</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
+                    <div class="row">
+                        <div class="col-12">
+                            <!-- Card de Upload -->
+                            <div class="upload-card mb-4">
+                                <div class="d-flex align-items-center justify-content-between mb-4">
+                                    <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">
+                                        <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>
+                                        Upload Automático
+                                    </h3>
+                                    <span class="badge py-2 px-3" id="uploadCreditsBadge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white;">
+                                        <i class="fas fa-coins me-1"></i>
+                                        <span id="uploadCredits">0</span> créditos
+                                    </span>
+                                </div>
+                                
+                                <!-- Limites -->
+                                <div class="limit-info">
+                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
+                                        <div>
+                                            <i class="fas fa-hard-drive"></i>
+                                            <span>Limite: <strong class="limit-value">200 KB</strong>/arquivo</span>
+                                        </div>
+                                        <div>
+                                            <i class="fas fa-layer-group"></i>
+                                            <span>Máximo: <strong class="limit-value">3 arquivos</strong>/vez</span>
+                                        </div>
+                                        <div>
+                                            <i class="fas fa-coins"></i>
+                                            <span>Custo: <strong class="limit-value">1 crédito</strong>/arquivo</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <form id="uploadForm">
+                                    <div class="upload-area mb-4" id="dropArea">
+                                        <div class="upload-icon">
+                                            <i class="fas fa-file-excel"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2" style="color: rgba(255,255,255,0.8);">Arraste seus arquivos aqui</h4>
+                                        <p class="text-muted small mb-3" style="color: rgba(255,255,255,0.6);">
+                                            <i class="fas fa-file-csv me-1"></i> CSV 
+                                            <i class="fas fa-file-excel ms-2 me-1"></i> Excel
+                                            <i class="fas fa-layer-group ms-2 me-1"></i> Até 3 arquivos
+                                        </p>
+                                        <div class="text-muted small mb-2" style="color: rgba(255,255,255,0.6);">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            Limite de <strong class="text-success" style="color: #f5a623;">200KB</strong> por arquivo
+                                        </div>
+                                        <div>
+                                            <label for="fileInput" class="btn btn-gradient btn-sm">
+                                                <i class="fas fa-folder-open me-2"></i>
+                                                Selecionar Arquivos
+                                            </label>
+                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="size-warning" id="sizeWarning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        <span id="sizeWarningText">Arquivo excede o limite de 200KB!</span>
+                                    </div>
+                                    
+                                    <div id="filePreviewContainer" class="mt-3"></div>
+                                    
+                                    <div class="processing-indicator mb-3">
+                                        <div class="processing-icon">
+                                            <i class="fas fa-robot"></i>
+                                        </div>
+                                        <div class="processing-text">
+                                            <strong>Processamento automático</strong>
+                                            <p class="small text-muted mb-0" style="color: rgba(255,255,255,0.6);">
+                                                O sistema detectará automaticamente:
+                                                <br>• Colunas mais importantes
+                                                <br>• Padrões nos dados
+                                                <br>• Melhor tipo de análise
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="d-grid">
+                                        <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
+                                            <i class="fas fa-play-circle me-2"></i>
+                                            Iniciar Análise
+                                            <span class="badge bg-light text-dark ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- Análises em Andamento (CARDS INDIVIDUAIS) -->
+                        <div class="col-12 mb-4">
+                            <div class="upload-card">
+                                <div class="d-flex align-items-center justify-content-between mb-4">
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-chart-line text-primary me-2 fa-lg" style="color: #f5a623;"></i>
+                                        <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">Análises em Andamento</h3>
+                                        <span class="badge bg-primary ms-2" id="activeAnalysesCount" style="background: #f5a623; color: white;">0</span>
+                                    </div>
+                                </div>
+                                
+                                <div id="activeAnalysesContainer">
+                                    <div class="text-center py-5" style="color: rgba(255,255,255,0.5);">
+                                        <i class="fas fa-cloud-upload-alt fa-3x mb-3 opacity-50"></i>
+                                        <h6>Nenhuma análise em andamento</h6>
+                                        <p class="small">Selecione até 3 arquivos para começar</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Histórico de Análises -->
+                        <div class="col-12">
+                            <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
+                                <div class="d-flex align-items-center mb-4">
+                                    <i class="fas fa-history text-primary me-2" style="color: #f5a623;"></i>
+                                    <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">Histórico de Análises</h3>
+                                </div>
+                                
+                                <div class="timeline" id="recentAnalyses" style="max-height: 400px; overflow-y: auto;">
+                                    <div class="timeline-item">
+                                        <div class="timeline-marker"></div>
+                                        <div class="timeline-content">
+                                            <p class="mb-1 small">Carregando histórico...</p>
+                                            <small style="color: rgba(255,255,255,0.5);">Aguarde</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-3 text-center">
+                                    <button class="btn btn-link small text-decoration-none" onclick="window.app?.loadFullHistory()" style="color: #f5a623;">
+                                        <i class="fas fa-eye me-1"></i> Ver todas as análises
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modal de Créditos -->
+    <div class="modal fade" id="creditsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(205,127,50,0.3);">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-coins text-warning me-2" style="color: #f5a623;"></i>
+                        Meus Créditos
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-coins fa-4x mb-3" style="color: #f5a623;"></i>
+                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #f5a623;">0</div>
+                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.7);">créditos disponíveis</p>
+                    
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong style="color: #f5a623;">Como funcionam os créditos:</strong><br>
+                        • Você começa com <strong style="color: #f5a623;">3 créditos gratuitos</strong><br>
+                        • ⭐ Premium ganha 1 crédito por dia<br>
+                        • Cada análise consome 1 crédito<br>
+                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
+                        • 🔥 Limite máximo de 3 créditos acumulados
+                    </div>
+                </div>
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(205,127,50,0.3);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white; border: none; padding: 0.75rem; border-radius: 50px;">
+                        <i class="fas fa-credit-card me-2"></i>
+                        Comprar mais créditos
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal GPSA para exibir resultados e gráficos -->
+    <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content" style="background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%); border: 1px solid #cd7f32;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(205,127,50,0.3);">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-chart-line me-2"></i>GPSA - Impacto no Negócio
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="gpsaModalBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                        <p class="mt-3" style="color: rgba(255,255,255,0.6);">Carregando análise...</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/auth.js"></script>
-    <script src="/static/js/app.js"></script>
+    <!-- Footer -->
+    <footer class="bg-white py-4 mt-5">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <p class="text-muted small mb-0" style="color: rgba(255,255,255,0.6);">
+                        <i class="fas fa-robot me-2" style="color: #f5a623;"></i>
+                        AutoAnalyticsPro © 2024 - IA para oficinas mecânicas
+                    </p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                        <i class="fas fa-brain me-1"></i> AutoML
+                    </span>
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                        <i class="fas fa-chart-line me-1"></i> Scikit-learn
+                    </span>
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                        <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
+                    </span>
+                    <span class="badge py-2 px-3" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                        <i class="fas fa-hard-drive me-1"></i> 200KB Limit
+                    </span>
+                </div>
+            </div>
+        </div>
+    </footer>
 
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    
+    <!-- Configuração do Toastr -->
     <script>
-        // Inicializar tooltips do Bootstrap
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl)
-        });
-        
-        // ==============================================
-        // Mostrar senha com toggle
-        // ==============================================
-        function setupPasswordToggles() {
-            document.querySelectorAll('.password-toggle').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const targetId = this.getAttribute('data-target');
-                    const field = document.getElementById(targetId);
-                    
-                    if (field) {
-                        const icon = this.querySelector('i');
-                        if (field.type === 'password') {
-                            field.type = 'text';
-                            icon.classList.remove('fa-eye-slash');
-                            icon.classList.add('fa-eye');
-                        } else {
-                            field.type = 'password';
-                            icon.classList.remove('fa-eye');
-                            icon.classList.add('fa-eye-slash');
-                        }
-                    }
-                });
-            });
-        }
-        
-        // ==============================================
-        // Força da senha
-        // ==============================================
-        function setupPasswordStrength() {
-            const passwordInput = document.getElementById('regPassword');
-            const strengthContainer = document.getElementById('passwordStrengthContainer');
-            const bars = [
-                document.getElementById('strengthBar1'),
-                document.getElementById('strengthBar2'),
-                document.getElementById('strengthBar3'),
-                document.getElementById('strengthBar4')
-            ];
-            const strengthText = document.getElementById('strengthText');
-            
-            function checkStrength(password) {
-                let strength = 0;
-                
-                if (password.length >= 6) strength++;
-                if (password.length >= 8) strength++;
-                if (/[A-Z]/.test(password)) strength++;
-                if (/[0-9]/.test(password)) strength++;
-                if (/[^A-Za-z0-9]/.test(password)) strength++;
-                
-                return Math.min(strength, 4);
-            }
-            
-            function getStrengthText(strength) {
-                switch(strength) {
-                    case 1: return { text: 'Fraca', class: 'weak' };
-                    case 2: return { text: 'Média', class: 'medium' };
-                    case 3: return { text: 'Forte', class: 'strong' };
-                    case 4: return { text: 'Muito Forte', class: 'very-strong' };
-                    default: return { text: 'Muito Fraca', class: 'weak' };
-                }
-            }
-            
-            passwordInput.addEventListener('input', function() {
-                const password = this.value;
-                
-                if (password.length > 0) {
-                    strengthContainer.style.display = 'flex';
-                    const strength = checkStrength(password);
-                    const strengthInfo = getStrengthText(strength);
-                    
-                    bars.forEach((bar, index) => {
-                        if (index < strength) {
-                            bar.classList.add('active');
-                        } else {
-                            bar.classList.remove('active');
-                        }
-                    });
-                    
-                    strengthText.textContent = strengthInfo.text;
-                    strengthText.className = `strength-text ${strengthInfo.class}`;
-                } else {
-                    strengthContainer.style.display = 'none';
-                }
-            });
-        }
-        
-        // ==============================================
-        // Confirmar senha em tempo real
-        // ==============================================
-        function setupPasswordMatch() {
-            const passwordInput = document.getElementById('regPassword');
-            const confirmInput = document.getElementById('regConfirmPassword');
-            const hint = document.getElementById('passwordMatchHint');
-            
-            function checkMatch() {
-                const password = passwordInput.value;
-                const confirm = confirmInput.value;
-                
-                if (confirm.length === 0) {
-                    hint.innerHTML = '';
-                    return;
-                }
-                
-                if (password === confirm) {
-                    hint.innerHTML = '<i class="fas fa-check-circle text-success me-1"></i><span class="text-success">Senhas coincidem</span>';
-                } else {
-                    hint.innerHTML = '<i class="fas fa-times-circle text-danger me-1"></i><span class="text-danger">Senhas não coincidem</span>';
-                }
-            }
-            
-            passwordInput.addEventListener('input', checkMatch);
-            confirmInput.addEventListener('input', checkMatch);
-        }
-        
-        // ==============================================
-        // Máscara para CAPTCHA
-        // ==============================================
-        function setupCaptchaMasks() {
-            const captchaInputs = ['loginCaptchaInput', 'registerCaptchaInput'];
-            
-            captchaInputs.forEach(id => {
-                const input = document.getElementById(id);
-                if (input) {
-                    input.addEventListener('input', function(e) {
-                        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
-                    });
-                    
-                    input.addEventListener('keydown', function(e) {
-                        if (e.key === 'Enter') {
-                            const form = this.closest('form');
-                            if (form) form.dispatchEvent(new Event('submit'));
-                        }
-                    });
-                }
-            });
-        }
-        
-        // ==============================================
-        // INICIALIZAÇÃO
-        // ==============================================
+        toastr.options = {
+            closeButton: true,
+            progressBar: true,
+            positionClass: "toast-top-right",
+            timeOut: 5000,
+            extendedTimeOut: 1000,
+            escapeHtml: true
+        };
+    </script>
+    
+    <!-- Scripts do sistema -->
+    <script src="/static/js/auth.js?v=2.0"></script>
+    <script src="/static/js/app.js?v=2.0"></script>
+    <script src="/static/js/dashboard.js?v=2.0"></script>
+    
+    <!-- Inicialização -->
+    <script>
         document.addEventListener('DOMContentLoaded', function() {
-            setupPasswordToggles();
-            setupPasswordStrength();
-            setupPasswordMatch();
-            setupCaptchaMasks();
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            AOS.init({ once: true, duration: 1000 });
+            gsap.registerPlugin(ScrollTrigger);
+
+            window.addEventListener('scroll', function() {
+                const navbar = document.getElementById('mainNavbar');
+                if (window.scrollY > 50) {
+                    navbar.classList.add('scrolled');
+                } else {
+                    navbar.classList.remove('scrolled');
+                }
+            });
+
+            gsap.from('.hero-title', {
+                duration: 1,
+                y: 100,
+                opacity: 0,
+                ease: 'power3.out'
+            });
+
+            gsap.from('.upload-card', {
+                scrollTrigger: {
+                    trigger: '.upload-card',
+                    start: 'top 80%',
+                    toggleActions: 'play none none reverse'
+                },
+                duration: 1,
+                x: 100,
+                opacity: 0,
+                ease: 'power3.out'
+            });
+            
+            setTimeout(() => {
+                if (window.app) {
+                    console.log('✅ App inicializado');
+                } else {
+                    console.error('❌ App não carregado');
+                    toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
+                }
+            }, 1000);
         });
     </script>
 </body>

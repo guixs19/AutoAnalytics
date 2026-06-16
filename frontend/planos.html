@@ -34,7 +34,6 @@
             -webkit-text-fill-color: transparent;
         }
         
-        /* 🔥 PLANO BRONZE - ESTILO EXCLUSIVO */
         .bronze-card {
             background: linear-gradient(145deg, #2c1a0a 0%, #3d2614 100%);
             border-radius: 40px;
@@ -398,6 +397,64 @@
             font-size: 0.7rem;
             opacity: 0.8;
         }
+
+        /* 🔥 NOVO ESTILO - EXPLICAÇÃO DOS CRÉDITOS */
+        .credits-explanation {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 1.25rem;
+            margin-top: 1.5rem;
+            border: 1px solid rgba(205, 127, 50, 0.25);
+        }
+
+        .credits-explanation .step {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.9rem;
+        }
+
+        .credits-explanation .step i {
+            color: #f5a623;
+            font-size: 1rem;
+            margin-top: 0.15rem;
+            min-width: 20px;
+        }
+
+        .credits-explanation .step strong {
+            color: #f5a623;
+        }
+
+        .credits-explanation .highlight-box {
+            background: rgba(245, 166, 35, 0.1);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            margin-top: 0.75rem;
+            border-left: 3px solid #f5a623;
+        }
+
+        .credits-explanation .highlight-box i {
+            color: #f5a623;
+            margin-right: 0.5rem;
+        }
+
+        .credits-explanation .highlight-box span {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.85rem;
+        }
+
+        .strategy-tag {
+            display: inline-block;
+            background: rgba(245, 166, 35, 0.15);
+            padding: 0.2rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            color: #f5a623;
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            margin-right: 0.3rem;
+        }
         
         @media (max-width: 768px) {
             .bronze-card {
@@ -417,6 +474,9 @@
                 width: 50px;
                 height: 50px;
                 font-size: 1.2rem;
+            }
+            .credits-explanation .step {
+                font-size: 0.8rem;
             }
         }
     </style>
@@ -532,10 +592,7 @@
                                             <i class="fas fa-clock me-1"></i>
                                             Respondemos em até 24h úteis
                                         </p>
-                                        <p class="text-muted small mb-0">
-                                            <i class="fas fa-shield-alt me-1"></i>
-                                            Atendimento prioritário para clientes Premium
-                                        </p>
+                                      
                                     </div>
                                 </div>
                                 
@@ -706,7 +763,6 @@
         };
         
         // 🔥 FORMULÁRIO DE CONTATO RÁPIDO - CORRIGIDO PARA PRODUÇÃO
-        // A ordem está correta: aviso → limpar → fechar modal → redirecionar
         document.getElementById('quickSupportForm')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -715,7 +771,6 @@
             const subject = document.getElementById('supportSubject').value;
             const message = document.getElementById('supportMessage').value;
             
-            // Montar o link mailto
             const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
                 `Nome: ${name}\n` +
                 `Email: ${email}\n` +
@@ -724,20 +779,15 @@
                 `---\nEnviado via AutoAnalytics Planos`
             )}`;
             
-            // 🔥 ORDEM CORRETA (não travará mais):
-            // 1. Mostrar aviso primeiro
             alert('📧 Seu email será aberto! Envie a mensagem para entrarmos em contato o mais breve possível.');
             
-            // 2. Limpar formulário
             document.getElementById('supportName').value = '';
             document.getElementById('supportEmail').value = '';
             document.getElementById('supportMessage').value = '';
             
-            // 3. Fechar modal (se existir)
             const supportModal = bootstrap.Modal.getInstance(document.getElementById('supportModal'));
             if (supportModal) supportModal.hide();
             
-            // 4. Redirecionar por ÚLTIMO (nunca antes!)
             window.location.href = mailtoLink;
         });
         
@@ -749,7 +799,6 @@
                 return;
             }
             
-            // Carregar informações do usuário
             try {
                 const response = await fetch('/api/auth/me', {
                     headers: {
@@ -771,7 +820,6 @@
                         creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
                     }
                     
-                    // Preencher nome no formulário se disponível
                     const nameInput = document.getElementById('supportName');
                     if (nameInput && user.name) {
                         nameInput.value = user.name;
@@ -782,12 +830,10 @@
                         emailInput.value = user.email;
                     }
                     
-                    // 🔥 CARREGAR STATUS DA ASSINATURA (MOSTRA DATAS)
                     if (window.loadSubscriptionStatus) {
                         await window.loadSubscriptionStatus();
                     }
                     
-                    // Verificar se precisa notificar sobre renovação
                     if (window.checkAndNotifyRenewal) {
                         await window.checkAndNotifyRenewal();
                     }
@@ -797,7 +843,6 @@
             }
         });
         
-        // 🔥 Recarregar status após pagamento bem-sucedido (quando voltar do dashboard)
         if (window.location.search.includes('payment=success')) {
             setTimeout(() => {
                 if (window.loadSubscriptionStatus) {
