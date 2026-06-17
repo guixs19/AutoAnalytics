@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM CAMINHOS ABSOLUTOS
+# main.py (na raiz) - VERSÃO COM SENTINEL INTEGRADO
 import sys
 import os
 from pathlib import Path
@@ -159,7 +159,6 @@ if FRONTEND_DIR.exists():
 else:
     print(f"   ❌ Frontend NÃO encontrado em: {FRONTEND_DIR}")
     print(f"   🔧 Criando frontend/js para você...")
-    # Criar diretórios se não existirem
     os.makedirs(FRONTEND_DIR / "js", exist_ok=True)
     os.makedirs(FRONTEND_DIR / "css", exist_ok=True)
 
@@ -192,6 +191,23 @@ app = FastAPI(
 )
 
 app.router.redirect_slashes = False
+
+# ==============================================
+# 🔥 MIDDLEWARE DE LOGGING DO SENTINEL
+# ==============================================
+print("\n📊 Configurando middleware de observabilidade...")
+
+try:
+    from backend.observability.sentinel import LoggingMiddleware, get_metrics_collector
+    
+    # Adicionar middleware de logging
+    metrics_collector = get_metrics_collector()
+    app.add_middleware(LoggingMiddleware, metrics=metrics_collector)
+    print("   ✅ LoggingMiddleware do Sentinel ativado")
+except ImportError as e:
+    print(f"   ⚠️ Sentinel não disponível: {e}")
+except Exception as e:
+    print(f"   ⚠️ Erro ao ativar Sentinel: {e}")
 
 # ==============================================
 # MIDDLEWARE CORS
@@ -228,7 +244,7 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# MIDDLEWARE DE LOG E DEBUG DE STATIC
+# 🔥 MIDDLEWARE DE LOG MANUAL (fallback)
 # ==============================================
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -244,7 +260,6 @@ async def log_requests(request: Request, call_next):
     # DEBUG: Log de erros 404 em arquivos estáticos
     if response.status_code == 404 and path.startswith('/static'):
         print(f"   ❌ ERRO 404 - Arquivo estático não encontrado: {path}")
-        # Tentar encontrar onde está o arquivo
         relative_path = path.replace('/static/', '')
         possible_paths = [
             FRONTEND_DIR / relative_path,
@@ -268,22 +283,19 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ==============================================
-# ARQUIVOS ESTÁTICOS - CORRIGIDO COM CAMINHO ABSOLUTO
+# ARQUIVOS ESTÁTICOS
 # ==============================================
 if frontend_available:
     print("\n📁 Configurando arquivos estáticos...")
     
-    # 🔥 CORREÇÃO CRÍTICA: Usar caminho absoluto com resolve()
     static_dir = FRONTEND_DIR.absolute()
     print(f"   📂 Servindo arquivos estáticos de: {static_dir}")
     
-    # Verificar se o diretório existe antes de montar
     if static_dir.exists():
         try:
             app.mount("/static", StaticFiles(directory=str(static_dir), html=False), name="static")
             print(f"   ✅ Arquivos estáticos montados em /static")
             
-            # Listar arquivos disponíveis para debug
             print(f"\n   📋 Arquivos disponíveis em /static:")
             for item in static_dir.iterdir():
                 if item.is_dir():
@@ -300,14 +312,13 @@ else:
     print("\n⚠️ Frontend não disponível, apenas API será servida")
 
 # ==============================================
-# ROTAS HTML (sem .html)
+# ROTAS HTML
 # ==============================================
 if frontend_available:
     print("\n🌐 Configurando rotas HTML...")
     
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
-        """Página inicial - redireciona para dashboard ou login"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -326,14 +337,12 @@ if frontend_available:
     
     @app.get("/login", include_in_schema=False)
     async def login_page():
-        """Página de login"""
         if login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
         return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
     
     @app.get("/dashboard", include_in_schema=False)
     async def dashboard_page(request: Request):
-        """Página do dashboard (protegida)"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -354,7 +363,6 @@ if frontend_available:
     
     @app.get("/planos", include_in_schema=False)
     async def planos_page(request: Request):
-        """Página de planos (protegida)"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -375,7 +383,6 @@ if frontend_available:
     
     @app.get("/checkout", include_in_schema=False)
     async def checkout_page(request: Request):
-        """Página de checkout (protegida)"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -394,7 +401,7 @@ if frontend_available:
         
         raise HTTPException(status_code=404, detail="Checkout não encontrado")
     
-    # Redirecionamentos para URLs sem .html
+    # Redirecionamentos
     @app.get("/planos.html", include_in_schema=False)
     async def redirect_planos_html():
         return RedirectResponse(url="/planos", status_code=301)
@@ -503,7 +510,7 @@ print("   ✅ Autenticação habilitada")
 time.sleep(1)
 
 # ==============================================
-# 🔥 ROTA CAPTCHA
+# ROTA CAPTCHA
 # ==============================================
 print("\n🔢 Configurando rota CAPTCHA...")
 
@@ -536,32 +543,32 @@ async def test_captcha():
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 # ==============================================
-# 🔥 REGISTRO DE TODAS AS ROTAS DOS ROUTERS
+# REGISTRO DE TODAS AS ROTAS DOS ROUTERS
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
 try:
-    # 1. Rotas de autenticação (auth_routes.py)
+    # 1. Rotas de autenticação
     from backend.api.auth_routes import router as auth_router
     app.include_router(auth_router, prefix="/api/auth")
     print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
     
-    # 2. Rotas de pagamento (payment_routes.py)
+    # 2. Rotas de pagamento
     from backend.api.payment_routes import router as payment_router
     app.include_router(payment_router, prefix="/api")
     print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance")
     
-    # 3. Rotas de upload múltiplo (upload_routes.py)
+    # 3. Rotas de upload múltiplo
     from backend.api.upload_routes import router as upload_router
     app.include_router(upload_router, prefix="/api")
     print("   ✅ Rotas UPLOAD: /api/upload-auto, /api/status, /api/analyses/history, /api/stats")
     
-    # 4. Rotas gerais com Gemini (routes.py)
+    # 4. Rotas gerais com Gemini
     from backend.api.routes import router as gemini_router
     app.include_router(gemini_router, prefix="/api")
     print("   ✅ Rotas GEMINI: /api/upload, /api/health, /api/test, /api/results")
     
-    # 5. Rotas Proof of Work (pow_routes.py)
+    # 5. Rotas Proof of Work
     try:
         from backend.api.pow_routes import router as pow_router
         app.include_router(pow_router, prefix="/api")
@@ -606,7 +613,7 @@ def init_promotion(db: Session):
         print(f"   ✅ Promoção Bronze: {promo.get_remaining_slots()} vagas restantes")
 
 # ==============================================
-# EVENTO DE STARTUP
+# 🔥 EVENTO DE STARTUP COM SENTINEL
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
@@ -614,18 +621,30 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 60)
     
+    # 🔥 Inicializar Sentinel (observabilidade)
+    try:
+        from backend.observability.sentinel import startup_webhook
+        await startup_webhook()
+        print("   ✅ Sentinel (observabilidade) inicializado")
+    except ImportError as e:
+        print(f"   ⚠️ Sentinel não disponível: {e}")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao iniciar Sentinel: {e}")
+    
+    # Inicializar promoção
     try:
         db = SessionLocal()
         init_promotion(db)
         db.close()
     except Exception as e:
-        print(f"   ⚠️ Erro: {e}")
+        print(f"   ⚠️ Erro ao inicializar promoção: {e}")
     
+    # Iniciar cleanup do CAPTCHA
     try:
         asyncio.create_task(captcha_manager.store.start_cleanup_loop())
         print("   ✅ Cleanup loop do CAPTCHA iniciado")
     except Exception as e:
-        print(f"   ⚠️ Erro: {e}")
+        print(f"   ⚠️ Erro ao iniciar cleanup do CAPTCHA: {e}")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     
@@ -635,6 +654,7 @@ async def startup_event():
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<45} ║
     ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: {settings.CAPTCHA_TYPE}     ║
+    ║  📊 Observabilidade: ✅ ativa                                     ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🔗 Endpoints principais:                                          ║
     ║     POST /api/auth/login                                          ║
@@ -654,13 +674,30 @@ async def startup_event():
     ╚══════════════════════════════════════════════════════════════════╝
     """)
 
+# ==============================================
+# 🔥 EVENTO DE SHUTDOWN COM SENTINEL
+# ==============================================
 @app.on_event("shutdown")
 async def shutdown_event():
     print("\n🛑 Desligando sistema...")
+    
+    # 🔥 Finalizar Sentinel
+    try:
+        from backend.observability.sentinel import shutdown_webhook
+        await shutdown_webhook()
+        print("   ✅ Sentinel finalizado com sucesso")
+    except ImportError as e:
+        print(f"   ⚠️ Sentinel não disponível: {e}")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao finalizar Sentinel: {e}")
+    
+    # Parar cleanup do CAPTCHA
     try:
         await captcha_manager.store.stop_cleanup_loop()
+        print("   ✅ Cleanup loop do CAPTCHA parado")
     except Exception as e:
-        print(f"   ⚠️ Erro: {e}")
+        print(f"   ⚠️ Erro ao parar cleanup do CAPTCHA: {e}")
+    
     print("👋 Sistema desligado!")
 
 # ==============================================
@@ -687,6 +724,7 @@ if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
     print(f"🔢 CAPTCHA: {settings.CAPTCHA_TYPE} ({settings.CAPTCHA_CODE_LENGTH} dígitos)")
+    print(f"📊 Observabilidade: ✅ ativa")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(

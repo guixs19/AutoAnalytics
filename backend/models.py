@@ -1,11 +1,22 @@
-# backend/models.py - CORREÇÃO DE DATETIME
+# backend/models.py - VERSÃO SINCRONIZADA COM CRUD.PY
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
 from sqlalchemy.orm import relationship
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 import enum
 
 from backend.database import Base
 from backend.security import hasher
+
+# 🔥 DEFINIR FUSO HORÁRIO DE BRASÍLIA (UTC-3) - MESMO DO CRUD.PY
+TZ_BRASIL = timezone(timedelta(hours=-3))
+
+def _now_brasil() -> datetime:
+    """Retorna datetime atual no fuso horário de Brasília (UTC-3)"""
+    return datetime.now(TZ_BRASIL)
+
+def _today_brasil() -> date:
+    """Retorna data atual no fuso horário de Brasília (UTC-3)"""
+    return datetime.now(TZ_BRASIL).date()
 
 
 class UserRole(str, enum.Enum):
@@ -44,16 +55,16 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     
-    # 🔧 CORRIGIDO: usar função lambda para executar no momento da inserção
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    last_login = Column(DateTime, onupdate=lambda: datetime.utcnow())
+    # 🔥 SINCRONIZADO: usa _now_brasil() em vez de datetime.utcnow()
+    created_at = Column(DateTime, default=_now_brasil)
+    last_login = Column(DateTime, onupdate=_now_brasil)
     
     is_admin = Column(Boolean, default=False)
     
     # Créditos
     credits = Column(Integer, default=0)
     total_purchased = Column(Integer, default=0)
-    last_payment_date = Column(DateTime, onupdate=lambda: datetime.utcnow())
+    last_payment_date = Column(DateTime, onupdate=_now_brasil)
     
     # Plano premium
     plan = Column(Enum(UserPlan), default=UserPlan.BASICO)
@@ -99,26 +110,26 @@ class User(Base):
     def add_credits(self, amount: int):
         self.credits += amount
         self.total_purchased += amount
-        self.last_payment_date = datetime.utcnow()
+        self.last_payment_date = _now_brasil()  # 🔥 SINCRONIZADO
     
     def is_premium(self) -> bool:
         if self.plan != UserPlan.PREMIUM_MENSAL:
             return False
         if not self.premium_expires_at:
             return False
-        return self.premium_expires_at >= date.today()
+        return self.premium_expires_at >= _today_brasil()  # 🔥 SINCRONIZADO
     
     def get_premium_days_left(self) -> int:
         if not self.is_premium():
             return 0
-        return (self.premium_expires_at - date.today()).days
+        return (self.premium_expires_at - _today_brasil()).days  # 🔥 SINCRONIZADO
     
     def get_premium_progress(self) -> float:
         if not self.premium_activated_at or not self.premium_expires_at:
             return 0
         
         total_days = 30
-        days_passed = (date.today() - self.premium_activated_at.date()).days
+        days_passed = (_today_brasil() - self.premium_activated_at.date()).days  # 🔥 SINCRONIZADO
         if days_passed < 0:
             days_passed = 0
         elif days_passed > total_days:
@@ -133,19 +144,17 @@ class User(Base):
     
     # ===== MÉTODOS PARA REFRESH TOKEN =====
     def set_refresh_token(self, token: str, jti: str, expires_days: int = 7):
-        from datetime import datetime, timedelta
         self.refresh_token = token
         self.refresh_token_jti = jti
-        self.refresh_token_expires = datetime.utcnow() + timedelta(days=expires_days)
+        self.refresh_token_expires = _now_brasil() + timedelta(days=expires_days)  # 🔥 SINCRONIZADO
         self.refresh_token_revoked = False
-        self.last_refresh_at = datetime.utcnow()
+        self.last_refresh_at = _now_brasil()  # 🔥 SINCRONIZADO
     
     def validate_refresh_token(self, token: str) -> bool:
-        from datetime import datetime
         return (
             self.refresh_token == token and
             self.refresh_token_expires and
-            self.refresh_token_expires > datetime.utcnow() and
+            self.refresh_token_expires > _now_brasil() and  # 🔥 SINCRONIZADO
             not self.refresh_token_revoked
         )
     
@@ -180,9 +189,9 @@ class Payment(Base):
     description = Column(String)
     payment_metadata = Column(JSON, default={})
     
-    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    # 🔥 SINCRONIZADO: usa _now_brasil()
+    created_at = Column(DateTime, default=_now_brasil)
+    updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
     approved_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="payments")
@@ -214,12 +223,12 @@ class DailyCreditLog(Base):
     payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
     
     credits_added = Column(Integer, default=1)
-    date = Column(Date, default=lambda: date.today())
+    date = Column(Date, default=_today_brasil)  # 🔥 SINCRONIZADO
     day_number = Column(Integer)
     total_after = Column(Integer)
     source = Column(String, default="daily_upload")
     
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    created_at = Column(DateTime, default=_now_brasil)  # 🔥 SINCRONIZADO
     
     user = relationship("User", back_populates="daily_credits")
     payment = relationship("Payment", back_populates="daily_credit_logs")
@@ -252,8 +261,8 @@ class Analysis(Base):
     ai_report = Column(Text)
     report_path = Column(String)
     
-    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
-    uploaded_at = Column(DateTime, default=lambda: datetime.utcnow())
+    # 🔥 SINCRONIZADO: usa _now_brasil()
+    uploaded_at = Column(DateTime, default=_now_brasil)
     processed_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="analyses")
@@ -275,9 +284,9 @@ class PromotionControl(Base):
     regular_price = Column(Float, default=149.90)
     is_active = Column(Boolean, default=True)
     
-    # 🔧 CORRIGIDO: usar lambda para executar no momento da inserção
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    # 🔥 SINCRONIZADO: usa _now_brasil()
+    created_at = Column(DateTime, default=_now_brasil)
+    updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
     
     def get_remaining_slots(self) -> int:
         return max(0, self.total_slots - self.used_slots)
@@ -291,14 +300,14 @@ class PromotionControl(Base):
     def use_slot(self) -> bool:
         if self.has_available_slots():
             self.used_slots += 1
-            self.updated_at = datetime.utcnow()
+            self.updated_at = _now_brasil()  # 🔥 SINCRONIZADO
             return True
         return False
     
     def reset_promotion(self):
         self.used_slots = 0
         self.is_active = True
-        self.updated_at = datetime.utcnow()
+        self.updated_at = _now_brasil()  # 🔥 SINCRONIZADO
 
 
-print("✅ models.py carregado - Datetimes corrigidos (UTC)")
+print("✅ models.py carregado - Datetimes sincronizados com UTC-3 (Brasília)")

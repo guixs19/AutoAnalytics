@@ -1,9 +1,17 @@
-# backend/schemas.py - VERSÃO ATUALIZADA COM session_type
+# backend/schemas.py - VERSÃO CORRIGIDA (com default_factory e timezone)
 
-from pydantic import BaseModel, EmailStr, Field
-from datetime import datetime, date
+from pydantic import BaseModel, EmailStr, Field, validator, field_validator
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from enum import Enum
+
+# 🔥 Definir fuso horário de Brasília (UTC-3) - mesmo do models.py
+TZ_BRASIL = timezone(timedelta(hours=-3))
+
+def _now_brasil() -> datetime:
+    """Retorna datetime atual no fuso horário de Brasília (UTC-3)"""
+    return datetime.now(TZ_BRASIL)
+
 
 # ==============================================
 # ENUMS
@@ -14,6 +22,13 @@ class UserRole(str, Enum):
     MANAGER = "manager"
     USER = "user"
     CLIENT = "client"
+
+class PaymentStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
 
 class AnalysisType(str, Enum):
     CLIENTES = "clientes"
@@ -33,23 +48,47 @@ class UserPlan(str, Enum):
 
 
 # ==============================================
-# USER SCHEMAS (ATUALIZADOS COM session_type)
+# USER SCHEMAS (COMPLETOS)
 # ==============================================
 
 class UserBase(BaseModel):
     email: EmailStr
-    name: str
-    workshop_name: Optional[str] = None
-    phone: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    workshop_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=20)
     role: UserRole = UserRole.USER
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Nome é obrigatório')
+        return v.strip()
+
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v):
+        if v:
+            cleaned = ''.join(filter(str.isdigit, v))
+            if len(cleaned) < 10:
+                raise ValueError('Telefone deve ter pelo menos 10 dígitos')
+        return v
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=6)
     captcha_text: Optional[str] = None
     captcha_id: Optional[str] = None
-    # 🔥 ADICIONADO: session_type para identificar se é login ou register
-    session_type: Optional[str] = "register"  # 'login' ou 'register'
+    session_type: Optional[str] = "register"
+    is_admin: Optional[bool] = False
+    credits: Optional[int] = 3
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Senha deve ter pelo menos 6 caracteres')
+        return v
 
 
 class UserLogin(BaseModel):
@@ -57,14 +96,38 @@ class UserLogin(BaseModel):
     password: str
     captcha_text: Optional[str] = None
     captcha_id: Optional[str] = None
-    # 🔥 ADICIONADO: session_type para identificar se é login ou register
-    session_type: Optional[str] = "login"  # 'login' ou 'register'
+    session_type: Optional[str] = "login"
+
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    name: Optional[str] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    workshop_name: Optional[str] = Field(None, max_length=200)
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    plan: Optional[UserPlan] = None
+    credits: Optional[int] = None
+    promotional_price_locked: Optional[bool] = None
+    promotional_price: Optional[float] = None
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        if v is not None:
+            if not v or not v.strip():
+                raise ValueError('Nome não pode estar vazio')
+            return v.strip()
+        return v
 
 
 class UserResponse(UserBase):
     id: int
     is_active: bool
     is_verified: bool
+    is_admin: bool = False
     created_at: datetime
     last_login: Optional[datetime] = None
     credits: int = 0
@@ -72,9 +135,26 @@ class UserResponse(UserBase):
     plan: UserPlan = UserPlan.BASICO
     premium_activated_at: Optional[datetime] = None
     premium_expires_at: Optional[date] = None
+    promotional_price_locked: bool = False
+    promotional_price: Optional[float] = None
+    purchased_at_promotion: Optional[datetime] = None
     
     class Config:
         from_attributes = True
+
+
+class UserStats(BaseModel):
+    total_users: int
+    active_users: int
+    inactive_users: int
+    admins: int
+    role_admins: int
+    managers: int
+    users: int
+    premium_users: int = 0
+    total_credits_distributed: int = 0
+    average_credits: float = 0
+    premium_revenue: float = 0
 
 
 # ==============================================
@@ -86,15 +166,11 @@ class PremiumStatus(BaseModel):
     plan: UserPlan
     activated_at: Optional[datetime] = None
     expires_at: Optional[date] = None
-    days_remaining: int = 0
-    days_passed: int = 0
-    total_days: int = 30
-    progress_percentage: float = 0
-    credits_received: int = 0
-    credits_remaining_to_receive: int = 0
-    current_balance: int = 0
-    received_today: bool = False
-    next_credit_date: Optional[date] = None
+    days_left: int = 0
+    progress: float = 0
+    credits_balance: int = 0
+    max_credits_balance: int = 3
+    timezone: str = "America/Sao_Paulo (UTC-3)"
     
     class Config:
         from_attributes = True
@@ -110,12 +186,14 @@ class DailyCreditLogBase(BaseModel):
 class DailyCreditLogCreate(DailyCreditLogBase):
     user_id: int
     payment_id: Optional[int] = None
+    source: Optional[str] = "daily_upload"
 
 
 class DailyCreditLogResponse(DailyCreditLogBase):
     id: int
     user_id: int
     payment_id: Optional[int] = None
+    source: str
     created_at: datetime
     
     class Config:
@@ -138,24 +216,79 @@ class PremiumSummary(BaseModel):
 
 
 # ==============================================
+# PROMOTION SCHEMAS (VAGAS BRONZE - VITALÍCIO)
+# ==============================================
+
+class PromotionControlBase(BaseModel):
+    total_slots: int = 100
+    used_slots: int = 0
+    promotional_price: float = 97.00
+    regular_price: float = 149.90
+    is_active: bool = True
+
+
+class PromotionControlCreate(PromotionControlBase):
+    pass
+
+
+class PromotionControlUpdate(BaseModel):
+    total_slots: Optional[int] = None
+    used_slots: Optional[int] = None
+    promotional_price: Optional[float] = None
+    regular_price: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
+class PromotionControlResponse(PromotionControlBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    remaining_slots: int
+    has_available_slots: bool
+    current_price: float
+    
+    class Config:
+        from_attributes = True
+
+
+class PromotionStatus(BaseModel):
+    is_active: bool
+    remaining_slots: int
+    total_slots: int
+    used_slots: int
+    promotional_price: float
+    regular_price: float
+    current_price: float
+    price_saved: float
+    percentage_off: float
+    slots_percentage: float
+    has_available_slots: bool
+    is_vitalicio: bool = True
+
+
+# ==============================================
 # TOKEN SCHEMAS
 # ==============================================
 
 class Token(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
-    token_type: str
+    token_type: str = "bearer"
     user_name: str
     user_email: str
     workshop_name: Optional[str] = None
     role: UserRole
+    is_admin: bool = False
     plan: UserPlan = UserPlan.BASICO
     credits: int = 0
+    promotional_price_locked: bool = False
+    current_price: Optional[float] = None
 
 
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
+    is_admin: Optional[bool] = False
 
 
 class TokenRefresh(BaseModel):
@@ -164,32 +297,14 @@ class TokenRefresh(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(..., min_length=6)
 
-
-# ==============================================
-# ADMIN SCHEMAS
-# ==============================================
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    workshop_name: Optional[str] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
-    plan: Optional[UserPlan] = None
-    credits: Optional[int] = None
-
-
-class UserStats(BaseModel):
-    total_users: int
-    active_users: int
-    admins: int
-    managers: int
-    users: int
-    premium_users: int = 0
-    total_credits_distributed: int = 0
-    premium_revenue: float = 0
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Nova senha deve ter pelo menos 6 caracteres')
+        return v
 
 
 # ==============================================
@@ -197,8 +312,8 @@ class UserStats(BaseModel):
 # ==============================================
 
 class PaymentBase(BaseModel):
-    amount: float
-    credits: int
+    amount: float = Field(..., gt=0)
+    credits: int = Field(..., gt=0)
     payment_method: str
     description: Optional[str] = None
 
@@ -206,6 +321,7 @@ class PaymentBase(BaseModel):
 class PaymentCreate(PaymentBase):
     user_id: int
     mp_id: str
+    preference_id: Optional[str] = None
     payment_metadata: Optional[Dict[str, Any]] = None
 
 
@@ -213,13 +329,15 @@ class PaymentResponse(PaymentBase):
     id: int
     user_id: int
     mp_id: str
-    status: str
+    status: PaymentStatus
     qr_code: Optional[str] = None
     qr_code_base64: Optional[str] = None
+    qr_code_url: Optional[str] = None
     checkout_url: Optional[str] = None
     preference_id: Optional[str] = None
     payment_metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     approved_at: Optional[datetime] = None
     daily_credit_logs: List[DailyCreditLogResponse] = []
     
@@ -238,6 +356,9 @@ class PixPaymentResponse(BaseModel):
     amount: float
     status: str
     test_mode: bool = False
+    promotional_applied: bool = False
+    promotional_price: Optional[float] = None
+    regular_price: Optional[float] = None
 
 
 # ==============================================
@@ -317,7 +438,7 @@ class AnalysisResult(BaseModel):
     predictions: Optional[list] = None
     ai_used: bool = False
     download_url: Optional[str] = None
-    created_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
 
 
 # ==============================================
@@ -374,7 +495,7 @@ class FileInfo(BaseModel):
     filename: str
     size: int
     extension: str
-    uploaded_at: datetime = datetime.now()
+    uploaded_at: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
 
 
 class FileProcessResult(BaseModel):
@@ -395,7 +516,7 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     code: int = 400
-    timestamp: datetime = datetime.now()
+    timestamp: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
 
 
 class ValidationError(BaseModel):
@@ -410,7 +531,7 @@ class ValidationError(BaseModel):
 
 class HealthCheck(BaseModel):
     status: str
-    timestamp: datetime
+    timestamp: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
     version: str
     database: str
     frontend: Dict[str, bool]
@@ -426,4 +547,20 @@ class SystemInfo(BaseModel):
     paths: Dict[str, str]
 
 
-print("✅ schemas.py carregado com session_type")
+# ==============================================
+# PRICE SCHEMAS (para exibição no frontend)
+# ==============================================
+
+class PriceInfo(BaseModel):
+    current_price: float
+    regular_price: float
+    promotional_price: float
+    has_promotion: bool
+    remaining_slots: int
+    total_slots: int
+    is_vitalicio: bool = True
+    savings: float
+    savings_percentage: float
+
+
+print("✅ schemas.py carregado - CORRIGIDO: default_factory com UTC-3")

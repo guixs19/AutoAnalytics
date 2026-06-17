@@ -1,6 +1,6 @@
-# backend/crud.py - VERSÃO COMPLETA CORRIGIDA (COM FUSO UTC-3)
+# backend/crud.py - VERSÃO COMPLETA OTIMIZADA E CORRIGIDA
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, not_  # 🔥 OR_ IMPORTADO CORRETAMENTE
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any, Union
 import logging
@@ -61,11 +61,19 @@ def get_user_by_phone(db: Session, phone: str) -> Optional[models.User]:
 
 
 def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
-    """Verifica se usuário já existe por email ou telefone"""
-    query = db.query(models.User).filter(models.User.email == email)
+    """
+    Verifica se usuário já existe por email ou telefone
+    🔥 CORRIGIDO: uso correto do or_()
+    """
     if phone:
-        query = query.or_(models.User.phone == phone)
-    return query.first() is not None
+        # 🔥 CORREÇÃO: or_() dentro do filter()
+        return db.query(models.User).filter(
+            or_(
+                models.User.email == email,
+                models.User.phone == phone
+            )
+        ).first() is not None
+    return db.query(models.User).filter(models.User.email == email).first() is not None
 
 
 def create_user(db: Session, user: schemas.UserCreate) -> models.User:
@@ -78,7 +86,6 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
     # Hash da senha
     hashed_password = hasher.hash_password(user.password)
     
-    # 🔥 CORREÇÃO: usar _now_brasil() em vez de datetime.now()
     db_user = models.User(
         email=user.email.lower().strip(),
         name=user.name.strip(),
@@ -88,7 +95,7 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
         role=user.role or models.UserRole.USER,
         is_active=True,
         is_verified=False,
-        created_at=_now_brasil(),  # 🔥 CORRIGIDO
+        created_at=_now_brasil(),
         credits=3,  # 3 créditos grátis para novos usuários
         total_purchased=0,
         plan=models.UserPlan.BASICO,
@@ -174,7 +181,7 @@ def update_last_login(db: Session, user_id: int) -> Optional[models.User]:
     """Atualiza timestamp do último login"""
     db_user = get_user_by_id(db, user_id)
     if db_user:
-        db_user.last_login = _now_brasil()  # 🔥 CORRIGIDO
+        db_user.last_login = _now_brasil()
         safe_commit(db, "Erro ao atualizar último login")
         db.refresh(db_user)
     return db_user
@@ -364,7 +371,7 @@ def get_user_by_refresh_token(db: Session, refresh_token: str) -> Optional[model
     """Busca usuário pelo refresh token (válido)"""
     return db.query(models.User).filter(
         models.User.refresh_token == refresh_token,
-        models.User.refresh_token_expires > _now_brasil(),  # 🔥 CORRIGIDO
+        models.User.refresh_token_expires > _now_brasil(),
         models.User.refresh_token_revoked == False
     ).first()
 
@@ -393,7 +400,7 @@ def revoke_all_user_refresh_tokens(db: Session, user_id: int) -> int:
 def cleanup_expired_refresh_tokens(db: Session) -> int:
     """Remove tokens expirados (job agendado)"""
     expired = db.query(models.User).filter(
-        models.User.refresh_token_expires < _now_brasil()  # 🔥 CORRIGIDO
+        models.User.refresh_token_expires < _now_brasil()
     ).all()
     
     count = 0
@@ -421,8 +428,8 @@ def activate_premium_plan(db: Session, user_id: int, payment_id: int = None) -> 
         return False
     
     user.plan = models.UserPlan.PREMIUM_MENSAL
-    user.premium_activated_at = _now_brasil()  # 🔥 CORRIGIDO
-    user.premium_expires_at = _today_brasil() + timedelta(days=30)  # 🔥 CORRIGIDO
+    user.premium_activated_at = _now_brasil()
+    user.premium_expires_at = _today_brasil() + timedelta(days=30)
     
     safe_commit(db, "Erro ao ativar plano premium")
     logger.info(f"⭐ Plano premium ativado para usuário {user_id} (expira em 30 dias)")
@@ -444,7 +451,7 @@ def check_premium_status(db: Session, user_id: int) -> Dict[str, Any]:
         "progress": user.get_premium_progress(),
         "credits_balance": user.credits or 0,
         "max_credits_balance": 3,
-        "timezone": "America/Sao_Paulo (UTC-3)"  # 🔥 ADICIONADO
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 
@@ -452,7 +459,7 @@ def get_premium_users(db: Session) -> List[models.User]:
     """Retorna todos os usuários com plano premium ativo"""
     return db.query(models.User).filter(
         models.User.plan == models.UserPlan.PREMIUM_MENSAL,
-        models.User.premium_expires_at >= _today_brasil()  # 🔥 CORRIGIDO
+        models.User.premium_expires_at >= _today_brasil()
     ).all()
 
 
@@ -460,7 +467,7 @@ def get_expired_premium_users(db: Session) -> List[models.User]:
     """Retorna usuários com plano premium expirado"""
     return db.query(models.User).filter(
         models.User.plan == models.UserPlan.PREMIUM_MENSAL,
-        models.User.premium_expires_at < _today_brasil()  # 🔥 CORRIGIDO
+        models.User.premium_expires_at < _today_brasil()
     ).all()
 
 
@@ -517,7 +524,7 @@ def create_payment(
         preference_id=preference_id,
         description=description,
         payment_metadata=payment_metadata or {},
-        created_at=_now_brasil()  # 🔥 CORRIGIDO
+        created_at=_now_brasil()
     )
     
     db.add(payment)
@@ -551,12 +558,12 @@ def update_payment_status(
     
     payment.status = status
     if status == models.PaymentStatus.APPROVED:
-        payment.approved_at = _now_brasil()  # 🔥 CORRIGIDO
+        payment.approved_at = _now_brasil()
     
     if mp_data:
         payment.payment_metadata = {**payment.payment_metadata, **mp_data}
     
-    payment.updated_at = _now_brasil()  # 🔥 CORRIGIDO
+    payment.updated_at = _now_brasil()
     
     safe_commit(db, "Erro ao atualizar pagamento")
     db.refresh(payment)
@@ -574,7 +581,7 @@ def get_user_payments(db: Session, user_id: int, limit: int = 10) -> List[models
 
 def get_pending_payments(db: Session, minutes: int = 30) -> List[models.Payment]:
     """Retorna pagamentos pendentes há mais de X minutos"""
-    threshold = _now_brasil() - timedelta(minutes=minutes)  # 🔥 CORRIGIDO
+    threshold = _now_brasil() - timedelta(minutes=minutes)
     return db.query(models.Payment).filter(
         models.Payment.status == models.PaymentStatus.PENDING,
         models.Payment.created_at < threshold
@@ -598,7 +605,7 @@ def create_analysis(db: Session, analysis: schemas.AnalysisCreate, user_id: int)
     db_analysis = models.Analysis(
         **analysis.dict(),
         user_id=user_id,
-        uploaded_at=_now_brasil(),  # 🔥 CORRIGIDO
+        uploaded_at=_now_brasil(),
         status="pending"
     )
     db.add(db_analysis)
@@ -708,7 +715,7 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
     
     premium = db.query(models.User).filter(
         models.User.plan == models.UserPlan.PREMIUM_MENSAL,
-        models.User.premium_expires_at >= _today_brasil()  # 🔥 CORRIGIDO
+        models.User.premium_expires_at >= _today_brasil()
     ).count()
     
     total_credits = db.query(func.sum(models.User.credits)).filter(
@@ -720,7 +727,7 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
     
     total_analyses = db.query(models.Analysis).count()
     analyses_today = db.query(models.Analysis).filter(
-        func.date(models.Analysis.uploaded_at) == _today_brasil()  # 🔥 CORRIGIDO
+        func.date(models.Analysis.uploaded_at) == _today_brasil()
     ).count()
     
     total_payments = db.query(models.Payment).count()
@@ -756,7 +763,7 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
             "approved": approved_payments,
             "total_revenue": total_revenue
         },
-        "timezone": "America/Sao_Paulo (UTC-3)"  # 🔥 ADICIONADO
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 
@@ -799,8 +806,8 @@ def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
             "status": p.status.value if hasattr(p.status, 'value') else str(p.status),
             "created_at": p.created_at.isoformat() if p.created_at else None
         } for p in payments],
-        "timestamp": _now_brasil().isoformat(),  # 🔥 CORRIGIDO
-        "timezone": "America/Sao_Paulo (UTC-3)"  # 🔥 ADICIONADO
+        "timestamp": _now_brasil().isoformat(),
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 
@@ -844,7 +851,7 @@ def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
     
     has_valid_token = False
     if user.refresh_token and user.refresh_token_expires:
-        has_valid_token = user.refresh_token_expires > _now_brasil() and not user.refresh_token_revoked  # 🔥 CORRIGIDO
+        has_valid_token = user.refresh_token_expires > _now_brasil() and not user.refresh_token_revoked
     
     return {
         "user_id": user.id,
@@ -855,8 +862,8 @@ def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
         "refresh_token_expires_at": user.refresh_token_expires.isoformat() if user.refresh_token_expires else None,
         "refresh_token_revoked": user.refresh_token_revoked,
         "session_active": has_valid_token,
-        "needs_cleanup": user.refresh_token_expires and user.refresh_token_expires < _now_brasil() if user.refresh_token_expires else False,  # 🔥 CORRIGIDO
-        "timezone": "America/Sao_Paulo (UTC-3)"  # 🔥 ADICIONADO
+        "needs_cleanup": user.refresh_token_expires and user.refresh_token_expires < _now_brasil() if user.refresh_token_expires else False,
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 
@@ -882,7 +889,7 @@ def force_logout_user(db: Session, email: str, reason: str = "Admin action") -> 
 
 def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
     """Limpeza de sessões órfãs"""
-    cutoff_date = _now_brasil() - timedelta(days=older_than_days)  # 🔥 CORRIGIDO
+    cutoff_date = _now_brasil() - timedelta(days=older_than_days)
     
     users_with_expired_tokens = db.query(models.User).filter(
         models.User.refresh_token_expires < cutoff_date,
@@ -930,4 +937,4 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     return True
 
 
-print("✅ crud.py carregado com correções de fuso UTC-3")
+print("✅ crud.py carregado com correções de fuso UTC-3 e OR fix")
