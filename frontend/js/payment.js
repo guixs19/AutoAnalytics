@@ -1,4 +1,4 @@
-// payment.js - VERSÃO PRODUÇÃO (PIX REAL)
+// payment.js - VERSÃO PRODUÇÃO COMPLETA (PIX REAL + STATUS PREMIUM)
 // ==============================================
 // CONFIGURAÇÕES GLOBAIS
 // ==============================================
@@ -48,7 +48,6 @@ function sanitizeNumber(value, defaultValue = 0) {
 
 function sanitizeCPF(cpf) {
     if (!cpf) return '';
-    // 🔥 Remove TUDO que não for número (pontos, traços, espaços)
     return cpf.replace(/\D/g, '');
 }
 
@@ -459,7 +458,6 @@ async function proceedWithCpf(planId) {
     
     if (!cpfInput) return;
     
-    // 🔥 GARANTIR QUE O CPF ESTÁ LIMPO (apenas números)
     const cpfLimpo = sanitizeCPF(cpfInput.value);
     
     if (cpfLimpo.length !== 11) {
@@ -502,15 +500,12 @@ async function selectPlan(planId, method, cpf = null) {
         }, 30000);
     }
     
-    // 🔥 GARANTIR QUE O CPF ESTÁ LIMPO (apenas números)
     const requestBody = { plan_id: planId };
     if (cpf) {
-        // Remove tudo que não é número
         const cpfLimpo = cpf.replace(/\D/g, '');
         if (cpfLimpo.length === 11) {
             requestBody.cpf = cpfLimpo;
         } else if (cpf.length === 11 && /^\d+$/.test(cpf)) {
-            // Já está limpo
             requestBody.cpf = cpf;
         } else {
             showNotification('❌ CPF inválido. Por favor, informe um CPF válido com 11 dígitos.', 'error');
@@ -539,7 +534,6 @@ async function selectPlan(planId, method, cpf = null) {
             
             if (method === 'pix') {
                 if (data.payment_id) {
-                    // 🔥 SUCESSO REAL: Abre modal com QR Code do Mercado Pago
                     showPixModalSecure(data.payment_id, data);
                 } else if (data.checkout_url) {
                     window.location.href = data.checkout_url;
@@ -554,7 +548,6 @@ async function selectPlan(planId, method, cpf = null) {
             const error = await response.json();
             const errorMsg = error.detail || error.message || 'Erro ao criar pagamento';
             
-            // 🔥 TRATAMENTO REAL DE ERROS - SEM FALLBACK FALSO
             if (errorMsg.toLowerCase().includes('cpf')) {
                 showNotification('⚠️ CPF obrigatório. Por favor, informe seu CPF.', 'warning');
                 openCpfModal(planId);
@@ -927,7 +920,7 @@ async function fetchWithAuth(url, options = {}) {
 }
 
 // ==============================================
-// 🔥 FUNÇÕES DE STATUS DO PLANO (DATA COMPRA/EXPIRAÇÃO)
+// 🔥 FUNÇÕES DE STATUS DO PLANO
 // ==============================================
 
 async function loadSubscriptionStatus() {
@@ -1102,6 +1095,324 @@ async function checkAndNotifyRenewal() {
 }
 
 // ==============================================
+// 🔥 FUNÇÕES DE STATUS PREMIUM - VERSÃO COMPLETA
+// ==============================================
+
+/**
+ * Carrega o status completo do plano premium do usuário
+ * Inclui informações de créditos diários, limite de 3, próximo crédito, etc.
+ */
+async function loadPremiumStatus() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/payments/premium-status`);
+        if (response && response.ok) {
+            const data = await response.json();
+            updatePremiumStatusUI(data);
+            return data;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar status premium:', error);
+    }
+    return null;
+}
+
+/**
+ * 🔥 ATUALIZA A UI COM TODAS AS INFORMAÇÕES DO PLANO PREMIUM
+ */
+function updatePremiumStatusUI(data) {
+    const container = document.getElementById('premiumStatusContainer');
+    if (!container) return;
+    
+    // Se não for premium, mostrar card para comprar
+    if (!data.is_premium) {
+        container.innerHTML = `
+            <div class="premium-card premium-inactive">
+                <div class="premium-status-header">
+                    <i class="fas fa-crown" style="color: #f5a623;"></i>
+                    <span>Plano Bronze</span>
+                </div>
+                <div class="premium-status-body">
+                    <p class="text-center" style="color: rgba(255,255,255,0.7);">
+                        <i class="fas fa-rocket me-2" style="color: #f5a623;"></i>
+                        Ative o plano premium e ganhe <strong style="color: #f5a623;">1 crédito novo por dia</strong>!
+                    </p>
+                    <div class="premium-benefits-preview">
+                        <div class="benefit-item">
+                            <i class="fas fa-check-circle" style="color: #48bb78;"></i>
+                            <span>1 crédito por dia durante 30 dias</span>
+                        </div>
+                        <div class="benefit-item">
+                            <i class="fas fa-check-circle" style="color: #48bb78;"></i>
+                            <span>Limite máximo de 3 créditos acumulados</span>
+                        </div>
+                        <div class="benefit-item">
+                            <i class="fas fa-check-circle" style="color: #48bb78;"></i>
+                            <span>Use seus créditos para análises com IA</span>
+                        </div>
+                    </div>
+                    <a href="/planos" class="btn btn-premium w-100">
+                        <i class="fas fa-gem me-2"></i>
+                        Adquirir Plano Bronze
+                    </a>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // ==========================================
+    // USUÁRIO PREMIUM - STATUS DETALHADO
+    // ==========================================
+    
+    const daysLeft = data.days_left || 0;
+    const creditsBalance = data.credits_balance || 0;
+    const maxCredits = data.max_credits_balance || 3;
+    const receivedToday = data.received_today || false;
+    const nextCreditDate = data.next_credit_date ? new Date(data.next_credit_date) : null;
+    const activatedAt = data.activated_at ? new Date(data.activated_at) : null;
+    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+    const canReceiveToday = data.can_receive_today || false;
+    const isAtMaxCredits = creditsBalance >= maxCredits;
+    const daysUsed = data.days_used || 0;
+    const totalDays = 30;
+    
+    const formattedActivation = activatedAt ? activatedAt.toLocaleDateString('pt-BR') : '—';
+    const formattedExpiration = expiresAt ? expiresAt.toLocaleDateString('pt-BR') : '—';
+    const progressPercent = Math.min(100, Math.round((daysUsed / totalDays) * 100));
+    
+    const isExpiringSoon = daysLeft <= 5 && daysLeft > 0;
+    const isExpired = daysLeft <= 0;
+    
+    // Determinar status do próximo crédito
+    let nextStatusText = '';
+    let nextStatusColor = '#f5a623';
+    let nextStatusIcon = 'fa-hourglass-half';
+    
+    if (isAtMaxCredits) {
+        nextStatusText = 'Gaste 1 para receber';
+        nextStatusColor = '#f56565';
+        nextStatusIcon = 'fa-exclamation-triangle';
+    } else if (receivedToday) {
+        nextStatusText = 'Amanhã';
+        nextStatusColor = '#48bb78';
+        nextStatusIcon = 'fa-check-circle';
+    } else if (canReceiveToday) {
+        nextStatusText = 'Disponível HOJE! 🎯';
+        nextStatusColor = '#48bb78';
+        nextStatusIcon = 'fa-gift';
+    } else {
+        nextStatusText = 'Em breve...';
+        nextStatusColor = '#f5a623';
+        nextStatusIcon = 'fa-clock';
+    }
+    
+    container.innerHTML = `
+        <div class="premium-card premium-active">
+            <!-- HEADER -->
+            <div class="premium-status-header">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-crown" style="color: #f5a623; font-size: 1.5rem;"></i>
+                    <div class="ms-3">
+                        <h5 class="mb-0" style="color: white;">Plano Bronze Premium</h5>
+                        <small style="color: rgba(255,255,255,0.6);">
+                            <i class="fas fa-calendar-check me-1"></i>
+                            Ativo desde ${formattedActivation}
+                        </small>
+                    </div>
+                </div>
+                <span class="badge premium-badge ${isExpiringSoon ? 'badge-warning' : ''} ${isExpired ? 'badge-danger' : ''}">
+                    <i class="fas fa-clock me-1"></i>
+                    ${isExpired ? 'Expirado ⚠️' : `${daysLeft} dias restantes`}
+                </span>
+            </div>
+            
+            <!-- PROGRESSO DO PLANO -->
+            <div class="premium-progress">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span style="color: rgba(255,255,255,0.6);">Progresso do plano (30 dias)</span>
+                    <span style="color: #f5a623;">${progressPercent}%</span>
+                </div>
+                <div class="progress" style="height: 6px; background: rgba(255,255,255,0.15);">
+                    <div class="progress-bar" style="width: ${progressPercent}%; background: linear-gradient(90deg, #f5a623, #cd7f32);"></div>
+                </div>
+                <div class="d-flex justify-content-between small mt-1">
+                    <span style="color: rgba(255,255,255,0.4);">Dia ${Math.min(daysUsed + 1, totalDays)}</span>
+                    <span style="color: rgba(255,255,255,0.4);">Dia ${totalDays}</span>
+                </div>
+            </div>
+            
+            <!-- CARDS DE CRÉDITOS (3 colunas) -->
+            <div class="row g-3 mb-3">
+                <div class="col-4">
+                    <div class="credit-status-card text-center p-3 rounded-3">
+                        <div style="font-size: 2rem; color: #f5a623; font-weight: 700;">${creditsBalance}</div>
+                        <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">
+                            <i class="fas fa-coins me-1"></i>Créditos Atuais
+                        </div>
+                        <div style="font-size: 0.6rem; color: rgba(255,255,255,0.4);">máx. ${maxCredits}</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="credit-status-card text-center p-3 rounded-3">
+                        <div style="font-size: 2rem; color: ${receivedToday ? '#48bb78' : (canReceiveToday ? '#f5a623' : '#f56565')};">
+                            ${receivedToday ? '✅' : (canReceiveToday ? '🎯' : '⏳')}
+                        </div>
+                        <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">
+                            <i class="fas fa-calendar-day me-1"></i>Crédito Hoje
+                        </div>
+                        <div style="font-size: 0.6rem; color: ${receivedToday ? '#48bb78' : (canReceiveToday ? '#f5a623' : '#f56565')};">
+                            ${receivedToday ? 'Recebido ✅' : (canReceiveToday ? 'Disponível 🎯' : 'Aguardando ⏳')}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="credit-status-card text-center p-3 rounded-3">
+                        <div style="font-size: 1.8rem; color: ${isAtMaxCredits ? '#f56565' : '#f5a623'};">
+                            <i class="fas ${isAtMaxCredits ? 'fa-exclamation-triangle' : 'fa-arrow-right'}"></i>
+                        </div>
+                        <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">
+                            <i class="fas fa-clock me-1"></i>Próximo Crédito
+                        </div>
+                        <div style="font-size: 0.6rem; color: ${nextStatusColor};">
+                            ${nextStatusText}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- MENSAGEM DE AÇÃO PRINCIPAL -->
+            <div class="premium-message ${isAtMaxCredits ? 'premium-message-warning' : (canReceiveToday ? 'premium-message-success' : 'premium-message-info')}">
+                <i class="fas ${isAtMaxCredits ? 'fa-exclamation-triangle' : (canReceiveToday ? 'fa-gift' : 'fa-info-circle')} me-2"></i>
+                <span>
+                    ${isAtMaxCredits 
+                        ? `⚠️ <strong>Limite de ${maxCredits} créditos atingido!</strong> Use um crédito para continuar recebendo 1 por dia.`
+                        : (canReceiveToday )
+                            ? `🎯 <strong>Você tem um crédito disponível HOJE!</strong> Clique no botão abaixo para receber.`
+                            : (receivedToday 
+                                ? `✅ Crédito de hoje já recebido! Volte amanhã para mais 1 crédito.`
+                                : `📅 Você está em dia com seus créditos. Continue usando para otimizar seu negócio!`
+                            )
+                    }
+                </span>
+            </div>
+            
+            <!-- BOTÃO DE AÇÃO (se disponível) -->
+            ${canReceiveToday ? `
+                <div class="d-grid gap-2 mt-3">
+                    <button class="btn btn-premium-receive" onclick="window.receiveDailyCredit()">
+                        <i class="fas fa-gift me-2"></i>
+                        Receber meu crédito de hoje! 🎁
+                    </button>
+                </div>
+            ` : ''}
+            
+            ${isAtMaxCredits ? `
+                <div class="premium-action-cta text-center mt-2">
+                    <small style="color: rgba(255,255,255,0.7);">
+                        💡 <strong style="color: #f5a623;">Dica:</strong> Você está com ${creditsBalance}/${maxCredits} créditos. 
+                        <span style="color: #48bb78;">Use um crédito para receber outro amanhã!</span>
+                    </small>
+                    <br>
+                    <a href="/dashboard" class="btn btn-sm btn-outline-warning mt-2">
+                        <i class="fas fa-upload me-1"></i>
+                        Ir para Dashboard e usar créditos
+                    </a>
+                </div>
+            ` : ''}
+            
+            ${isExpiringSoon ? `
+                <div class="premium-expiring-warning mt-2">
+                    <i class="fas fa-clock me-1"></i>
+                    <span>⚠️ Seu plano expira em ${daysLeft} dias. Renove para não perder os benefícios!</span>
+                    <a href="/planos" class="btn btn-sm btn-warning ms-2">Renovar Agora</a>
+                </div>
+            ` : ''}
+            
+            <!-- FOOTER COM DATAS -->
+            <div class="premium-footer">
+                <div class="row text-center small">
+                    <div class="col-6">
+                        <i class="fas fa-calendar-plus" style="color: #f5a623;"></i>
+                        <span style="color: rgba(255,255,255,0.6);"> Início: ${formattedActivation}</span>
+                    </div>
+                    <div class="col-6">
+                        <i class="fas fa-calendar-times" style="color: ${isExpiringSoon ? '#f56565' : '#f5a623'};"></i>
+                        <span style="color: rgba(255,255,255,0.6);"> Expira: ${formattedExpiration}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Notificações
+    if (isAtMaxCredits) {
+        showNotification(
+            `⚠️ Você atingiu o limite de ${maxCredits} créditos! Use um crédito para continuar recebendo 1 por dia.`,
+            'warning'
+        );
+    }
+    
+    if (canReceiveToday) {
+        showNotification(
+            '🎯 Você tem um crédito premium disponível HOJE! Clique no botão para receber.',
+            'success'
+        );
+    }
+}
+
+/**
+ * 🔥 RECEBE O CRÉDITO DIÁRIO DO PREMIUM
+ */
+async function receiveDailyCredit() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/payments/daily-credit`, {
+            method: 'POST'
+        });
+        
+        if (response && response.ok) {
+            const data = await response.json();
+            
+            if (data.success) {
+                showNotification(`✅ ${data.message || 'Crédito recebido com sucesso!'}`, 'success');
+                setTimeout(() => loadPremiumStatus(), 500);
+                if (window.updateCreditsDisplay) {
+                    setTimeout(() => window.updateCreditsDisplay(), 1000);
+                }
+            } else {
+                showNotification(data.message || 'Erro ao receber crédito', 'warning');
+            }
+        } else {
+            showNotification('Erro ao receber crédito. Tente novamente.', 'error');
+        }
+    } catch (error) {
+        console.error('Erro ao receber crédito:', error);
+        showNotification('Erro de conexão. Tente novamente.', 'error');
+    }
+}
+
+/**
+ * 🔥 POLLING PARA ATUALIZAR STATUS PREMIUM PERIODICAMENTE
+ */
+let premiumStatusInterval = null;
+
+function startPremiumStatusPolling(interval = 60000) {
+    if (premiumStatusInterval) clearInterval(premiumStatusInterval);
+    
+    loadPremiumStatus();
+    
+    premiumStatusInterval = setInterval(() => {
+        loadPremiumStatus();
+    }, interval);
+}
+
+function stopPremiumStatusPolling() {
+    if (premiumStatusInterval) {
+        clearInterval(premiumStatusInterval);
+        premiumStatusInterval = null;
+    }
+}
+
+// ==============================================
 // INICIALIZAÇÃO
 // ==============================================
 
@@ -1111,23 +1422,43 @@ function isPlansPage() {
            document.getElementById('plansContainer') !== null;
 }
 
+function isDashboardPage() {
+    return window.location.pathname.includes('index.html') || 
+           window.location.pathname === '/dashboard' ||
+           window.location.pathname === '/' ||
+           document.getElementById('premiumStatusContainer') !== null;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Inicializar na página de planos
     if (isPlansPage()) {
         setTimeout(() => {
             loadPlans();
-            console.log('✅ payment.js inicializado - PIX REAL (sem simulação)');
+            console.log('✅ payment.js inicializado - PÁGINA DE PLANOS');
             console.log(`📊 Limite de créditos: ${MAX_CREDITS_BALANCE}`);
             console.log(`⏰ Expiração PIX: ${PIX_EXPIRY_MINUTES} minutos`);
             console.log(`🌐 API_URL: ${API_URL}`);
         }, 200);
     }
     
+    // 🔥 Inicializar STATUS PREMIUM no dashboard
+    if (isDashboardPage()) {
+        setTimeout(() => {
+            loadPremiumStatus();
+            // Iniciar polling a cada 60 segundos
+            startPremiumStatusPolling(60000);
+            console.log('✅ payment.js - Status Premium ativo no Dashboard');
+        }, 500);
+    }
+    
+    // Atualizar créditos periodicamente
     const creditsElement = document.getElementById('creditsDisplay');
     if (creditsElement) {
         updateCreditsDisplay();
         setInterval(updateCreditsDisplay, 30000);
     }
     
+    // Limpar polling ao fechar modal PIX
     const pixModal = document.getElementById('pixModal');
     if (pixModal) {
         pixModal.addEventListener('hidden.bs.modal', function() {
@@ -1142,6 +1473,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Verificar parâmetro de sucesso no pagamento
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success') {
         showNotification('Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
@@ -1151,6 +1483,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.loadSubscriptionStatus) {
                 window.loadSubscriptionStatus();
             }
+            if (window.loadPremiumStatus) {
+                window.loadPremiumStatus();
+            }
         }, 1000);
     }
 });
@@ -1159,15 +1494,29 @@ document.addEventListener('DOMContentLoaded', function() {
 // EXPOSIÇÃO DE FUNÇÕES GLOBAIS
 // ==============================================
 
+// Pagamento
 window.selectPlan = selectPlan;
 window.openCpfModal = openCpfModal;
 window.proceedWithCpf = proceedWithCpf;
 window.copyPixCodeSecure = copyPixCodeSecure;
+
+// Créditos
 window.updateCreditsDisplay = updateCreditsDisplay;
 window.formatCreditsDisplay = formatCreditsDisplay;
 window.showNotification = showNotification;
+
+// Status do plano
 window.loadSubscriptionStatus = loadSubscriptionStatus;
 window.checkAndNotifyRenewal = checkAndNotifyRenewal;
 
-console.log('✅ payment.js carregado - API_URL dinâmica (PIX REAL - sem simulação)');
+// 🔥 Status Premium
+window.loadPremiumStatus = loadPremiumStatus;
+window.updatePremiumStatusUI = updatePremiumStatusUI;
+window.receiveDailyCredit = receiveDailyCredit;
+window.startPremiumStatusPolling = startPremiumStatusPolling;
+window.stopPremiumStatusPolling = stopPremiumStatusPolling;
+
+console.log('✅ payment.js carregado - COMPLETO (PIX REAL + STATUS PREMIUM)');
 console.log('🔒 Proteção antifraude: CPF obrigatório e validado');
+console.log(`📊 Limite máximo de créditos: ${MAX_CREDITS_BALANCE}`);
+console.log(`🕐 Fuso horário: America/Sao_Paulo (UTC-3)`);

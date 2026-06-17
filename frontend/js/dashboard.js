@@ -2,6 +2,7 @@
 // GPSA Visual + Gráfico de Tendência + PDF AUTOMÁTICO + Botão PDF manual
 // Layout: Gráfico e Insights lado a lado
 // Cards individuais com animação suave (3-4 segundos)
+// Estilo: apenas créditos em dourado, resto original (roxo/azul)
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Inicializando Dashboard...');
@@ -85,7 +86,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             let growthType = 'linear';
             let growthIcon = '📈';
             let growthDesc = 'Crescimento constante e previsível';
-            let growthColor = '#4299e1';
+            let growthColor = '#667eea';
             
             if (scoreMedio > 0.85) {
                 growthType = 'exponential';
@@ -101,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 growthType = 'linear';
                 growthIcon = '➡️';
                 growthDesc = 'Crescimento LINEAR, previsível';
-                growthColor = '#4299e1';
+                growthColor = '#667eea';
             } else {
                 growthType = 'logarithmic';
                 growthIcon = '🔄';
@@ -135,17 +136,17 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div class="gpsa-score-wrapper">
                             <div class="gpsa-score-circle" data-score="${Math.round(scoreMedio * 100)}">
                                 <svg width="140" height="140" viewBox="0 0 140 140">
-                                    <circle cx="70" cy="70" r="60" fill="none" stroke="#e2e8f0" stroke-width="8"/>
+                                    <circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="8"/>
                                     <circle class="score-ring" cx="70" cy="70" r="60" fill="none" 
                                             stroke="url(#scoreGrad)" stroke-width="8" 
                                             stroke-dasharray="377" stroke-dashoffset="377"/>
                                 </svg>
                                 <div class="score-text">
                                     <span class="score-number">0</span>
-                                    <span class="score-symbol">%</span>
+                                    <span class="score-symbol" style="color: #f5a623;">%</span>
                                 </div>
                             </div>
-                            <h3 class="mt-3 mb-1">${growthIcon} Índice de Confiança</h3>
+                            <h3 class="mt-3 mb-1" style="color: white;">${growthIcon} Índice de Confiança</h3>
                             <p class="text-muted small">${growthDesc}</p>
                         </div>
                     </div>
@@ -155,8 +156,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div class="col-md-4">
                             <div class="impact-card text-center p-4 rounded-4 h-100">
                                 <div class="impact-icon mb-3"><i class="fas fa-chart-line fa-3x" style="color: #48bb78;"></i></div>
-                                <h4>Crescimento Projetado</h4>
-                                <div class="impact-value display-4 fw-bold text-success" data-target="${projecoes.crescimentoPercentual}">
+                                <h4 style="color: white;">Crescimento Projetado</h4>
+                                <div class="impact-value display-4 fw-bold text-success" data-target="${projecoes.crescimentoPercentual}" style="color: #48bb78;">
                                     0<span class="fs-4">%</span>
                                 </div>
                                 <small class="text-muted">nos próximos 3 meses</small>
@@ -172,8 +173,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div class="col-md-4">
                             <div class="impact-card text-center p-4 rounded-4 h-100">
                                 <div class="impact-icon mb-3"><i class="fas fa-coins fa-3x" style="color: #f5a623;"></i></div>
-                                <h4>Economia Mensal</h4>
-                                <div class="impact-value display-4 fw-bold text-warning" data-target="${projecoes.economiaMensal}">
+                                <h4 style="color: white;">Economia Mensal</h4>
+                                <div class="impact-value display-4 fw-bold" data-target="${projecoes.economiaMensal}" style="color: #f5a623;">
                                     R$ 0
                                 </div>
                                 <small class="text-muted">em redução de custos</small>
@@ -184,12 +185,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div class="col-md-4">
                             <div class="impact-card text-center p-4 rounded-4 h-100">
                                 <div class="impact-icon mb-3"><i class="fas fa-users fa-3x" style="color: #667eea;"></i></div>
-                                <h4>Retenção de Clientes</h4>
-                                <div class="impact-value display-4 fw-bold text-primary" data-target="${projecoes.retencaoClientes}">
+                                <h4 style="color: white;">Retenção de Clientes</h4>
+                                <div class="impact-value display-4 fw-bold" data-target="${projecoes.retencaoClientes}" style="color: #667eea;">
                                     0<span class="fs-4">%</span>
                                 </div>
                                 <small class="text-muted">taxa estimada de fidelização</small>
-                                <div class="trend-indicator mt-2"><i class="fas fa-heart"></i> Clientes satisfeitos</div>
+                                <div class="trend-indicator mt-2"><i class="fas fa-heart" style="color: #f56565;"></i> Clientes satisfeitos</div>
                             </div>
                         </div>
                     </div>
@@ -199,8 +200,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div class="col-md-6">
                             <div class="trend-chart-card p-4 rounded-4 h-100">
                                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
-                                    <h5 class="mb-0">
-                                        <i class="fas fa-chart-line me-2"></i> 
+                                    <h5 class="mb-0" style="color: white;">
+                                        <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i> 
                                         Projeção de Crescimento - ${growthType.charAt(0).toUpperCase() + growthType.slice(1)}
                                         <span class="badge ms-2" style="background: ${growthColor};">${growthIcon}</span>
                                     </h5>
@@ -218,14 +219,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                         
                         <div class="col-md-6">
                             <div class="insights-card p-4 rounded-4 h-100">
-                                <h5 class="mb-3">
-                                    <i class="fas fa-lightbulb me-2"></i> 
+                                <h5 class="mb-3" style="color: white;">
+                                    <i class="fas fa-lightbulb me-2" style="color: #f5a623;"></i> 
                                     Insights da ${hasGeminiInsights ? 'IA Gemini' : 'Análise'}
-                                    ${hasGeminiInsights ? '<span class="badge bg-success ms-2"><i class="fas fa-robot me-1"></i>IA</span>' : ''}
+                                    ${hasGeminiInsights ? '<span class="badge ms-2" style="background: #f5a623; color: white;"><i class="fas fa-robot me-1"></i>IA</span>' : ''}
                                 </h5>
                                 <div class="insights-list" style="max-height: 250px; overflow-y: auto;">
                                     ${hasGeminiInsights ? 
-                                        insightsList.slice(0, 5).map(i => `<div class="insight-item mb-2 p-2 bg-light rounded-3">${escapeHtml(i)}</div>`).join('') :
+                                        insightsList.slice(0, 5).map(i => `<div class="insight-item mb-2 p-2 rounded-3">${escapeHtml(i)}</div>`).join('') :
                                         this.generateInsightsHTML(scoreMedio, altoRisco, totalRegistros, growthType)
                                     }
                                 </div>
@@ -237,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <div class="row g-4 mb-4">
                         <div class="col-12">
                             <div class="risk-summary p-3 rounded-4">
-                                <h5 class="mb-3 text-center"><i class="fas fa-chart-pie me-2"></i> Distribuição de Risco</h5>
+                                <h5 class="mb-3 text-center" style="color: white;"><i class="fas fa-chart-pie me-2" style="color: #f5a623;"></i> Distribuição de Risco</h5>
                                 <div class="row text-center">
                                     <div class="col-4">
                                         <div class="risk-badge high p-2 rounded-3">
@@ -268,10 +269,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <!-- Barra de Progresso do Score -->
                     <div class="score-progress-card p-4 rounded-4">
                         <div class="d-flex justify-content-between mb-2">
-                            <span><i class="fas fa-chart-simple me-2"></i> Score de Acerto da Previsão</span>
-                            <span class="score-progress-value fw-bold">0%</span>
+                            <span style="color: white;"><i class="fas fa-chart-simple me-2" style="color: #f5a623;"></i> Score de Acerto da Previsão</span>
+                            <span class="score-progress-value fw-bold" style="color: #f5a623;">0%</span>
                         </div>
-                        <div class="progress mb-2" style="height: 12px; border-radius: 20px;">
+                        <div class="progress mb-2" style="height: 12px; border-radius: 20px; background: rgba(255,255,255,0.15);">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" 
                                  style="width: 0%; background: linear-gradient(90deg, ${growthColor}, #764ba2);"></div>
                         </div>
@@ -279,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     </div>
                     
                     <div class="text-center mt-4">
-                        <button class="btn btn-outline-primary btn-sm" onclick="window.closeGPSA()">
+                        <button class="btn btn-outline-light btn-sm" onclick="window.closeGPSA()">
                             <i class="fas fa-times me-2"></i> Fechar Dashboard
                         </button>
                     </div>
@@ -322,7 +323,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             insights.push(`💡 <strong>Recomendação:</strong> Foque em ações preventivas para maximizar resultados.`);
             insights.push(`📊 <strong>Total analisado:</strong> ${totalRegistros.toLocaleString()} registros processados com sucesso.`);
             
-            return insights.map(i => `<div class="insight-item mb-2 p-2 bg-light rounded-3">${i}</div>`).join('');
+            return insights.map(i => `<div class="insight-item mb-2 p-2 rounded-3">${i}</div>`).join('');
         }
         
         initTrendChart(growthType, scoreMedio, projecoes) {
@@ -372,7 +373,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                             label: 'Projeção Futura',
                             data: dadosProjecao,
                             borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            backgroundColor: 'rgba(102, 126, 234, 0.2)',
                             borderWidth: 3,
                             fill: true,
                             tension: 0.3,
@@ -383,14 +384,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                         {
                             label: 'Tendência Atual',
                             data: dadosAtual,
-                            borderColor: '#a0aec0',
+                            borderColor: 'rgba(255,255,255,0.4)',
                             backgroundColor: 'transparent',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             fill: false,
                             tension: 0.2,
                             pointRadius: 3,
-                            pointBackgroundColor: '#a0aec0'
+                            pointBackgroundColor: 'rgba(255,255,255,0.4)'
                         }
                     ]
                 },
@@ -398,12 +399,32 @@ document.addEventListener('DOMContentLoaded', async function() {
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: {
-                        legend: { position: 'top', labels: { font: { size: 11 } } },
-                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } }
+                        legend: { 
+                            position: 'top', 
+                            labels: { 
+                                font: { size: 11 },
+                                color: 'rgba(255,255,255,0.8)'
+                            } 
+                        },
+                        tooltip: { 
+                            callbacks: { 
+                                label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` 
+                            } 
+                        }
                     },
                     scales: {
-                        y: { title: { display: true, text: 'Crescimento (%)' }, min: 0, max: 100, grid: { color: '#e2e8f0' } },
-                        x: { title: { display: true, text: 'Meses' }, grid: { display: false } }
+                        y: { 
+                            title: { display: true, text: 'Crescimento (%)', color: 'rgba(255,255,255,0.6)' },
+                            min: 0, 
+                            max: 100, 
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.6)' }
+                        },
+                        x: { 
+                            title: { display: true, text: 'Meses', color: 'rgba(255,255,255,0.6)' },
+                            grid: { display: false },
+                            ticks: { color: 'rgba(255,255,255,0.6)' }
+                        }
                     }
                 }
             });
@@ -628,7 +649,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         const creditsDisplay = getCreditsDisplay();
-        document.querySelectorAll('.credits-display, .user-credits, #creditsCount').forEach(el => {
+        document.querySelectorAll('.credits-display, .user-credits, #creditsCount, #uploadCredits, #creditsDisplay').forEach(el => {
             if (el) el.textContent = creditsDisplay;
         });
     }
@@ -652,15 +673,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <div class="modal fade" id="creditsModal" tabindex="-1">
                     <div class="modal-dialog">
                         <div class="modal-content">
-                            <div class="modal-header bg-warning">
-                                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Créditos Insuficientes</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <div class="modal-header bg-warning" style="background: linear-gradient(135deg, #f5a623, #cd7f32) !important;">
+                                <h5 class="modal-title" style="color: white;"><i class="fas fa-exclamation-triangle me-2"></i>Créditos Insuficientes</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body text-center py-4">
-                                <i class="fas fa-coins fa-4x text-warning mb-3"></i>
-                                <h5>Você não tem créditos suficientes</h5>
-                                <p>Cada arquivo consome 1 crédito.</p>
-                                <a href="/planos" class="btn btn-primary mt-2">Comprar Créditos</a>
+                                <i class="fas fa-coins fa-4x mb-3" style="color: #f5a623;"></i>
+                                <h5 style="color: white;">Você não tem créditos suficientes</h5>
+                                <p style="color: rgba(255,255,255,0.7);">Cada arquivo consome 1 crédito.</p>
+                                <a href="/planos" class="btn mt-2" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 0.75rem 2rem; border-radius: 50px;">Comprar Créditos</a>
                             </div>
                         </div>
                     </div>
@@ -1004,13 +1025,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                             </div>
                         </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="background: rgba(255,255,255,0.05); color: white;">
                         <div class="progress-container mb-4" id="progress-container-${processId}">
                             <div class="d-flex justify-content-between small mb-1">
                                 <span><i class="fas fa-spinner fa-spin me-1"></i> Processando com IA...</span>
-                                <span id="progress-text-${processId}" class="text-muted">0%</span>
+                                <span id="progress-text-${processId}" class="text-muted" style="color: rgba(255,255,255,0.6);">0%</span>
                             </div>
-                            <div class="progress" style="height: 12px; border-radius: 20px; background: #e2e8f0;">
+                            <div class="progress" style="height: 12px; border-radius: 20px; background: rgba(255,255,255,0.1);">
                                 <div id="progress-${processId}" class="progress-bar progress-bar-striped" 
                                      style="width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 20px; transition: width 3.5s ease-out;"></div>
                             </div>
@@ -1019,27 +1040,27 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <div id="results-${processId}" style="display: none;">
                             <div class="row g-3 mb-4">
                                 <div class="col-md-3 col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded-3">
-                                        <div class="metric-value h3 mb-0 text-primary" id="total-rows-${processId}">-</div>
-                                        <div class="metric-label small text-muted">Total Registros</div>
+                                    <div class="metric-box text-center p-3 rounded-3" style="background: rgba(0,0,0,0.2);">
+                                        <div class="metric-value h3 mb-0" id="total-rows-${processId}" style="color: #f5a623;">-</div>
+                                        <div class="metric-label small" style="color: rgba(255,255,255,0.6);">Total Registros</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded-3">
-                                        <div class="metric-value h3 mb-0 text-success" id="score-${processId}">-</div>
-                                        <div class="metric-label small text-muted">Score Médio</div>
+                                    <div class="metric-box text-center p-3 rounded-3" style="background: rgba(0,0,0,0.2);">
+                                        <div class="metric-value h3 mb-0" id="score-${processId}" style="color: #48bb78;">-</div>
+                                        <div class="metric-label small" style="color: rgba(255,255,255,0.6);">Score Médio</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded-3">
-                                        <div class="metric-value h3 mb-0 text-info" id="features-${processId}">-</div>
-                                        <div class="metric-label small text-muted">Features</div>
+                                    <div class="metric-box text-center p-3 rounded-3" style="background: rgba(0,0,0,0.2);">
+                                        <div class="metric-value h3 mb-0" id="features-${processId}" style="color: #667eea;">-</div>
+                                        <div class="metric-label small" style="color: rgba(255,255,255,0.6);">Features</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded-3">
-                                        <div class="metric-value h3 mb-0 text-warning" id="risk-${processId}">-</div>
-                                        <div class="metric-label small text-muted">Alto Risco</div>
+                                    <div class="metric-box text-center p-3 rounded-3" style="background: rgba(0,0,0,0.2);">
+                                        <div class="metric-value h3 mb-0" id="risk-${processId}" style="color: #f56565;">-</div>
+                                        <div class="metric-label small" style="color: rgba(255,255,255,0.6);">Alto Risco</div>
                                     </div>
                                 </div>
                             </div>
@@ -1072,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         if (activeAnalyses.length === 0) {
             container.innerHTML = `
-                <div class="text-center text-muted py-5">
+                <div class="text-center py-5" style="color: rgba(255,255,255,0.5);">
                     <i class="fas fa-chart-line fa-3x mb-3 opacity-50"></i>
                     <h5>Nenhuma análise em andamento</h5>
                     <p class="small">Envie arquivos para ver os resultados aqui</p>
@@ -1297,10 +1318,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             gpsaModal.setAttribute('tabindex', '-1');
             gpsaModal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered modal-xl">
-                    <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);">
-                        <div class="modal-header border-0">
-                            <h5 class="modal-title" style="color: #f5a623;">
-                                <i class="fas fa-chart-line me-2"></i>GPSA - Impacto no Negócio
+                    <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.2);">
+                        <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
+                            <h5 class="modal-title" style="color: white;">
+                                <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>GPSA - Impacto no Negócio
                             </h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
@@ -1451,7 +1472,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         if (!analyses || analyses.length === 0) {
             container.innerHTML = `
-                <div class="text-center text-muted py-4">
+                <div class="text-center py-4" style="color: rgba(255,255,255,0.5);">
                     <i class="fas fa-chart-line fa-2x mb-2"></i>
                     <p>Nenhuma análise realizada</p>
                     <small>Envie seu primeiro arquivo</small>
@@ -1463,35 +1484,34 @@ document.addEventListener('DOMContentLoaded', async function() {
         const html = analyses.slice(0, 10).map(a => {
             const date = new Date(a.created_at);
             return `
-                <div class="list-group-item list-group-item-action">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>${escapeHtml(a.filename || 'Análise')}</strong>
-                            <br><small class="text-muted">${date.toLocaleDateString('pt-BR')}</small>
-                        </div>
-                        <span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}">${a.status === 'completed' ? 'Concluído' : a.status}</span>
+                <div class="timeline-item">
+                    <div class="timeline-marker ${a.status === 'completed' ? 'bg-success' : ''}"></div>
+                    <div class="timeline-content">
+                        <strong>${escapeHtml(a.filename || 'Análise')}</strong>
+                        <br><small style="color: rgba(255,255,255,0.5);">${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}</small>
+                        <br><span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}" style="font-size: 0.65rem;">${a.status === 'completed' ? '✅ Concluído' : a.status}</span>
                     </div>
                 </div>
             `;
         }).join('');
         
-        container.innerHTML = `<div class="list-group">${html}</div>`;
+        container.innerHTML = html;
     }
     
     // ===== DRAG & DROP =====
     
     function setupDragAndDrop() {
-        const dropZone = document.getElementById('dropZone');
+        const dropZone = document.getElementById('dropArea');
         if (!dropZone) return;
         
-        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('drag-over'); });
+        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('click', () => { document.getElementById('fileInput').click(); });
         
         dropZone.addEventListener('drop', async (e) => {
             e.preventDefault();
-            dropZone.classList.remove('drag-over');
+            dropZone.classList.remove('dragover');
             
             const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) {
@@ -1524,14 +1544,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             container = document.createElement('div');
             container.id = 'filePreviewContainer';
             container.className = 'mt-3';
-            const dropZone = document.getElementById('dropZone');
+            const dropZone = document.getElementById('dropArea');
             if (dropZone) dropZone.insertAdjacentElement('afterend', container);
         }
         
         let html = `
-            <div class="bg-light p-3 rounded-3">
+            <div class="p-3 rounded-3" style="background: rgba(0,0,0,0.2);">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <strong><i class="fas fa-files me-2"></i>${files.length} arquivo(s):</strong>
+                    <strong style="color: white;"><i class="fas fa-files me-2"></i>${files.length} arquivo(s):</strong>
                     <button type="button" class="btn btn-sm btn-outline-danger" id="clearFilesBtn">Limpar</button>
                 </div>
                 <div class="list-group list-group-flush bg-transparent" style="max-height: 200px; overflow-y: auto;">
@@ -1539,10 +1559,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         for (const file of files) {
             const fileSizeKB = (file.size / 1024).toFixed(1);
-            html += `<div class="list-group-item bg-transparent px-0 py-2"><i class="fas fa-file-excel text-success me-2"></i>${escapeHtml(file.name)} <span class="badge bg-secondary ms-2">${fileSizeKB}KB</span></div>`;
+            html += `<div class="list-group-item bg-transparent px-0 py-2" style="color: white; border-color: rgba(255,255,255,0.1);"><i class="fas fa-file-excel text-success me-2"></i>${escapeHtml(file.name)} <span class="badge ms-2" style="background: rgba(255,255,255,0.15); color: white;">${fileSizeKB}KB</span></div>`;
         }
         
-        html += `</div><div class="text-muted small mt-2"><i class="fas fa-info-circle me-1"></i>Cada arquivo consome 1 crédito. Limite de ${MAX_FILE_SIZE_KB}KB.</div></div>`;
+        html += `</div><div class="text-muted small mt-2" style="color: rgba(255,255,255,0.6);"><i class="fas fa-info-circle me-1"></i>Cada arquivo consome 1 crédito. Limite de ${MAX_FILE_SIZE_KB}KB.</div></div>`;
         container.innerHTML = html;
         
         document.getElementById('clearFilesBtn')?.addEventListener('click', () => {
@@ -1613,21 +1633,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         .impact-card, .trend-chart-card, .insights-card, .score-progress-card {
-            background: rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.05);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.1);
             transition: all 0.3s ease;
         }
         
         .impact-card:hover, .trend-chart-card:hover {
             transform: translateY(-5px);
-            background: rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.08);
         }
         
         .impact-value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
         .trend-indicator { font-size: 0.8rem; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 20px; display: inline-block; }
         .insight-item { transition: all 0.2s; }
-        .insight-item:hover { transform: translateX(5px); background: rgba(255,255,255,0.1) !important; }
+        .insight-item:hover { transform: translateX(5px); background: rgba(255,255,255,0.05) !important; }
         
         .gpsa-score-circle { position: relative; display: inline-block; }
         .score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.5s ease-out; }
@@ -1661,13 +1681,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         .analysis-card:hover { transform: translateY(-4px); }
         
         .metric-box { transition: all 0.2s; }
-        .metric-box:hover { transform: translateY(-2px); background: #e9ecef !important; }
+        .metric-box:hover { transform: translateY(-2px); background: rgba(0,0,0,0.3) !important; }
         
         .badge { font-weight: normal; }
         .trend-chart-card canvas { max-height: 250px; width: 100%; }
         
         .risk-summary {
-            background: rgba(0,0,0,0.2);
+            background: rgba(0,0,0,0.15);
             backdrop-filter: blur(5px);
         }
         

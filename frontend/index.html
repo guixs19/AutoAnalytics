@@ -39,14 +39,14 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             overflow-x: hidden;
         }
 
-        /* 🔥 NAVBAR ESTILO BRONZE */
+        /* 🔥 NAVBAR ESTILO ORIGINAL */
         .navbar-modern {
-            background: rgba(44, 26, 10, 0.95);
+            background: rgba(102, 126, 234, 0.95);
             backdrop-filter: blur(10px);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             padding: 1rem 0;
@@ -54,24 +54,26 @@
             width: 100%;
             top: 0;
             z-index: 1000;
-            border-bottom: 2px solid #cd7f32;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
         }
 
         .navbar-modern.scrolled {
             padding: 0.5rem 0;
-            background: rgba(44, 26, 10, 0.98);
+            background: rgba(102, 126, 234, 0.98);
         }
 
         .brand-text {
             font-size: 1.8rem;
             font-weight: 800;
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: white;
             letter-spacing: -0.5px;
         }
 
-        /* 🔥 CRÉDITS BADGE ESTILO BRONZE */
+        .brand-text .gradient-text {
+            color: #f5a623;
+        }
+
+        /* 🔥 CRÉDITS BADGE - APENAS ELE DOURADO */
         .credits-badge {
             background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
             padding: 0.5rem 1.5rem;
@@ -105,7 +107,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             opacity: 0.9;
         }
 
@@ -114,9 +116,11 @@
             font-weight: 800;
             line-height: 1.2;
             margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: white;
+        }
+
+        .hero-title .gradient-text {
+            color: #f5a623;
         }
 
         .hero-subtitle {
@@ -126,36 +130,36 @@
             max-width: 600px;
         }
 
-        /* 🔥 UPLOAD CARD ESTILO BRONZE */
+        /* 🔥 UPLOAD CARD */
         .upload-card {
-            background: linear-gradient(145deg, #2c1a0a 0%, #3d2614 100%);
+            background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
             border-radius: 30px;
             padding: 2rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-            border: 1px solid #cd7f32;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             transition: all 0.3s ease;
         }
 
         .upload-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 30px 80px rgba(205, 127, 50, 0.2);
-            border-color: #f5a623;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.4);
         }
 
         .upload-area {
-            border: 3px dashed rgba(205, 127, 50, 0.5);
+            border: 3px dashed rgba(255, 255, 255, 0.3);
             border-radius: 20px;
             padding: 2.5rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s;
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.15);
         }
 
         .upload-area:hover {
-            border-color: #f5a623;
-            background: rgba(245, 166, 35, 0.1);
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .upload-area.dragover {
@@ -166,7 +170,7 @@
 
         .upload-icon {
             font-size: 4rem;
-            color: #f5a623;
+            color: rgba(255, 255, 255, 0.8);
             margin-bottom: 1rem;
             animation: float 3s ease-in-out infinite;
         }
@@ -242,24 +246,24 @@
         }
 
         .loading-progress .progress-bar {
-            background: linear-gradient(90deg, #f5a623, #cd7f32);
+            background: linear-gradient(90deg, #667eea, #764ba2);
             width: 0%;
             transition: width 0.3s ease;
         }
 
         /* Indicador de Processamento */
         .processing-indicator {
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 20px;
             padding: 1.5rem;
             margin: 1.5rem 0;
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             text-align: center;
         }
 
         .processing-icon {
             font-size: 3rem;
-            color: #f5a623;
+            color: rgba(255, 255, 255, 0.7);
             margin-bottom: 1rem;
         }
 
@@ -272,21 +276,20 @@
             color: #f5a623;
         }
 
-        /* Botão de Upload */
         .btn-gradient {
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
             padding: 0.75rem 2rem;
             border-radius: 50px;
             font-weight: 600;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn-gradient:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(205, 127, 50, 0.6);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
             color: white;
         }
 
@@ -309,7 +312,7 @@
             transform: translateY(-2px);
         }
 
-        /* Timeline para histórico */
+        /* Timeline */
         .timeline {
             position: relative;
             padding-left: 1.5rem;
@@ -322,7 +325,7 @@
             top: 0;
             bottom: 0;
             width: 2px;
-            background: linear-gradient(180deg, #f5a623 0%, #cd7f32 100%);
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
             border-radius: 2px;
         }
 
@@ -342,9 +345,9 @@
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            background: #f5a623;
+            background: #667eea;
             border: 2px solid white;
-            box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.3);
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
         }
 
         .timeline-marker.bg-success {
@@ -363,9 +366,9 @@
 
         /* Métricas */
         .metric-card {
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 15px;
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             padding: 1rem;
         }
 
@@ -380,15 +383,14 @@
             color: rgba(255, 255, 255, 0.6);
         }
 
-        /* Limite Info Bar */
         .limit-info {
-            background: rgba(245, 166, 35, 0.15);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
             padding: 0.75rem;
             margin-bottom: 1rem;
             text-align: center;
             font-size: 0.85rem;
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             color: rgba(255, 255, 255, 0.8);
         }
 
@@ -402,7 +404,6 @@
             color: #f5a623;
         }
 
-        /* Size Warning */
         .size-warning {
             background: rgba(220, 53, 69, 0.2);
             border: 1px solid #dc3545;
@@ -425,7 +426,6 @@
             75% { transform: translateX(5px); }
         }
 
-        /* Admin Badge */
         .admin-badge {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
             color: white;
@@ -441,27 +441,22 @@
             display: inline-block;
         }
 
-        /* Toastr customização */
+        /* Toastr */
         .toast-success {
             background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
         }
-
         .toast-error {
             background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
         }
-
         .toast-info {
             background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
         }
-
         .toast-warning {
             background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important;
         }
 
         .gradient-text {
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: #f5a623;
         }
 
         /* Análises em Andamento */
@@ -471,53 +466,43 @@
         }
 
         @keyframes slideInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .analysis-card .card {
             transition: all 0.2s;
             border-radius: 20px !important;
-            background: rgba(44, 26, 10, 0.9) !important;
-            border: 1px solid rgba(205, 127, 50, 0.3) !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
             color: white;
         }
 
         .analysis-card .card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(205, 127, 50, 0.2);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
         }
 
         .analysis-card .metric-box {
-            background: rgba(0, 0, 0, 0.3) !important;
+            background: rgba(0, 0, 0, 0.2) !important;
             color: white;
         }
-
         .analysis-card .metric-label {
             color: rgba(255, 255, 255, 0.6);
         }
-
         .analysis-card .metric-value {
             color: #f5a623;
         }
 
-        /* File Preview */
         .file-preview-container {
             max-height: 200px;
             overflow-y: auto;
         }
 
         .file-preview-container .bg-light {
-            background: rgba(0, 0, 0, 0.3) !important;
+            background: rgba(0, 0, 0, 0.2) !important;
             color: white;
         }
-
         .file-preview-container .text-muted {
             color: rgba(255, 255, 255, 0.6) !important;
         }
@@ -531,23 +516,23 @@
         }
         
         .impact-card, .trend-chart-card, .insights-card, .score-progress-card {
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             transition: all 0.3s ease;
             color: white;
         }
         
         .impact-card:hover, .trend-chart-card:hover {
             transform: translateY(-5px);
-            background: rgba(245, 166, 35, 0.1);
-            border-color: #f5a623;
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
         }
         
         .impact-value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
         .trend-indicator { font-size: 0.8rem; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 20px; display: inline-block; }
-        .insight-item { transition: all 0.2s; background: rgba(0,0,0,0.2) !important; color: white; }
-        .insight-item:hover { transform: translateX(5px); background: rgba(245, 166, 35, 0.15) !important; }
+        .insight-item { transition: all 0.2s; background: rgba(0,0,0,0.15) !important; color: white; }
+        .insight-item:hover { transform: translateX(5px); background: rgba(255, 255, 255, 0.05) !important; }
         
         .gpsa-score-circle { position: relative; display: inline-block; }
         .score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.5s ease-out; }
@@ -555,19 +540,11 @@
         .score-number { font-size: 2rem; font-weight: bold; display: block; line-height: 1; color: #f5a623; }
         
         .progress-bar { transition: width 3.5s ease-out; }
-        
-        .credit-badge {
-            background: rgba(255,255,255,0.3);
-            padding: 2px 8px;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            margin-left: 8px;
-        }
 
         .risk-summary {
-            background: rgba(0,0,0,0.3);
+            background: rgba(0,0,0,0.2);
             backdrop-filter: blur(5px);
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .risk-badge {
@@ -578,73 +555,239 @@
             background: rgba(245, 101, 101, 0.2);
             border: 1px solid rgba(245, 101, 101, 0.5);
         }
-
         .risk-badge.medium {
             background: rgba(245, 166, 35, 0.2);
             border: 1px solid rgba(245, 166, 35, 0.5);
         }
-
         .risk-badge.low {
             background: rgba(72, 187, 120, 0.2);
             border: 1px solid rgba(72, 187, 120, 0.5);
         }
-
         .risk-badge:hover {
             transform: translateY(-2px);
         }
-
         .risk-value {
             font-size: 1.5rem;
             color: white;
         }
-
         .risk-label {
             font-size: 0.75rem;
             opacity: 0.8;
             color: rgba(255, 255, 255, 0.7);
         }
-
         .risk-badge .fw-bold {
             color: white;
         }
 
-        /* Texto do modal */
+        /* Modais */
         .modal-content {
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%) !important;
-            border: 1px solid #cd7f32 !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
         }
-
         .modal-content .modal-title {
-            color: #f5a623 !important;
+            color: white !important;
         }
-
         .modal-content .text-muted {
             color: rgba(255, 255, 255, 0.7) !important;
         }
-
         .modal-content .alert-info {
-            background: rgba(245, 166, 35, 0.15) !important;
-            border-color: rgba(205, 127, 50, 0.3) !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
             color: rgba(255, 255, 255, 0.8) !important;
         }
-
         .modal-content .alert-info strong {
             color: #f5a623 !important;
+        }
+        .modal-content .btn-close-white {
+            filter: brightness(0) invert(1);
         }
 
         /* Footer */
         footer {
-            background: rgba(44, 26, 10, 0.95) !important;
-            border-top: 1px solid #cd7f32 !important;
+            background: rgba(102, 126, 234, 0.95) !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
         }
-
         footer .text-muted {
             color: rgba(255, 255, 255, 0.6) !important;
         }
-
         footer .badge.bg-light {
-            background: rgba(205, 127, 50, 0.2) !important;
-            color: #f5a623 !important;
+            background: rgba(255, 255, 255, 0.15) !important;
+            color: white !important;
+        }
+
+        /* ============================================== */
+        /* 🔥 ESTILOS DO CARD PREMIUM */
+        /* ============================================== */
+
+        .premium-card {
+            border-radius: 20px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.15);
+            transition: all 0.3s ease;
+        }
+
+        .premium-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .premium-card.premium-active {
+            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
+            border-color: #cd7f32;
+        }
+
+        .premium-card.premium-inactive {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .premium-status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .premium-badge {
+            background: linear-gradient(135deg, #f5a623, #cd7f32);
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+        }
+
+        .premium-badge.badge-warning {
+            background: linear-gradient(135deg, #f5a623, #ed8936);
+        }
+
+        .premium-badge.badge-danger {
+            background: linear-gradient(135deg, #f56565, #e53e3e);
+        }
+
+        .premium-progress {
+            margin-bottom: 1rem;
+        }
+
+        .credit-status-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s ease;
+        }
+
+        .credit-status-card:hover {
+            background: rgba(0,0,0,0.4);
+            transform: translateY(-2px);
+        }
+
+        .premium-message {
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        .premium-message-info {
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            color: rgba(255,255,255,0.8);
+        }
+
+        .premium-message-success {
+            background: rgba(72, 187, 120, 0.2);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+        }
+
+        .premium-message-warning {
+            background: rgba(245, 166, 35, 0.2);
+            border: 1px solid rgba(245, 166, 35, 0.3);
+            color: #f5a623;
+        }
+
+        .premium-message-warning strong {
+            color: #f56565;
+        }
+
+        .btn-premium {
+            background: linear-gradient(135deg, #f5a623, #cd7f32);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-premium:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(205, 127, 50, 0.4);
+            color: white;
+        }
+
+        .btn-premium-receive {
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            animation: pulse-premium 2s ease-in-out infinite;
+        }
+
+        .btn-premium-receive:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
+            color: white;
+        }
+
+        @keyframes pulse-premium {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4); }
+            50% { box-shadow: 0 0 20px 5px rgba(72, 187, 120, 0.2); }
+        }
+
+        .premium-benefits-preview {
+            margin: 1rem 0;
+        }
+
+        .benefit-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.3rem 0;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.85rem;
+        }
+
+        .premium-expiring-warning {
+            background: rgba(245, 166, 35, 0.15);
+            border: 1px solid rgba(245, 166, 35, 0.3);
+            border-radius: 10px;
+            padding: 0.5rem 0.75rem;
+            color: #f5a623;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .premium-footer {
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .premium-action-cta {
+            padding: 0.5rem;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .premium-status-body {
+            padding: 0.5rem 0;
         }
 
         /* Responsividade */
@@ -660,6 +803,21 @@
             .gpsa-score-circle svg { width: 100px; height: 100px; }
             .risk-value { font-size: 1.2rem; }
             .btn-gradient, .btn-outline-danger { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
+            
+            .premium-status-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            .premium-status-header .badge {
+                align-self: flex-start;
+            }
+            .credit-status-card {
+                padding: 0.75rem !important;
+            }
+            .credit-status-card div:first-child {
+                font-size: 1.5rem !important;
+            }
         }
     </style>
 </head>
@@ -674,6 +832,7 @@
                 </a>
                 
                 <div class="d-flex align-items-center gap-3">
+                    <!-- CRÉDITS BADGE - DOURADO -->
                     <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
                         <i class="fas fa-coins me-2"></i>
                         <span id="creditsCount">0</span> créditos
@@ -685,17 +844,17 @@
                     </span>
                     
                     <div class="dropdown">
-                        <button class="btn btn-light rounded-pill px-4" type="button" data-bs-toggle="dropdown" style="background: rgba(255,255,255,0.1); color: white; border-color: rgba(205,127,50,0.3);">
+                        <button class="btn btn-light rounded-pill px-4" type="button" data-bs-toggle="dropdown" style="background: rgba(255,255,255,0.15); color: white; border-color: rgba(255,255,255,0.2);">
                             <i class="fas fa-user-circle me-2"></i>
                             <span id="userName" style="color: white;">Usuário</span>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end" style="background: #2c1a0a; border-color: #cd7f32;">
+                        <ul class="dropdown-menu dropdown-menu-end" style="background: rgba(102, 126, 234, 0.95); border-color: rgba(255,255,255,0.2);">
                             <li>
                                 <span class="dropdown-item-text text-muted small" id="workshopName" style="color: rgba(255,255,255,0.7);">
                                     <i class="fas fa-wrench me-2"></i>Oficina
                                 </span>
                             </li>
-                            <li><hr class="dropdown-divider" style="border-color: rgba(205,127,50,0.3);"></li>
+                            <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.2);"></li>
                             <li>
                                 <a class="dropdown-item" href="#" id="logoutBtn" style="color: rgba(255,255,255,0.8);">
                                     <i class="fas fa-sign-out-alt me-2"></i>Sair
@@ -726,7 +885,7 @@
         <div class="container">
             <div class="row align-items-center min-vh-100">
                 <div class="col-lg-6 mb-5 mb-lg-0" data-aos="fade-right" data-aos-duration="1000">
-                    <span class="badge mb-3 py-2 px-3" style="background: rgba(205,127,50,0.3); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                    <span class="badge mb-3 py-2 px-3" style="background: rgba(255,255,255,0.15); color: #f5a623; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-robot me-2"></i>Scikit-learn + IA
                     </span>
                     <h1 class="hero-title">
@@ -791,12 +950,24 @@
                 
                 <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
                     <div class="row">
+                        <!-- 🔥 CARD DE STATUS PREMIUM -->
+                        <div class="col-12 mb-4">
+                            <div class="upload-card" id="premiumStatusContainer">
+                                <div class="text-center py-3">
+                                    <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
+                                        <span class="visually-hidden">Carregando...</span>
+                                    </div>
+                                    <p class="mt-2" style="color: rgba(255,255,255,0.6);">Carregando status do plano...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card de Upload -->
                         <div class="col-12">
-                            <!-- Card de Upload -->
                             <div class="upload-card mb-4">
                                 <div class="d-flex align-items-center justify-content-between mb-4">
-                                    <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">
-                                        <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>
+                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">
+                                        <i class="fas fa-cloud-upload-alt me-2" style="color: #f5a623;"></i>
                                         Upload Automático
                                     </h3>
                                     <span class="badge py-2 px-3" id="uploadCreditsBadge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white;">
@@ -836,7 +1007,7 @@
                                         </p>
                                         <div class="text-muted small mb-2" style="color: rgba(255,255,255,0.6);">
                                             <i class="fas fa-info-circle me-1"></i>
-                                            Limite de <strong class="text-success" style="color: #f5a623;">200KB</strong> por arquivo
+                                            Limite de <strong style="color: #f5a623;">200KB</strong> por arquivo
                                         </div>
                                         <div>
                                             <label for="fileInput" class="btn btn-gradient btn-sm">
@@ -880,14 +1051,14 @@
                             </div>
                         </div>
                         
-                        <!-- Análises em Andamento (CARDS INDIVIDUAIS) -->
+                        <!-- Análises em Andamento -->
                         <div class="col-12 mb-4">
                             <div class="upload-card">
                                 <div class="d-flex align-items-center justify-content-between mb-4">
                                     <div class="d-flex align-items-center">
-                                        <i class="fas fa-chart-line text-primary me-2 fa-lg" style="color: #f5a623;"></i>
-                                        <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">Análises em Andamento</h3>
-                                        <span class="badge bg-primary ms-2" id="activeAnalysesCount" style="background: #f5a623; color: white;">0</span>
+                                        <i class="fas fa-chart-line me-2 fa-lg" style="color: #f5a623;"></i>
+                                        <h3 class="h5 mb-0 fw-bold" style="color: white;">Análises em Andamento</h3>
+                                        <span class="badge ms-2" id="activeAnalysesCount" style="background: #f5a623; color: white;">0</span>
                                     </div>
                                 </div>
                                 
@@ -905,8 +1076,8 @@
                         <div class="col-12">
                             <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
                                 <div class="d-flex align-items-center mb-4">
-                                    <i class="fas fa-history text-primary me-2" style="color: #f5a623;"></i>
-                                    <h3 class="h5 mb-0 fw-bold" style="color: #f5a623;">Histórico de Análises</h3>
+                                    <i class="fas fa-history me-2" style="color: #f5a623;"></i>
+                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">Histórico de Análises</h3>
                                 </div>
                                 
                                 <div class="timeline" id="recentAnalyses" style="max-height: 400px; overflow-y: auto;">
@@ -936,8 +1107,8 @@
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(205,127,50,0.3);">
-                    <h5 class="modal-title" style="color: #f5a623;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
+                    <h5 class="modal-title" style="color: white;">
                         <i class="fas fa-coins text-warning me-2" style="color: #f5a623;"></i>
                         Meus Créditos
                     </h5>
@@ -958,8 +1129,8 @@
                         • 🔥 Limite máximo de 3 créditos acumulados
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(205,127,50,0.3);">
-                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white; border: none; padding: 0.75rem; border-radius: 50px;">
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.2);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 0.75rem; border-radius: 50px;">
                         <i class="fas fa-credit-card me-2"></i>
                         Comprar mais créditos
                     </a>
@@ -968,13 +1139,14 @@
         </div>
     </div>
 
-    <!-- Modal GPSA para exibir resultados e gráficos -->
+    <!-- Modal GPSA -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content" style="background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%); border: 1px solid #cd7f32;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(205,127,50,0.3);">
-                    <h5 class="modal-title" style="color: #f5a623;">
-                        <i class="fas fa-chart-line me-2"></i>GPSA - Impacto no Negócio
+            <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.2);">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
+                    <h5 class="modal-title" style="color: white;">
+                        <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
+                        GPSA - Impacto no Negócio
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -1001,16 +1173,16 @@
                     </p>
                 </div>
                 <div class="col-md-6 text-md-end">
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-brain me-1"></i> AutoML
                     </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-chart-line me-1"></i> Scikit-learn
                     </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
                     </span>
-                    <span class="badge py-2 px-3" style="background: rgba(205,127,50,0.2); color: #f5a623; border: 1px solid rgba(205,127,50,0.3);">
+                    <span class="badge py-2 px-3" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-hard-drive me-1"></i> 200KB Limit
                     </span>
                 </div>
@@ -1043,6 +1215,7 @@
     <script src="/static/js/auth.js?v=2.0"></script>
     <script src="/static/js/app.js?v=2.0"></script>
     <script src="/static/js/dashboard.js?v=2.0"></script>
+    <script src="/static/js/payment.js?v=2.0"></script>
     
     <!-- Inicialização -->
     <script>
@@ -1084,14 +1257,22 @@
                 ease: 'power3.out'
             });
             
+            // 🔥 Carregar status premium após inicialização
             setTimeout(() => {
+                if (window.loadPremiumStatus) {
+                    window.loadPremiumStatus();
+                    if (window.startPremiumStatusPolling) {
+                        window.startPremiumStatusPolling(60000);
+                    }
+                }
+                
                 if (window.app) {
                     console.log('✅ App inicializado');
                 } else {
                     console.error('❌ App não carregado');
                     toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
                 }
-            }, 1000);
+            }, 1500);
         });
     </script>
 </body>
