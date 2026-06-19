@@ -1,9 +1,9 @@
-# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA) - COM NÚMEROS 100% MAIORES
+# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA) - NÚMEROS GIGANTES
 
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO ATUALIZADA
 - PoW (Proof of Work) com Redis (apenas para upload)
-- CAPTCHA Simples de Números (reescrever o que aparece) - NÚMEROS 100% MAIORES
+- CAPTCHA Simples de Números - NÚMEROS GIGANTES (fonte 180px)
 - JWT com blacklist e refresh token
 - Rate limiting adaptativo
 - Argon2 para hash de senhas
@@ -706,7 +706,7 @@ class PoWManager:
 
 
 # ==============================================
-# 4. CAPTCHA SIMPLES - NÚMEROS 100% MAIORES, LINHAS SUTIS
+# 4. CAPTCHA SIMPLES - NÚMEROS GIGANTES (FONTE 180px)
 # ==============================================
 
 class CaptchaSession:
@@ -897,32 +897,29 @@ class CaptchaStore:
 
 class CaptchaManager:
     """
-    Gerenciador de CAPTCHA SIMPLES - Reescreva os números
-    Gera imagem com números distorcidos/rabiscados - NÚMEROS 100% MAIORES
+    Gerenciador de CAPTCHA SIMPLES - NÚMEROS GIGANTES (fonte 180px)
     """
     
     def __init__(self):
         self.store = CaptchaStore()
         self._dev_mode = getattr(settings, 'DEBUG', False)
         
-        # 🔥 DIMENSÕES AUMENTADAS PARA ACOMODAR NÚMEROS MAIORES
-        self.image_width = 500   # Aumentado para números maiores
-        self.image_height = 200  # Aumentado para números maiores
-        self.font_size = 110     # 🔥 100% MAIOR: 48 → 110 (mais que o dobro)
+        # 🔥 NÚMEROS GIGANTES - OCUPAM TODO O ESPAÇO
+        self.image_width = 600      # Imagem mais larga
+        self.image_height = 220     # Imagem mais alta
+        self.font_size = 180        # 🔥 FONTE GIGANTE (180px)
         
-        # 🔥 LINHAS SUTIS E FINAS
-        self.line_width = 1      # Linhas bem finas
-        self.curve_width = 1     # Curvas bem finas
+        # Linhas mínimas e sutis
+        self.line_width = 1
+        self.curve_width = 1
         
         # Cache de imagens
         self._image_cache: Dict[str, Tuple[float, bytes]] = {}
         self._cache_ttl = 60
         self._max_cache = 100
         
-        logger.info(f"🔢 CAPTCHA Manager inicializado - NÚMEROS 100% MAIORES")
+        logger.info(f"🔢 CAPTCHA Manager - NÚMEROS GIGANTES (fonte: {self.font_size}px)")
         logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height}")
-        logger.info(f"   📝 Tamanho fonte: {self.font_size} (original: 48 → +129%)")
-        logger.info(f"   📏 Linhas: {self.line_width}px (finas e sutis)")
         
         if self._dev_mode:
             logger.info("   🔧 Modo DEV: resposta '1234' aceita automaticamente")
@@ -949,63 +946,59 @@ class CaptchaManager:
     
     def _draw_distorted_numbers(self, code: str) -> bytes:
         """
-        Desenha números com distorção - NÚMEROS 100% MAIORES, LINHAS SUTIS
+        Desenha números GIGANTES ocupando todo o espaço
         """
         if not PIL_AVAILABLE:
             return self._generate_svg_fallback(code)
         
-        # 🔥 DIMENSÕES GRANDES
-        width = self.image_width   # 500
-        height = self.image_height  # 200
+        width = self.image_width   # 600
+        height = self.image_height  # 220
         
         # Cria imagem com fundo gradiente
         img = Image.new('RGB', (width, height), color='white')
         draw = ImageDraw.Draw(img)
         
-        # Fundo com gradiente
+        # Fundo com gradiente mais escuro para contraste
         for i in range(height):
-            r = int(102 + (i / height) * 100)
-            g = int(126 + (i / height) * 50)
-            b = int(234 - (i / height) * 100)
+            r = int(80 + (i / height) * 80)
+            g = int(100 + (i / height) * 50)
+            b = int(200 - (i / height) * 80)
             draw.line([(0, i), (width, i)], fill=(r, g, b))
         
-        # 🔥 POUCO RUÍDO (não atrapalha a leitura)
-        noise_count = int(200 * (width * height) / (500 * 200))
-        for _ in range(noise_count):
+        # 🔥 RUÍDO MÍNIMO (quase invisível)
+        for _ in range(80):
             x = random.randint(0, width)
             y = random.randint(0, height)
-            draw.point((x, y), fill=(random.randint(0, 80), random.randint(0, 80), random.randint(0, 80)))
+            draw.point((x, y), fill=(random.randint(0, 50), random.randint(0, 50), random.randint(0, 50)))
         
-        # 🔥 LINHAS SUTIS E FINAS (poucas, para não atrapalhar)
-        line_count = int(12 * (width * height) / (500 * 200))
-        for _ in range(line_count):
+        # 🔥 LINHAS MUITO SUTIS (poucas e finas)
+        for _ in range(5):
             x1 = random.randint(0, width)
             y1 = random.randint(0, height)
             x2 = random.randint(0, width)
             y2 = random.randint(0, height)
             draw.line(
                 [(x1, y1), (x2, y2)], 
-                fill=(random.randint(140, 200), random.randint(140, 200), random.randint(140, 200)), 
-                width=self.line_width
+                fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
+                width=1
             )
         
-        # 🔥 CURVAS SUTIS (poucas e finas)
-        curve_count = int(4 * (width * height) / (500 * 200))
-        for _ in range(curve_count):
+        # 🔥 CURVAS SUTIS
+        for _ in range(3):
             points = []
             start_x = random.randint(0, width // 4)
             start_y = random.randint(0, height)
-            for i in range(6):
-                points.append((start_x + i * (width // 7), start_y + random.randint(-20, 20)))
+            for i in range(5):
+                points.append((start_x + i * (width // 6), start_y + random.randint(-15, 15)))
             draw.line(
                 points, 
-                fill=(random.randint(140, 200), random.randint(140, 200), random.randint(140, 200)), 
-                width=self.curve_width
+                fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
+                width=1
             )
         
-        # 🔥 FONTE GRANDE para os números
+        # 🔥 FONTE GIGANTE
         try:
-            font_size = self.font_size  # 110
+            font_size = self.font_size  # 180
             try:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
             except:
@@ -1016,55 +1009,64 @@ class CaptchaManager:
         except:
             font = ImageFont.load_default()
         
-        # Calcula posições com espaçamento proporcional
+        # 🔥 DESENHA NÚMEROS OCUPANDO TODO O ESPAÇO
         char_width = width // len(code)
+        
         for i, char in enumerate(code):
-            # Posição centralizada
-            x = (i * char_width) + (char_width // 2) - (font_size // 2) + random.randint(-8, 8)
-            y = height // 2 + random.randint(-15, 15) - (font_size // 3)
+            # Centraliza cada número no seu espaço
+            try:
+                bbox = draw.textbbox((0, 0), char, font=font)
+                char_w = bbox[2] - bbox[0]
+                char_h = bbox[3] - bbox[1]
+            except:
+                char_w = font_size * 0.7
+                char_h = font_size
             
-            # Cor branca brilhante
-            color = (255, 255, 255)
+            # Posição centralizada com pequeno deslocamento aleatório
+            x = (i * char_width) + (char_width // 2) - (char_w // 2) + random.randint(-3, 3)
+            y = (height // 2) - (char_h // 2) + random.randint(-5, 5)
             
-            # Desenha o número com contorno preto grosso
-            for offset_x in range(-3, 4):
-                for offset_y in range(-3, 4):
+            # 🔥 CONTORNO PRETO GROSSO (para destacar)
+            for offset_x in range(-5, 6):
+                for offset_y in range(-5, 6):
                     if offset_x != 0 or offset_y != 0:
                         draw.text((x + offset_x, y + offset_y), char, fill=(0, 0, 0), font=font)
             
-            # Desenha o número em branco por cima
-            draw.text((x, y), char, fill=color, font=font)
+            # 🔥 NÚMERO BRANCO POR CIMA (brilhante)
+            draw.text((x, y), char, fill=(255, 255, 255), font=font)
+            
+            # 🔥 PEQUENO BRILHO/REFLEXO (efeito 3D)
+            draw.text((x - 2, y - 2), char, fill=(255, 255, 255), font=font)
         
-        # Aplica filtro de desfoque suave
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
+        # Desfoque mínimo para suavizar bordas
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.2))
         
         # Converte para bytes
         img_bytes = io.BytesIO()
-        img.save(img_bytes, format='PNG')
+        img.save(img_bytes, format='PNG', optimize=True)
         img_bytes.seek(0)
         
         return img_bytes.getvalue()
     
     def _generate_svg_fallback(self, code: str) -> bytes:
-        """Gera SVG com números grandes - NÚMEROS 100% MAIORES"""
+        """SVG com números GIGANTES (180px)"""
         
-        width = self.image_width   # 500
-        height = self.image_height  # 200
+        width = 600
+        height = 220
         
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#667eea" />
-      <stop offset="100%" stop-color="#764ba2" />
+      <stop offset="0%" stop-color="#4a6cf7" />
+      <stop offset="100%" stop-color="#6c3cb0" />
     </linearGradient>
-    <filter id="distort">
-      <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" result="noise"/>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+    <filter id="shadow">
+      <feDropShadow dx="3" dy="3" stdDeviation="2" flood-color="black" flood-opacity="0.5"/>
     </filter>
   </defs>
   
-  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="20" ry="20"/>
+  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="16" ry="16"/>
   
   <!-- Linhas sutis -->
   <g stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none">
@@ -1072,27 +1074,22 @@ class CaptchaManager:
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
-    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
   </g>
   
   <!-- Números GIGANTES -->
-  <text x="{width // 2}" y="{height // 2 + 15}" 
-        font-family="'Courier New', monospace" font-size="120" font-weight="bold" 
+  <text x="{width // 2}" y="{height // 2 + 20}" 
+        font-family="'Courier New', monospace" font-size="150" font-weight="bold" 
         fill="white" text-anchor="middle" dominant-baseline="middle"
-        letter-spacing="30"
-        filter="url(#distort)">
+        letter-spacing="50"
+        filter="url(#shadow)">
     {code}
   </text>
-  
-  <!-- Bordas decorativas -->
-  <rect x="5" y="5" width="{width-10}" height="{height-10}" fill="none" 
-        stroke="rgba(255,255,255,0.1)" stroke-width="1.5" rx="16" ry="16"/>
 </svg>'''
         
         return svg.encode('utf-8')
     
     async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """Gera imagem CAPTCHA com números 100% MAIORES"""
+        """Gera imagem CAPTCHA com números GIGANTES"""
         client_ip = self._get_client_ip(request)
         
         try:
@@ -1478,9 +1475,9 @@ __all__ = [
     'start_cleanup_tasks'
 ]
 
-print("✅ security.py carregado - CAPTCHA com NÚMEROS 100% MAIORES!")
-print(f"   📐 Dimensões: 500x200 (antes: 280x100)")
-print(f"   📝 Tamanho fonte: 110 (antes: 48 → +129%)")
-print(f"   📏 Linhas: finas e sutis (1px)")
+print("✅ security.py carregado - NÚMEROS GIGANTES (fonte 180px)!")
+print(f"   📐 Dimensões: 600x220")
+print(f"   📝 Tamanho fonte: 180px (ocupando todo o espaço)")
+print("   📏 Linhas: mínimas e sutis (1px)")
 print("🔢 PoW mantido apenas para upload de arquivos")
 print("🔒 CAPTCHA Store isola sessões por tipo (login/register)")

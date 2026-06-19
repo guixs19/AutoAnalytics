@@ -309,11 +309,11 @@
         .strength-text.strong { color: #48bb78; }
         .strength-text.very-strong { color: #38a169; }
         
-        /* 🔥 CAPTCHA - NÚMEROS 100% MAIORES */
+        /* 🔥 CAPTCHA - DIV NORMAL, NÚMEROS GIGANTES */
         .captcha-container {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             border-radius: 20px;
-            padding: 1.5rem;
+            padding: 1.25rem;
             margin-bottom: 1.5rem;
             border: 2px solid rgba(102, 126, 234, 0.1);
             transition: all 0.3s ease;
@@ -330,11 +330,12 @@
             padding: 0.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             border: 1px solid #e9ecef;
-            min-height: 160px;
+            min-height: 100px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.3s ease;
+            overflow: hidden;
         }
         
         .captcha-image-wrapper:hover {
@@ -342,28 +343,31 @@
         }
         
         .captcha-image {
+            /* 🔥 IMAGEM SE AJUSTA AO CONTAINER SEM DISTORCER */
             max-width: 100%;
             height: auto;
             border-radius: 10px;
             display: block;
             margin: 0 auto;
             background: #f8f9fa;
-            min-height: 120px;
+            /* 🔥 GARANTE QUE A IMAGEM NÃO FIQUE DISTORCIDA */
+            aspect-ratio: auto;
+            object-fit: contain;
         }
         
         .captcha-refresh {
             background: white;
             border: 2px solid #667eea;
             color: #667eea;
-            width: 60px;
-            height: 60px;
+            width: 52px;
+            height: 52px;
             border-radius: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.3s ease;
             cursor: pointer;
-            font-size: 1.4rem;
+            font-size: 1.2rem;
         }
         
         .captcha-refresh:hover {
@@ -386,13 +390,13 @@
         .captcha-input {
             border: 2px solid #e9ecef;
             border-radius: 14px;
-            padding: 1.2rem;
-            font-size: 1.8rem;
+            padding: 1rem;
+            font-size: 1.3rem;
             font-weight: 700;
             text-align: center;
             transition: all 0.3s ease;
             background: white;
-            letter-spacing: 12px;
+            letter-spacing: 6px;
             font-family: monospace;
         }
         
@@ -400,7 +404,7 @@
             border-color: #667eea;
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
             outline: none;
-            letter-spacing: 14px;
+            letter-spacing: 8px;
         }
         
         .captcha-helper {
@@ -491,7 +495,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
         
-        /* 🔥 RESPONSIVO PARA CAPTCHA MAIOR */
         @media (max-width: 768px) {
             .card {
                 margin: 0;
@@ -506,18 +509,18 @@
             }
             
             .captcha-refresh {
-                width: 54px;
-                height: 54px;
+                width: 46px;
+                height: 46px;
             }
             
             .captcha-input {
-                font-size: 1.5rem;
-                padding: 1rem;
-                letter-spacing: 8px;
+                font-size: 1.2rem;
+                padding: 0.85rem;
+                letter-spacing: 4px;
             }
             
             .captcha-image-wrapper {
-                min-height: 130px;
+                min-height: 80px;
             }
         }
         
@@ -650,18 +653,18 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA LOGIN - NÚMEROS 100% MAIORES -->
+                                    <!-- 🔥 CAPTCHA LOGIN - DIV NORMAL, NÚMEROS GIGANTES -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center g-2">
-                                            <div class="col-9 col-md-8">
+                                            <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="loginCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='200' viewBox='0 0 500 200'%3E%3Crect width='500' height='200' fill='%23667eea'/%3E%3Ctext x='250' y='115' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Crect width='600' height='220' fill='%23667eea'/%3E%3Ctext x='300' y='125' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
                                                          alt="Digite os números da imagem">
                                                     <input type="hidden" id="loginCaptchaId">
                                                 </div>
                                             </div>
-                                            <div class="col-3 col-md-4">
+                                            <div class="col-4">
                                                 <div class="captcha-refresh mx-auto" id="refreshLoginCaptcha" title="Nova imagem">
                                                     <i class="fas fa-sync-alt"></i>
                                                 </div>
@@ -765,18 +768,18 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA REGISTER - NÚMEROS 100% MAIORES -->
+                                    <!-- 🔥 CAPTCHA REGISTER - DIV NORMAL, NÚMEROS GIGANTES -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center g-2">
-                                            <div class="col-9 col-md-8">
+                                            <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="registerCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='200' viewBox='0 0 500 200'%3E%3Crect width='500' height='200' fill='%23667eea'/%3E%3Ctext x='250' y='115' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Crect width='600' height='220' fill='%23667eea'/%3E%3Ctext x='300' y='125' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
                                                          alt="Digite os números da imagem">
                                                     <input type="hidden" id="registerCaptchaId">
                                                 </div>
                                             </div>
-                                            <div class="col-3 col-md-4">
+                                            <div class="col-4">
                                                 <div class="captcha-refresh mx-auto" id="refreshRegisterCaptcha" title="Nova imagem">
                                                     <i class="fas fa-sync-alt"></i>
                                                 </div>
