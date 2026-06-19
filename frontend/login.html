@@ -309,7 +309,7 @@
         .strength-text.strong { color: #48bb78; }
         .strength-text.very-strong { color: #38a169; }
         
-        /* 🔥 CAPTCHA - DIV NORMAL, NÚMEROS GIGANTES */
+        /* 🔥 CAPTCHA - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES DENTRO */
         .captcha-container {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             border-radius: 20px;
@@ -330,29 +330,29 @@
             padding: 0.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             border: 1px solid #e9ecef;
-            min-height: 100px;
+            min-height: 120px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.3s ease;
             overflow: hidden;
+            transition: all 0.3s ease;
         }
         
         .captcha-image-wrapper:hover {
             transform: scale(1.02);
+            border-color: #667eea;
         }
         
+        /* 🔥 IMAGEM SE ADAPTA AO CONTAINER, NÚMEROS FICAM GIGANTES */
         .captcha-image {
-            /* 🔥 IMAGEM SE AJUSTA AO CONTAINER SEM DISTORCER */
-            max-width: 100%;
+            width: 100%;
             height: auto;
+            object-fit: contain;
             border-radius: 10px;
             display: block;
             margin: 0 auto;
             background: #f8f9fa;
-            /* 🔥 GARANTE QUE A IMAGEM NÃO FIQUE DISTORCIDA */
-            aspect-ratio: auto;
-            object-fit: contain;
+            filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.1));
         }
         
         .captcha-refresh {
@@ -368,13 +368,14 @@
             transition: all 0.3s ease;
             cursor: pointer;
             font-size: 1.2rem;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
         }
         
         .captcha-refresh:hover {
             background: #667eea;
             color: white;
             transform: rotate(180deg);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
         
         .captcha-refresh:active {
@@ -391,12 +392,12 @@
             border: 2px solid #e9ecef;
             border-radius: 14px;
             padding: 1rem;
-            font-size: 1.3rem;
+            font-size: 1.5rem;
             font-weight: 700;
             text-align: center;
             transition: all 0.3s ease;
             background: white;
-            letter-spacing: 6px;
+            letter-spacing: 8px;
             font-family: monospace;
         }
         
@@ -404,7 +405,7 @@
             border-color: #667eea;
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
             outline: none;
-            letter-spacing: 8px;
+            letter-spacing: 10px;
         }
         
         .captcha-helper {
@@ -508,19 +509,24 @@
                 padding: 1rem;
             }
             
+            .captcha-image-wrapper {
+                min-height: 90px;
+            }
+            
             .captcha-refresh {
                 width: 46px;
                 height: 46px;
+                font-size: 1rem;
             }
             
             .captcha-input {
                 font-size: 1.2rem;
                 padding: 0.85rem;
-                letter-spacing: 4px;
+                letter-spacing: 6px;
             }
             
-            .captcha-image-wrapper {
-                min-height: 80px;
+            .captcha-input:focus {
+                letter-spacing: 8px;
             }
         }
         
@@ -653,13 +659,13 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA LOGIN - DIV NORMAL, NÚMEROS GIGANTES -->
+                                    <!-- 🔥 CAPTCHA LOGIN - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center g-2">
                                             <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="loginCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Crect width='600' height='220' fill='%23667eea'/%3E%3Ctext x='300' y='125' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240' viewBox='0 0 600 240'%3E%3Crect width='600' height='240' fill='%23667eea'/%3E%3Ctext x='300' y='135' font-family='monospace' font-size='50' fill='white' text-anchor='middle' font-weight='bold'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
                                                          alt="Digite os números da imagem">
                                                     <input type="hidden" id="loginCaptchaId">
                                                 </div>
@@ -768,13 +774,13 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA REGISTER - DIV NORMAL, NÚMEROS GIGANTES -->
+                                    <!-- 🔥 CAPTCHA REGISTER - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES -->
                                     <div class="captcha-container">
                                         <div class="row align-items-center g-2">
                                             <div class="col-8">
                                                 <div class="captcha-image-wrapper">
                                                     <img id="registerCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Crect width='600' height='220' fill='%23667eea'/%3E%3Ctext x='300' y='125' font-family='monospace' font-size='40' fill='white' text-anchor='middle'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
+                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240' viewBox='0 0 600 240'%3E%3Crect width='600' height='240' fill='%23667eea'/%3E%3Ctext x='300' y='135' font-family='monospace' font-size='50' fill='white' text-anchor='middle' font-weight='bold'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
                                                          alt="Digite os números da imagem">
                                                     <input type="hidden" id="registerCaptchaId">
                                                 </div>
