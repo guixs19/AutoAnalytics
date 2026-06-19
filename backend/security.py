@@ -895,6 +895,25 @@ class CaptchaStore:
         }
 
 
+# ==============================================
+# ═══════════════════════════════════════════════
+# 🔥 AJUSTE AQUI O TAMANHO DO CAPTCHA!
+# ═══════════════════════════════════════════════
+# 
+# Para aumentar os números, modifique as variáveis 
+# abaixo dentro da classe CaptchaManager:
+# 
+#   self.font_size = 180   ← Tamanho da fonte (números)
+#   self.image_width = 600  ← Largura da imagem
+#   self.image_height = 220 ← Altura da imagem
+# 
+# Recomendações:
+#   - font_size: 180-220 para números gigantes
+#   - Mantenha proporção: width ≈ font_size * 3.3
+#   - Mantenha proporção: height ≈ font_size * 1.2
+# ═══════════════════════════════════════════════
+# ==============================================
+
 class CaptchaManager:
     """
     Gerenciador de CAPTCHA SIMPLES - NÚMEROS GIGANTES (fonte 180px)
@@ -904,12 +923,25 @@ class CaptchaManager:
         self.store = CaptchaStore()
         self._dev_mode = getattr(settings, 'DEBUG', False)
         
-        # 🔥 NÚMEROS GIGANTES - OCUPAM TODO O ESPAÇO
-        self.image_width = 600      # Imagem mais larga
-        self.image_height = 220     # Imagem mais alta
-        self.font_size = 180        # 🔥 FONTE GIGANTE (180px)
+        # ============================================================
+        # 🔥 ALTERE ESTES TRÊS VALORES CONFORME DESEJAR:
+        # ============================================================
+        self.image_width = 600      # Largura total da imagem gerada
+        self.image_height = 220     # Altura total da imagem gerada
+        self.font_size = 180        # 🔥 Tamanho dos números (Fonte)
+        # ============================================================
+        #
+        # 💡 SUGESTÕES DE TAMANHOS:
+        #   - Muito Grande:  width=700, height=260, font_size=220
+        #   - Grande:        width=600, height=220, font_size=180
+        #   - Médio:         width=500, height=180, font_size=140
+        #   - Padrão:        width=420, height=150, font_size=110
+        #
+        # ⚠️ Se aumentar a fonte, aumente proporcionalmente a imagem!
+        #    Fórmula: width ≈ font_size * 3.3, height ≈ font_size * 1.2
+        # ============================================================
         
-        # Linhas mínimas e sutis
+        # Linhas mínimas e sutis (não altere a menos que queira mais distorção)
         self.line_width = 1
         self.curve_width = 1
         
@@ -951,8 +983,8 @@ class CaptchaManager:
         if not PIL_AVAILABLE:
             return self._generate_svg_fallback(code)
         
-        width = self.image_width   # 600
-        height = self.image_height  # 220
+        width = self.image_width
+        height = self.image_height
         
         # Cria imagem com fundo gradiente
         img = Image.new('RGB', (width, height), color='white')
@@ -980,7 +1012,7 @@ class CaptchaManager:
             draw.line(
                 [(x1, y1), (x2, y2)], 
                 fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
-                width=1
+                width=self.line_width
             )
         
         # 🔥 CURVAS SUTIS
@@ -993,12 +1025,12 @@ class CaptchaManager:
             draw.line(
                 points, 
                 fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
-                width=1
+                width=self.curve_width
             )
         
         # 🔥 FONTE GIGANTE
         try:
-            font_size = self.font_size  # 180
+            font_size = self.font_size
             try:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
             except:
@@ -1049,10 +1081,10 @@ class CaptchaManager:
         return img_bytes.getvalue()
     
     def _generate_svg_fallback(self, code: str) -> bytes:
-        """SVG com números GIGANTES (180px)"""
+        """SVG com números GIGANTES"""
         
-        width = 600
-        height = 220
+        width = self.image_width
+        height = self.image_height
         
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
@@ -1078,7 +1110,7 @@ class CaptchaManager:
   
   <!-- Números GIGANTES -->
   <text x="{width // 2}" y="{height // 2 + 20}" 
-        font-family="'Courier New', monospace" font-size="150" font-weight="bold" 
+        font-family="'Courier New', monospace" font-size="{self.font_size + 10}" font-weight="bold" 
         fill="white" text-anchor="middle" dominant-baseline="middle"
         letter-spacing="50"
         filter="url(#shadow)">
