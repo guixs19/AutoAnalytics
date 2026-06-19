@@ -1,9 +1,9 @@
-# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA)
+# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA) - COM CAPTCHA 25% MAIOR
 
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO ATUALIZADA
 - PoW (Proof of Work) com Redis (apenas para upload)
-- CAPTCHA Simples de Números (reescrever o que aparece)
+- CAPTCHA Simples de Números (reescrever o que aparece) - 25% MAIOR
 - JWT com blacklist e refresh token
 - Rate limiting adaptativo
 - Argon2 para hash de senhas
@@ -898,19 +898,27 @@ class CaptchaStore:
 class CaptchaManager:
     """
     Gerenciador de CAPTCHA SIMPLES - Reescreva os números
-    Gera imagem com números distorcidos/rabiscados
+    Gera imagem com números distorcidos/rabiscados - 25% MAIOR
     """
     
     def __init__(self):
         self.store = CaptchaStore()
         self._dev_mode = getattr(settings, 'DEBUG', False)
         
+        # 🔥 DIMENSÕES AUMENTADAS EM 25%
+        self.image_width = 350   # Original: 280 → +25%
+        self.image_height = 125  # Original: 100 → +25%
+        self.font_size = 60      # Original: 48 → +25%
+        
         # Cache de imagens
         self._image_cache: Dict[str, Tuple[float, bytes]] = {}
         self._cache_ttl = 60
         self._max_cache = 100
         
-        logger.info("🔢 CAPTCHA Manager inicializado (números rabiscados)")
+        logger.info(f"🔢 CAPTCHA Manager inicializado (números rabiscados - 25% MAIOR)")
+        logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height} (antigo: 280x100)")
+        logger.info(f"   📝 Tamanho fonte: {self.font_size} (antigo: 48)")
+        
         if self._dev_mode:
             logger.info("   🔧 Modo DEV: resposta '1234' aceita automaticamente")
     
@@ -934,13 +942,17 @@ class CaptchaManager:
         """Gera código numérico aleatório"""
         return ''.join(str(random.randint(0, 9)) for _ in range(length))
     
-    def _draw_distorted_numbers(self, code: str, width: int = 280, height: int = 100) -> bytes:
+    def _draw_distorted_numbers(self, code: str) -> bytes:
         """
-        Desenha números com distorção e efeito "rabiscado"
+        Desenha números com distorção e efeito "rabiscado" - TAMANHO AUMENTADO 25%
         """
         if not PIL_AVAILABLE:
             # Fallback: gera SVG simples
-            return self._generate_svg_fallback(code, width, height)
+            return self._generate_svg_fallback(code)
+        
+        # 🔥 DIMENSÕES AUMENTADAS
+        width = self.image_width   # 350
+        height = self.image_height  # 125
         
         # Cria imagem com fundo gradiente
         img = Image.new('RGB', (width, height), color='white')
@@ -953,33 +965,36 @@ class CaptchaManager:
             b = int(234 - (i / height) * 100)
             draw.line([(0, i), (width, i)], fill=(r, g, b))
         
-        # Adiciona ruído (pontos aleatórios)
-        for _ in range(300):
+        # 🔥 MAIS RUÍDO (proporcional ao tamanho)
+        noise_count = int(400 * (width * height) / (280 * 100))  # ~500 pontos
+        for _ in range(noise_count):
             x = random.randint(0, width)
             y = random.randint(0, height)
             draw.point((x, y), fill=(random.randint(0, 100), random.randint(0, 100), random.randint(0, 100)))
         
-        # Linhas de distorção (rabiscos)
-        for _ in range(15):
+        # 🔥 MAIS LINHAS DE DISTORÇÃO
+        line_count = int(20 * (width * height) / (280 * 100))  # ~25 linhas
+        for _ in range(line_count):
             x1 = random.randint(0, width)
             y1 = random.randint(0, height)
             x2 = random.randint(0, width)
             y2 = random.randint(0, height)
             draw.line([(x1, y1), (x2, y2)], fill=(random.randint(100, 200), random.randint(100, 200), random.randint(100, 200)), width=2)
         
-        # Curvas de distorção
-        for _ in range(5):
+        # 🔥 MAIS CURVAS
+        curve_count = int(7 * (width * height) / (280 * 100))  # ~9 curvas
+        for _ in range(curve_count):
             points = []
             start_x = random.randint(0, width // 4)
             start_y = random.randint(0, height)
-            for i in range(5):
-                points.append((start_x + i * (width // 6), start_y + random.randint(-15, 15)))
+            for i in range(7):  # mais pontos para curvas mais suaves
+                points.append((start_x + i * (width // 8), start_y + random.randint(-20, 20)))
             draw.line(points, fill=(random.randint(80, 150), random.randint(80, 150), random.randint(80, 150)), width=2)
         
         # Desenha cada número com distorção individual
         try:
-            # Tenta usar uma fonte
-            font_size = 48
+            # 🔥 TENTA USAR FONTE MAIOR
+            font_size = self.font_size  # 60
             try:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
             except:
@@ -990,25 +1005,26 @@ class CaptchaManager:
         except:
             font = ImageFont.load_default()
         
-        # Calcula posições
+        # Calcula posições com espaçamento proporcional
         char_width = width // len(code)
         for i, char in enumerate(code):
-            # Posição com deslocamento aleatório
-            x = (i * char_width) + random.randint(-8, 8) + 15
-            y = height // 2 + random.randint(-12, 12) - 10
+            # Posição com deslocamento aleatório (maior amplitude)
+            x = (i * char_width) + random.randint(-12, 12) + 20
+            y = height // 2 + random.randint(-18, 18) - 12
             
-            # Cores aleatórias para cada número
-            color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))
+            # Cores aleatórias para cada número (mais vibrantes)
+            color = (random.randint(220, 255), random.randint(220, 255), random.randint(220, 255))
             
             # Desenha o número
             draw.text((x, y), char, fill=color, font=font)
             
-            # Adiciona sombra/contorno
+            # Adiciona sombra/contorno (mais espesso)
+            draw.text((x+2, y+2), char, fill=(0, 0, 0), font=font)
             draw.text((x+1, y+1), char, fill=(0, 0, 0), font=font)
             draw.text((x, y), char, fill=color, font=font)
         
-        # Aplica filtro de desfoque para suavizar
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.8))
+        # Aplica filtro de desfoque para suavizar (ligeiramente mais forte)
+        img = img.filter(ImageFilter.GaussianBlur(radius=1.0))
         
         # Converte para bytes
         img_bytes = io.BytesIO()
@@ -1017,12 +1033,13 @@ class CaptchaManager:
         
         return img_bytes.getvalue()
     
-    def _generate_svg_fallback(self, code: str, width: int = 280, height: int = 100) -> bytes:
-        """Gera SVG com números distorcidos (fallback sem PIL)"""
+    def _generate_svg_fallback(self, code: str) -> bytes:
+        """Gera SVG com números distorcidos (fallback sem PIL) - 25% MAIOR"""
+        
+        width = self.image_width   # 350
+        height = self.image_height  # 125
         
         # Cria SVG com números
-        numbers_html = ' '.join(code)
-        
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
@@ -1032,44 +1049,46 @@ class CaptchaManager:
     </linearGradient>
     <filter id="distort">
       <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise"/>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" xChannelSelector="R" yChannelSelector="G"/>
     </filter>
   </defs>
   
-  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="16" ry="16"/>
+  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="20" ry="20"/>
   
-  <!-- Linhas de distorção -->
+  <!-- Linhas de distorção (mais) -->
   <g stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none">
+    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
+    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
     <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
   </g>
   
-  <!-- Números -->
-  <text x="{width // 2}" y="{height // 2 + 8}" 
-        font-family="'Courier New', monospace" font-size="52" font-weight="bold" 
+  <!-- Números (maiores) -->
+  <text x="{width // 2}" y="{height // 2 + 10}" 
+        font-family="'Courier New', monospace" font-size="65" font-weight="bold" 
         fill="white" text-anchor="middle" dominant-baseline="middle"
-        letter-spacing="12"
+        letter-spacing="16"
         filter="url(#distort)">
     {code}
   </text>
   
   <!-- Bordas decorativas -->
-  <rect x="2" y="2" width="{width-4}" height="{height-4}" fill="none" 
-        stroke="rgba(255,255,255,0.2)" stroke-width="2" rx="14" ry="14"/>
+  <rect x="3" y="3" width="{width-6}" height="{height-6}" fill="none" 
+        stroke="rgba(255,255,255,0.2)" stroke-width="2" rx="18" ry="18"/>
 </svg>'''
         
         return svg.encode('utf-8')
     
     async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """Gera imagem CAPTCHA com números distorcidos"""
+        """Gera imagem CAPTCHA com números distorcidos - 25% MAIOR"""
         client_ip = self._get_client_ip(request)
         
         try:
             # Gera código de 4 números
             code = self.generate_number_code(4)
             
-            # Desenha imagem com distorção
+            # Desenha imagem com distorção (tamanho maior)
             img_bytes = self._draw_distorted_numbers(code)
             
             # Gera ID único
@@ -1454,6 +1473,8 @@ __all__ = [
     'start_cleanup_tasks'
 ]
 
-print("✅ security.py carregado - CAPTCHA de números rabiscados ativo")
+print("✅ security.py carregado - CAPTCHA de números rabiscados ativo (25% MAIOR)")
+print(f"   📐 Dimensões: 350x125 (antigo: 280x100)")
+print(f"   📝 Tamanho fonte: 60 (antigo: 48)")
 print("🔢 PoW mantido apenas para upload de arquivos")
 print("🔒 CAPTCHA Store agora isola sessões por tipo (login/register)")

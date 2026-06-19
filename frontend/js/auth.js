@@ -1,11 +1,17 @@
-// frontend/js/auth.js - VERSÃO PRODUÇÃO CORRIGIDA
+// frontend/js/auth.js - VERSÃO FINAL CORRIGIDA
+// 🔥 CORREÇÕES:
+// 1. Colisão de nome isAuthenticated - RESOLVIDO com getter/setter
+// 2. UI dessincronizada - RESOLVIDO com setter automático
+// 3. Race condition no init() - RESOLVIDO movendo initialized = true para antes das operações assíncronas
+// 4. Chamada redundante updateUI() removida
 
 class Auth {
     constructor() {
         this.apiBase = '/api';
         
         this.currentUser = null;
-        this.isAuthenticated = false;
+        // 🔥 PROPRIEDADE PRIVADA SIMULADA
+        this._isAuthenticated = false;
         this.userData = null;
         this.loginCaptchaId = null;
         this.registerCaptchaId = null;
@@ -14,14 +20,63 @@ class Auth {
         this.initialized = false;
         this.isRegisterCaptchaLoaded = false;
         
+        // Controle de refresh em andamento
+        this._isRefreshing = false;
+        this._refreshPromise = null;
+        
+        // Debounce para UI
+        this._uiUpdateTimeout = null;
+        
+        // 🔥 NOVO: Marca o início da inicialização
+        this._initializing = false;
+        
         this.init();
     }
     
-    async init() {
-        await this.checkToken();
-        this.setupAuthPageListeners();
-        this.updateUI();
-        this.initialized = true;
+    // ==============================================
+    // GETTER / SETTER PARA AUTENTICAÇÃO COM UI AUTOMÁTICA
+    // ==============================================
+    
+    /**
+     * 🔥 GETTER: Retorna o estado atual
+     * Uso: auth.isAuthenticated
+     */
+    get isAuthenticated() {
+        return this._isAuthenticated;
+    }
+    
+    /**
+     * 🔥 SETTER: Atualiza estado E DISPARA UI AUTOMATICAMENTE
+     * Uso: auth.isAuthenticated = true
+     */
+    set isAuthenticated(value) {
+        const changed = this._isAuthenticated !== value;
+        const oldValue = this._isAuthenticated;
+        this._isAuthenticated = value;
+        
+        // 🔥 CORRIGIDO: Se o estado mudou E a instância já foi inicializada
+        // OU se está em processo de inicialização (para capturar mudanças durante o boot)
+        if (changed && (this.initialized || this._initializing)) {
+            console.log(`🔄 Estado de autenticação mudou: ${oldValue} → ${value}`);
+            
+            // Dispara atualização da UI (com debounce)
+            this._scheduleUIUpdate();
+        }
+    }
+    
+    /**
+     * 🔥 Agendamento de atualização UI com debounce
+     * Evita múltiplas atualizações em sequência
+     */
+    _scheduleUIUpdate() {
+        if (this._uiUpdateTimeout) {
+            clearTimeout(this._uiUpdateTimeout);
+        }
+        
+        this._uiUpdateTimeout = setTimeout(() => {
+            this.updateUI();
+            this._uiUpdateTimeout = null;
+        }, 50);
     }
     
     // ==============================================
@@ -95,7 +150,7 @@ class Auth {
     showCaptchaError(sessionType = 'login') {
         const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
         if (captchaImage) {
-            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="100" viewBox="0 0 280 100"%3E%3Crect width="280" height="100" fill="%23e53e3e"/%3E%3Ctext x="140" y="55" font-family="monospace" font-size="14" fill="white" text-anchor="middle"%3E⚠️ ERRO%3C/text%3E%3C/svg%3E';
+            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="350" height="125" viewBox="0 0 350 125"%3E%3Crect width="350" height="125" fill="%23e53e3e"/%3E%3Ctext x="175" y="68" font-family="monospace" font-size="16" fill="white" text-anchor="middle"%3E⚠️ ERRO%3C/text%3E%3C/svg%3E';
         }
     }
     
@@ -161,7 +216,7 @@ class Auth {
     }
     
     // ==============================================
-    // LOGIN - CORRIGIDO
+    // LOGIN
     // ==============================================
     
     async login(email, password, captchaText, captchaId) {
@@ -206,7 +261,8 @@ class Auth {
                     email: email,
                     password: password,
                     captcha_id: captchaId,
-                    captcha_code: captchaText
+                    captcha_code: captchaText,
+                    session_type: 'login'
                 })
             });
             
@@ -227,7 +283,9 @@ class Auth {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
                 
+                // 🔥 SETTER - DISPARA UI AUTOMATICAMENTE
                 this.isAuthenticated = true;
+                
                 this.userData = {
                     email: data.user_email,
                     name: data.user_name,
@@ -265,7 +323,7 @@ class Auth {
     }
     
     // ==============================================
-    // REGISTRO - CORRIGIDO
+    // REGISTRO
     // ==============================================
     
     async register(name, email, password, workshopName, captchaText, captchaId) {
@@ -311,7 +369,8 @@ class Auth {
                 password: password,
                 workshop_name: workshopName,
                 captcha_code: captchaText,
-                captcha_id: captchaId
+                captcha_id: captchaId,
+                session_type: 'register'
             };
             
             const response = await fetch(`${this.apiBase}/auth/register`, {
@@ -468,17 +527,24 @@ class Auth {
                 }
                 
                 this.userData = {
-                    email: data.user,
-                    name: data.name,
-                    is_admin: data.is_admin,
+                    email: data.user || data.user_email,
+                    name: data.name || data.user_name,
+                    is_admin: data.is_admin || false,
                     admin_level: data.admin_level,
-                    credits: data.credits,
-                    credits_display: data.credits_display
+                    credits: data.credits || 0,
+                    credits_display: data.credits_display || '0'
                 };
                 
                 this.currentUser = this.userData;
                 
                 return true;
+            }
+            
+            if (response.status === 401 && localStorage.getItem('refresh_token')) {
+                const refreshed = await this.refreshToken();
+                if (refreshed) {
+                    return this.checkToken();
+                }
             }
             
             this.clearTokens();
@@ -495,39 +561,73 @@ class Auth {
     }
     
     async refreshToken() {
+        if (this._isRefreshing) {
+            return this._refreshPromise;
+        }
+        
         const refreshToken = localStorage.getItem('refresh_token');
+        const accessToken = localStorage.getItem('access_token');
         
         if (!refreshToken) {
             return false;
         }
         
-        try {
-            const response = await fetch(`${this.apiBase}/auth/refresh`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    refresh_token: refreshToken
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.access_token) {
-                localStorage.setItem('access_token', data.access_token);
-                if (data.refresh_token) {
-                    localStorage.setItem('refresh_token', data.refresh_token);
+        this._isRefreshing = true;
+        
+        this._refreshPromise = (async () => {
+            try {
+                const response = await fetch(`${this.apiBase}/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken,
+                        old_access_token: accessToken || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                    if (data.refresh_token) {
+                        localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    
+                    if (data.user_email) {
+                        this.userData = {
+                            ...this.userData,
+                            email: data.user_email,
+                            name: data.user_name,
+                            workshop_name: data.workshop_name,
+                            role: data.role,
+                            plan: data.plan,
+                            credits: data.credits,
+                            is_admin: data.is_admin
+                        };
+                        this.currentUser = this.userData;
+                    }
+                    
+                    this.isAuthenticated = true;
+                    
+                    console.log('✅ Token refresh realizado com sucesso');
+                    return true;
                 }
-                return true;
+                
+                console.warn('❌ Refresh token falhou:', data.message || 'Resposta inválida');
+                return false;
+                
+            } catch (error) {
+                console.error('❌ Token refresh error:', error);
+                return false;
+            } finally {
+                this._isRefreshing = false;
+                this._refreshPromise = null;
             }
-            
-            return false;
-            
-        } catch (error) {
-            console.error('Token refresh error:', error);
-            return false;
-        }
+        })();
+        
+        return this._refreshPromise;
     }
     
     async logout() {
@@ -552,6 +652,8 @@ class Auth {
         this.clearTokens();
         this.isAuthenticated = false;
         this.currentUser = null;
+        this._isRefreshing = false;
+        this._refreshPromise = null;
         
         document.dispatchEvent(new CustomEvent('userLoggedOut'));
         
@@ -562,6 +664,10 @@ class Auth {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
     }
+    
+    // ==============================================
+    // CRÉDITOS E UTILIDADES
+    // ==============================================
     
     async loadUserCredits() {
         if (!this.isAuthenticated) return false;
@@ -647,9 +753,9 @@ class Auth {
         return this.userData || {};
     }
     
-    isAuthenticated() {
-        return this.isAuthenticated;
-    }
+    // ==============================================
+    // FETCH WITH AUTH
+    // ==============================================
     
     async fetchWithAuth(url, options = {}) {
         const token = localStorage.getItem('access_token');
@@ -678,6 +784,11 @@ class Auth {
                 } else {
                     this.clearTokens();
                     this.isAuthenticated = false;
+                    this.currentUser = null;
+                    
+                    if (!window.location.pathname.includes('/login')) {
+                        window.location.href = '/login';
+                    }
                     return null;
                 }
             }
@@ -689,6 +800,10 @@ class Auth {
             return null;
         }
     }
+    
+    // ==============================================
+    // UI E MENSAGENS
+    // ==============================================
     
     showError(message) {
         const errorDiv = document.getElementById('authMessage');
@@ -733,9 +848,50 @@ class Auth {
             guestElements.forEach(el => el.classList.remove('d-none'));
         }
     }
+    
+    // ==============================================
+    // 🔥 MÉTODO DE INICIALIZAÇÃO CORRIGIDO
+    // ==============================================
+    
+    async init() {
+        console.log('🚀 Inicializando Auth...');
+        
+        // 🔥 CORREÇÃO CRÍTICA: Marca como inicializando ANTES das operações assíncronas
+        // Isso permite que o setter dispare UI updates durante o boot
+        this._initializing = true;
+        this.initialized = true;
+        
+        // Agora qualquer mudança de estado via setter vai disparar updateUI()
+        await this.checkToken();
+        
+        // Configura listeners
+        this.setupAuthPageListeners();
+        
+        // 🔥 updateUI NÃO É MAIS CHAMADO MANUALMENTE
+        // O setter já disparou automaticamente durante o checkToken()
+        // E se não houve mudança, o estado inicial (false) já é o correto
+        
+        // Finaliza inicialização
+        this._initializing = false;
+        
+        // 🔥 Garante que a UI está sincronizada (caso o setter não tenha sido chamado)
+        // Por exemplo: se não havia token e o estado permaneceu false
+        this.updateUI();
+        
+        console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
+        console.log(`   initialized: ${this.initialized}, initializing: ${this._initializing}`);
+    }
 }
+
+// ==============================================
+// INSTÂNCIA GLOBAL
+// ==============================================
 
 window.appAuth = new Auth();
 
+// Funções auxiliares
 window.getAuth = () => window.appAuth;
 window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
+
+console.log('✅ Auth carregado. Use window.appAuth para acessar.');
+console.log('   Ex: window.appAuth.isAuthenticated');

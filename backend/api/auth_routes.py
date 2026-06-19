@@ -6,12 +6,13 @@ Responsável por login, logout, refresh token e verificação de sessão
 
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional
 import logging
 import os
+import io
 
 from backend.database import get_db
 from backend import crud
@@ -31,19 +32,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["authentication"])
 
 # Flag para modo de desenvolvimento (permitir CAPTCHA fixo "1234")
-# Em produção, deve ser False
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 
 
 # ==============================================
-# MODELOS PYDANTIC - CORRIGIDOS
+# MODELOS PYDANTIC
 # ==============================================
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     captcha_id: Optional[str] = None
-    captcha_code: Optional[str] = None  # 🔥 Nome alterado de captcha_text para captcha_code
+    captcha_code: Optional[str] = None
     session_type: str = "login"
     
     @validator('captcha_code')
@@ -59,7 +59,49 @@ class RefreshTokenRequest(BaseModel):
 
 
 # ==============================================
-# ROTA DE LOGIN - CORRIGIDA
+# ROTA DE CAPTCHA - NOVA
+# ==============================================
+
+@router.get("/captcha/generate")
+async def get_captcha(
+    request: Request,
+    session_type: str = "login",
+    db: Session = Depends(get_db)
+):
+    """
+    Gera uma nova imagem CAPTCHA com números distorcidos.
+    Retorna a imagem PNG e o ID do captcha no header X-Captcha-ID.
+    GET /api/auth/captcha/generate?session_type=login
+    """
+    try:
+        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(
+            request, 
+            session_type=session_type
+        )
+        
+        logger.info(f"🔢 CAPTCHA gerado: {captcha_id[:12]}... para {session_type}")
+        
+        return StreamingResponse(
+            io.BytesIO(img_bytes),
+            media_type="image/png",
+            headers={
+                "X-Captcha-ID": captcha_id,
+                "Access-Control-Expose-Headers": "X-Captcha-ID",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+    except Exception as e:
+        logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao gerar CAPTCHA"
+        )
+
+
+# ==============================================
+# ROTA DE LOGIN
 # ==============================================
 
 @router.post("/login", status_code=status.HTTP_200_OK)
@@ -78,9 +120,9 @@ async def login(
     
     logger.info(f"🔐 [LOGIN] Tentativa: {login_data.email} | IP: {client_ip}")
     
-    # Extrair CAPTCHA (prioriza captcha_code do body)
+    # Extrair CAPTCHA
     captcha_id = request.headers.get("X-Captcha-ID") or login_data.captcha_id
-    captcha_text = login_data.captcha_code  # 🔥 Usa captcha_code
+    captcha_text = login_data.captcha_code
     
     if not captcha_id:
         raise HTTPException(
@@ -94,15 +136,13 @@ async def login(
             detail="Digite os números que aparecem na imagem."
         )
     
-    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV
+    # VALIDAÇÃO DO CAPTCHA
     is_valid = False
     
-    # Modo de desenvolvimento: aceita "1234" como código universal
     if DEV_MODE and captcha_text == "1234":
         logger.warning(f"⚠️ [LOGIN] Modo DEV: CAPTCHA 1234 aceito para {login_data.email}")
         is_valid = True
     else:
-        # Validação normal via Redis
         is_valid = await captcha_manager.validate_captcha_async(
             captcha_id=captcha_id,
             captcha_text=captcha_text,
@@ -117,7 +157,7 @@ async def login(
             detail="❌ Código incorreto! Digite os números que aparecem na imagem."
         )
     
-    # VALIDAÇÃO 2: Rate limiting
+    # Rate limiting
     is_ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
     is_email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
     
@@ -127,7 +167,7 @@ async def login(
             detail="Muitas tentativas. Aguarde 15 minutos."
         )
     
-    # VALIDAÇÃO 3: Credenciais
+    # Credenciais
     user = crud.authenticate_user(db, login_data.email, login_data.password)
     
     if not user:
@@ -143,10 +183,8 @@ async def login(
             detail="Conta desativada. Contate o suporte."
         )
     
-    # Atualizar último login
     crud.update_last_login(db, user.id)
     
-    # Preparar dados para token
     user_data = {
         "sub": user.email,
         "email": user.email,
@@ -159,15 +197,12 @@ async def login(
         "admin_level": user.admin_level if hasattr(user, 'admin_level') else None
     }
     
-    # Gerar tokens
     tokens = jwt_manager.create_token_pair(user_data)
     
-    # Salvar refresh token
     if hasattr(user, 'set_refresh_token'):
         user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
     db.commit()
     
-    # Resposta
     response_data = {
         "success": True,
         "access_token": tokens["access_token"],
@@ -185,7 +220,6 @@ async def login(
         "message": "Login realizado com sucesso"
     }
     
-    # Configurar cookies
     api_response = JSONResponse(content=response_data)
     api_response = set_auth_cookies(
         api_response,
@@ -200,6 +234,78 @@ async def login(
 
 
 # ==============================================
+# ROTA DE REFRESH - NOVA
+# ==============================================
+
+@router.post("/refresh")
+async def refresh_token_endpoint(
+    data: RefreshTokenRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    """
+    Renova o access token usando o refresh token.
+    POST /api/auth/refresh
+    """
+    try:
+        logger.info("🔄 [REFRESH] Tentando renovar tokens...")
+        
+        new_tokens = await jwt_manager.refresh_access_token(
+            refresh_token=data.refresh_token,
+            db=db,
+            old_access_token=data.old_access_token
+        )
+        
+        if not new_tokens:
+            logger.warning("❌ [REFRESH] Refresh token inválido ou expirado")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token inválido ou expirado"
+            )
+        
+        payload = jwt_manager.decode_token(new_tokens["access_token"])
+        email = payload.get("sub") or payload.get("email")
+        user = crud.get_user_by_email(db, email)
+        
+        response_data = {
+            "access_token": new_tokens["access_token"],
+            "refresh_token": new_tokens["refresh_token"],
+            "token_type": "bearer",
+            "expires_in": new_tokens.get("expires_in", 3600),
+            "user_email": user.email if user else email,
+            "user_name": user.name if user else "",
+            "workshop_name": user.workshop_name if user else "",
+            "role": str(user.role) if user else "",
+            "plan": str(user.plan) if user else "",
+            "credits": user.credits if user else 0,
+            "credits_display": "∞" if (user and user.is_admin) else str(user.credits if user else 0),
+            "is_admin": user.is_admin if user else False,
+            "message": "Tokens renovados com sucesso"
+        }
+        
+        api_response = JSONResponse(content=response_data)
+        api_response = set_auth_cookies(
+            api_response,
+            new_tokens["access_token"],
+            new_tokens["refresh_token"],
+            new_tokens.get("expires_in", 3600)
+        )
+        
+        logger.info(f"✅ [REFRESH] Tokens renovados para {email}")
+        return api_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [REFRESH] Erro ao renovar tokens: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno ao renovar tokens"
+        )
+
+
+# ==============================================
 # VERIFICAÇÃO DE TOKEN
 # ==============================================
 
@@ -210,7 +316,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     GET /api/auth/check-token
     """
     
-    # Extrair token dos cookies ou headers
     access_token = request.cookies.get("access_token")
     if access_token and access_token.startswith("Bearer "):
         access_token = access_token.replace("Bearer ", "")
@@ -228,7 +333,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             content={"status": "no_token", "message": "Nenhum token encontrado"}
         )
     
-    # Verificar access token
     if access_token:
         payload = await jwt_manager.verify_token_async(access_token, "access")
         
@@ -251,7 +355,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     "expires_in": expires_in
                 }
     
-    # Tentar refresh
     if refresh_token:
         logger.info("🔄 [TOKEN] Tentando refresh...")
         
@@ -288,7 +391,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"❌ [TOKEN] Erro no refresh: {e}")
     
-    # Limpar tokens inválidos
     response = JSONResponse(
         status_code=status.HTTP_401_UNAUTHORIZED,
         content={"status": "invalid", "message": "Sessão expirada. Faça login novamente."}
@@ -360,7 +462,6 @@ async def get_me(current_user = Depends(get_current_active_user)):
 # EXPORTAÇÕES
 # ==============================================
 
-# Re-exportar funções de segurança para outros módulos
 from backend.security import (
     get_current_user,
     get_current_active_user,
