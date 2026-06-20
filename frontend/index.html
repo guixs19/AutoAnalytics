@@ -879,7 +879,8 @@
                             </li>
                             <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.2);"></li>
                             <li>
-                                <a class="dropdown-item" href="#" id="logoutBtn" style="color: rgba(255,255,255,0.8);">
+                                <!-- 🔥 LOGOUT CORRIGIDO - Chama o método do auth.js -->
+                                <a class="dropdown-item" href="#" onclick="event.preventDefault(); window.appAuth.logout();" style="color: rgba(255,255,255,0.8);">
                                     <i class="fas fa-sign-out-alt me-2"></i>Sair
                                 </a>
                             </li>
@@ -1114,7 +1115,7 @@
                                 </div>
                                 
                                 <div class="mt-3 text-center">
-                                    <button class="btn btn-link small text-decoration-none" onclick="window.app?.loadFullHistory()" style="color: #f5a623;">
+                                    <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: #f5a623;">
                                         <i class="fas fa-eye me-1"></i> Ver todas as análises
                                     </button>
                                 </div>
@@ -1213,15 +1214,41 @@
         </div>
     </footer>
 
-    <!-- Scripts -->
+    <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS - ORDEM CORRIGIDA -->
+    <!-- ============================================== -->
+    
+    <!-- 1. Bootstrap Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 2. AOS Animation -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    
+    <!-- 3. GSAP -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- 4. Toastr -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
+    <!-- 5. PapaParse para CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- 6. XLSX para Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- 7. 🔥 AUTH - PRIMEIRO (antes de app.js e dashboard.js) -->
+    <script src="/static/js/auth.js"></script>
+    
+    <!-- 8. APP - LÓGICA PRINCIPAL -->
+    <script src="/static/js/app.js"></script>
+    
+    <!-- 9. DASHBOARD - UI E GRÁFICOS -->
+    <script src="/static/js/dashboard.js"></script>
+    
+    <!-- 10. PAYMENT - SISTEMA DE PAGAMENTOS -->
+    <script src="/static/js/payment.js?v=2.0"></script>
+
     <!-- Configuração do Toastr -->
     <script>
         toastr.options = {
@@ -1233,14 +1260,10 @@
             escapeHtml: true
         };
     </script>
-    
-    <!-- Scripts do sistema -->
-    <script src="/static/js/auth.js?v=2.0"></script>
-    <script src="/static/js/app.js?v=2.0"></script>
-    <script src="/static/js/dashboard.js?v=2.0"></script>
-    <script src="/static/js/payment.js?v=2.0"></script>
-    
-    <!-- Inicialização -->
+
+    <!-- ============================================== -->
+    <!-- 🔥 INICIALIZAÇÃO - CORRIGIDA -->
+    <!-- ============================================== -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // 🔥 SEGUNDA VERIFICAÇÃO (fallback) - caso o bloqueio imediato não tenha funcionado
@@ -1282,20 +1305,23 @@
                 ease: 'power3.out'
             });
             
-            // Carregar status premium após inicialização
+            // 🔥 VERIFICAÇÃO CORRIGIDA: usa window.autoAnalytics (definido no app.js)
             setTimeout(() => {
-                if (window.loadPremiumStatus) {
-                    window.loadPremiumStatus();
-                    if (window.startPremiumStatusPolling) {
-                        window.startPremiumStatusPolling(60000);
+                if (window.autoAnalytics) {
+                    console.log('✅ App inicializado com sucesso');
+                    
+                    // Carregar status premium após inicialização
+                    if (typeof window.loadPremiumStatus === 'function') {
+                        window.loadPremiumStatus();
+                        if (typeof window.startPremiumStatusPolling === 'function') {
+                            window.startPremiumStatusPolling(60000);
+                        }
                     }
-                }
-                
-                if (window.app) {
-                    console.log('✅ App inicializado');
                 } else {
-                    console.error('❌ App não carregado');
-                    toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
+                    console.error('❌ App não carregado - Verifique se o script app.js foi carregado');
+                    if (typeof toastr !== 'undefined') {
+                        toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
+                    }
                 }
             }, 1500);
         });
