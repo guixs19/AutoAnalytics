@@ -118,14 +118,15 @@
             margin-top: 4px;
         }
 
-        .tabs {
+        /* 🔥 AUTH TABS */
+        .auth-tabs {
             display: flex;
             border-bottom: 2px solid #edf2f7;
             margin-bottom: 24px;
             gap: 0;
         }
 
-        .tab {
+        .auth-tab {
             flex: 1;
             text-align: center;
             padding: 12px 8px;
@@ -139,15 +140,15 @@
             position: relative;
         }
 
-        .tab:hover {
+        .auth-tab:hover {
             color: #4c51bf;
         }
 
-        .tab.active {
+        .auth-tab.active {
             color: #4c51bf;
         }
 
-        .tab.active::after {
+        .auth-tab.active::after {
             content: '';
             position: absolute;
             bottom: -2px;
@@ -164,12 +165,13 @@
             to { transform: scaleX(1); }
         }
 
-        .tab-content {
+        /* 🔥 AUTH TAB CONTENT */
+        .auth-tab-content {
             display: none;
             animation: fadeIn 0.3s ease-out;
         }
 
-        .tab-content.active {
+        .auth-tab-content.active {
             display: block;
         }
 
@@ -655,7 +657,7 @@
                 font-size: 1.3rem;
             }
 
-            .tab {
+            .auth-tab {
                 font-size: 0.85rem;
                 padding: 10px 6px;
             }
@@ -754,20 +756,20 @@
             <p><i class="fas fa-robot" style="color: #667eea;"></i> IA para Oficinas Mecânicas</p>
         </div>
 
-        <!-- TABS -->
-        <div class="tabs" id="authTabs" role="tablist">
-            <button class="tab active" data-tab="login" role="tab" aria-selected="true" aria-controls="tab-login" id="tab-login-btn">
+        <!-- 🔥 AUTH TABS - CORRIGIDAS COM data-tab -->
+        <div class="auth-tabs" id="authTabs" role="tablist">
+            <button class="auth-tab active" data-target="#login-form-wrapper" data-tab="login" role="tab" aria-selected="true" id="tab-login-btn">
                 <i class="fas fa-sign-in-alt me-2"></i> Entrar
             </button>
-            <button class="tab" data-tab="register" role="tab" aria-selected="false" aria-controls="tab-register" id="tab-register-btn">
+            <button class="auth-tab" data-target="#register-form-wrapper" data-tab="register" role="tab" aria-selected="false" id="tab-register-btn">
                 <i class="fas fa-user-plus me-2"></i> Criar Conta
             </button>
         </div>
 
         <!-- ========================================== -->
-        <!-- 🔥 TAB LOGIN - COMPLETO COM CAPTCHA -->
+        <!-- 🔥 TAB LOGIN -->
         <!-- ========================================== -->
-        <div class="tab-content active" id="tab-login" role="tabpanel" aria-labelledby="tab-login-btn">
+        <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel" aria-labelledby="tab-login-btn">
             <form id="loginForm" novalidate>
                 <div class="form-group">
                     <label for="loginEmail"><i class="fas fa-envelope"></i> E-mail</label>
@@ -789,7 +791,7 @@
                     <a href="#" class="forgot-password" tabindex="3"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Esqueceu a senha?</a>
                 </div>
 
-                <!-- 🔥 CAPTCHA LOGIN - ADICIONADO -->
+                <!-- CAPTCHA LOGIN -->
                 <div class="captcha-container" role="group" aria-label="Validação de segurança">
                     <label for="loginCaptchaInput"><i class="fas fa-shield-alt"></i> Verificação de Segurança</label>
                     <div class="sr-only" id="loginCaptchaDescription">
@@ -851,9 +853,9 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 🔥 TAB REGISTER - COMPLETO COM BOTÃO -->
+        <!-- 🔥 TAB REGISTER -->
         <!-- ========================================== -->
-        <div class="tab-content" id="tab-register" role="tabpanel" aria-labelledby="tab-register-btn">
+        <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel" aria-labelledby="tab-register-btn">
             <form id="registerForm" novalidate>
                 <div class="form-group">
                     <label for="registerName"><i class="fas fa-user"></i> Nome Completo</label>
@@ -964,7 +966,6 @@
                     </label>
                 </div>
 
-                <!-- 🔥 BOTÃO DE REGISTRO - ADICIONADO -->
                 <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
                     <i class="fas fa-user-plus me-2" aria-hidden="true"></i> Criar Minha Conta
                 </button>
@@ -993,10 +994,14 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/auth.js"></script>
+    <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS -->
+    <!-- ============================================== -->
     
-    <!-- Configuração do Toastr -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
     <script>
         toastr.options = {
             closeButton: true,
@@ -1008,7 +1013,71 @@
         };
     </script>
 
-    <!-- 🔥 SCRIPT PARA O TOGGLE DA SENHA (NÃO REMOVER) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Inicializando gerenciador de tabs...');
+            
+            document.querySelectorAll('.auth-tab').forEach(tabBtn => {
+                tabBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    const tabName = this.getAttribute('data-tab');
+                    console.log(`📝 Alternando para tab: ${tabName}`);
+                    
+                    // 1. Remove active de todas as abas
+                    document.querySelectorAll('.auth-tab').forEach(b => {
+                        b.classList.remove('active');
+                        b.setAttribute('aria-selected', 'false');
+                    });
+                    
+                    // 2. Ativa a aba atual
+                    this.classList.add('active');
+                    this.setAttribute('aria-selected', 'true');
+                    
+                    // 3. Oculta todos os conteúdos
+                    document.querySelectorAll('.auth-tab-content').forEach(c => {
+                        c.classList.remove('active');
+                    });
+                    
+                    // 4. Mostra o conteúdo correspondente usando o data-target
+                    const targetId = this.getAttribute('data-target');
+                    if (targetId) {
+                        const targetContent = document.querySelector(targetId);
+                        if (targetContent) {
+                            targetContent.classList.add('active');
+                            console.log(`✅ Conteúdo exibido: ${targetId}`);
+                        }
+                    }
+                    
+                    // 5. Carrega o CAPTCHA de registo se for a aba correta
+                    if (tabName === 'register') {
+                        setTimeout(() => {
+                            if (window.appAuth && typeof window.appAuth.loadCaptcha === 'function') {
+                                if (!window.appAuth.isRegisterCaptchaLoaded) {
+                                    window.appAuth.loadCaptcha('register');
+                                }
+                            }
+                        }, 300);
+                    }
+                });
+            });
+            
+            // 🔥 Forçar carregamento caso inicie na aba de registo
+            const registerTab = document.querySelector('.auth-tab[data-target="#register-form-wrapper"]');
+            if (registerTab && registerTab.classList.contains('active')) {
+                setTimeout(() => {
+                    if (window.appAuth && typeof window.appAuth.loadCaptcha === 'function') {
+                        if (!window.appAuth.isRegisterCaptchaLoaded) {
+                            window.appAuth.loadCaptcha('register');
+                        }
+                    }
+                }, 500);
+            }
+            
+            console.log('✅ Gerenciador de tabs inicializado com sucesso!');
+        });
+    </script>
+
     <script>
         document.querySelectorAll('.password-toggle').forEach(function(button) {
             button.addEventListener('click', function() {
@@ -1030,8 +1099,7 @@
             });
         });
     </script>
-    
-    <!-- ⚠️ ATENÇÃO: NÃO ADICIONES NENHUM OUTRO SCRIPT COM addEventListener PARA OS FORMULÁRIOS -->
-    <!-- O auth.js já gerencia tudo. Scripts manuais vão quebrar o CAPTCHA! -->
+
+    <script src="/static/js/auth.js"></script>
 </body>
 </html>
