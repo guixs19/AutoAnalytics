@@ -1,6 +1,29 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+    <!-- ============================================== -->
+    <!-- 🔥 BLOQUEIO IMEDIATO - EXECUTA ANTES DE TUDO -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            // Verifica de forma síncrona se há indícios de sessão ativa no localStorage
+            // Se o usuário não passou pelo login, bloqueia o carregamento do resto da página
+            const token = localStorage.getItem('access_token');
+            const isLogged = token !== null && token !== '';
+            
+            // Se NÃO estiver logado, bloqueia e redireciona para o login
+            if (!isLogged) {
+                console.log('🔒 Acesso não autorizado. Desviando para a tela de login...');
+                // Usamos .replace() para o usuário não ficar preso ao clicar no botão "Voltar"
+                window.location.replace('/login');
+                // Impede a execução do resto do script
+                throw new Error('Redirecionando para login');
+            }
+            
+            console.log('✅ Sessão ativa. Carregando dashboard...');
+        })();
+    </script>
+    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoAnalytics - Dashboard de IA para Oficinas</title>
@@ -1220,8 +1243,10 @@
     <!-- Inicialização -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // 🔥 SEGUNDA VERIFICAÇÃO (fallback) - caso o bloqueio imediato não tenha funcionado
             const token = localStorage.getItem('access_token');
             if (!token) {
+                console.log('🔒 Fallback: Token não encontrado. Redirecionando...');
                 window.location.href = '/login';
                 return;
             }
@@ -1257,7 +1282,7 @@
                 ease: 'power3.out'
             });
             
-            // 🔥 Carregar status premium após inicialização
+            // Carregar status premium após inicialização
             setTimeout(() => {
                 if (window.loadPremiumStatus) {
                     window.loadPremiumStatus();

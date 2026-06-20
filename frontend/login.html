@@ -2,11 +2,8 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoAnalytics - Dashboard de IA para Oficinas</title>
-    
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>AutoAnalytics - Login</title>
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -14,1190 +11,963 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
-    <!-- AOS Animation -->
-    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Anime.js para animações -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
-    
-    <!-- Toastr para notificações -->
+    <!-- Toastr -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
-    
-    <!-- Bibliotecas para PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
     <style>
+        /* Seu CSS atual do login.html - mantido igual */
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            position: relative;
             overflow-x: hidden;
         }
 
-        /* 🔥 NAVBAR ESTILO ORIGINAL */
-        .navbar-modern {
-            background: rgba(102, 126, 234, 0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            padding: 1rem 0;
-            position: fixed;
-            width: 100%;
-            top: 0;
-            z-index: 1000;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .navbar-modern.scrolled {
-            padding: 0.5rem 0;
-            background: rgba(102, 126, 234, 0.98);
-        }
-
-        .brand-text {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: white;
-            letter-spacing: -0.5px;
-        }
-
-        .brand-text .gradient-text {
-            color: #f5a623;
-        }
-
-        /* 🔥 CRÉDITS BADGE - APENAS ELE DOURADO */
-        .credits-badge {
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
-            padding: 0.5rem 1.5rem;
-            border-radius: 50px;
-            color: white;
-            font-weight: 600;
-            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
-            transition: transform 0.3s;
-            cursor: pointer;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .credits-badge:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 25px rgba(205, 127, 50, 0.6);
-        }
-
-        /* Hero Section */
-        .hero-section {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-            padding: 120px 0 60px;
-        }
-
-        .hero-bg {
+        .bubble {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            opacity: 0.9;
-        }
-
-        .hero-title {
-            font-size: 3.5rem;
-            font-weight: 800;
-            line-height: 1.2;
-            margin-bottom: 1.5rem;
-            color: white;
-        }
-
-        .hero-title .gradient-text {
-            color: #f5a623;
-        }
-
-        .hero-subtitle {
-            font-size: 1.2rem;
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 2rem;
-            max-width: 600px;
-        }
-
-        /* 🔥 UPLOAD CARD */
-        .upload-card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 30px;
-            padding: 2rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s ease;
-        }
-
-        .upload-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
-            border-color: rgba(255, 255, 255, 0.4);
-        }
-
-        .upload-area {
-            border: 3px dashed rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            padding: 2.5rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: rgba(0, 0, 0, 0.15);
-        }
-
-        .upload-area:hover {
-            border-color: rgba(255, 255, 255, 0.6);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .upload-area.dragover {
-            border-color: #48bb78;
-            background: rgba(72, 187, 120, 0.15);
-            transform: scale(1.02);
-        }
-
-        .upload-icon {
-            font-size: 4rem;
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 1rem;
-            animation: float 3s ease-in-out infinite;
+            background: rgba(255,255,255,0.08);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: float 8s infinite ease-in-out;
         }
 
         @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+            0%, 100% { transform: translateY(0) translateX(0); }
+            25% { transform: translateY(-20px) translateX(10px); }
+            50% { transform: translateY(-40px) translateX(-10px); }
+            75% { transform: translateY(-20px) translateX(5px); }
         }
 
-        /* ===== TELA DE CARREGAMENTO ===== */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
+        .login-card {
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
             width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.92);
-            backdrop-filter: blur(8px);
-            z-index: 9999;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
+            max-width: 420px;
+            padding: 32px 28px;
+            position: relative;
+            z-index: 1;
+            animation: slideUp 0.6s ease-out;
         }
 
-        .loading-overlay.show {
-            display: flex;
-            animation: fadeIn 0.3s ease-out;
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        .login-header {
+            text-align: center;
+            margin-bottom: 28px;
         }
 
-        .spinner-brain {
-            width: 80px;
-            height: 80px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid #f5a623;
-            border-right: 4px solid #cd7f32;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .login-header .logo-icon {
+            font-size: 3rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .loading-text {
-            margin-top: 20px;
-            color: #f5a623;
-            font-size: 1.2rem;
-            font-weight: 500;
-        }
-
-        .loading-subtext {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.9rem;
+        .login-header h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #1a1a2e;
             margin-top: 8px;
         }
 
-        .loading-progress {
-            width: 250px;
-            margin-top: 20px;
-        }
-
-        .loading-progress .progress {
-            height: 6px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .loading-progress .progress-bar {
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-
-        /* Indicador de Processamento */
-        .processing-indicator {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 20px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            text-align: center;
-        }
-
-        .processing-icon {
-            font-size: 3rem;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 1rem;
-        }
-
-        .processing-text {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1rem;
-        }
-
-        .processing-text strong {
+        .login-header h1 span {
             color: #f5a623;
         }
 
-        .btn-gradient {
+        .login-header p {
+            font-size: 0.85rem;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #edf2f7;
+            margin-bottom: 24px;
+            gap: 0;
+        }
+
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 12px 8px;
+            cursor: pointer;
+            color: #718096;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+            border: none;
+            background: transparent;
+            position: relative;
+        }
+
+        .tab:hover {
+            color: #4c51bf;
+        }
+
+        .tab.active {
+            color: #4c51bf;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 3px 3px 0 0;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: scaleX(0); }
+            to { transform: scaleX(1); }
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+            position: relative;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            color: #4a5568;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .form-group label i {
+            color: #667eea;
+            width: 18px;
+            margin-right: 4px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            color: #a0aec0;
+            font-size: 1rem;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 12px 12px 44px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.3s;
+            background: #f7fafc;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-control::placeholder {
+            color: #a0aec0;
+        }
+
+        .password-wrapper {
+            position: relative;
+        }
+
+        .password-wrapper .form-control {
+            padding-right: 44px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: #a0aec0;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .password-toggle:hover {
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.08);
+        }
+
+        .forgot-password {
+            display: block;
+            text-align: right;
+            font-size: 13px;
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 4px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .forgot-password:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .captcha-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px;
+            margin-top: 16px;
+            transition: all 0.3s;
+        }
+
+        .captcha-container:hover {
+            border-color: #667eea;
+        }
+
+        .captcha-container:focus-within {
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+
+        .captcha-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .captcha-box {
+            flex: 1;
+            min-width: 0;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 6px;
+            min-height: 60px;
+            overflow: hidden;
+        }
+
+        .captcha-box img {
+            width: 100%;
+            max-width: 220px;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            border-radius: 4px;
+        }
+
+        .btn-refresh {
+            flex-shrink: 0;
+            background: #edf2f7;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            width: 44px;
+            height: 44px;
+        }
+
+        .btn-refresh:focus-visible {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-refresh:hover {
+            background: #e2e8f0;
+            transform: rotate(180deg);
+        }
+
+        .btn-refresh:active {
+            transform: rotate(180deg) scale(0.95);
+        }
+
+        .btn-refresh svg {
+            width: 20px;
+            height: 20px;
+            stroke: #4a5568;
+            transition: stroke 0.3s;
+        }
+
+        .btn-refresh:hover svg {
+            stroke: #667eea;
+        }
+
+        .captcha-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-align: center;
+            letter-spacing: 6px;
+            transition: all 0.3s;
+            background: #ffffff;
+            box-sizing: border-box;
+        }
+
+        .captcha-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+            letter-spacing: 8px;
+        }
+
+        .captcha-input::placeholder {
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: #a0aec0;
+            font-size: 0.85rem;
+        }
+
+        .captcha-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #718096;
+            font-weight: 500;
+            padding: 0 2px;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .captcha-footer span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .captcha-timer {
+            color: #3182ce;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            min-width: 45px;
+            transition: all 0.3s;
+        }
+
+        .captcha-timer.expiring {
+            color: #f56565;
+            animation: pulse 1s infinite;
+        }
+
+        .captcha-timer.expired {
+            color: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .password-strength {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 6px;
+        }
+
+        .strength-bar {
+            flex: 1;
+            height: 4px;
+            background: #e9ecef;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .strength-bar.active {
+            background: linear-gradient(90deg, #f56565, #ed8936, #48bb78, #38a169);
+        }
+
+        .strength-text {
+            font-size: 0.7rem;
+            font-weight: 600;
+            min-width: 65px;
+        }
+
+        .strength-text.weak { color: #f56565; }
+        .strength-text.medium { color: #ed8936; }
+        .strength-text.strong { color: #48bb78; }
+        .strength-text.very-strong { color: #38a169; }
+
+        .password-match-hint {
+            font-size: 0.8rem;
+            margin-top: 4px;
+        }
+
+        .password-match-hint .text-success { color: #48bb78; }
+        .password-match-hint .text-danger { color: #f56565; }
+
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .form-check-input {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+
+        .form-check-label {
+            font-size: 0.85rem;
+            color: #4a5568;
+            cursor: pointer;
+        }
+
+        .form-check-label a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .form-check-label a:hover {
+            text-decoration: underline;
+        }
+
+        .btn-submit {
+            width: 100%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 0.75rem 2rem;
-            border-radius: 50px;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            position: relative;
+            overflow: hidden;
         }
 
-        .btn-gradient:hover {
+        .btn-submit::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .btn-submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
-            color: white;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.35);
         }
 
-        .btn-gradient:disabled {
-            opacity: 0.5;
+        .btn-submit:hover::before {
+            left: 100%;
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
 
-        .btn-outline-danger {
-            background: transparent;
-            border: 1px solid #dc3545;
-            color: #dc3545;
-            transition: all 0.3s;
+        .btn-submit-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
         }
 
-        .btn-outline-danger:hover {
-            background: #dc3545;
-            color: white;
-            transform: translateY(-2px);
+        .btn-submit-success:hover {
+            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.35);
         }
 
-        /* Timeline */
-        .timeline {
-            position: relative;
-            padding-left: 1.5rem;
-        }
-
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-            border-radius: 2px;
-        }
-
-        .timeline-item {
-            position: relative;
-            padding-bottom: 1.5rem;
-        }
-
-        .timeline-item:last-child {
-            padding-bottom: 0;
-        }
-
-        .timeline-marker {
-            position: absolute;
-            left: -1.5rem;
-            top: 0.25rem;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #667eea;
-            border: 2px solid white;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
-        }
-
-        .timeline-marker.bg-success {
-            background: #48bb78;
-            box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
-        }
-
-        .timeline-content {
-            padding-left: 0.5rem;
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .timeline-content strong {
-            color: #f5a623;
-        }
-
-        /* Métricas */
-        .metric-card {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 1rem;
-        }
-
-        .metric-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #f5a623;
-        }
-
-        .metric-label {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .limit-info {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 0.75rem;
-            margin-bottom: 1rem;
-            text-align: center;
-            font-size: 0.85rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .limit-info i {
-            color: #f5a623;
+        .btn-submit .spinner-border {
+            width: 1.2rem;
+            height: 1.2rem;
             margin-right: 0.5rem;
         }
 
-        .limit-info .limit-value {
-            font-weight: 700;
-            color: #f5a623;
-        }
-
-        .size-warning {
-            background: rgba(220, 53, 69, 0.2);
-            border: 1px solid #dc3545;
-            color: #f8d7da;
+        .auth-message {
+            margin-top: 12px;
+            padding: 10px;
             border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.8rem;
-            margin-top: 0.5rem;
+            font-size: 0.9rem;
             display: none;
         }
 
-        .size-warning.show {
+        .auth-message.show {
             display: block;
-            animation: shake 0.3s ease-in-out;
+            animation: fadeIn 0.3s ease-out;
         }
 
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+        .auth-message.error {
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #feb2b2;
         }
 
-        .admin-badge {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: none;
-            margin-left: 0.5rem;
+        .auth-message.success {
+            background: #f0fff4;
+            color: #276749;
+            border: 1px solid #9ae6b4;
         }
 
-        body.is-admin .admin-badge {
-            display: inline-block;
+        .auth-message.info {
+            background: #ebf8ff;
+            color: #2b6cb0;
+            border: 1px solid #90cdf4;
         }
 
-        /* Toastr */
-        .toast-success {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
-        }
-        .toast-error {
-            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
-        }
-        .toast-info {
-            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
-        }
-        .toast-warning {
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important;
+        .login-footer {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #edf2f7;
         }
 
-        .gradient-text {
-            color: #f5a623;
+        .login-footer .links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
         }
 
-        /* Análises em Andamento */
-        .analysis-card {
-            animation: slideInUp 0.3s ease-out;
-            margin-bottom: 1rem;
-        }
-
-        @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .analysis-card .card {
-            transition: all 0.2s;
-            border-radius: 20px !important;
-            background: rgba(255, 255, 255, 0.1) !important;
-            border: 1px solid rgba(255, 255, 255, 0.15) !important;
-            color: white;
-        }
-
-        .analysis-card .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .analysis-card .metric-box {
-            background: rgba(0, 0, 0, 0.2) !important;
-            color: white;
-        }
-        .analysis-card .metric-label {
-            color: rgba(255, 255, 255, 0.6);
-        }
-        .analysis-card .metric-value {
-            color: #f5a623;
-        }
-
-        .file-preview-container {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .file-preview-container .bg-light {
-            background: rgba(0, 0, 0, 0.2) !important;
-            color: white;
-        }
-        .file-preview-container .text-muted {
-            color: rgba(255, 255, 255, 0.6) !important;
-        }
-
-        /* ===== ESTILOS GPSA ===== */
-        .gpsa-dashboard { animation: fadeInUp 0.5s ease-out; }
-        
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .impact-card, .trend-chart-card, .insights-card, .score-progress-card {
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            color: white;
-        }
-        
-        .impact-card:hover, .trend-chart-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-        
-        .impact-value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
-        .trend-indicator { font-size: 0.8rem; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 20px; display: inline-block; }
-        .insight-item { transition: all 0.2s; background: rgba(0,0,0,0.15) !important; color: white; }
-        .insight-item:hover { transform: translateX(5px); background: rgba(255, 255, 255, 0.05) !important; }
-        
-        .gpsa-score-circle { position: relative; display: inline-block; }
-        .score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.5s ease-out; }
-        .score-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        .score-number { font-size: 2rem; font-weight: bold; display: block; line-height: 1; color: #f5a623; }
-        
-        .progress-bar { transition: width 3.5s ease-out; }
-
-        .risk-summary {
-            background: rgba(0,0,0,0.2);
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .risk-badge {
-            transition: all 0.3s ease;
-        }
-
-        .risk-badge.high {
-            background: rgba(245, 101, 101, 0.2);
-            border: 1px solid rgba(245, 101, 101, 0.5);
-        }
-        .risk-badge.medium {
-            background: rgba(245, 166, 35, 0.2);
-            border: 1px solid rgba(245, 166, 35, 0.5);
-        }
-        .risk-badge.low {
-            background: rgba(72, 187, 120, 0.2);
-            border: 1px solid rgba(72, 187, 120, 0.5);
-        }
-        .risk-badge:hover {
-            transform: translateY(-2px);
-        }
-        .risk-value {
-            font-size: 1.5rem;
-            color: white;
-        }
-        .risk-label {
+        .login-footer .links a {
             font-size: 0.75rem;
-            opacity: 0.8;
-            color: rgba(255, 255, 255, 0.7);
-        }
-        .risk-badge .fw-bold {
-            color: white;
+            color: #a0aec0;
+            text-decoration: none;
+            transition: color 0.2s;
         }
 
-        /* Modais */
-        .modal-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        }
-        .modal-content .modal-title {
-            color: white !important;
-        }
-        .modal-content .text-muted {
-            color: rgba(255, 255, 255, 0.7) !important;
-        }
-        .modal-content .alert-info {
-            background: rgba(255, 255, 255, 0.1) !important;
-            border-color: rgba(255, 255, 255, 0.2) !important;
-            color: rgba(255, 255, 255, 0.8) !important;
-        }
-        .modal-content .alert-info strong {
-            color: #f5a623 !important;
-        }
-        .modal-content .btn-close-white {
-            filter: brightness(0) invert(1);
+        .login-footer .links a:hover {
+            color: #667eea;
         }
 
-        /* Footer */
-        footer {
-            background: rgba(102, 126, 234, 0.95) !important;
-            border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
-        }
-        footer .text-muted {
-            color: rgba(255, 255, 255, 0.6) !important;
-        }
-        footer .badge.bg-light {
-            background: rgba(255, 255, 255, 0.15) !important;
-            color: white !important;
+        .login-footer .copyright {
+            font-size: 0.7rem;
+            color: #cbd5e0;
         }
 
-        /* ============================================== */
-        /* 🔥 ESTILOS DO CARD PREMIUM */
-        /* ============================================== */
-
-        .premium-card {
-            border-radius: 20px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255,255,255,0.15);
-            transition: all 0.3s ease;
-        }
-
-        .premium-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .premium-card.premium-active {
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
-            border-color: #cd7f32;
-        }
-
-        .premium-card.premium-inactive {
-            background: rgba(255,255,255,0.05);
-            border-color: rgba(255,255,255,0.1);
-        }
-
-        .premium-status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .premium-badge {
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            color: white;
-            padding: 0.4rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-        }
-
-        .premium-badge.badge-warning {
-            background: linear-gradient(135deg, #f5a623, #ed8936);
-        }
-
-        .premium-badge.badge-danger {
-            background: linear-gradient(135deg, #f56565, #e53e3e);
-        }
-
-        .premium-progress {
-            margin-bottom: 1rem;
-        }
-
-        .credit-status-card {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.1);
-            transition: all 0.2s ease;
-        }
-
-        .credit-status-card:hover {
-            background: rgba(0,0,0,0.4);
-            transform: translateY(-2px);
-        }
-
-        .premium-message {
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            margin: 0.5rem 0;
-            font-size: 0.9rem;
-        }
-
-        .premium-message-info {
-            background: rgba(102, 126, 234, 0.2);
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            color: rgba(255,255,255,0.8);
-        }
-
-        .premium-message-success {
-            background: rgba(72, 187, 120, 0.2);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
-        }
-
-        .premium-message-warning {
-            background: rgba(245, 166, 35, 0.2);
-            border: 1px solid rgba(245, 166, 35, 0.3);
-            color: #f5a623;
-        }
-
-        .premium-message-warning strong {
-            color: #f56565;
-        }
-
-        .btn-premium {
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-
-        .btn-premium:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(205, 127, 50, 0.4);
-            color: white;
-        }
-
-        .btn-premium-receive {
-            background: linear-gradient(135deg, #48bb78, #38a169);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            animation: pulse-premium 2s ease-in-out infinite;
-        }
-
-        .btn-premium-receive:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
-            color: white;
-        }
-
-        @keyframes pulse-premium {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4); }
-            50% { box-shadow: 0 0 20px 5px rgba(72, 187, 120, 0.2); }
-        }
-
-        .premium-benefits-preview {
-            margin: 1rem 0;
-        }
-
-        .benefit-item {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.3rem 0;
-            color: rgba(255,255,255,0.7);
-            font-size: 0.85rem;
-        }
-
-        .premium-expiring-warning {
-            background: rgba(245, 166, 35, 0.15);
-            border: 1px solid rgba(245, 166, 35, 0.3);
-            border-radius: 10px;
-            padding: 0.5rem 0.75rem;
-            color: #f5a623;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-
-        .premium-footer {
-            margin-top: 1rem;
-            padding-top: 0.75rem;
-            border-top: 1px solid rgba(255,255,255,0.08);
-        }
-
-        .premium-action-cta {
-            padding: 0.5rem;
-            border-radius: 10px;
-            background: rgba(0,0,0,0.2);
-        }
-
-        .premium-status-body {
-            padding: 0.5rem 0;
-        }
-
-        /* Responsividade */
-        @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2.5rem;
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 24px 16px;
             }
-            .upload-card {
-                padding: 1.5rem;
+
+            .login-header h1 {
+                font-size: 1.3rem;
             }
-            .impact-value { font-size: 1.8rem; }
-            .score-number { font-size: 1.5rem; }
-            .gpsa-score-circle svg { width: 100px; height: 100px; }
-            .risk-value { font-size: 1.2rem; }
-            .btn-gradient, .btn-outline-danger { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
-            
-            .premium-status-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 0.5rem;
+
+            .tab {
+                font-size: 0.85rem;
+                padding: 10px 6px;
             }
-            .premium-status-header .badge {
-                align-self: flex-start;
+
+            .captcha-box {
+                min-height: 50px;
             }
-            .credit-status-card {
-                padding: 0.75rem !important;
+
+            .captcha-box img {
+                max-width: 140px;
             }
-            .credit-status-card div:first-child {
-                font-size: 1.5rem !important;
+
+            .btn-refresh {
+                width: 38px;
+                height: 38px;
+                padding: 8px;
+            }
+
+            .btn-refresh svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            .captcha-input {
+                font-size: 0.95rem;
+                padding: 10px 12px;
+                letter-spacing: 4px;
+            }
+
+            .captcha-input:focus {
+                letter-spacing: 6px;
+            }
+
+            .captcha-footer {
+                font-size: 0.6rem;
+            }
+
+            .login-footer .links {
+                gap: 10px;
+            }
+
+            .login-footer .links a {
+                font-size: 0.65rem;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .login-card {
+                padding: 16px 12px;
+            }
+
+            .captcha-box img {
+                max-width: 100px;
+            }
+
+            .form-control {
+                font-size: 13px;
+                padding: 10px 10px 10px 36px;
+            }
+
+            .btn-submit {
+                font-size: 14px;
+                padding: 12px;
+            }
+
+            .captcha-row {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .captcha-box {
+                flex: 0 0 100%;
+                max-width: 100%;
+            }
+
+            .captcha-box img {
+                max-width: 180px;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Navbar Moderna -->
-    <nav class="navbar-modern" id="mainNavbar">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center w-100">
-                <a class="brand-text text-decoration-none" href="/dashboard">
-                    <i class="fas fa-robot me-2"></i>
-                    AutoAnalytics<span class="gradient-text">Pro</span>
-                </a>
-                
-                <div class="d-flex align-items-center gap-3">
-                    <!-- CRÉDITS BADGE - DOURADO -->
-                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
-                        <i class="fas fa-coins me-2"></i>
-                        <span id="creditsCount">0</span> créditos
+
+    <!-- Bolhas decorativas -->
+    <div class="bubble" style="width: 120px; height: 120px; bottom: -40px; left: -40px; animation-duration: 12s;"></div>
+    <div class="bubble" style="width: 80px; height: 80px; top: 10%; right: -20px; animation-duration: 10s; animation-delay: 2s;"></div>
+    <div class="bubble" style="width: 160px; height: 160px; bottom: 5%; right: 5%; animation-duration: 15s; animation-delay: 1s;"></div>
+
+    <div class="login-card">
+        <!-- HEADER -->
+        <div class="login-header">
+            <div class="logo-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <h1>Auto<span>Analytics</span>Pro</h1>
+            <p><i class="fas fa-robot" style="color: #667eea;"></i> IA para Oficinas Mecânicas</p>
+        </div>
+
+        <!-- TABS -->
+        <div class="tabs" id="authTabs" role="tablist">
+            <button class="tab active" data-tab="login" role="tab" aria-selected="true" aria-controls="tab-login" id="tab-login-btn">
+                <i class="fas fa-sign-in-alt me-2"></i> Entrar
+            </button>
+            <button class="tab" data-tab="register" role="tab" aria-selected="false" aria-controls="tab-register" id="tab-register-btn">
+                <i class="fas fa-user-plus me-2"></i> Criar Conta
+            </button>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB LOGIN -->
+        <!-- ========================================== -->
+        <div class="tab-content active" id="tab-login" role="tabpanel" aria-labelledby="tab-login-btn">
+            <form id="loginForm" novalidate>
+                <div class="form-group">
+                    <label for="loginEmail"><i class="fas fa-envelope"></i> E-mail</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-envelope"></i></span>
+                        <input type="email" id="loginEmail" name="email" class="form-control" placeholder="seu@email.com" required autocomplete="email" tabindex="1">
                     </div>
-                    
-                    <span class="admin-badge" id="adminBadge">
-                        <i class="fas fa-crown me-1"></i>
-                        Admin
-                    </span>
-                    
-                    <div class="dropdown">
-                        <button class="btn btn-light rounded-pill px-4" type="button" data-bs-toggle="dropdown" style="background: rgba(255,255,255,0.15); color: white; border-color: rgba(255,255,255,0.2);">
-                            <i class="fas fa-user-circle me-2"></i>
-                            <span id="userName" style="color: white;">Usuário</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="loginPassword"><i class="fas fa-lock"></i> Senha</label>
+                    <div class="input-wrapper password-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
+                        <input type="password" id="loginPassword" name="password" class="form-control" placeholder="Sua senha" required autocomplete="current-password" tabindex="2">
+                        <button type="button" class="password-toggle" data-target="loginPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
+                            <i class="far fa-eye-slash" aria-hidden="true"></i>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end" style="background: rgba(102, 126, 234, 0.95); border-color: rgba(255,255,255,0.2);">
-                            <li>
-                                <span class="dropdown-item-text text-muted small" id="workshopName" style="color: rgba(255,255,255,0.7);">
-                                    <i class="fas fa-wrench me-2"></i>Oficina
-                                </span>
-                            </li>
-                            <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.2);"></li>
-                            <li>
-                                <a class="dropdown-item" href="#" id="logoutBtn" style="color: rgba(255,255,255,0.8);">
-                                    <i class="fas fa-sign-out-alt me-2"></i>Sair
-                                </a>
-                            </li>
-                        </ul>
+                    </div>
+                    <a href="#" class="forgot-password" tabindex="3"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Esqueceu a senha?</a>
+                </div>
+
+                <!-- CAPTCHA - COM ACESSIBILIDADE -->
+                <div class="captcha-container" role="group" aria-label="Validação de segurança">
+                    <div class="sr-only" id="captchaDescription">
+                        Digite os 4 números que aparecem na imagem para validar que você é humano.
+                        A imagem é atualizada automaticamente a cada 2 minutos ou ao clicar no botão de atualizar.
+                    </div>
+
+                    <div class="captcha-row">
+                        <div class="captcha-box">
+                            <img id="loginCaptchaImage" 
+                                 src="/api/auth/captcha/generate" 
+                                 alt="CAPTCHA: digite os 4 números da imagem"
+                                 aria-describedby="captchaDescription">
+                            <input type="hidden" id="loginCaptchaId">
+                        </div>
+                        <button type="button" 
+                                class="btn-refresh" 
+                                id="refreshLoginCaptcha" 
+                                title="Atualizar imagem do CAPTCHA" 
+                                aria-label="Gerar nova imagem do CAPTCHA"
+                                tabindex="4">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <input type="text" 
+                           name="captcha" 
+                           id="loginCaptchaInput" 
+                           class="captcha-input" 
+                           placeholder="Digite os 4 números" 
+                           maxlength="4" 
+                           inputmode="numeric" 
+                           pattern="[0-9]*" 
+                           autocomplete="off" 
+                           required
+                           tabindex="5"
+                           aria-describedby="captchaDescription captchaTimerLabel"
+                           aria-label="Digite os 4 números do CAPTCHA">
+
+                    <div class="captcha-footer">
+                        <span id="captchaTimerLabel">
+                            ⏱️ Expira em: <strong class="captcha-timer" id="loginCaptchaTimer" aria-live="polite">02:00</strong>
+                        </span>
+                        <span>🚫 Uso único</span>
                     </div>
                 </div>
-            </div>
+
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="rememberMe" tabindex="6">
+                    <label class="form-check-label" for="rememberMe">
+                        <i class="far fa-check-circle me-1" aria-hidden="true"></i> Manter conectado por 30 dias
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-submit" id="loginBtn" tabindex="7">
+                    <i class="fas fa-sign-in-alt me-2" aria-hidden="true"></i> Entrar no Sistema
+                </button>
+            </form>
         </div>
-    </nav>
 
-    <!-- TELA DE CARREGAMENTO GLOBAL -->
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner-brain"></div>
-        <div class="loading-text" id="loadingText">Processando sua análise...</div>
-        <div class="loading-subtext" id="loadingSubtext">A IA está analisando seus dados</div>
-        <div class="loading-progress" id="loadingProgress">
-            <div class="progress">
-                <div class="progress-bar" id="loadingProgressBar" style="width: 0%"></div>
-            </div>
+        <!-- ========================================== -->
+        <!-- TAB REGISTER -->
+        <!-- ========================================== -->
+        <div class="tab-content" id="tab-register" role="tabpanel" aria-labelledby="tab-register-btn">
+            <form id="registerForm" novalidate>
+                <div class="form-group">
+                    <label for="regName"><i class="fas fa-user"></i> Nome Completo</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-user"></i></span>
+                        <input type="text" id="regName" name="name" class="form-control" placeholder="Ex: João Silva" required autocomplete="name">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="regEmail"><i class="fas fa-envelope"></i> E-mail</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-envelope"></i></span>
+                        <input type="email" id="regEmail" name="email" class="form-control" placeholder="seu@email.com" required autocomplete="email">
+                    </div>
+                </div>
+
+                <div class="row" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 1; min-width: 140px;">
+                        <label for="regPassword"><i class="fas fa-lock"></i> Senha</label>
+                        <div class="input-wrapper password-wrapper">
+                            <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
+                            <input type="password" id="regPassword" name="password" class="form-control" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password">
+                            <button type="button" class="password-toggle" data-target="regPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
+                                <i class="far fa-eye-slash" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength" id="passwordStrengthContainer" style="display: none;">
+                            <div class="strength-bar" id="strengthBar1"></div>
+                            <div class="strength-bar" id="strengthBar2"></div>
+                            <div class="strength-bar" id="strengthBar3"></div>
+                            <div class="strength-bar" id="strengthBar4"></div>
+                            <span class="strength-text" id="strengthText">Fraca</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="flex: 1; min-width: 140px;">
+                        <label for="regConfirmPassword"><i class="fas fa-lock"></i> Confirmar</label>
+                        <div class="input-wrapper password-wrapper">
+                            <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
+                            <input type="password" id="regConfirmPassword" name="confirm_password" class="form-control" placeholder="Digite novamente" required autocomplete="new-password">
+                            <button type="button" class="password-toggle" data-target="regConfirmPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
+                                <i class="far fa-eye-slash" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div class="password-match-hint" id="passwordMatchHint"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="regWorkshop"><i class="fas fa-wrench"></i> Nome da Oficina</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-wrench"></i></span>
+                        <input type="text" id="regWorkshop" name="workshop" class="form-control" placeholder="Ex: Oficina Central" required>
+                    </div>
+                </div>
+
+                <!-- CAPTCHA REGISTER -->
+                <div class="captcha-container" role="group" aria-label="Validação de segurança">
+                    <div class="sr-only" id="registerCaptchaDescription">
+                        Digite os 4 números que aparecem na imagem para validar que você é humano.
+                        A imagem é atualizada automaticamente a cada 2 minutos ou ao clicar no botão de atualizar.
+                    </div>
+
+                    <div class="captcha-row">
+                        <div class="captcha-box">
+                            <img id="registerCaptchaImage" 
+                                 src="/api/auth/captcha/generate" 
+                                 alt="CAPTCHA: digite os 4 números da imagem"
+                                 aria-describedby="registerCaptchaDescription">
+                            <input type="hidden" id="registerCaptchaId">
+                        </div>
+                        <button type="button" 
+                                class="btn-refresh" 
+                                id="refreshRegisterCaptcha" 
+                                title="Atualizar imagem do CAPTCHA" 
+                                aria-label="Gerar nova imagem do CAPTCHA">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <input type="text" 
+                           name="captcha" 
+                           id="registerCaptchaInput" 
+                           class="captcha-input" 
+                           placeholder="Digite os 4 números" 
+                           maxlength="4" 
+                           inputmode="numeric" 
+                           pattern="[0-9]*" 
+                           autocomplete="off" 
+                           required
+                           aria-describedby="registerCaptchaDescription registerCaptchaTimerLabel"
+                           aria-label="Digite os 4 números do CAPTCHA">
+
+                    <div class="captcha-footer">
+                        <span id="registerCaptchaTimerLabel">
+                            ⏱️ Expira em: <strong class="captcha-timer" id="registerCaptchaTimer" aria-live="polite">02:00</strong>
+                        </span>
+                        <span>🚫 Uso único</span>
+                    </div>
+                </div>
+
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="terms" required>
+                    <label class="form-check-label" for="terms">
+                        <i class="far fa-check-circle me-1" aria-hidden="true"></i> Aceito os <a href="#">Termos de Uso</a> e <a href="#">Política de Privacidade</a>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
+                    <i class="fas fa-user-plus me-2" aria-hidden="true"></i> Criar Conta Gratuita
+                </button>
+
+                <div style="text-align: center; margin-top: 12px;">
+                    <small style="color: #718096;">
+                        <i class="fas fa-gift" style="color: #f5a623;" aria-hidden="true"></i>
+                        Ao criar sua conta, você ganha <strong style="color: #f5a623;">3 créditos grátis</strong>!
+                    </small>
+                </div>
+            </form>
         </div>
-    </div>
 
-    <!-- Hero Section com Upload -->
-    <section class="hero-section">
-        <div class="hero-bg"></div>
-        <div class="container">
-            <div class="row align-items-center min-vh-100">
-                <div class="col-lg-6 mb-5 mb-lg-0" data-aos="fade-right" data-aos-duration="1000">
-                    <span class="badge mb-3 py-2 px-3" style="background: rgba(255,255,255,0.15); color: #f5a623; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-robot me-2"></i>Scikit-learn + IA
-                    </span>
-                    <h1 class="hero-title">
-                        Análise Inteligente para<br>
-                        <span class="gradient-text">sua oficina mecânica</span>
-                    </h1>
-                    <p class="hero-subtitle">
-                        <strong>🚀 Upload automático!</strong><br>
-                        Basta enviar seus arquivos CSV ou Excel. 
-                        O sistema detecta automaticamente os padrões e gera insights poderosos.
-                    </p>
-                    
-                    <div class="row g-3 mb-4">
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Sem seleção de colunas</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Detecção automática</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Análise completa</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Resultados em segundos</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Métricas Rápidas -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="totalAnalises">0</div>
-                                <div class="metric-label">Análises</div>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="analisesHoje">0</div>
-                                <div class="metric-label">Hoje</div>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="creditsDisplay">0</div>
-                                <div class="metric-label">Créditos</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
-                    <div class="row">
-                        <!-- 🔥 CARD DE STATUS PREMIUM -->
-                        <div class="col-12 mb-4">
-                            <div class="upload-card" id="premiumStatusContainer">
-                                <div class="text-center py-3">
-                                    <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
-                                        <span class="visually-hidden">Carregando...</span>
-                                    </div>
-                                    <p class="mt-2" style="color: rgba(255,255,255,0.6);">Carregando status do plano...</p>
-                                </div>
-                            </div>
-                        </div>
+        <!-- MENSAGEM -->
+        <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
 
-                        <!-- Card de Upload -->
-                        <div class="col-12">
-                            <div class="upload-card mb-4">
-                                <div class="d-flex align-items-center justify-content-between mb-4">
-                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">
-                                        <i class="fas fa-cloud-upload-alt me-2" style="color: #f5a623;"></i>
-                                        Upload Automático
-                                    </h3>
-                                    <span class="badge py-2 px-3" id="uploadCreditsBadge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white;">
-                                        <i class="fas fa-coins me-1"></i>
-                                        <span id="uploadCredits">0</span> créditos
-                                    </span>
-                                </div>
-                                
-                                <!-- Limites -->
-                                <div class="limit-info">
-                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
-                                        <div>
-                                            <i class="fas fa-hard-drive"></i>
-                                            <span>Limite: <strong class="limit-value">200 KB</strong>/arquivo</span>
-                                        </div>
-                                        <div>
-                                            <i class="fas fa-layer-group"></i>
-                                            <span>Máximo: <strong class="limit-value">3 arquivos</strong>/vez</span>
-                                        </div>
-                                        <div>
-                                            <i class="fas fa-coins"></i>
-                                            <span>Custo: <strong class="limit-value">1 crédito</strong>/arquivo</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <form id="uploadForm">
-                                    <div class="upload-area mb-4" id="dropArea">
-                                        <div class="upload-icon">
-                                            <i class="fas fa-file-excel"></i>
-                                        </div>
-                                        <h4 class="h6 mb-2" style="color: rgba(255,255,255,0.8);">Arraste seus arquivos aqui</h4>
-                                        <p class="text-muted small mb-3" style="color: rgba(255,255,255,0.6);">
-                                            <i class="fas fa-file-csv me-1"></i> CSV 
-                                            <i class="fas fa-file-excel ms-2 me-1"></i> Excel
-                                            <i class="fas fa-layer-group ms-2 me-1"></i> Até 3 arquivos
-                                        </p>
-                                        <div class="text-muted small mb-2" style="color: rgba(255,255,255,0.6);">
-                                            <i class="fas fa-info-circle me-1"></i>
-                                            Limite de <strong style="color: #f5a623;">200KB</strong> por arquivo
-                                        </div>
-                                        <div>
-                                            <label for="fileInput" class="btn btn-gradient btn-sm">
-                                                <i class="fas fa-folder-open me-2"></i>
-                                                Selecionar Arquivos
-                                            </label>
-                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="size-warning" id="sizeWarning">
-                                        <i class="fas fa-exclamation-triangle me-2"></i>
-                                        <span id="sizeWarningText">Arquivo excede o limite de 200KB!</span>
-                                    </div>
-                                    
-                                    <div id="filePreviewContainer" class="mt-3"></div>
-                                    
-                                    <div class="processing-indicator mb-3">
-                                        <div class="processing-icon">
-                                            <i class="fas fa-robot"></i>
-                                        </div>
-                                        <div class="processing-text">
-                                            <strong>Processamento automático</strong>
-                                            <p class="small text-muted mb-0" style="color: rgba(255,255,255,0.6);">
-                                                O sistema detectará automaticamente:
-                                                <br>• Colunas mais importantes
-                                                <br>• Padrões nos dados
-                                                <br>• Melhor tipo de análise
-                                            </p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="d-grid">
-                                        <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
-                                            <i class="fas fa-play-circle me-2"></i>
-                                            Iniciar Análise
-                                            <span class="badge bg-light text-dark ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                        
-                        <!-- Análises em Andamento -->
-                        <div class="col-12 mb-4">
-                            <div class="upload-card">
-                                <div class="d-flex align-items-center justify-content-between mb-4">
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-chart-line me-2 fa-lg" style="color: #f5a623;"></i>
-                                        <h3 class="h5 mb-0 fw-bold" style="color: white;">Análises em Andamento</h3>
-                                        <span class="badge ms-2" id="activeAnalysesCount" style="background: #f5a623; color: white;">0</span>
-                                    </div>
-                                </div>
-                                
-                                <div id="activeAnalysesContainer">
-                                    <div class="text-center py-5" style="color: rgba(255,255,255,0.5);">
-                                        <i class="fas fa-cloud-upload-alt fa-3x mb-3 opacity-50"></i>
-                                        <h6>Nenhuma análise em andamento</h6>
-                                        <p class="small">Selecione até 3 arquivos para começar</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Histórico de Análises -->
-                        <div class="col-12">
-                            <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
-                                <div class="d-flex align-items-center mb-4">
-                                    <i class="fas fa-history me-2" style="color: #f5a623;"></i>
-                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">Histórico de Análises</h3>
-                                </div>
-                                
-                                <div class="timeline" id="recentAnalyses" style="max-height: 400px; overflow-y: auto;">
-                                    <div class="timeline-item">
-                                        <div class="timeline-marker"></div>
-                                        <div class="timeline-content">
-                                            <p class="mb-1 small">Carregando histórico...</p>
-                                            <small style="color: rgba(255,255,255,0.5);">Aguarde</small>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="mt-3 text-center">
-                                    <button class="btn btn-link small text-decoration-none" onclick="window.app?.loadFullHistory()" style="color: #f5a623;">
-                                        <i class="fas fa-eye me-1"></i> Ver todas as análises
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <!-- FOOTER -->
+        <div class="login-footer">
+            <div class="links">
+                <a href="#"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Suporte 24h</a>
+                <a href="#"><i class="fas fa-shield-alt me-1" aria-hidden="true"></i> Privacidade</a>
+                <a href="#"><i class="fas fa-file-alt me-1" aria-hidden="true"></i> Termos</a>
+                <a href="#"><i class="fas fa-envelope me-1" aria-hidden="true"></i> Contato</a>
             </div>
-        </div>
-    </section>
-
-    <!-- Modal de Créditos -->
-    <div class="modal fade" id="creditsModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
-                    <h5 class="modal-title" style="color: white;">
-                        <i class="fas fa-coins text-warning me-2" style="color: #f5a623;"></i>
-                        Meus Créditos
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center py-4">
-                    <i class="fas fa-coins fa-4x mb-3" style="color: #f5a623;"></i>
-                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #f5a623;">0</div>
-                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.7);">créditos disponíveis</p>
-                    
-                    <div class="alert alert-info small">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong style="color: #f5a623;">Como funcionam os créditos:</strong><br>
-                        • Você começa com <strong style="color: #f5a623;">3 créditos gratuitos</strong><br>
-                        • ⭐ Premium ganha 1 crédito por dia<br>
-                        • Cada análise consome 1 crédito<br>
-                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
-                        • 🔥 Limite máximo de 3 créditos acumulados
-                    </div>
-                </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.2);">
-                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 0.75rem; border-radius: 50px;">
-                        <i class="fas fa-credit-card me-2"></i>
-                        Comprar mais créditos
-                    </a>
-                </div>
-            </div>
+            <div class="copyright">© 2026 AutoAnalyticsPro. Todos os direitos reservados.</div>
         </div>
     </div>
 
-    <!-- Modal GPSA -->
-    <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.2);">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
-                    <h5 class="modal-title" style="color: white;">
-                        <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
-                        GPSA - Impacto no Negócio
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="gpsaModalBody">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
-                            <span class="visually-hidden">Carregando...</span>
-                        </div>
-                        <p class="mt-3" style="color: rgba(255,255,255,0.6);">Carregando análise...</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="bg-white py-4 mt-5">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <p class="text-muted small mb-0" style="color: rgba(255,255,255,0.6);">
-                        <i class="fas fa-robot me-2" style="color: #f5a623;"></i>
-                        AutoAnalyticsPro © 2024 - IA para oficinas mecânicas
-                    </p>
-                </div>
-                <div class="col-md-6 text-md-end">
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-brain me-1"></i> AutoML
-                    </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-chart-line me-1"></i> Scikit-learn
-                    </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
-                    </span>
-                    <span class="badge py-2 px-3" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-hard-drive me-1"></i> 200KB Limit
-                    </span>
-                </div>
-            </div>
-        </div>
-    </footer>
-
-    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script src="/static/js/auth.js?v=2.0"></script>
     
     <!-- Configuração do Toastr -->
     <script>
@@ -1209,95 +979,6 @@
             extendedTimeOut: 1000,
             escapeHtml: true
         };
-    </script>
-    
-    <!-- Scripts do sistema -->
-    <script src="/static/js/auth.js?v=2.0"></script>
-    <script src="/static/js/app.js?v=2.0"></script>
-    <script src="/static/js/dashboard.js?v=2.0"></script>
-    <script src="/static/js/payment.js?v=2.0"></script>
-    
-    <!-- Inicialização -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // 🔥 TRAVA DE SEGURANÇA: Redireciona deslogados para o login rapidamente
-            // Isso substitui a verificação manual de localStorage
-            setTimeout(() => {
-                // Verifica se o Auth foi carregado
-                if (!window.appAuth) {
-                    console.warn('⚠️ Auth não carregado, redirecionando para login...');
-                    window.location.href = '/login';
-                    return;
-                }
-                
-                // Verifica autenticação usando o estado do Auth
-                if (!window.appAuth.isAuthenticated) {
-                    console.log('🔒 Acesso negado. Redirecionando para tela de login...');
-                    window.location.href = '/login';
-                } else {
-                    console.log('✅ Usuário autenticado. Dashboard liberado.');
-                    
-                    // Carregar dados do usuário
-                    if (window.appAuth.loadUserCredits) {
-                        window.appAuth.loadUserCredits();
-                    }
-                }
-            }, 300); // Tempo ideal para o checkToken() validar os cookies ou localStorage
-            
-            // ==============================================
-            // INICIALIZAÇÕES VISUAIS
-            // ==============================================
-            
-            AOS.init({ once: true, duration: 1000 });
-            gsap.registerPlugin(ScrollTrigger);
-
-            window.addEventListener('scroll', function() {
-                const navbar = document.getElementById('mainNavbar');
-                if (window.scrollY > 50) {
-                    navbar.classList.add('scrolled');
-                } else {
-                    navbar.classList.remove('scrolled');
-                }
-            });
-
-            gsap.from('.hero-title', {
-                duration: 1,
-                y: 100,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-
-            gsap.from('.upload-card', {
-                scrollTrigger: {
-                    trigger: '.upload-card',
-                    start: 'top 80%',
-                    toggleActions: 'play none none reverse'
-                },
-                duration: 1,
-                x: 100,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-            
-            // 🔥 Carregar status premium após inicialização
-            setTimeout(() => {
-                if (window.loadPremiumStatus) {
-                    window.loadPremiumStatus();
-                    if (window.startPremiumStatusPolling) {
-                        window.startPremiumStatusPolling(60000);
-                    }
-                }
-                
-                if (window.app) {
-                    console.log('✅ App inicializado');
-                } else {
-                    console.error('❌ App não carregado');
-                    if (window.toastr) {
-                        toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
-                    }
-                }
-            }, 1500);
-        });
     </script>
 </body>
 </html>
