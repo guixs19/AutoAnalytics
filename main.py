@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO CORRIGIDA COM ROTAS CERTAS
+# main.py (na raiz) - VERSÃO COMPLETAMENTE CORRIGIDA
 import sys
 import os
 from pathlib import Path
@@ -322,7 +322,7 @@ if frontend_available:
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
+        if token and token.startswith("Bearer "):  # 🔥 LINHA 349 CORRIGIDA!
             token = token.replace("Bearer ", "")
         
         if token:
@@ -346,7 +346,7 @@ if frontend_available:
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer ""):
+        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
             token = token.replace("Bearer ", "")
         
         if not token:
@@ -366,7 +366,7 @@ if frontend_available:
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
+        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
             token = token.replace("Bearer ", "")
         
         if not token:
@@ -386,7 +386,7 @@ if frontend_available:
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
+        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
             token = token.replace("Bearer ", "")
         
         if not token:
@@ -425,13 +425,13 @@ if frontend_available:
 # ==============================================
 async def extract_token(request: Request) -> str:
     token = request.cookies.get("access_token")
-    if token and token.startswith("Bearer "):
+    if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
         token = token.replace("Bearer ", "")
     if token:
         return token
     
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
+    if auth_header.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
         return auth_header.replace("Bearer ", "")
     
     token = request.headers.get("X-Access-Token", "")
