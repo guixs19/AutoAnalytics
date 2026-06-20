@@ -1,4 +1,4 @@
-# backend/crud.py - VERSÃO CORRIGIDA (hashed_password)
+# backend/crud.py - VERSÃO CORRIGIDA E SINCRONIZADA
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, not_
 from datetime import datetime, date, timedelta, timezone
@@ -12,7 +12,7 @@ from backend.security import hasher, jwt_manager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🔥 CORREÇÃO: Definir fuso horário de Brasília (UTC-3)
+# 🔥 CORREÇÃO: Definir fuso horário de Brasília (UTC-3) - SINCRONIZADO com models.py
 TZ_BRASIL = timezone(timedelta(hours=-3))
 
 def _now_brasil() -> datetime:
@@ -76,14 +76,14 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
 
 
 # ==============================================
-# 🔥 FUNÇÃO CREATE_USER CORRIGIDA - hashed_password
+# 🔥 FUNÇÃO CREATE_USER CORRIGIDA - SINCRONIZADA COM MODELS.PY
 # ==============================================
 
 def create_user(db: Session, user_data: Any) -> models.User:
     """
     Cria um novo usuário no banco de dados com segurança contra campos ausentes
     🔥 CORRIGIDO: getattr() para phone com fallback None
-    🔥 CORRIGIDO: hashed_password (NÃO password_hash)
+    🔥 CORRIGIDO: hashed_password (NÃO password_hash) - SINCRONIZADO com models.py
     """
     
     # 🔥 CORREÇÃO CRUCIAL: Captura o telefone com segurança
@@ -91,6 +91,7 @@ def create_user(db: Session, user_data: Any) -> models.User:
     phone_value = getattr(user_data, "phone", None)
     
     # 🔥 CORREÇÃO: usar hashed_password (o nome correto do campo no models.py)
+    # SINCRONIZADO com models.py que tem hashed_password
     db_user = models.User(
         name=user_data.name,
         email=user_data.email,
@@ -166,6 +167,7 @@ def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.User
         update_data['workshop_name'] = update_data['workshop_name'].strip()
     
     if 'password' in update_data:
+        # 🔥 CORRIGIDO: usar hashed_password (sincronizado com models.py)
         update_data['hashed_password'] = hasher.hash_password(update_data.pop('password'))
     
     for key, value in update_data.items():
@@ -939,4 +941,4 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     return True
 
 
-print("✅ crud.py carregado com correções de fuso UTC-3, OR fix, create_user seguro e hashed_password")
+print("✅ crud.py carregado - SINCRONIZADO com models.py (hashed_password, UTC-3)")

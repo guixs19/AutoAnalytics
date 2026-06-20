@@ -1,4 +1,4 @@
-# backend/api/auth.py
+# backend/api/auth.py - VERSÃO CORRIGIDA
 """
 Módulo de REGISTRO de usuários
 Responsável apenas por cadastro de novos usuários
@@ -38,8 +38,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=100)
     workshop_name: str = Field(..., min_length=2, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)  # 🔥 ADICIONADO
     captcha_id: str
-    captcha_code: str  # 🔥 Nome alterado de captcha_text para captcha_code
+    captcha_code: str
     session_type: str = "register"
     
     @validator('captcha_code')
@@ -47,13 +48,21 @@ class RegisterRequest(BaseModel):
         if not v.isdigit():
             raise ValueError('CAPTCHA deve conter apenas números')
         return v
+    
+    @validator('phone')
+    def validate_phone(cls, v):
+        if v:
+            cleaned = ''.join(filter(str.isdigit, v))
+            if len(cleaned) < 10:
+                raise ValueError('Telefone deve ter pelo menos 10 dígitos')
+        return v
 
 
 # ==============================================
 # ROTA DE REGISTRO - CORRIGIDA
 # ==============================================
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)  # 🔥 CORRIGIDO: agora é /register
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(
     register_data: RegisterRequest,
     request: Request,
@@ -108,8 +117,19 @@ async def register(
             detail="Este email já está cadastrado. Faça login."
         )
     
+    # 🔥 VALIDAÇÃO 4: Telefone único (se fornecido)
+    if register_data.phone:
+        existing_phone = crud.get_user_by_phone(db, register_data.phone)
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este telefone já está cadastrado."
+            )
+    
     # Criar usuário
     try:
+        # 🔥 CORRIGIDO: passando o objeto RegisterRequest diretamente
+        # O crud.create_user vai extrair os campos corretamente
         new_user = crud.create_user(db, register_data)
         
         logger.info(f"✅ [REGISTER] Usuário criado: {new_user.email} | ID: {new_user.id}")

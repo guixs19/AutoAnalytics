@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA (captcha_code)
+// frontend/js/auth.js - VERSÃO CORRIGIDA (com phone, validação e máscara)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -278,7 +278,7 @@ class Auth {
                 email: email,
                 password: password,
                 captcha_id: captchaId || this.loginCaptchaId,
-                captcha_code: captchaCode,  // ← CORRIGIDO: antes era "captcha"
+                captcha_code: captchaCode,
                 session_type: 'login'
             };
             
@@ -364,7 +364,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER - CORRIGIDO (captcha_code)
+    // 🔥 REGISTER - CORRIGIDO (com phone, validação e máscara)
     // ==============================================
     
     async handleRegister(e) {
@@ -375,6 +375,7 @@ class Auth {
         const passwordInput = document.getElementById('registerPassword');
         const confirmPasswordInput = document.getElementById('registerConfirmPassword');
         const workshopInput = document.getElementById('registerWorkshop');
+        const phoneInput = document.getElementById('registerPhone');
         const captchaInput = document.getElementById('registerCaptchaInput');
         const captchaIdInput = document.getElementById('registerCaptchaId');
         
@@ -383,18 +384,46 @@ class Auth {
         const password = passwordInput?.value;
         const confirmPassword = confirmPasswordInput?.value;
         const workshopName = workshopInput?.value?.trim();
+        const phone = phoneInput?.value?.trim();
         const captchaCode = captchaInput?.value?.trim();
         const captchaId = captchaIdInput?.value || this.registerCaptchaId;
         
-        console.log('📝 Tentando registrar:', { name, email, workshopName, captchaId });
+        console.log('📝 Tentando registrar:', { name, email, workshopName, phone, captchaId });
         
+        // ==============================================
+        // 🔥 VALIDAÇÕES
+        // ==============================================
+        
+        // 1. Campos obrigatórios
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
-                toastr.error('Preencha todos os campos.');
+                toastr.error('Preencha todos os campos obrigatórios.');
             }
             return;
         }
         
+        // 2. Validação de telefone (opcional)
+        if (phone) {
+            const phoneClean = phone.replace(/\D/g, '');
+            
+            // Verifica se tem pelo menos 10 dígitos (DDD + número)
+            if (phoneClean.length > 0 && phoneClean.length < 10) {
+                if (window.toastr) {
+                    toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
+                }
+                return;
+            }
+            
+            // Verifica se tem mais de 11 dígitos
+            if (phoneClean.length > 11) {
+                if (window.toastr) {
+                    toastr.warning('Telefone deve ter no máximo 11 dígitos.');
+                }
+                return;
+            }
+        }
+        
+        // 3. Senha
         if (password.length < 6) {
             if (window.toastr) {
                 toastr.error('Senha deve ter no mínimo 6 caracteres.');
@@ -402,6 +431,7 @@ class Auth {
             return;
         }
         
+        // 4. Confirmação de senha
         if (password !== confirmPassword) {
             if (window.toastr) {
                 toastr.error('As senhas não coincidem.');
@@ -409,6 +439,7 @@ class Auth {
             return;
         }
         
+        // 5. CAPTCHA
         if (!captchaCode || captchaCode.length < 4) {
             if (window.toastr) {
                 toastr.error('Digite os 4 números da imagem.');
@@ -424,6 +455,10 @@ class Auth {
             return;
         }
         
+        // ==============================================
+        // 🔥 ENVIAR REGISTRO
+        // ==============================================
+        
         const submitBtn = document.getElementById('registerBtn');
         const originalText = submitBtn?.innerHTML;
         if (submitBtn) {
@@ -434,14 +469,14 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de registro...');
             
-            // 🔥 CORREÇÃO CRUCIAL: usar captcha_code (NÃO captcha)
             const requestBody = {
                 name: name,
                 email: email,
                 password: password,
                 workshop_name: workshopName,
+                phone: phone || null,
                 captcha_id: captchaId,
-                captcha_code: captchaCode,  // ← CORRIGIDO: antes era "captcha"
+                captcha_code: captchaCode,
                 session_type: 'register'
             };
             
@@ -472,6 +507,15 @@ class Auth {
                 if (window.toastr) {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
                 }
+                
+                // 🔥 Limpa o formulário
+                if (nameInput) nameInput.value = '';
+                if (emailInput) emailInput.value = '';
+                if (passwordInput) passwordInput.value = '';
+                if (confirmPasswordInput) confirmPasswordInput.value = '';
+                if (workshopInput) workshopInput.value = '';
+                if (phoneInput) phoneInput.value = '';
+                if (captchaInput) captchaInput.value = '';
                 
                 setTimeout(() => {
                     console.log('🔀 Redirecionando para /login...');

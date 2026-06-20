@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO FINAL CORRIGIDA
+# main.py (na raiz) - VERSÃO FINAL SINCRONIZADA COM FRONTEND
 import sys
 import os
 from pathlib import Path
@@ -49,7 +49,7 @@ class Settings:
     MODELS_DIR = str(BACKEND_DIR / "models")
     DATA_DIR = str(BACKEND_DIR / "data")
     
-    MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "204800"))
+    MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "204800"))  # 200KB
     ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -131,11 +131,15 @@ if FRONTEND_DIR.exists():
         planos_available = True
         frontend_available = True
         print(f"   ✅ planos.html")
+    else:
+        print(f"   ⚠️ planos.html não encontrado em {planos_html}")
     
     if checkout_html.exists():
         checkout_available = True
         frontend_available = True
         print(f"   ✅ checkout.html")
+    else:
+        print(f"   ⚠️ checkout.html não encontrado em {checkout_html}")
     
     # Verificar diretório JS
     js_dir = FRONTEND_DIR / "js"
@@ -148,14 +152,20 @@ if FRONTEND_DIR.exists():
                 print(f"   ⚠️ js/{js_file} não encontrado")
     else:
         print(f"   ❌ Pasta js não encontrada em {js_dir}")
+        os.makedirs(js_dir, exist_ok=True)
+        print(f"   ✅ Pasta js criada")
     
     # Verificar diretório CSS
     css_dir = FRONTEND_DIR / "css"
     if css_dir.exists():
         if (css_dir / "style.css").exists():
             print(f"   ✅ css/style.css")
+        else:
+            print(f"   ⚠️ css/style.css não encontrado")
     else:
         print(f"   ⚠️ Pasta css não encontrada")
+        os.makedirs(css_dir, exist_ok=True)
+        print(f"   ✅ Pasta css criada")
 else:
     print(f"   ❌ Frontend NÃO encontrado em: {FRONTEND_DIR}")
     print(f"   🔧 Criando frontend/js para você...")
@@ -223,7 +233,8 @@ app.add_middleware(
         "X-Captcha-ID", 
         "X-Captcha-Expires",
         "X-Auth-Required",
-        "X-Redirect-To"
+        "X-Redirect-To",
+        "X-Captcha-Text"
     ]
 )
 print(f"   ✅ CORS configurado para: {settings.CORS_ORIGINS}")
@@ -371,7 +382,6 @@ if frontend_available:
             access_token = access_token.replace("Bearer ", "")
         
         # 🚨 CORREÇÃO BLINDADA: Se não houver token, redireciona VISUALMENTE
-        # NUNCA mandes JSON para o navegador aqui!
         if not access_token:
             print(f"🔴 [DASHBOARD] Sem token - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
@@ -403,57 +413,104 @@ if frontend_available:
                 )
                 
         except Exception as e:
-            # Qualquer falha inesperada, manda para o login em segurança
             print(f"❌ [DASHBOARD] Erro na validação: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
-    @app.get("/planos", include_in_schema=False)
-    async def planos_page(request: Request):
-        """Página de planos - requer autenticação"""
+    # ============================================================
+    # 🔥 PLANOS - CORRIGIDO (com verificação de autenticação)
+    # ============================================================
+    @app.get("/planos", response_class=HTMLResponse)
+    async def route_planos(request: Request):
+        """
+        🔥 PLANOS - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
+        """
         from backend.security import jwt_manager
         
-        token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
-            token = token.replace("Bearer ", "")
+        # 1. Tenta ler o cookie de acesso
+        access_token = request.cookies.get("access_token")
+        if access_token and access_token.startswith("Bearer "):
+            access_token = access_token.replace("Bearer ", "")
         
-        if not token:
-            return RedirectResponse(url="/login", status_code=302)
+        # Se não houver token, redireciona para login
+        if not access_token:
+            print(f"🔴 [PLANOS] Sem token - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
         
         try:
-            payload = await jwt_manager.verify_token_async(token, "access")
-            if not payload:
-                return RedirectResponse(url="/login", status_code=302)
+            # 2. Valida o token
+            payload = await jwt_manager.verify_token_async(access_token, "access")
             
+            if not payload:
+                print(f"🔴 [PLANOS] Token inválido - redirecionando para /login")
+                return RedirectResponse(url="/login", status_code=303)
+            
+            # 3. Token válido - entrega o HTML dos planos
             if planos_available:
-                return FileResponse(str(FRONTEND_DIR / "planos.html"))
-            
-            raise HTTPException(status_code=404, detail="Planos não encontrado")
-        except Exception:
-            return RedirectResponse(url="/login", status_code=302)
+                file_path = FRONTEND_DIR / "planos.html"
+                if not file_path.exists():
+                    print(f"❌ [PLANOS] planos.html não encontrado em {file_path}")
+                    return HTMLResponse(
+                        content="<h1>Erro: planos.html não encontrado na pasta frontend</h1>",
+                        status_code=404
+                    )
+                
+                print(f"✅ [PLANOS] Token válido para {payload.get('email')} - entregando planos")
+                return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+            else:
+                return HTMLResponse(
+                    content="<h1>Erro: Página de planos não disponível</h1>",
+                    status_code=404
+                )
+                
+        except Exception as e:
+            print(f"❌ [PLANOS] Erro na validação: {e} - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
     
-    @app.get("/checkout", include_in_schema=False)
-    async def checkout_page(request: Request):
-        """Página de checkout - requer autenticação"""
+    # ============================================================
+    # 🔥 CHECKOUT - CORRIGIDO (com verificação de autenticação)
+    # ============================================================
+    @app.get("/checkout", response_class=HTMLResponse)
+    async def route_checkout(request: Request):
+        """
+        🔥 CHECKOUT - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
+        """
         from backend.security import jwt_manager
         
-        token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
-            token = token.replace("Bearer ", "")
+        access_token = request.cookies.get("access_token")
+        if access_token and access_token.startswith("Bearer "):
+            access_token = access_token.replace("Bearer ", "")
         
-        if not token:
-            return RedirectResponse(url="/login", status_code=302)
+        if not access_token:
+            print(f"🔴 [CHECKOUT] Sem token - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
         
         try:
-            payload = await jwt_manager.verify_token_async(token, "access")
+            payload = await jwt_manager.verify_token_async(access_token, "access")
+            
             if not payload:
-                return RedirectResponse(url="/login", status_code=302)
+                print(f"🔴 [CHECKOUT] Token inválido - redirecionando para /login")
+                return RedirectResponse(url="/login", status_code=303)
             
             if checkout_available:
-                return FileResponse(str(FRONTEND_DIR / "checkout.html"))
-            
-            raise HTTPException(status_code=404, detail="Checkout não encontrado")
-        except Exception:
-            return RedirectResponse(url="/login", status_code=302)
+                file_path = FRONTEND_DIR / "checkout.html"
+                if not file_path.exists():
+                    print(f"❌ [CHECKOUT] checkout.html não encontrado em {file_path}")
+                    return HTMLResponse(
+                        content="<h1>Erro: checkout.html não encontrado na pasta frontend</h1>",
+                        status_code=404
+                    )
+                
+                print(f"✅ [CHECKOUT] Token válido para {payload.get('email')} - entregando checkout")
+                return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+            else:
+                return HTMLResponse(
+                    content="<h1>Erro: Página de checkout não disponível</h1>",
+                    status_code=404
+                )
+                
+        except Exception as e:
+            print(f"❌ [CHECKOUT] Erro na validação: {e} - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
     
     # Redirecionamentos para URLs com .html
     @app.get("/planos.html", include_in_schema=False)
@@ -565,63 +622,33 @@ print("   ✅ Autenticação habilitada")
 time.sleep(1)
 
 # ==============================================
-# ROTA CAPTCHA
-# ==============================================
-print("\n🔢 Configurando rota CAPTCHA...")
-
-@app.get("/api/auth/captcha/generate")
-async def generate_captcha_direct(request: Request, session_type: str = "login"):
-    print(f"🔢 [CAPTCHA] Solicitado para {session_type}")
-    try:
-        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(request, session_type)
-        content_type = "image/png" if img_bytes and img_bytes.startswith(b'\x89PNG') else "image/svg+xml"
-        return Response(
-            content=img_bytes,
-            media_type=content_type,
-            headers={
-                "X-Captcha-ID": captcha_id,
-                "X-Captcha-Expires": str(settings.CAPTCHA_EXPIRATION_SECONDS),
-                "Cache-Control": "no-store, no-cache, must-revalidate, private",
-                "Access-Control-Expose-Headers": "X-Captcha-ID, X-Captcha-Expires"
-            }
-        )
-    except Exception as e:
-        print(f"❌ [CAPTCHA] Erro: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar CAPTCHA: {str(e)}")
-
-@app.get("/api/auth/captcha/test", include_in_schema=False)
-async def test_captcha():
-    try:
-        img_bytes, captcha_id = await captcha_manager.generate_captcha_image_async(None, "test")
-        return {"success": True, "message": "CAPTCHA funcionando", "captcha_id": captcha_id[:16], "size_bytes": len(img_bytes)}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
-
-# ==============================================
-# 🔥 REGISTRO DE TODAS AS ROTAS DOS ROUTERS (CORRIGIDO)
+# 🔥 REGISTRO DE TODAS AS ROTAS DOS ROUTERS
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
 try:
-    # 🔥 1. Rotas de autenticação - CORRIGIDO
+    # 🔥 1. Rotas de autenticação (login, logout, refresh, check-token)
     from backend.api.auth_routes import router as auth_router
-    from backend.api.auth import router as registration_router  # ← auth.py
+    
+    # 🔥 2. Rotas de registro (register)
+    from backend.api.auth import router as registration_router
     
     # 🔥 AMBOS COM O MESMO PREFIXO /api/auth
     app.include_router(auth_router, prefix="/api/auth")
-    app.include_router(registration_router, prefix="/api/auth")  # ← CORRIGIDO: antes era "/api"
+    app.include_router(registration_router, prefix="/api/auth")
     
     print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
+    print("   ✅ Rotas CAPTCHA: /api/auth/captcha/generate (via auth_routes.py)")
     
-    # 2. Rotas de pagamento
+    # 3. Rotas de pagamento
     try:
         from backend.api.payment_routes import router as payment_router
         app.include_router(payment_router, prefix="/api")
-        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance")
+        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance, /api/payments/subscription-status, /api/payments/premium-status, /api/payments/daily-credit")
     except ImportError as e:
         print(f"   ⚠️ Payment routes não disponível: {e}")
     
-    # 3. Rotas de upload múltiplo
+    # 4. Rotas de upload múltiplo
     try:
         from backend.api.upload_routes import router as upload_router
         app.include_router(upload_router, prefix="/api")
@@ -629,15 +656,15 @@ try:
     except ImportError as e:
         print(f"   ⚠️ Upload routes não disponível: {e}")
     
-    # 4. Rotas gerais com Gemini
+    # 5. Rotas gerais com Gemini (routes.py)
     try:
         from backend.api.routes import router as gemini_router
         app.include_router(gemini_router, prefix="/api")
-        print("   ✅ Rotas GEMINI: /api/upload, /api/health, /api/test, /api/results")
+        print("   ✅ Rotas GEMINI: /api/upload, /api/health, /api/test, /api/results, /api/status, /api/admin/diagnostics")
     except ImportError as e:
         print(f"   ⚠️ Gemini routes não disponível: {e}")
     
-    # 5. Rotas Proof of Work
+    # 6. Rotas Proof of Work
     try:
         from backend.api.pow_routes import router as pow_router
         app.include_router(pow_router, prefix="/api")
@@ -664,7 +691,9 @@ async def health_check():
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "environment": settings.ENVIRONMENT,
         "debug": settings.DEBUG,
-        "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())}
+        "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())},
+        "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 # ==============================================
@@ -716,6 +745,7 @@ async def startup_event():
         print(f"   ⚠️ Erro ao iniciar cleanup do CAPTCHA: {e}")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
+    frontend_status = "✅" if frontend_available else "❌"
     
     print(f"""
     ╔══════════════════════════════════════════════════════════════════╗
@@ -723,24 +753,29 @@ async def startup_event():
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<45} ║
     ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: {settings.CAPTCHA_TYPE}     ║
-    ║  📊 Observabilidade: ✅ ativa                                     ║
+    ║  🌐 Frontend: {frontend_status} | 📊 Observabilidade: ✅ ativa          ║
+    ║  📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo                    ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🔗 Endpoints principais:                                          ║
     ║     POST /api/auth/register  ← 🔥 ROTA CORRIGIDA                 ║
     ║     POST /api/auth/login                                         ║
     ║     POST /api/upload-auto (múltiplos arquivos)                    ║
-    ║     GET  /api/analyses/history                                    ║
-    ║     GET  /api/plans                                               ║
+    ║     GET  /api/auth/captcha/generate                             ║
+    ║     GET  /api/auth/check-token                                   ║
+    ║     GET  /api/auth/me                                            ║
+    ║     GET  /api/health                                             ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🌐 Páginas (com redirecionamento):                               ║
     ║     http://localhost:{settings.PORT}/                             ║
     ║     http://localhost:{settings.PORT}/login                        ║
     ║     http://localhost:{settings.PORT}/dashboard                    ║
     ║     http://localhost:{settings.PORT}/planos                       ║
+    ║     http://localhost:{settings.PORT}/checkout                     ║
     ║     http://localhost:{settings.PORT}/api/docs                     ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  📁 Frontend: {FRONTEND_DIR.absolute()}                              ║
     ║  🗄️  Database: {db_path}                                           ║
+    ║  🕐 Timezone: America/Sao_Paulo (UTC-3)                           ║
     ╚══════════════════════════════════════════════════════════════════╝
     """)
 
@@ -796,6 +831,7 @@ if __name__ == "__main__":
     print(f"🤖 IA: Google Gemini")
     print(f"🔢 CAPTCHA: {settings.CAPTCHA_TYPE} ({settings.CAPTCHA_CODE_LENGTH} dígitos)")
     print(f"📊 Observabilidade: ✅ ativa")
+    print(f"📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(

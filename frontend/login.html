@@ -853,7 +853,7 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 🔥 TAB REGISTER -->
+        <!-- 🔥 TAB REGISTER - COM CAMPO PHONE -->
         <!-- ========================================== -->
         <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel" aria-labelledby="tab-register-btn">
             <form id="registerForm" novalidate>
@@ -911,6 +911,19 @@
                         <span class="input-icon" aria-hidden="true"><i class="fas fa-wrench"></i></span>
                         <input type="text" id="registerWorkshop" name="workshop" class="form-control" placeholder="Ex: Oficina Central" required>
                     </div>
+                </div>
+
+                <!-- 🔥 CAMPO PHONE - ADICIONADO -->
+                <div class="form-group">
+                    <label for="registerPhone"><i class="fas fa-phone"></i> Telefone <small style="color: #718096;">(opcional)</small></label>
+                    <div class="input-wrapper">
+                        <span class="input-icon" aria-hidden="true"><i class="fas fa-phone"></i></span>
+                        <input type="tel" id="registerPhone" name="phone" class="form-control" placeholder="(00) 00000-0000" autocomplete="tel">
+                    </div>
+                    <small style="color: #a0aec0; font-size: 0.7rem;">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Opcional - usado apenas para contato
+                    </small>
                 </div>
 
                 <!-- CAPTCHA REGISTER -->
@@ -1100,6 +1113,7 @@
         });
     </script>
 
+    <!-- 🔥 AUTH.JS - CARREGADO POR ÚLTIMO -->
     <script src="/static/js/auth.js"></script>
 </body>
 </html>

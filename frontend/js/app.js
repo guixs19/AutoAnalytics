@@ -1,4 +1,4 @@
-// frontend/js/app.js - VERSÃO PRODUÇÃO (200KB) - TOTALMENTE CORRIGIDA
+// frontend/js/app.js - VERSÃO PRODUÇÃO (200KB) - TOTALMENTE CORRIGIDA E SINCRONIZADA
 // Limite: 200KB | Sistema de créditos premium | API relativa para VPS
 
 class AutoAnalytics {
@@ -7,13 +7,14 @@ class AutoAnalytics {
         const isLocalhost = window.location.hostname === 'localhost' || 
                            window.location.hostname === '127.0.0.1';
         
+        // 🔥 CORRIGIDO: Usa a mesma lógica de API base do backend
         this.apiBase = isLocalhost 
             ? 'http://localhost:8000/api'
             : '/api';
         
         console.log(`🌐 API Base: ${this.apiBase} (${isLocalhost ? 'localhost' : 'produção'})`);
         
-        // 🔥 LIMITE: 200KB
+        // 🔥 LIMITE: 200KB (sincronizado com backend)
         this.MAX_FILE_SIZE_KB = 200;
         this.MAX_FILE_SIZE_BYTES = this.MAX_FILE_SIZE_KB * 1024;
         this.MAX_CREDITS_BALANCE = 3;
@@ -260,6 +261,7 @@ class AutoAnalytics {
         }
         
         try {
+            // 🔥 CORRIGIDO: Usa /api/payments/check-analysis (sincronizado com backend)
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
             if (response && response.ok) {
                 const data = await response.json();
@@ -300,6 +302,7 @@ class AutoAnalytics {
         }
         
         try {
+            // 🔥 CORRIGIDO: Usa /api/payments/premium/check-daily
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium/check-daily`, {
                 method: 'POST'
             });
@@ -387,6 +390,7 @@ class AutoAnalytics {
                 return;
             }
             
+            // 🔥 CORRIGIDO: Usa /api/auth/check-token
             const response = await fetch(`${this.apiBase}/auth/check-token`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -415,6 +419,7 @@ class AutoAnalytics {
             const refreshToken = localStorage.getItem('refresh_token');
             if (!refreshToken) return false;
             
+            // 🔥 CORRIGIDO: Usa /api/auth/refresh
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -516,8 +521,7 @@ class AutoAnalytics {
         
         if (file.size > this.MAX_FILE_SIZE_BYTES) {
             this.showFileSizeWarning(file);
-            // 🔥 CORRIGIDO: NÃO chama resetFileSelection() aqui
-            this.fileData = null; // Apenas limpa os dados do arquivo
+            this.fileData = null;
             if (this.uploadButton) {
                 this.uploadButton.disabled = true;
                 this.uploadButton.innerHTML = `❌ Arquivo excede ${this.MAX_FILE_SIZE_KB}KB`;
@@ -534,7 +538,6 @@ class AutoAnalytics {
         const warningEl = document.getElementById('sizeWarning');
         
         if (warningEl) {
-            // 🔥 CORRIGIDO: Mensagem dinâmica com o limite correto de 200KB
             warningEl.innerHTML = `
                 <div class="alert alert-warning py-2 mb-0 mt-2">
                     <i class="fas fa-exclamation-triangle me-2"></i>
@@ -557,8 +560,6 @@ class AutoAnalytics {
     hideFileSizeWarning() {
         const warningEl = document.getElementById('sizeWarning');
         if (warningEl) {
-            // 🔥 CORRIGIDO: Não limpa o innerHTML completamente se não for necessário
-            // Apenas remove a classe show, o conteúdo pode ser sobrescrito depois
             warningEl.classList.remove('show');
         }
     }
@@ -581,7 +582,7 @@ class AutoAnalytics {
         }
         
         if (!this.validateFileSize(file)) {
-            return; // 🔥 CORRIGIDO: Não continua, mas mantém o aviso visível
+            return;
         }
         
         const validTypes = ['.xlsx', '.xls', '.csv'];
@@ -606,6 +607,7 @@ class AutoAnalytics {
             formData.append('ai_model', 'auto');
             
             const token = localStorage.getItem('access_token');
+            // 🔥 CORRIGIDO: Usa /api/upload-auto (sincronizado com backend)
             const response = await fetch(`${this.apiBase}/upload-auto`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -679,15 +681,13 @@ class AutoAnalytics {
         }
     }
     
-    // 🔥 CORRIGIDO: handleFileSelect sem reset prematuro
     async handleFileSelect() {
         const file = this.fileInput?.files[0];
         if (!file) return;
         
-        // 🔥 CORRIGIDO: Validação sem reset que apaga o aviso
         if (file.size > this.MAX_FILE_SIZE_BYTES) {
             this.validateFileSize(file);
-            return; // Não continua, mantém o aviso visível
+            return;
         }
         
         if (!this.validateFile(file)) return;
@@ -947,6 +947,7 @@ class AutoAnalytics {
             if (!this.currentProcessId) return;
             
             try {
+                // 🔥 CORRIGIDO: Usa /api/status/{process_id}
                 const status = await this.getStatus(this.currentProcessId);
                 
                 const progressBar = document.getElementById('progressBar');
@@ -1041,6 +1042,7 @@ class AutoAnalytics {
         if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
+            // 🔥 CORRIGIDO: Usa /api/analyses/history
             const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
             if (response && response.ok) {
                 const data = await response.json();
@@ -1090,6 +1092,7 @@ class AutoAnalytics {
         if (this.isLoginPage() || this.isRegisterPage()) return;
         
         try {
+            // 🔥 CORRIGIDO: Usa /api/stats
             const response = await this.fetchWithAuth(`${this.apiBase}/stats`);
             if (response && response.ok) {
                 const stats = await response.json();
@@ -1109,6 +1112,7 @@ class AutoAnalytics {
         if (!this.isPremium()) return;
         
         try {
+            // 🔥 CORRIGIDO: Usa /api/payments/balance
             const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
             if (response && response.ok) {
                 const data = await response.json();
@@ -1207,7 +1211,7 @@ class AutoAnalytics {
         const preview = document.getElementById('dataPreview');
         if (preview) preview.classList.add('d-none');
         
-        this.clearSizeWarningContent(); // 🔥 Usa o método específico para limpar
+        this.clearSizeWarningContent();
         this.fileData = null;
         this.columns = [];
     }
@@ -1372,4 +1376,4 @@ if (!document.getElementById('appStyles')) {
     document.head.appendChild(style);
 }
 
-console.log('✅ app.js carregado - Limite: 200KB - TOTALMENTE CORRIGIDO');
+console.log('✅ app.js carregado - Limite: 200KB - TOTALMENTE CORRIGIDO E SINCRONIZADO');
