@@ -1,8 +1,7 @@
-// frontend/js/auth.js - VERSÃO FINAL DEFINITIVA
+// frontend/js/auth.js - VERSÃO COMPLETA CORRIGIDA
 /**
  * Módulo de Autenticação - AutoAnalytics
- * GERENCIAMENTO COMPLETO DE SESSÃO, CAPTCHA E NAVEGAÇÃO
- * 🔥 REDIRECIONAMENTO: /login.html e /dashboard (sem extensão)
+ * FLUXO: login → dashboard | register → login
  */
 
 class Auth {
@@ -19,21 +18,16 @@ class Auth {
         this.initialized = false;
         this.isRegisterCaptchaLoaded = false;
         
-        // Controle de refresh em andamento
         this._isRefreshing = false;
         this._refreshPromise = null;
-        
-        // Debounce para UI
         this._uiUpdateTimeout = null;
-        
-        // Marca o início da inicialização
         this._initializing = false;
         
         this.init();
     }
     
     // ==============================================
-    // GETTER / SETTER PARA AUTENTICAÇÃO COM UI AUTOMÁTICA
+    // GETTER / SETTER
     // ==============================================
     
     get isAuthenticated() {
@@ -42,11 +36,9 @@ class Auth {
     
     set isAuthenticated(value) {
         const changed = this._isAuthenticated !== value;
-        const oldValue = this._isAuthenticated;
         this._isAuthenticated = value;
-        
-        if (changed && (this.initialized || this._initializing)) {
-            console.log(`🔄 Estado de autenticação mudou: ${oldValue} → ${value}`);
+        if (changed) {
+            console.log(`🔄 Estado de autenticação: ${value}`);
             this._scheduleUIUpdate();
         }
     }
@@ -55,7 +47,6 @@ class Auth {
         if (this._uiUpdateTimeout) {
             clearTimeout(this._uiUpdateTimeout);
         }
-        
         this._uiUpdateTimeout = setTimeout(() => {
             this.updateUI();
             this._uiUpdateTimeout = null;
@@ -63,7 +54,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 CAPTCHA - COM CRONÔMETRO FUNCIONANDO
+    // CAPTCHA
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
@@ -111,7 +102,6 @@ class Auth {
                 captchaImage.src = imageUrl;
             }
             
-            // 🔥 INICIAR CRONÔMETRO
             this.startCaptchaTimer(sessionType);
             
             const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
@@ -131,12 +121,7 @@ class Auth {
         }
     }
     
-    // ==============================================
-    // 🔥 CRONÔMETRO DO CAPTCHA
-    // ==============================================
-    
     startCaptchaTimer(sessionType) {
-        // Limpar timer anterior
         if (sessionType === 'login' && this.loginCaptchaTimer) {
             clearInterval(this.loginCaptchaTimer);
             this.loginCaptchaTimer = null;
@@ -151,7 +136,6 @@ class Auth {
         
         const timerElement = document.getElementById(`${sessionType}CaptchaTimer`);
         
-        // Atualizar imediatamente
         if (timerElement) {
             timerElement.textContent = '02:00';
             timerElement.classList.remove('expiring', 'expired');
@@ -221,10 +205,6 @@ class Auth {
         }
     }
     
-    // ==============================================
-    // REFRESH CAPTCHA
-    // ==============================================
-    
     async refreshCaptcha(sessionType = 'login') {
         this.resetCaptchaTimer(sessionType);
         await this.loadCaptcha(sessionType);
@@ -238,7 +218,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 LOGIN - COM REDIRECIONAMENTO DEFINITIVO
+    // 🔥 LOGIN - COM REDIRECIONAMENTO CORRETO
     // ==============================================
     
     async handleLogin(e) {
@@ -252,8 +232,6 @@ class Auth {
         if (!email || !password || !captchaCode) {
             if (window.toastr) {
                 toastr.error('Por favor, preencha todos os campos.');
-            } else {
-                this.showError('Preencha todos os campos');
             }
             return;
         }
@@ -261,13 +239,11 @@ class Auth {
         if (captchaCode.length < 4) {
             if (window.toastr) {
                 toastr.error('Digite os 4 números da imagem.');
-            } else {
-                this.showError('Digite os 4 números da imagem');
             }
             return;
         }
         
-        const submitBtn = e.target.querySelector('button[type="submit"]') || document.getElementById('loginBtn');
+        const submitBtn = document.getElementById('loginBtn');
         const originalText = submitBtn?.innerHTML;
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -295,7 +271,7 @@ class Auth {
             const data = await response.json();
             
             if (response.ok && (data.success || data.access_token)) {
-                console.log('✅ Login bem-sucedido:', data.message || 'Sucesso!');
+                console.log('✅ Login bem-sucedido!');
                 
                 // 1. Salvar tokens
                 if (data.access_token) {
@@ -305,69 +281,46 @@ class Auth {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
                 
-                // 2. Atualizar dados na memória
+                // 2. Atualizar dados
                 this.userData = {
-                    email: data.user_email || data.user?.email || email,
-                    name: data.user_name || data.user?.name || 'Usuário',
-                    workshop_name: data.workshop_name || data.user?.workshop_name,
-                    role: data.role || data.user?.role,
-                    plan: data.plan || data.user?.plan,
-                    credits: data.credits || data.user?.credits || 0,
-                    is_admin: data.is_admin || data.user?.is_admin || false
+                    email: data.user_email || email,
+                    name: data.user_name || 'Usuário',
+                    workshop_name: data.workshop_name,
+                    role: data.role,
+                    plan: data.plan,
+                    credits: data.credits || 0,
+                    is_admin: data.is_admin || false
                 };
                 
                 this.currentUser = this.userData;
                 this.isAuthenticated = true;
                 
-                // 3. Atualizar UI
-                this.updateUI();
-                
-                // 4. Mensagem de sucesso
-                if (window.toastr) {
-                    toastr.success('Login realizado com sucesso!');
-                } else {
-                    this.showSuccess('Login realizado!');
-                }
-                
-                // 5. Limpar campos sensíveis e timers
+                // 3. Limpar campos
                 this.clearCaptchaTimer('login');
                 const passwordField = document.getElementById('loginPassword');
                 if (passwordField) passwordField.value = '';
                 const captchaInput = document.getElementById('loginCaptchaInput');
                 if (captchaInput) captchaInput.value = '';
                 
-                // 🔥 6. REDIRECIONAMENTO DEFINITIVO
-                // Se estiver na página de login, vai para o dashboard
-                // Se o backend usa rota limpa (sem .html), use '/dashboard'
-                // Se for arquivo estático, use '/dashboard.html'
+                // 4. Mensagem
+                if (window.toastr) {
+                    toastr.success('Login realizado com sucesso!');
+                }
+                
+                // 5. REDIRECIONAMENTO
                 setTimeout(() => {
-                    // Verifica se está na página de login
-                    const isLoginPage = window.location.pathname.includes('login') || 
-                                        window.location.pathname === '/' ||
-                                        window.location.pathname === '';
-                    
-                    if (isLoginPage) {
-                        console.log('🔀 Redirecionando para o dashboard...');
-                        window.location.href = '/dashboard';
-                    } else {
-                        // Se já estiver no dashboard, apenas recarrega
-                        window.location.reload();
-                    }
-                }, 500);
+                    console.log('🔀 Redirecionando para /dashboard...');
+                    window.location.href = '/dashboard';
+                }, 600);
                 
                 return true;
                 
             } else {
-                // Login falhou
                 const errorMsg = data.detail || data.message || 'Erro ao realizar login.';
-                
                 if (window.toastr) {
                     toastr.error(errorMsg);
-                } else {
-                    this.showError(errorMsg);
                 }
                 
-                // Recarregar CAPTCHA
                 await this.refreshCaptcha('login');
                 const captchaInput = document.getElementById('loginCaptchaInput');
                 if (captchaInput) {
@@ -379,13 +332,9 @@ class Auth {
             
         } catch (error) {
             console.error('❌ Erro na requisição de login:', error);
-            
             if (window.toastr) {
                 toastr.error('Erro de comunicação com o servidor.');
-            } else {
-                this.showError('Erro de comunicação com o servidor.');
             }
-            
             await this.refreshCaptcha('login');
             return false;
             
@@ -398,26 +347,29 @@ class Auth {
     }
     
     // ==============================================
-    // REGISTRO
+    // 🔥 REGISTER - CORRIGIDO E FUNCIONANDO
     // ==============================================
     
     async handleRegister(e) {
         e.preventDefault();
         
-        const name = document.getElementById('regName')?.value;
-        const email = document.getElementById('regEmail')?.value;
+        // 🔥 PEGAR TODOS OS CAMPOS DO FORMULÁRIO
+        const name = document.getElementById('regName')?.value?.trim();
+        const email = document.getElementById('regEmail')?.value?.trim();
         const password = document.getElementById('regPassword')?.value;
         const confirmPassword = document.getElementById('regConfirmPassword')?.value;
-        const workshopName = document.getElementById('regWorkshop')?.value;
-        const captchaCode = document.getElementById('registerCaptchaInput')?.value;
+        const workshopName = document.getElementById('regWorkshop')?.value?.trim();
+        const captchaCode = document.getElementById('registerCaptchaInput')?.value?.trim();
         const captchaId = document.getElementById('registerCaptchaId')?.value || this.registerCaptchaId;
         
-        // Validações
+        console.log('📝 Tentando registrar:', { name, email, workshopName });
+        
+        // 🔥 VALIDAÇÕES
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos.');
             } else {
-                this.showError('Preencha todos os campos');
+                alert('Preencha todos os campos.');
             }
             return;
         }
@@ -426,7 +378,7 @@ class Auth {
             if (window.toastr) {
                 toastr.error('Senha deve ter no mínimo 6 caracteres.');
             } else {
-                this.showError('Senha deve ter no mínimo 6 caracteres');
+                alert('Senha deve ter no mínimo 6 caracteres.');
             }
             return;
         }
@@ -435,7 +387,7 @@ class Auth {
             if (window.toastr) {
                 toastr.error('As senhas não coincidem.');
             } else {
-                this.showError('As senhas não coincidem');
+                alert('As senhas não coincidem.');
             }
             return;
         }
@@ -444,7 +396,7 @@ class Auth {
             if (window.toastr) {
                 toastr.error('Digite os 4 números da imagem.');
             } else {
-                this.showError('Digite os 4 números da imagem');
+                alert('Digite os 4 números da imagem.');
             }
             return;
         }
@@ -453,12 +405,13 @@ class Auth {
             if (window.toastr) {
                 toastr.error('CAPTCHA não carregado. Clique em 🔄');
             } else {
-                this.showError('CAPTCHA não carregado. Clique em 🔄');
+                alert('CAPTCHA não carregado. Clique em 🔄');
             }
             await this.refreshCaptcha('register');
             return;
         }
         
+        // 🔥 BLOQUEAR BOTÃO
         const submitBtn = document.getElementById('registerBtn');
         const originalText = submitBtn?.innerHTML;
         if (submitBtn) {
@@ -467,31 +420,38 @@ class Auth {
         }
         
         try {
+            console.log('🔄 Enviando requisição de registro...');
+            
+            const requestBody = {
+                name: name,
+                email: email,
+                password: password,
+                workshop_name: workshopName,
+                captcha_id: captchaId,
+                captcha_code: captchaCode,
+                session_type: 'register'
+            };
+            
+            console.log('📦 Body:', requestBody);
+            
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Captcha-ID': captchaId
                 },
-                body: JSON.stringify({
-                    name: name,
-                    email: email,
-                    password: password,
-                    workshop_name: workshopName,
-                    captcha_id: captchaId,
-                    captcha_code: captchaCode,
-                    session_type: 'register'
-                })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
+            console.log('📥 Resposta:', data);
             
             if (!response.ok) {
                 const errorMsg = data.detail || data.message || 'Falha no registro';
                 if (window.toastr) {
                     toastr.error(errorMsg);
                 } else {
-                    this.showError(errorMsg);
+                    alert(errorMsg);
                 }
                 await this.refreshCaptcha('register');
                 return false;
@@ -501,10 +461,12 @@ class Auth {
                 if (window.toastr) {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
                 } else {
-                    this.showSuccess('Conta criada! Faça login para continuar.');
+                    alert('✅ Conta criada! Faça login para continuar.');
                 }
                 
+                // 🔥 REDIRECIONAR PARA O LOGIN
                 setTimeout(() => {
+                    console.log('🔀 Redirecionando para /login...');
                     window.location.href = '/login';
                 }, 2000);
                 
@@ -514,11 +476,11 @@ class Auth {
             throw new Error(data.message || 'Erro no registro');
             
         } catch (error) {
-            console.error('Registration error:', error);
+            console.error('❌ Erro no registro:', error);
             if (window.toastr) {
                 toastr.error(error.message);
             } else {
-                this.showError(error.message);
+                alert(error.message);
             }
             await this.refreshCaptcha('register');
             return false;
@@ -556,12 +518,7 @@ class Auth {
         this.clearTokens();
         this.isAuthenticated = false;
         this.currentUser = null;
-        this._isRefreshing = false;
-        this._refreshPromise = null;
         
-        document.dispatchEvent(new CustomEvent('userLoggedOut'));
-        
-        // 🔥 Redirecionar para login
         window.location.href = '/login';
     }
     
@@ -571,15 +528,14 @@ class Auth {
     }
     
     // ==============================================
-    // SETUP DOS LISTENERS
+    // 🔥 SETUP DOS LISTENERS - CORRIGIDO
     // ==============================================
     
     setupAuthPageListeners() {
+        // 🔥 LOGIN FORM
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-            
-            // Carregar CAPTCHA inicial
             this.loadCaptcha('login');
             
             const refreshBtn = document.getElementById('refreshLoginCaptcha');
@@ -590,9 +546,14 @@ class Auth {
             }
         }
         
+        // 🔥 REGISTER FORM - CORRIGIDO
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
+            console.log('📝 Formulário de registro encontrado!');
             registerForm.addEventListener('submit', (e) => this.handleRegister(e));
+            
+            // Carregar CAPTCHA do registro
+            this.loadCaptcha('register');
             
             const refreshBtn = document.getElementById('refreshRegisterCaptcha');
             if (refreshBtn) {
@@ -600,9 +561,11 @@ class Auth {
                     this.refreshCaptcha('register');
                 });
             }
+        } else {
+            console.warn('⚠️ Formulário de registro não encontrado!');
         }
         
-        // Carregar CAPTCHA ao mudar para a tab de registro
+        // 🔥 TAB DE REGISTRO - carregar CAPTCHA quando clicar
         const registerTab = document.querySelector('#register-tab') || 
                            document.querySelector('button[data-bs-target="#register"]') ||
                            document.querySelector('.tab[data-tab="register"]');
@@ -614,7 +577,7 @@ class Auth {
             });
         }
         
-        // Toggle de senha
+        // 🔥 PASSWORD TOGGLE
         document.querySelectorAll('.password-toggle').forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetId = btn.getAttribute('data-target');
@@ -634,7 +597,7 @@ class Auth {
             });
         });
         
-        // Botão de logout
+        // 🔥 LOGOUT
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
@@ -780,7 +743,7 @@ class Auth {
     }
     
     // ==============================================
-    // CRÉDITOS E UTILIDADES
+    // CRÉDITOS
     // ==============================================
     
     async loadUserCredits() {
@@ -822,31 +785,6 @@ class Auth {
             return `${credits}/3`;
         }
         return String(this.getCredits());
-    }
-    
-    async checkCreditsForAnalysis() {
-        if (this.isAdmin()) return true;
-        
-        const credits = this.getCredits();
-        
-        if (credits <= 0) {
-            this.showCreditsModal();
-            return false;
-        }
-        
-        return true;
-    }
-    
-    showCreditsModal() {
-        if (window.toastr) {
-            toastr.warning('Créditos insuficientes! Adquira o plano premium.', 'Atenção');
-        }
-        
-        setTimeout(() => {
-            if (window.location.pathname !== '/planos') {
-                window.location.href = '/planos';
-            }
-        }, 2000);
     }
     
     updateCreditsDisplay() {
@@ -919,7 +857,7 @@ class Auth {
     }
     
     // ==============================================
-    // UI E MENSAGENS
+    // UI
     // ==============================================
     
     showError(message) {
@@ -935,22 +873,6 @@ class Auth {
                 const alert = errorDiv.querySelector('.alert');
                 if (alert) alert.remove();
             }, 5000);
-        }
-    }
-    
-    showSuccess(message) {
-        const errorDiv = document.getElementById('authMessage');
-        if (errorDiv) {
-            errorDiv.innerHTML = `
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="fas fa-check-circle me-2"></i>${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            `;
-            setTimeout(() => {
-                const alert = errorDiv.querySelector('.alert');
-                if (alert) alert.remove();
-            }, 3000);
         }
     }
     
@@ -990,7 +912,6 @@ class Auth {
         
         this._initializing = false;
         
-        // Garante que a UI está sincronizada
         this.updateUI();
         
         console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
@@ -1002,10 +923,6 @@ class Auth {
 // ==============================================
 
 window.appAuth = new Auth();
-
-// Funções auxiliares
-window.getAuth = () => window.appAuth;
-window.refreshCaptcha = (type) => window.appAuth?.refreshCaptcha(type);
 
 console.log('✅ Auth carregado. Use window.appAuth para acessar.');
 console.log('   Ex: window.appAuth.isAuthenticated');
