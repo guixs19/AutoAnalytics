@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA (LOGIN + REGISTER)
+// frontend/js/auth.js - VERSÃO CORRIGIDA (com IDs corretos)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -54,11 +54,13 @@ class Auth {
     }
     
     // ==============================================
-    // CAPTCHA
+    // 🔥 CAPTCHA - CORRIGIDO (IDs corretos)
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
         try {
+            console.log(`🔄 Carregando CAPTCHA para: ${sessionType}`);
+            
             const url = `${this.apiBase}/auth/captcha/generate?session_type=${sessionType}&t=${Date.now()}`;
             
             const response = await fetch(url, {
@@ -79,6 +81,8 @@ class Auth {
                 throw new Error('CAPTCHA ID não recebido');
             }
             
+            console.log(`✅ CAPTCHA ID recebido: ${captchaId}`);
+            
             if (sessionType === 'login') {
                 this.loginCaptchaId = captchaId;
             } else {
@@ -86,25 +90,34 @@ class Auth {
                 this.isRegisterCaptchaLoaded = true;
             }
             
+            // 🔥 CORRIGIDO: IDs corretos (loginCaptchaId, registerCaptchaId)
             const hiddenField = document.getElementById(`${sessionType}CaptchaId`);
             if (hiddenField) {
                 hiddenField.value = captchaId;
+                console.log(`📝 Hidden field ${sessionType}CaptchaId atualizado`);
             }
             
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
+            // 🔥 CORRIGIDO: O ID da imagem é "loginCaptchaImg" e "registerCaptchaImg"
+            const imageId = sessionType === 'login' ? 'loginCaptchaImg' : 'registerCaptchaImg';
+            const captchaImage = document.getElementById(imageId);
             if (captchaImage) {
                 if (captchaImage.src && captchaImage.src.startsWith('blob:')) {
                     URL.revokeObjectURL(captchaImage.src);
                 }
                 captchaImage.src = imageUrl;
+                console.log(`🖼️ Imagem CAPTCHA atualizada: #${imageId}`);
+            } else {
+                console.warn(`⚠️ Elemento #${imageId} não encontrado`);
             }
             
             this.startCaptchaTimer(sessionType);
             
-            const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
+            // 🔥 CORRIGIDO: O ID do input é "loginCaptchaInput" e "registerCaptchaInput"
+            const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+            const captchaInput = document.getElementById(inputId);
             if (captchaInput) {
                 captchaInput.value = '';
                 captchaInput.disabled = false;
@@ -115,7 +128,7 @@ class Auth {
             return captchaId;
             
         } catch (error) {
-            console.error('Erro ao carregar CAPTCHA:', error);
+            console.error('❌ Erro ao carregar CAPTCHA:', error);
             this.showCaptchaError(sessionType);
             return null;
         }
@@ -134,7 +147,9 @@ class Auth {
         const expirySeconds = 120;
         let remaining = expirySeconds;
         
-        const timerElement = document.getElementById(`${sessionType}CaptchaTimer`);
+        // 🔥 CORRIGIDO: IDs corretos
+        const timerId = sessionType === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
+        const timerElement = document.getElementById(timerId);
         
         if (timerElement) {
             timerElement.textContent = '02:00';
@@ -163,7 +178,8 @@ class Auth {
                     timerElement.classList.add('expired');
                 }
                 
-                const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
+                const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+                const captchaInput = document.getElementById(inputId);
                 if (captchaInput) {
                     captchaInput.disabled = true;
                     captchaInput.placeholder = 'Expirado - Clique em 🔄';
@@ -192,13 +208,15 @@ class Auth {
     resetCaptchaTimer(sessionType) {
         this.clearCaptchaTimer(sessionType);
         
-        const timerElement = document.getElementById(`${sessionType}CaptchaTimer`);
+        const timerId = sessionType === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
+        const timerElement = document.getElementById(timerId);
         if (timerElement) {
             timerElement.textContent = '02:00';
             timerElement.classList.remove('expiring', 'expired');
         }
         
-        const captchaInput = document.getElementById(`${sessionType}CaptchaInput`);
+        const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+        const captchaInput = document.getElementById(inputId);
         if (captchaInput) {
             captchaInput.disabled = false;
             captchaInput.placeholder = 'Digite os 4 números';
@@ -211,7 +229,8 @@ class Auth {
     }
     
     showCaptchaError(sessionType = 'login') {
-        const captchaImage = document.getElementById(`${sessionType}CaptchaImage`);
+        const imageId = sessionType === 'login' ? 'loginCaptchaImg' : 'registerCaptchaImg';
+        const captchaImage = document.getElementById(imageId);
         if (captchaImage) {
             captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="350" height="125" viewBox="0 0 350 125"%3E%3Crect width="350" height="125" fill="%23e53e3e"/%3E%3Ctext x="175" y="68" font-family="monospace" font-size="16" fill="white" text-anchor="middle"%3E⚠️ ERRO%3C/text%3E%3C/svg%3E';
         }
@@ -273,7 +292,6 @@ class Auth {
             if (response.ok && (data.success || data.access_token)) {
                 console.log('✅ Login bem-sucedido!');
                 
-                // 1. Salvar tokens
                 if (data.access_token) {
                     localStorage.setItem('access_token', data.access_token);
                 }
@@ -281,7 +299,6 @@ class Auth {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
                 
-                // 2. Atualizar dados
                 this.userData = {
                     email: data.user_email || email,
                     name: data.user_name || 'Usuário',
@@ -295,19 +312,16 @@ class Auth {
                 this.currentUser = this.userData;
                 this.isAuthenticated = true;
                 
-                // 3. Limpar campos
                 this.clearCaptchaTimer('login');
                 const passwordField = document.getElementById('loginPassword');
                 if (passwordField) passwordField.value = '';
                 const captchaInput = document.getElementById('loginCaptchaInput');
                 if (captchaInput) captchaInput.value = '';
                 
-                // 4. Mensagem
                 if (window.toastr) {
                     toastr.success('Login realizado com sucesso!');
                 }
                 
-                // 5. REDIRECIONAMENTO
                 setTimeout(() => {
                     console.log('🔀 Redirecionando para /dashboard...');
                     window.location.href = '/dashboard';
@@ -347,21 +361,22 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER - CORRIGIDO
+    // 🔥 REGISTER
     // ==============================================
     
     async handleRegister(e) {
         e.preventDefault();
         
-        const name = document.getElementById('regName')?.value?.trim();
-        const email = document.getElementById('regEmail')?.value?.trim();
-        const password = document.getElementById('regPassword')?.value;
-        const confirmPassword = document.getElementById('regConfirmPassword')?.value;
-        const workshopName = document.getElementById('regWorkshop')?.value?.trim();
+        // 🔥 CORRIGIDO: IDs corretos (registerName, registerEmail, etc)
+        const name = document.getElementById('registerName')?.value?.trim();
+        const email = document.getElementById('registerEmail')?.value?.trim();
+        const password = document.getElementById('registerPassword')?.value;
+        const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
+        const workshopName = document.getElementById('registerWorkshop')?.value?.trim();
         const captchaCode = document.getElementById('registerCaptchaInput')?.value?.trim();
         const captchaId = document.getElementById('registerCaptchaId')?.value || this.registerCaptchaId;
         
-        console.log('📝 Tentando registrar:', { name, email, workshopName });
+        console.log('📝 Tentando registrar:', { name, email, workshopName, captchaId });
         
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
@@ -460,7 +475,7 @@ class Auth {
         } catch (error) {
             console.error('❌ Erro no registro:', error);
             if (window.toastr) {
-                toastr.error(error.message);
+                toastr.error(error.message || 'Erro ao criar conta. Tente novamente.');
             }
             await this.refreshCaptcha('register');
             return false;
@@ -508,14 +523,16 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 SETUP DOS LISTENERS - CORRIGIDO
+    // SETUP DOS LISTENERS
     // ==============================================
     
     setupAuthPageListeners() {
+        console.log('🔧 Configurando listeners de autenticação...');
+        
         // LOGIN FORM
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
-            console.log('📝 Formulário de login encontrado!');
+            console.log('✅ Formulário de login encontrado!');
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
             this.loadCaptcha('login');
             
@@ -525,12 +542,14 @@ class Auth {
                     this.refreshCaptcha('login');
                 });
             }
+        } else {
+            console.warn('⚠️ Formulário de login NÃO encontrado!');
         }
         
         // REGISTER FORM
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
-            console.log('📝 Formulário de registro encontrado!');
+            console.log('✅ Formulário de registro encontrado!');
             registerForm.addEventListener('submit', (e) => this.handleRegister(e));
             
             this.loadCaptcha('register');
@@ -538,11 +557,12 @@ class Auth {
             const refreshBtn = document.getElementById('refreshRegisterCaptcha');
             if (refreshBtn) {
                 refreshBtn.addEventListener('click', () => {
+                    console.log('🔄 Atualizando CAPTCHA de registro...');
                     this.refreshCaptcha('register');
                 });
             }
         } else {
-            console.warn('⚠️ Formulário de registro não encontrado!');
+            console.warn('⚠️ Formulário de registro NÃO encontrado!');
         }
         
         // TAB DE REGISTRO
@@ -585,6 +605,8 @@ class Auth {
                 this.logout();
             });
         }
+        
+        console.log('✅ Listeners configurados!');
     }
     
     // ==============================================
@@ -837,18 +859,14 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 UPDATE UI - CORRIGIDO (com verificação)
+    // UPDATE UI
     // ==============================================
     
     updateUI() {
-        // 🔥 SÓ EXECUTA SE EXISTIREM ELEMENTOS DE UI
-        // Verifica se estamos em uma página que tem elementos de autenticação
         const authRequiredElements = document.querySelectorAll('.auth-required');
         const guestElements = document.querySelectorAll('.guest-only');
         
-        // Se não houver elementos de autenticação, não faz nada (evita erros)
         if (authRequiredElements.length === 0 && guestElements.length === 0) {
-            console.debug('ℹ️ Nenhum elemento de UI de autenticação encontrado. Ignorando updateUI().');
             return;
         }
         
@@ -886,10 +904,10 @@ class Auth {
         
         this._initializing = false;
         
-        // 🔥 SÓ CHAMA updateUI() SE HOUVER ELEMENTOS
         this.updateUI();
         
         console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
+        console.log(`📝 Formulários configurados: login=${!!document.getElementById('loginForm')}, register=${!!document.getElementById('registerForm')}`);
     }
 }
 
