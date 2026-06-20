@@ -16,7 +16,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
     <style>
-        /* Seu CSS atual do login.html - mantido igual */
+        /* TODO O SEU CSS AQUI (mantido igual) */
         * {
             box-sizing: border-box;
             margin: 0;
@@ -979,6 +979,117 @@
             extendedTimeOut: 1000,
             escapeHtml: true
         };
+    </script>
+
+    <!-- 🔥 SCRIPT DIRETO PARA REGISTRO - CORRIGIDO -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Configurando eventos manuais...');
+            
+            // 🔥 REGISTER FORM - Evento direto
+            const registerForm = document.getElementById('registerForm');
+            if (registerForm) {
+                console.log('✅ Formulário de registro encontrado!');
+                
+                registerForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log('📝 Submit do registro disparado!');
+                    
+                    // Pegar dados
+                    const name = document.getElementById('regName')?.value?.trim();
+                    const email = document.getElementById('regEmail')?.value?.trim();
+                    const password = document.getElementById('regPassword')?.value;
+                    const confirmPassword = document.getElementById('regConfirmPassword')?.value;
+                    const workshopName = document.getElementById('regWorkshop')?.value?.trim();
+                    const captchaCode = document.getElementById('registerCaptchaInput')?.value?.trim();
+                    const captchaId = document.getElementById('registerCaptchaId')?.value;
+                    
+                    console.log('📦 Dados:', { name, email, workshopName, captchaCode, captchaId });
+                    
+                    // Validações
+                    if (!name || !email || !password || !workshopName) {
+                        toastr.error('Preencha todos os campos.');
+                        return;
+                    }
+                    
+                    if (password.length < 6) {
+                        toastr.error('Senha deve ter no mínimo 6 caracteres.');
+                        return;
+                    }
+                    
+                    if (password !== confirmPassword) {
+                        toastr.error('As senhas não coincidem.');
+                        return;
+                    }
+                    
+                    if (!captchaCode || captchaCode.length < 4) {
+                        toastr.error('Digite os 4 números da imagem.');
+                        return;
+                    }
+                    
+                    if (!captchaId) {
+                        toastr.error('CAPTCHA não carregado. Clique em 🔄');
+                        return;
+                    }
+                    
+                    // Desabilitar botão
+                    const btn = document.getElementById('registerBtn');
+                    const originalText = btn?.innerHTML;
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Criando conta...';
+                    }
+                    
+                    // Enviar requisição
+                    fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Captcha-ID': captchaId
+                        },
+                        body: JSON.stringify({
+                            name: name,
+                            email: email,
+                            password: password,
+                            workshop_name: workshopName,
+                            captcha_id: captchaId,
+                            captcha_code: captchaCode,
+                            session_type: 'register'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('📥 Resposta:', data);
+                        
+                        if (data.success) {
+                            toastr.success('✅ Conta criada! Faça login para continuar.');
+                            setTimeout(() => {
+                                window.location.href = '/login';
+                            }, 2000);
+                        } else {
+                            toastr.error(data.detail || data.message || 'Erro no registro');
+                            // Recarregar CAPTCHA
+                            const refreshBtn = document.getElementById('refreshRegisterCaptcha');
+                            if (refreshBtn) refreshBtn.click();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('❌ Erro:', error);
+                        toastr.error('Erro de comunicação com o servidor.');
+                    })
+                    .finally(() => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = originalText;
+                        }
+                    });
+                });
+            } else {
+                console.error('❌ Formulário de registro NÃO encontrado!');
+            }
+        });
     </script>
 </body>
 </html>
