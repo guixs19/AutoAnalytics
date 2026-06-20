@@ -1,10 +1,10 @@
-# backend/security.py - VERSÃO PRODUÇÃO (OTIMIZADA + SEGURA)
+# backend/security.py - VERSÃO CORRIGIDA (ERRO DE FLOAT RESOLVIDO)
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO PRODUÇÃO
 - CAPTCHA com resolução otimizada (300x110, esticado pelo CSS)
 - Rate Limit rigoroso com Redis
 - Atomic Pop na validação (anti-replay)
-- Fallback seguro para blacklist
+- 🔥 CORREÇÃO: TODOS os valores convertidos para int()
 """
 
 from datetime import datetime, timedelta
@@ -61,13 +61,13 @@ oauth2_scheme = OAuth2PasswordBearer(
     scheme_name="JWT"
 )
 
-# 🔥 RATE LIMIT PARA CAPTCHA (anti-brute force)
-CAPTCHA_RATE_LIMIT = 5  # Máximo de tentativas
-CAPTCHA_RATE_WINDOW = 60  # Em 60 segundos
+# Rate limit para CAPTCHA (anti-brute force)
+CAPTCHA_RATE_LIMIT = 5
+CAPTCHA_RATE_WINDOW = 60
 
-# 🔥 RATE LIMIT PARA GERAÇÃO DE CAPTCHA
-CAPTCHA_GENERATE_LIMIT = 10  # Máximo de gerações
-CAPTCHA_GENERATE_WINDOW = 60  # Em 60 segundos
+# Rate limit para geração de CAPTCHA
+CAPTCHA_GENERATE_LIMIT = 10
+CAPTCHA_GENERATE_WINDOW = 60
 
 
 # ==============================================
@@ -412,10 +412,6 @@ class JWTManager:
         return True
     
     async def blacklist_token(self, jti: str, expire_in: int):
-        """
-        🔥 CORREÇÃO: Fallback seguro para blacklist
-        Se Redis falhar, levanta exceção em vez de usar memória não compartilhada
-        """
         if not jti:
             return
         
@@ -431,13 +427,11 @@ class JWTManager:
                     logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist Redis")
                 except Exception as e:
                     logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
-                    # 🔥 Em vez de usar memória não compartilhada, levanta exceção
                     raise HTTPException(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail="Serviço de autenticação temporariamente indisponível. Tente novamente."
                     )
             else:
-                # 🔥 Se Redis não está disponível, levanta exceção controlada
                 logger.error("❌ Redis indisponível para blacklist - recusando operação")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -460,10 +454,8 @@ class JWTManager:
                 return exists
             except Exception as e:
                 logger.error(f"Erro ao verificar blacklist Redis: {e}")
-                # 🔥 Em caso de erro no Redis, bloqueia por segurança
                 return True
         else:
-            # 🔥 Sem Redis, bloqueia por segurança
             logger.warning("⚠️ Redis indisponível para verificação de blacklist - bloqueando por segurança")
             return True
     
@@ -726,7 +718,7 @@ class PoWManager:
 
 
 # ==============================================
-# 4. CAPTCHA OTIMIZADO (RESOLUÇÃO REDUZIDA + RATE LIMIT)
+# 4. CAPTCHA - VERSÃO CORRIGIDA (SEM ERRO DE FLOAT)
 # ==============================================
 
 class CaptchaSession:
@@ -750,10 +742,7 @@ class CaptchaSession:
 
 
 class CaptchaStore:
-    """
-    Armazenamento de CAPTCHAs - Isola sessões por tipo (login/register)
-    🔥 CORREÇÃO: Atomic Pop - deleta antes de verificar (anti-replay)
-    """
+    """Armazenamento de CAPTCHAs - Atomic Pop (anti-replay)"""
     
     def __init__(self):
         self._store: Dict[str, CaptchaSession] = {}
@@ -846,10 +835,7 @@ class CaptchaStore:
             return captcha_id
     
     async def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
-        """
-        🔥 CORREÇÃO: ATOMIC POP
-        Deleta o CAPTCHA ANTES de validar (anti-replay / race condition)
-        """
+        """Atomic Pop - deleta antes de validar"""
         async with self._store_lock:
             if time.time() - self._last_cleanup > self._cleanup_interval:
                 await self._cleanup_async()
@@ -860,22 +846,17 @@ class CaptchaStore:
             session = self._store[captcha_id]
             user_key = self._get_user_key(ip, session_type)
             
-            # 🔥 VERIFICA SE O CAPTCHA PERTENCE À SESSÃO
             if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
                 logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
-                # 🔥 ATOMIC POP: deleta antes de validar
                 del self._store[captcha_id]
                 if user_key in self._user_sessions:
                     del self._user_sessions[user_key]
                 return False, "Desafio não pertence à sua sessão atual"
             
-            # 🔥 ATOMIC POP: deleta o CAPTCHA IMEDIATAMENTE (antes da validação)
-            # Isso previne race conditions e replay attacks
             if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
                 del self._user_sessions[user_key]
             del self._store[captcha_id]
             
-            # 🔥 AGORA VALIDA (depois de deletar)
             user_answer_clean = user_answer.strip().replace(" ", "")
             
             if session.is_expired():
@@ -913,19 +894,13 @@ class CaptchaStore:
 
 
 # ==============================================
-# 🔥 CAPTCHA MANAGER - RESOLUÇÃO OTIMIZADA
+# 🔥 CAPTCHA MANAGER - VERSÃO CORRIGIDA
 # ==============================================
 
 class CaptchaManager:
     """
-    Gerenciador de CAPTCHA - RESOLUÇÃO OTIMIZADA PARA PRODUÇÃO
-    
-    🔥 OTIMIZAÇÕES:
-    - Resolução REDUZIDA: 300x110 (vs 900x350)
-    - Fonte proporcional: 100px (vs 280px)
-    - CSS no frontend estica a imagem (mantém qualidade visual)
-    - Redução de ~60% no consumo de CPU
-    - Rate limit rigoroso com Redis
+    Gerenciador de CAPTCHA - RESOLUÇÃO OTIMIZADA
+    🔥 CORREÇÃO: TODOS os valores convertidos para int()
     """
     
     def __init__(self):
@@ -935,22 +910,22 @@ class CaptchaManager:
         # ============================================================
         # 🔥 RESOLUÇÃO OTIMIZADA (PRODUÇÃO)
         # ============================================================
-        self.image_width = 300      # 🔥 REDUZIDO (vs 900)
-        self.image_height = 110     # 🔥 REDUZIDO (vs 350)
-        self.font_size = 100        # 🔥 REDUZIDO (vs 280)
+        self.image_width = 300
+        self.image_height = 110
+        self.font_size = 100
         
         # Espaçamento fixo entre caracteres
-        self.char_spacing = 20      # 🔥 REDUZIDO (vs 60)
+        self.char_spacing = 20
         
         # Rotação mínima
-        self.rotation_range = (-3, 3)  # 🔥 REDUZIDO (vs -5 a 5)
+        self.rotation_range = (-3, 3)
         
         # Linhas finas (width=1)
         self.line_width = 1
-        self.num_lines = 3          # 🔥 REDUZIDO (vs 4)
+        self.num_lines = 3
         
         # Pontos de ruído
-        self.noise_points = 80      # 🔥 REDUZIDO (vs 200)
+        self.noise_points = 80
         # ============================================================
         
         # Cache de imagens
@@ -960,13 +935,12 @@ class CaptchaManager:
         
         logger.info("=" * 60)
         logger.info("🔢 CAPTCHA OTIMIZADO PARA PRODUÇÃO!")
-        logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height} (REDUZIDO)")
+        logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height}")
         logger.info(f"   📝 Tamanho da fonte: {self.font_size}px")
         logger.info(f"   📏 Espaçamento: {self.char_spacing}px")
         logger.info(f"   🔄 Rotação: {self.rotation_range}")
         logger.info(f"   📏 Linhas: {self.num_lines} linhas finas")
         logger.info(f"   🎯 Ruído: {self.noise_points} pontos")
-        logger.info(f"   ⚡ Redução de CPU: ~60%")
         logger.info("=" * 60)
         
         if self._dev_mode:
@@ -993,14 +967,19 @@ class CaptchaManager:
     
     def _draw_optimized_captcha(self, code: str) -> bytes:
         """
-        🔥 VERSÃO OTIMIZADA (RESOLUÇÃO REDUZIDA)
+        🔥 VERSÃO CORRIGIDA - SEM ERRO DE FLOAT
         """
         if not PIL_AVAILABLE:
             return self._generate_svg_fallback(code)
         
-        width = self.image_width
-        height = self.image_height
-        font_size = self.font_size
+        # 🔥 CONVERTER TUDO PARA int() para evitar erro de float
+        width = int(self.image_width)
+        height = int(self.image_height)
+        font_size = int(self.font_size)
+        line_width = int(self.line_width)
+        num_lines = int(self.num_lines)
+        noise_points = int(self.noise_points)
+        char_spacing = int(self.char_spacing)
         
         # Cria imagem com fundo gradiente
         img = Image.new('RGB', (width, height), color='white')
@@ -1014,15 +993,15 @@ class CaptchaManager:
             draw.line([(0, i), (width, i)], fill=(r, g, b))
         
         # 🔥 LINHAS FINAS
-        for _ in range(self.num_lines):
+        for _ in range(num_lines):
             x1 = random.randint(0, width)
             y1 = random.randint(0, height)
             x2 = random.randint(0, width)
             y2 = random.randint(0, height)
-            draw.line([(x1, y1), (x2, y2)], fill=(160, 160, 160), width=self.line_width)
+            draw.line([(x1, y1), (x2, y2)], fill=(160, 160, 160), width=line_width)
         
         # 🔥 PONTOS DE RUÍDO
-        for _ in range(self.noise_points):
+        for _ in range(noise_points):
             x = random.randint(0, width)
             y = random.randint(0, height)
             gray = random.randint(120, 200)
@@ -1046,14 +1025,14 @@ class CaptchaManager:
         
         try:
             bbox = draw.textbbox((0, 0), '0', font=font)
-            char_width = bbox[2] - bbox[0]
+            char_width = int(bbox[2] - bbox[0])
         except:
-            char_width = font_size * 0.6
+            char_width = int(font_size * 0.6)
         
-        available_width = width - (margin * 2)
+        available_width = int(width - (margin * 2))
         
         if total_chars > 1:
-            spacing = (available_width - (char_width * total_chars)) / (total_chars - 1)
+            spacing = int((available_width - (char_width * total_chars)) / (total_chars - 1))
             spacing = max(5, spacing)
         else:
             spacing = 0
@@ -1062,17 +1041,17 @@ class CaptchaManager:
         start_x = margin
         
         for i, char in enumerate(code):
-            x = start_x + (i * (char_width + spacing))
-            y = (height // 2) - (font_size // 2) + random.randint(-2, 2)
-            angle = random.randint(*self.rotation_range)
+            x = int(start_x + (i * (char_width + spacing)))
+            y = int((height // 2) - (font_size // 2) + random.randint(-2, 2))
+            angle = random.randint(-3, 3)
             
             try:
                 bbox = draw.textbbox((0, 0), char, font=font)
-                char_w = bbox[2] - bbox[0] + 10
-                char_h = bbox[3] - bbox[1] + 10
+                char_w = int(bbox[2] - bbox[0] + 10)
+                char_h = int(bbox[3] - bbox[1] + 10)
             except:
-                char_w = char_width + 10
-                char_h = font_size + 10
+                char_w = int(char_width + 10)
+                char_h = int(font_size + 10)
             
             char_img = Image.new('RGBA', (char_w, char_h), (0, 0, 0, 0))
             char_draw = ImageDraw.Draw(char_img)
@@ -1091,8 +1070,8 @@ class CaptchaManager:
             
             rotated = char_img.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
             rot_w, rot_h = rotated.size
-            paste_x = x - (rot_w // 2) + (char_w // 2)
-            paste_y = y - (rot_h // 2) + (char_h // 2)
+            paste_x = int(x - (rot_w // 2) + (char_w // 2))
+            paste_y = int(y - (rot_h // 2) + (char_h // 2))
             
             img.paste(rotated, (paste_x, paste_y), rotated)
         
@@ -1107,8 +1086,9 @@ class CaptchaManager:
         return img_bytes.getvalue()
     
     def _generate_svg_fallback(self, code: str) -> bytes:
-        width = self.image_width
-        height = self.image_height
+        width = int(self.image_width)
+        height = int(self.image_height)
+        font_size = int(self.font_size)
         
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
@@ -1131,7 +1111,7 @@ class CaptchaManager:
   {''.join(f'<line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" stroke="rgba(255,255,255,0.15)" stroke-width="1" />' for _ in range(3))}
   
   <text x="{width // 2}" y="{height // 2 + 12}" 
-        font-family="'Courier New', monospace" font-size="{self.font_size + 10}" font-weight="bold" 
+        font-family="'Courier New', monospace" font-size="{font_size + 10}" font-weight="bold" 
         fill="white" text-anchor="middle" dominant-baseline="middle"
         letter-spacing="40"
         filter="url(#shadow)">
@@ -1142,12 +1122,10 @@ class CaptchaManager:
         return svg.encode('utf-8')
     
     async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """
-        🔥 GERA CAPTCHA COM RATE LIMIT RIGOROSO
-        """
+        """Gera CAPTCHA com rate limit"""
         client_ip = self._get_client_ip(request)
         
-        # 🔥 RATE LIMIT PARA GERAÇÃO
+        # Rate limit para geração
         rate_key = f"captcha_generate:{client_ip}:{session_type}"
         can_generate = await rate_limiter.check_rate_limit(
             rate_key,
@@ -1184,17 +1162,14 @@ class CaptchaManager:
     
     async def validate_captcha_async(self, captcha_id: str, captcha_text: str,
                                       request: Request, session_type: str = "login") -> bool:
-        """
-        Valida resposta do CAPTCHA com RATE LIMIT
-        🔥 CORREÇÃO: Atomic Pop dentro do store
-        """
+        """Valida CAPTCHA com rate limit e atomic pop"""
         client_ip = self._get_client_ip(request)
         
         if self._dev_mode and captcha_text == "1234":
             logger.info("🔧 Modo DEV: resposta '1234' aceita")
             return True
         
-        # 🔥 RATE LIMIT PARA VALIDAÇÃO
+        # Rate limit para validação
         rate_key = f"captcha_validate:{client_ip}:{session_type}"
         can_validate = await rate_limiter.check_rate_limit(
             rate_key,
@@ -1209,7 +1184,6 @@ class CaptchaManager:
                 detail=f"Muitas tentativas de CAPTCHA. Aguarde {CAPTCHA_RATE_WINDOW} segundos."
             )
         
-        # 🔥 O CAPTCHA É DESTRUÍDO DENTRO DE get_and_validate (Atomic Pop)
         valid, message = await self.store.get_and_validate(
             captcha_id, captcha_text.strip(), client_ip, session_type
         )
@@ -1280,7 +1254,6 @@ class RateLimiter:
                     return False
             except Exception as e:
                 logger.error(f"Erro no Redis: {e}")
-                # Em caso de erro no Redis, permite por segurança (mas loga)
                 return True
         
         # Fallback em memória
@@ -1568,15 +1541,15 @@ __all__ = [
 ]
 
 print("=" * 70)
-print("🔥 CAPTCHA OTIMIZADO PARA PRODUÇÃO - VERSÃO FINAL!")
-print("   📐 Dimensões: 300x110 (REDUZIDO - 60% menos CPU)")
+print("🔥 CAPTCHA OTIMIZADO - VERSÃO CORRIGIDA!")
+print("   📐 Dimensões: 300x110 (REDUZIDO)")
 print("   📝 Tamanho da fonte: 100px")
 print("   📏 Espaçamento: 20px")
 print("   🔄 Rotação: -3° a +3°")
 print("   📏 Linhas: 3 finas (width=1)")
 print("   🎯 Ruído: 80 pontos")
-print("   🛡️ Rate limit geração: 10/minuto por IP")
-print("   🛡️ Rate limit validação: 5/minuto por IP")
+print("   🛡️ Rate limit geração: 10/minuto")
+print("   🛡️ Rate limit validação: 5/minuto")
 print("   🔒 ATOMIC POP (deleta antes de validar)")
-print("   🔒 Fallback seguro para blacklist")
+print("   🔥 CORREÇÃO: 'float' object cannot be interpreted as an integer")
 print("=" * 70)
