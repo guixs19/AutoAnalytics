@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO COMPLETAMENTE CORRIGIDA
+# main.py (na raiz) - VERSÃO FINAL CORRIGIDA
 import sys
 import os
 from pathlib import Path
@@ -171,7 +171,7 @@ try:
     from fastapi import FastAPI, Request, Depends, HTTPException, Cookie
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
     import uvicorn
     print("   ✅ FastAPI importado")
 except ImportError as e:
@@ -312,17 +312,18 @@ else:
     print("\n⚠️ Frontend não disponível, apenas API será servida")
 
 # ==============================================
-# ROTAS HTML
+# 🔥 ROTAS HTML - VERSÃO CORRIGIDA COM REDIRECIONAMENTOS
 # ==============================================
 if frontend_available:
-    print("\n🌐 Configurando rotas HTML...")
+    print("\n🌐 Configurando rotas HTML com redirecionamentos...")
     
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
+        """Página inicial - redireciona para dashboard ou login"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):  # 🔥 LINHA 349 CORRIGIDA!
+        if token and token.startswith("Bearer "):
             token = token.replace("Bearer ", "")
         
         if token:
@@ -331,77 +332,130 @@ if frontend_available:
                 return FileResponse(str(FRONTEND_DIR / "index.html"))
         
         if login_available:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
+            return RedirectResponse(url="/login", status_code=302)
         
         return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
     
     @app.get("/login", include_in_schema=False)
-    async def login_page():
+    async def login_page(request: Request):
+        """Página de login - redireciona para dashboard se já autenticado"""
+        from backend.security import jwt_manager
+        
+        token = request.cookies.get("access_token")
+        if token and token.startswith("Bearer "):
+            token = token.replace("Bearer ", "")
+        
+        if token:
+            payload = await jwt_manager.verify_token_async(token, "access")
+            if payload and dashboard_available:
+                return RedirectResponse(url="/dashboard", status_code=302)
+        
         if login_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
         return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
     
-    @app.get("/dashboard", include_in_schema=False)
-    async def dashboard_page(request: Request):
+    # ============================================================
+    # 🔥 DASHBOARD - CORRIGIDO (RedirectResponse em vez de JSON)
+    # ============================================================
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def route_dashboard(request: Request):
+        """
+        🔥 DASHBOARD - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
+        CORREÇÃO BLINDADA: NUNCA retorna JSON, sempre RedirectResponse
+        """
         from backend.security import jwt_manager
         
-        token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
-            token = token.replace("Bearer ", "")
+        # 1. Tenta ler o cookie de acesso
+        access_token = request.cookies.get("access_token")
+        if access_token and access_token.startswith("Bearer "):
+            access_token = access_token.replace("Bearer ", "")
         
-        if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+        # 🚨 CORREÇÃO BLINDADA: Se não houver token, redireciona VISUALMENTE
+        # NUNCA mandes JSON para o navegador aqui!
+        if not access_token:
+            print(f"🔴 [DASHBOARD] Sem token - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
         
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        
-        if dashboard_available:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
-        
-        raise HTTPException(status_code=404, detail="Dashboard não encontrado")
+        try:
+            # 2. Valida o token
+            payload = await jwt_manager.verify_token_async(access_token, "access")
+            
+            if not payload:
+                print(f"🔴 [DASHBOARD] Token inválido - redirecionando para /login")
+                return RedirectResponse(url="/login", status_code=303)
+            
+            # 3. Token válido - entrega o HTML do dashboard
+            if dashboard_available:
+                file_path = FRONTEND_DIR / "index.html"
+                if not file_path.exists():
+                    print(f"❌ [DASHBOARD] index.html não encontrado em {file_path}")
+                    return HTMLResponse(
+                        content="<h1>Erro: index.html não encontrado na pasta frontend</h1>",
+                        status_code=404
+                    )
+                
+                print(f"✅ [DASHBOARD] Token válido para {payload.get('email')} - entregando dashboard")
+                return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+            else:
+                return HTMLResponse(
+                    content="<h1>Erro: Dashboard não disponível</h1>",
+                    status_code=404
+                )
+                
+        except Exception as e:
+            # Qualquer falha inesperada, manda para o login em segurança
+            print(f"❌ [DASHBOARD] Erro na validação: {e} - redirecionando para /login")
+            return RedirectResponse(url="/login", status_code=303)
     
     @app.get("/planos", include_in_schema=False)
     async def planos_page(request: Request):
+        """Página de planos - requer autenticação"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
+        if token and token.startswith("Bearer "):
             token = token.replace("Bearer ", "")
         
         if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+            return RedirectResponse(url="/login", status_code=302)
         
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        
-        if planos_available:
-            return FileResponse(str(FRONTEND_DIR / "planos.html"))
-        
-        raise HTTPException(status_code=404, detail="Planos não encontrado")
+        try:
+            payload = await jwt_manager.verify_token_async(token, "access")
+            if not payload:
+                return RedirectResponse(url="/login", status_code=302)
+            
+            if planos_available:
+                return FileResponse(str(FRONTEND_DIR / "planos.html"))
+            
+            raise HTTPException(status_code=404, detail="Planos não encontrado")
+        except Exception:
+            return RedirectResponse(url="/login", status_code=302)
     
     @app.get("/checkout", include_in_schema=False)
     async def checkout_page(request: Request):
+        """Página de checkout - requer autenticação"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
+        if token and token.startswith("Bearer "):
             token = token.replace("Bearer ", "")
         
         if not token:
-            return JSONResponse(status_code=401, content={"error": "Não autenticado", "redirect": "/login"})
+            return RedirectResponse(url="/login", status_code=302)
         
-        payload = await jwt_manager.verify_token_async(token, "access")
-        if not payload:
-            return JSONResponse(status_code=401, content={"error": "Token inválido", "redirect": "/login"})
-        
-        if checkout_available:
-            return FileResponse(str(FRONTEND_DIR / "checkout.html"))
-        
-        raise HTTPException(status_code=404, detail="Checkout não encontrado")
+        try:
+            payload = await jwt_manager.verify_token_async(token, "access")
+            if not payload:
+                return RedirectResponse(url="/login", status_code=302)
+            
+            if checkout_available:
+                return FileResponse(str(FRONTEND_DIR / "checkout.html"))
+            
+            raise HTTPException(status_code=404, detail="Checkout não encontrado")
+        except Exception:
+            return RedirectResponse(url="/login", status_code=302)
     
-    # Redirecionamentos
+    # Redirecionamentos para URLs com .html
     @app.get("/planos.html", include_in_schema=False)
     async def redirect_planos_html():
         return RedirectResponse(url="/planos", status_code=301)
@@ -419,19 +473,20 @@ if frontend_available:
         return RedirectResponse(url="/checkout", status_code=301)
     
     print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
+    print("   🔥 Todas com redirecionamento amigável (302/303)")
 
 # ==============================================
 # FUNÇÃO AUXILIAR PARA EXTRAIR TOKEN
 # ==============================================
 async def extract_token(request: Request) -> str:
     token = request.cookies.get("access_token")
-    if token and token.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
+    if token and token.startswith("Bearer "):
         token = token.replace("Bearer ", "")
     if token:
         return token
     
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):  # 🔥 LINHA CORRIGIDA
+    if auth_header.startswith("Bearer "):
         return auth_header.replace("Bearer ", "")
     
     token = request.headers.get("X-Access-Token", "")
@@ -677,7 +732,7 @@ async def startup_event():
     ║     GET  /api/analyses/history                                    ║
     ║     GET  /api/plans                                               ║
     ╠══════════════════════════════════════════════════════════════════╣
-    ║  🌐 Páginas:                                                      ║
+    ║  🌐 Páginas (com redirecionamento):                               ║
     ║     http://localhost:{settings.PORT}/                             ║
     ║     http://localhost:{settings.PORT}/login                        ║
     ║     http://localhost:{settings.PORT}/dashboard                    ║
@@ -728,8 +783,9 @@ async def not_found_exception_handler(request: Request, exc):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     path = request.url.path
+    # 🔥 Para rotas HTML, redireciona em vez de mostrar JSON
     if exc.status_code == 401 and not path.startswith('/api/'):
-        return JSONResponse(status_code=401, content={"error": exc.detail, "redirect": "/login"})
+        return RedirectResponse(url="/login", status_code=302)
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 # ==============================================
