@@ -1,11 +1,10 @@
-# backend/security.py - VERSÃO CORRIGIDA (ISOLAMENTO DE SESSÕES CAPTCHA) - NÚMEROS GIGANTES
-
+# backend/security.py - VERSÃO OTIMIZADA (CAPTCHA LEGÍVEL + RATE LIMIT)
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO ATUALIZADA
+- CAPTCHA com números GIGANTES e espaçamento otimizado
+- Rate Limit específico para validação de CAPTCHA
 - PoW (Proof of Work) com Redis (apenas para upload)
-- CAPTCHA Simples de Números - NÚMEROS GIGANTES (fonte 180px)
 - JWT com blacklist e refresh token
-- Rate limiting adaptativo
 - Argon2 para hash de senhas
 """
 
@@ -62,6 +61,10 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=False,
     scheme_name="JWT"
 )
+
+# 🔥 RATE LIMIT PARA CAPTCHA (anti-brute force)
+CAPTCHA_RATE_LIMIT = 5  # Máximo de tentativas
+CAPTCHA_RATE_WINDOW = 60  # Em 60 segundos
 
 
 # ==============================================
@@ -706,7 +709,7 @@ class PoWManager:
 
 
 # ==============================================
-# 4. CAPTCHA SIMPLES - NÚMEROS GIGANTES (FONTE 180px)
+# 4. CAPTCHA OTIMIZADO - NÚMEROS GIGANTES + LEGÍVEL
 # ==============================================
 
 class CaptchaSession:
@@ -769,9 +772,7 @@ class CaptchaStore:
             self._cleanup_task = None
             logger.info("🛑 Cleanup loop do CAPTCHA parado")
     
-    # 🔥 CORREÇÃO: Chave composta com session_type para isolar login e register
     def _get_user_key(self, ip: str, session_type: str = "login") -> str:
-        """Garante que a chave diferencia completamente o login do registro"""
         return f"{session_type}:{ip}"
     
     async def _cleanup_async(self):
@@ -790,7 +791,6 @@ class CaptchaStore:
             
             self._last_cleanup = now
     
-    # 🔥 CORREÇÃO: add com isolamento por session_type
     async def add(self, captcha_id: str, correct_code: str, ip: str, session_type: str = "login") -> str:
         async with self._store_lock:
             now = time.time()
@@ -809,10 +809,8 @@ class CaptchaStore:
                     del self._store[cid]
                 logger.info(f"🧹 Limpeza emergencial: {to_remove} CAPTCHAs removidos")
             
-            # 🔥 CRIA CHAVE COMPOSTA (IP + TIPO DE SESSÃO)
             user_key = self._get_user_key(ip, session_type)
             
-            # Remove apenas a sessão antiga DESTE TIPO ESPECÍFICO
             if user_key in self._user_sessions:
                 old_id = self._user_sessions[user_key]
                 if old_id in self._store:
@@ -830,7 +828,6 @@ class CaptchaStore:
             
             return captcha_id
     
-    # 🔥 CORREÇÃO: validação com session_type
     async def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
         async with self._store_lock:
             if time.time() - self._last_cleanup > self._cleanup_interval:
@@ -842,7 +839,6 @@ class CaptchaStore:
             session = self._store[captcha_id]
             user_key = self._get_user_key(ip, session_type)
             
-            # 🔥 VERIFICA SE O CAPTCHA PERTENCE À SESSÃO CORRETA
             if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
                 logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
                 return False, "Desafio não pertence à sua sessão atual"
@@ -891,32 +887,21 @@ class CaptchaStore:
             "total_active": len(self._store),
             "total_sessions": len(self._user_sessions),
             "max_size": self._max_store_size,
-            "captcha_type": "simple_numbers"
+            "captcha_type": "simple_numbers_optimized"
         }
 
 
 # ==============================================
-# ═══════════════════════════════════════════════
-# 🔥 AJUSTE AQUI O TAMANHO DO CAPTCHA!
-# ═══════════════════════════════════════════════
-# 
-# Para aumentar os números, modifique as variáveis 
-# abaixo dentro da classe CaptchaManager:
-# 
-#   self.font_size = 180   ← Tamanho da fonte (números)
-#   self.image_width = 600  ← Largura da imagem
-#   self.image_height = 220 ← Altura da imagem
-# 
-# Recomendações:
-#   - font_size: 180-220 para números gigantes
-#   - Mantenha proporção: width ≈ font_size * 3.3
-#   - Mantenha proporção: height ≈ font_size * 1.2
-# ═══════════════════════════════════════════════
+# 🔥 CAPTCHA OTIMIZADO - VERSÃO LEGÍVEL NO MOBILE
 # ==============================================
 
 class CaptchaManager:
     """
-    Gerenciador de CAPTCHA SIMPLES - NÚMEROS GIGANTES (fonte 180px)
+    Gerenciador de CAPTCHA OTIMIZADO
+    - Números GIGANTES (fonte 180px)
+    - Espaçamento fixo entre caracteres (evita letras coladas)
+    - Ruído substituído por pontos (splatters) - mais legível
+    - Rotação individual de cada número (mantém segurança)
     """
     
     def __init__(self):
@@ -924,34 +909,33 @@ class CaptchaManager:
         self._dev_mode = getattr(settings, 'DEBUG', False)
         
         # ============================================================
-        # 🔥 ALTERE ESTES TRÊS VALORES CONFORME DESEJAR:
+        # 🔥 CONFIGURAÇÃO DO CAPTCHA
         # ============================================================
-        self.image_width = 600      # Largura total da imagem gerada
-        self.image_height = 220     # Altura total da imagem gerada
-        self.font_size = 180        # 🔥 Tamanho dos números (Fonte)
-        # ============================================================
-        #
-        # 💡 SUGESTÕES DE TAMANHOS:
-        #   - Muito Grande:  width=700, height=260, font_size=220
-        #   - Grande:        width=600, height=220, font_size=180
-        #   - Médio:         width=500, height=180, font_size=140
-        #   - Padrão:        width=420, height=150, font_size=110
-        #
-        # ⚠️ Se aumentar a fonte, aumente proporcionalmente a imagem!
-        #    Fórmula: width ≈ font_size * 3.3, height ≈ font_size * 1.2
-        # ============================================================
+        self.image_width = 600
+        self.image_height = 220
+        self.font_size = 180
         
-        # Linhas mínimas e sutis (não altere a menos que queira mais distorção)
-        self.line_width = 1
-        self.curve_width = 1
+        # 🔥 ESPAÇAMENTO FIXO ENTRE CARACTERES (evita colagem)
+        self.char_spacing = 35  # Espaço extra entre números
+        
+        # 🔥 ROTAÇÃO MÍNIMA (segurança sem prejudicar legibilidade)
+        self.rotation_range = (-8, 8)  # Graus de rotação aleatória
+        
+        # 🔥 PONTOS DE RUÍDO (splatters) em vez de linhas
+        self.noise_points = 120  # Quantidade de pontos de ruído
+        self.noise_color_range = (100, 200)  # Tons de cinza
+        # ============================================================
         
         # Cache de imagens
         self._image_cache: Dict[str, Tuple[float, bytes]] = {}
         self._cache_ttl = 60
         self._max_cache = 100
         
-        logger.info(f"🔢 CAPTCHA Manager - NÚMEROS GIGANTES (fonte: {self.font_size}px)")
+        logger.info(f"🔢 CAPTCHA OTIMIZADO - NÚMEROS GIGANTES (fonte: {self.font_size}px)")
         logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height}")
+        logger.info(f"   📏 Espaçamento: {self.char_spacing}px entre caracteres")
+        logger.info(f"   🔄 Rotação: {self.rotation_range}")
+        logger.info(f"   🎯 Ruído: {self.noise_points} pontos (sem linhas cortantes)")
         
         if self._dev_mode:
             logger.info("   🔧 Modo DEV: resposta '1234' aceita automaticamente")
@@ -973,18 +957,22 @@ class CaptchaManager:
         return client_ip
     
     def generate_number_code(self, length: int = 4) -> str:
-        """Gera código numérico aleatório"""
         return ''.join(str(random.randint(0, 9)) for _ in range(length))
     
-    def _draw_distorted_numbers(self, code: str) -> bytes:
+    def _draw_optimized_captcha(self, code: str) -> bytes:
         """
-        Desenha números GIGANTES ocupando todo o espaço
+        🔥 VERSÃO OTIMIZADA:
+        - Números GIGANTES ocupando todo o espaço
+        - Espaçamento fixo entre caracteres
+        - Pontos de ruído (sem linhas cortantes)
+        - Rotação individual de cada número
         """
         if not PIL_AVAILABLE:
             return self._generate_svg_fallback(code)
         
         width = self.image_width
         height = self.image_height
+        font_size = self.font_size
         
         # Cria imagem com fundo gradiente
         img = Image.new('RGB', (width, height), color='white')
@@ -997,40 +985,15 @@ class CaptchaManager:
             b = int(200 - (i / height) * 80)
             draw.line([(0, i), (width, i)], fill=(r, g, b))
         
-        # 🔥 RUÍDO MÍNIMO (quase invisível)
-        for _ in range(80):
+        # 🔥 1. PONTOS DE RUÍDO (em vez de linhas cortantes)
+        for _ in range(self.noise_points):
             x = random.randint(0, width)
             y = random.randint(0, height)
-            draw.point((x, y), fill=(random.randint(0, 50), random.randint(0, 50), random.randint(0, 50)))
+            gray = random.randint(*self.noise_color_range)
+            draw.point((x, y), fill=(gray, gray, gray))
         
-        # 🔥 LINHAS MUITO SUTIS (poucas e finas)
-        for _ in range(5):
-            x1 = random.randint(0, width)
-            y1 = random.randint(0, height)
-            x2 = random.randint(0, width)
-            y2 = random.randint(0, height)
-            draw.line(
-                [(x1, y1), (x2, y2)], 
-                fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
-                width=self.line_width
-            )
-        
-        # 🔥 CURVAS SUTIS
-        for _ in range(3):
-            points = []
-            start_x = random.randint(0, width // 4)
-            start_y = random.randint(0, height)
-            for i in range(5):
-                points.append((start_x + i * (width // 6), start_y + random.randint(-15, 15)))
-            draw.line(
-                points, 
-                fill=(random.randint(170, 220), random.randint(170, 220), random.randint(170, 220)), 
-                width=self.curve_width
-            )
-        
-        # 🔥 FONTE GIGANTE
+        # 🔥 2. CARREGAR FONTE GIGANTE
         try:
-            font_size = self.font_size
             try:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
             except:
@@ -1041,37 +1004,91 @@ class CaptchaManager:
         except:
             font = ImageFont.load_default()
         
-        # 🔥 DESENHA NÚMEROS OCUPANDO TODO O ESPAÇO
-        char_width = width // len(code)
+        # 🔥 3. CALCULAR ESPAÇAMENTO FIXO
+        # Total de caracteres, largura disponível, margens
+        total_chars = len(code)
+        margin = 30  # Margem esquerda/direita
+        
+        # Calcula largura de cada caractere (aproximadamente)
+        try:
+            # Mede o caractere '0' como referência
+            bbox = draw.textbbox((0, 0), '0', font=font)
+            char_width = bbox[2] - bbox[0]
+        except:
+            char_width = font_size * 0.7
+        
+        # Largura total ocupada pelos caracteres + espaçamento
+        total_width = (char_width * total_chars) + (self.char_spacing * (total_chars - 1))
+        
+        # Se não couber, reduz o espaçamento
+        if total_width > width - (margin * 2):
+            spacing = (width - (margin * 2) - (char_width * total_chars)) / (total_chars - 1)
+            spacing = max(10, spacing)  # Espaçamento mínimo
+        else:
+            spacing = self.char_spacing
+        
+        # 🔥 4. DESENHAR CADA NÚMERO COM ROTAÇÃO INDIVIDUAL
+        start_x = margin
         
         for i, char in enumerate(code):
-            # Centraliza cada número no seu espaço
+            # Posição X com espaçamento fixo
+            x = start_x + (i * (char_width + spacing))
+            
+            # Posição Y centralizada com pequena variação
+            y = (height // 2) - (font_size // 2) + random.randint(-5, 5)
+            
+            # 🔥 ROTAÇÃO INDIVIDUAL (segurança sem prejudicar legibilidade)
+            angle = random.randint(*self.rotation_range)
+            
+            # Criar imagem temporária para o caractere rotacionado
             try:
+                # Tamanho do caractere
                 bbox = draw.textbbox((0, 0), char, font=font)
-                char_w = bbox[2] - bbox[0]
-                char_h = bbox[3] - bbox[1]
+                char_w = bbox[2] - bbox[0] + 10
+                char_h = bbox[3] - bbox[1] + 10
             except:
-                char_w = font_size * 0.7
-                char_h = font_size
+                char_w = char_width + 10
+                char_h = font_size + 10
             
-            # Posição centralizada com pequeno deslocamento aleatório
-            x = (i * char_width) + (char_width // 2) - (char_w // 2) + random.randint(-3, 3)
-            y = (height // 2) - (char_h // 2) + random.randint(-5, 5)
+            # Criar imagem temporária com fundo transparente
+            char_img = Image.new('RGBA', (char_w, char_h), (0, 0, 0, 0))
+            char_draw = ImageDraw.Draw(char_img)
             
-            # 🔥 CONTORNO PRETO GROSSO (para destacar)
-            for offset_x in range(-5, 6):
-                for offset_y in range(-5, 6):
-                    if offset_x != 0 or offset_y != 0:
-                        draw.text((x + offset_x, y + offset_y), char, fill=(0, 0, 0), font=font)
+            # Desenhar caractere na imagem temporária
+            char_draw.text((5, 5), char, fill=(255, 255, 255, 255), font=font)
             
-            # 🔥 NÚMERO BRANCO POR CIMA (brilhante)
-            draw.text((x, y), char, fill=(255, 255, 255), font=font)
+            # 🔥 CONTORNO PRETO (destaque)
+            char_draw.text((3, 3), char, fill=(0, 0, 0, 255), font=font)
+            char_draw.text((7, 3), char, fill=(0, 0, 0, 255), font=font)
+            char_draw.text((3, 7), char, fill=(0, 0, 0, 255), font=font)
+            char_draw.text((7, 7), char, fill=(0, 0, 0, 255), font=font)
             
-            # 🔥 PEQUENO BRILHO/REFLEXO (efeito 3D)
-            draw.text((x - 2, y - 2), char, fill=(255, 255, 255), font=font)
+            # Desenhar caractere principal (branco) por cima
+            char_draw.text((5, 5), char, fill=(255, 255, 255, 255), font=font)
+            
+            # Rotacionar a imagem do caractere
+            rotated = char_img.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+            
+            # Calcular posição para colar na imagem principal (centralizado)
+            rot_w, rot_h = rotated.size
+            paste_x = x - (rot_w // 2) + (char_w // 2)
+            paste_y = y - (rot_h // 2) + (char_h // 2)
+            
+            # 🔥 PEGA O CANAL ALPHA (transparência) para colagem suave
+            img.paste(rotated, (paste_x, paste_y), rotated)
+            
+            # 🔥 PEQUENO BRILHO/REFLEXO (efeito 3D) - texto branco translúcido
+            try:
+                glow_img = Image.new('RGBA', (char_w, char_h), (0, 0, 0, 0))
+                glow_draw = ImageDraw.Draw(glow_img)
+                glow_draw.text((3, 3), char, fill=(255, 255, 255, 80), font=font)
+                glow_rotated = glow_img.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+                img.paste(glow_rotated, (paste_x, paste_y), glow_rotated)
+            except:
+                pass
         
-        # Desfoque mínimo para suavizar bordas
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.2))
+        # 🔥 5. DESFOQUE MÍNIMO (suaviza bordas)
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.3))
         
         # Converte para bytes
         img_bytes = io.BytesIO()
@@ -1081,10 +1098,11 @@ class CaptchaManager:
         return img_bytes.getvalue()
     
     def _generate_svg_fallback(self, code: str) -> bytes:
-        """SVG com números GIGANTES"""
+        """SVG com números GIGANTES e espaçamento otimizado"""
         
         width = self.image_width
         height = self.image_height
+        spacing = self.char_spacing
         
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
@@ -1100,19 +1118,16 @@ class CaptchaManager:
   
   <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="16" ry="16"/>
   
-  <!-- Linhas sutis -->
-  <g stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none">
-    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
-    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
-    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
-    <line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" />
+  <!-- Pontos de ruído (em vez de linhas) -->
+  <g fill="rgba(255,255,255,0.15)">
+    {''.join(f'<circle cx="{random.randint(0, width)}" cy="{random.randint(0, height)}" r="{random.randint(1, 3)}" />' for _ in range(80))}
   </g>
   
-  <!-- Números GIGANTES -->
+  <!-- Números com espaçamento fixo -->
   <text x="{width // 2}" y="{height // 2 + 20}" 
         font-family="'Courier New', monospace" font-size="{self.font_size + 10}" font-weight="bold" 
         fill="white" text-anchor="middle" dominant-baseline="middle"
-        letter-spacing="50"
+        letter-spacing="{spacing + 20}"
         filter="url(#shadow)">
     {code}
   </text>
@@ -1121,18 +1136,18 @@ class CaptchaManager:
         return svg.encode('utf-8')
     
     async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """Gera imagem CAPTCHA com números GIGANTES"""
+        """Gera imagem CAPTCHA OTIMIZADA com números GIGANTES"""
         client_ip = self._get_client_ip(request)
         
         try:
             code = self.generate_number_code(4)
-            img_bytes = self._draw_distorted_numbers(code)
+            img_bytes = self._draw_optimized_captcha(code)
             
             captcha_id = f"captcha_{secrets.token_urlsafe(12)}_{int(time.time())}"
             
             await self.store.add(captcha_id, code, client_ip, session_type)
             
-            logger.debug(f"🔢 CAPTCHA gerado: {code} para {session_type}:{client_ip}")
+            logger.debug(f"🔢 CAPTCHA otimizado gerado: {code} para {session_type}:{client_ip}")
             
             return img_bytes, captcha_id
             
@@ -1146,12 +1161,30 @@ class CaptchaManager:
     
     async def validate_captcha_async(self, captcha_id: str, captcha_text: str,
                                       request: Request, session_type: str = "login") -> bool:
-        """Valida resposta do CAPTCHA"""
+        """
+        Valida resposta do CAPTCHA com RATE LIMIT
+        🔥 Anti-brute force: máximo de 5 tentativas por IP/minuto
+        """
         client_ip = self._get_client_ip(request)
         
         if self._dev_mode and captcha_text == "1234":
             logger.info("🔧 Modo DEV: resposta '1234' aceita")
             return True
+        
+        # 🔥 RATE LIMIT para validação de CAPTCHA (anti-brute force)
+        rate_key = f"captcha_rate:{client_ip}:{session_type}"
+        current_count = await rate_limiter.check_rate_limit(
+            rate_key, 
+            CAPTCHA_RATE_LIMIT, 
+            CAPTCHA_RATE_WINDOW
+        )
+        
+        if not current_count:
+            logger.warning(f"🚨 Rate limit excedido para CAPTCHA - IP: {client_ip}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Muitas tentativas de CAPTCHA. Aguarde {CAPTCHA_RATE_WINDOW} segundos."
+            )
         
         valid, message = await self.store.get_and_validate(
             captcha_id, captcha_text.strip(), client_ip, session_type
@@ -1507,9 +1540,14 @@ __all__ = [
     'start_cleanup_tasks'
 ]
 
-print("✅ security.py carregado - NÚMEROS GIGANTES (fonte 180px)!")
-print(f"   📐 Dimensões: 600x220")
-print(f"   📝 Tamanho fonte: 180px (ocupando todo o espaço)")
-print("   📏 Linhas: mínimas e sutis (1px)")
+print("=" * 60)
+print("✅ security.py carregado - CAPTCHA OTIMIZADO!")
+print("   📐 Dimensões: 600x220")
+print("   📝 Tamanho fonte: 180px (ocupando todo o espaço)")
+print("   📏 Espaçamento fixo: 35px entre caracteres (evita colagem)")
+print("   🔄 Rotação individual: -8° a +8°")
+print("   🎯 Ruído: 120 pontos (sem linhas cortantes)")
+print("   🛡️ Rate limit: 5 tentativas/minuto por IP")
 print("🔢 PoW mantido apenas para upload de arquivos")
 print("🔒 CAPTCHA Store isola sessões por tipo (login/register)")
+print("=" * 60)

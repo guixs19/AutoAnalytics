@@ -309,152 +309,167 @@
         .strength-text.strong { color: #48bb78; }
         .strength-text.very-strong { color: #38a169; }
         
-        /* 🔥 CAPTCHA - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES DENTRO */
-        .captcha-container {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 20px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
+        /* ============================================== */
+        /* 🔥 CAPTCHA - ESTRUTURA FLEXBOX (SEM TABELAS) */
+        /* ============================================== */
+        .captcha-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 15px;
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 12px;
             border: 2px solid rgba(102, 126, 234, 0.1);
             transition: all 0.3s ease;
         }
         
-        .captcha-container:hover {
+        .captcha-wrapper:hover {
             border-color: #667eea;
             box-shadow: 0 5px 20px rgba(102, 126, 234, 0.15);
         }
         
-        .captcha-image-wrapper {
-            background: white;
-            border-radius: 14px;
-            padding: 0.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            border: 1px solid #e9ecef;
-            min-height: 120px;
+        .captcha-row {
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
+            gap: 10px;
+            width: 100%;
+        }
+        
+        .captcha-image-container {
+            flex: 1;
+            min-width: 0;
+            background: white;
+            border-radius: 10px;
+            padding: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid #e9ecef;
             overflow: hidden;
-            transition: all 0.3s ease;
         }
         
-        .captcha-image-wrapper:hover {
-            transform: scale(1.02);
-            border-color: #667eea;
-        }
-        
-        /* 🔥 IMAGEM SE ADAPTA AO CONTAINER, NÚMEROS FICAM GIGANTES */
         .captcha-image {
             width: 100%;
+            max-width: 240px;
             height: auto;
-            object-fit: contain;
-            border-radius: 10px;
             display: block;
+            object-fit: contain;
+            border-radius: 6px;
             margin: 0 auto;
             background: #f8f9fa;
-            filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.1));
         }
         
-        .captcha-refresh {
+        .captcha-refresh-btn {
             background: white;
             border: 2px solid #667eea;
             color: #667eea;
-            width: 52px;
-            height: 52px;
-            border-radius: 16px;
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.3s ease;
             cursor: pointer;
-            font-size: 1.2rem;
+            flex-shrink: 0;
             box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
         }
         
-        .captcha-refresh:hover {
+        .captcha-refresh-btn:hover {
             background: #667eea;
             color: white;
             transform: rotate(180deg);
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
         
-        .captcha-refresh:active {
+        .captcha-refresh-btn:active {
             transform: rotate(180deg) scale(0.95);
         }
         
-        .captcha-refresh:disabled {
+        .captcha-refresh-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
         
+        .captcha-refresh-btn svg {
+            width: 22px;
+            height: 22px;
+            transition: all 0.3s ease;
+        }
+        
+        .captcha-refresh-btn:hover svg {
+            stroke: white;
+        }
+        
+        .captcha-input-wrapper {
+            width: 100%;
+        }
+        
         .captcha-input {
+            width: 100%;
+            padding: 12px 16px;
             border: 2px solid #e9ecef;
-            border-radius: 14px;
-            padding: 1rem;
-            font-size: 1.5rem;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.2rem;
             font-weight: 700;
             text-align: center;
+            letter-spacing: 6px;
             transition: all 0.3s ease;
             background: white;
-            letter-spacing: 8px;
-            font-family: monospace;
+            box-sizing: border-box;
         }
         
         .captcha-input:focus {
             border-color: #667eea;
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
             outline: none;
-            letter-spacing: 10px;
+            letter-spacing: 8px;
         }
         
-        .captcha-helper {
-            font-size: 0.8rem;
-            color: #6c757d;
-            margin-top: 0.75rem;
-            text-align: center;
-        }
-        
-        .captcha-helper i {
-            color: #667eea;
+        .captcha-input::placeholder {
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: #adb5bd;
             font-size: 0.9rem;
+        }
+        
+        .captcha-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: #64748b;
+            padding: 0 2px;
+        }
+        
+        .captcha-footer span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
         .captcha-timer {
             font-weight: 700;
-            color: #667eea;
-            background: rgba(102, 126, 234, 0.12);
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
+            color: #3b82f6;
+            font-family: 'Courier New', monospace;
+            min-width: 45px;
             transition: all 0.3s ease;
-            font-family: monospace;
-            font-size: 0.85rem;
         }
         
         .captcha-timer.expiring {
             color: #f56565;
-            background: rgba(245, 101, 101, 0.12);
             animation: pulse 1s infinite;
         }
         
         .captcha-timer.expired {
             color: #dc3545;
-            background: rgba(220, 53, 69, 0.12);
         }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        
-        .captcha-hint {
-            background: rgba(102, 126, 234, 0.08);
-            border-radius: 12px;
-            padding: 0.6rem;
-            font-size: 0.75rem;
-            color: #667eea;
-            text-align: center;
-            margin-top: 0.5rem;
+            50% { opacity: 0.5; }
         }
         
         .form-check-input:checked {
@@ -494,40 +509,6 @@
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @media (max-width: 768px) {
-            .card {
-                margin: 0;
-            }
-            
-            .card-header {
-                padding: 1.5rem 1rem;
-            }
-            
-            .captcha-container {
-                padding: 1rem;
-            }
-            
-            .captcha-image-wrapper {
-                min-height: 90px;
-            }
-            
-            .captcha-refresh {
-                width: 46px;
-                height: 46px;
-                font-size: 1rem;
-            }
-            
-            .captcha-input {
-                font-size: 1.2rem;
-                padding: 0.85rem;
-                letter-spacing: 6px;
-            }
-            
-            .captcha-input:focus {
-                letter-spacing: 8px;
-            }
         }
         
         .security-badge {
@@ -572,6 +553,78 @@
         .forgot-link:hover {
             transform: translateX(3px);
         }
+        
+        /* ============================================== */
+        /* RESPONSIVIDADE */
+        /* ============================================== */
+        @media (max-width: 768px) {
+            .card {
+                margin: 0;
+            }
+            
+            .card-header {
+                padding: 1.5rem 1rem;
+            }
+            
+            .captcha-wrapper {
+                padding: 12px;
+            }
+            
+            .captcha-row {
+                flex-wrap: nowrap;
+            }
+            
+            .captcha-image {
+                max-width: 160px;
+            }
+            
+            .captcha-refresh-btn {
+                width: 42px;
+                height: 42px;
+            }
+            
+            .captcha-refresh-btn svg {
+                width: 18px;
+                height: 18px;
+            }
+            
+            .captcha-input {
+                font-size: 1rem;
+                padding: 10px 12px;
+                letter-spacing: 4px;
+            }
+            
+            .captcha-input:focus {
+                letter-spacing: 6px;
+            }
+            
+            .captcha-footer {
+                font-size: 0.65rem;
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .captcha-row {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .captcha-image-container {
+                flex: 0 0 100%;
+                max-width: 100%;
+            }
+            
+            .captcha-image {
+                max-width: 180px;
+            }
+            
+            .captcha-refresh-btn {
+                width: 38px;
+                height: 38px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -596,7 +649,7 @@
                             <i class="fas fa-robot me-1"></i>
                             IA para Oficinas Mecânicas
                         </p>
-                        <div class="mt-3 d-flex justify-content-center gap-2">
+                        <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
                             <span class="security-badge">
                                 <i class="fas fa-shield-alt"></i>
                                 Protegido
@@ -659,38 +712,33 @@
                                         </a>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA LOGIN - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES -->
-                                    <div class="captcha-container">
-                                        <div class="row align-items-center g-2">
-                                            <div class="col-8">
-                                                <div class="captcha-image-wrapper">
-                                                    <img id="loginCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240' viewBox='0 0 600 240'%3E%3Crect width='600' height='240' fill='%23667eea'/%3E%3Ctext x='300' y='135' font-family='monospace' font-size='50' fill='white' text-anchor='middle' font-weight='bold'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="Digite os números da imagem">
-                                                    <input type="hidden" id="loginCaptchaId">
-                                                </div>
+                                    <!-- 🔥 CAPTCHA LOGIN - ESTRUTURA FLEXBOX (SEM TABELAS) -->
+                                    <div class="captcha-wrapper">
+                                        <div class="captcha-row">
+                                            <div class="captcha-image-container">
+                                                <img id="loginCaptchaImage" class="captcha-image" 
+                                                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='120' viewBox='0 0 400 120'%3E%3Crect width='400' height='120' fill='%23667eea'/%3E%3Ctext x='200' y='70' font-family='monospace' font-size='40' fill='white' text-anchor='middle' font-weight='bold'%3E🔒%3C/text%3E%3C/svg%3E"
+                                                     alt="Digite os números da imagem">
+                                                <input type="hidden" id="loginCaptchaId">
                                             </div>
-                                            <div class="col-4">
-                                                <div class="captcha-refresh mx-auto" id="refreshLoginCaptcha" title="Nova imagem">
-                                                    <i class="fas fa-sync-alt"></i>
-                                                </div>
-                                            </div>
+                                            <button type="button" class="captcha-refresh-btn" id="refreshLoginCaptcha" title="Nova imagem">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                                                </svg>
+                                            </button>
                                         </div>
-                                        <div class="mt-3">
-                                            <input type="text" 
-                                                   class="form-control captcha-input" 
-                                                   id="loginCaptchaInput" 
-                                                   placeholder="••••" 
-                                                   maxlength="4" 
-                                                   inputmode="numeric" 
-                                                   pattern="[0-9]*" 
-                                                   autocomplete="off"
-                                                   required>
-                                            <div class="captcha-helper d-flex justify-content-between align-items-center mt-2">
-                                                <span><i class="fas fa-hourglass-half me-1"></i>Expira em</span>
-                                                <span class="captcha-timer" id="loginCaptchaTimer">02:00</span>
-                                                <span><i class="fas fa-ban me-1"></i>Uso único</span>
-                                            </div>
+                                        
+                                        <div class="captcha-input-wrapper">
+                                            <input type="text" class="captcha-input" id="loginCaptchaInput" 
+                                                   placeholder="Digite os 4 números" maxlength="4" 
+                                                   inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
+                                        </div>
+                                        
+                                        <div class="captcha-footer">
+                                            <span>
+                                                ⏱️ Expira em: <strong class="captcha-timer" id="loginCaptchaTimer">02:00</strong>
+                                            </span>
+                                            <span>🚫 Uso único</span>
                                         </div>
                                     </div>
                                     
@@ -774,38 +822,33 @@
                                                placeholder="Ex: Oficina Central" required>
                                     </div>
                                     
-                                    <!-- 🔥 CAPTCHA REGISTER - ESTRUTURA ORIGINAL, NÚMEROS GIGANTES -->
-                                    <div class="captcha-container">
-                                        <div class="row align-items-center g-2">
-                                            <div class="col-8">
-                                                <div class="captcha-image-wrapper">
-                                                    <img id="registerCaptchaImage" class="captcha-image" 
-                                                         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240' viewBox='0 0 600 240'%3E%3Crect width='600' height='240' fill='%23667eea'/%3E%3Ctext x='300' y='135' font-family='monospace' font-size='50' fill='white' text-anchor='middle' font-weight='bold'%3E🔒 Carregando...%3C/text%3E%3C/svg%3E"
-                                                         alt="Digite os números da imagem">
-                                                    <input type="hidden" id="registerCaptchaId">
-                                                </div>
+                                    <!-- 🔥 CAPTCHA REGISTER - ESTRUTURA FLEXBOX (SEM TABELAS) -->
+                                    <div class="captcha-wrapper">
+                                        <div class="captcha-row">
+                                            <div class="captcha-image-container">
+                                                <img id="registerCaptchaImage" class="captcha-image" 
+                                                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='120' viewBox='0 0 400 120'%3E%3Crect width='400' height='120' fill='%23667eea'/%3E%3Ctext x='200' y='70' font-family='monospace' font-size='40' fill='white' text-anchor='middle' font-weight='bold'%3E🔒%3C/text%3E%3C/svg%3E"
+                                                     alt="Digite os números da imagem">
+                                                <input type="hidden" id="registerCaptchaId">
                                             </div>
-                                            <div class="col-4">
-                                                <div class="captcha-refresh mx-auto" id="refreshRegisterCaptcha" title="Nova imagem">
-                                                    <i class="fas fa-sync-alt"></i>
-                                                </div>
-                                            </div>
+                                            <button type="button" class="captcha-refresh-btn" id="refreshRegisterCaptcha" title="Nova imagem">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                                                </svg>
+                                            </button>
                                         </div>
-                                        <div class="mt-3">
-                                            <input type="text" 
-                                                   class="form-control captcha-input" 
-                                                   id="registerCaptchaInput" 
-                                                   placeholder="••••" 
-                                                   maxlength="4" 
-                                                   inputmode="numeric" 
-                                                   pattern="[0-9]*" 
-                                                   autocomplete="off"
-                                                   required>
-                                            <div class="captcha-helper d-flex justify-content-between align-items-center mt-2">
-                                                <span><i class="fas fa-hourglass-half me-1"></i>Expira em</span>
-                                                <span class="captcha-timer" id="registerCaptchaTimer">02:00</span>
-                                                <span><i class="fas fa-ban me-1"></i>Uso único</span>
-                                            </div>
+                                        
+                                        <div class="captcha-input-wrapper">
+                                            <input type="text" class="captcha-input" id="registerCaptchaInput" 
+                                                   placeholder="Digite os 4 números" maxlength="4" 
+                                                   inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
+                                        </div>
+                                        
+                                        <div class="captcha-footer">
+                                            <span>
+                                                ⏱️ Expira em: <strong class="captcha-timer" id="registerCaptchaTimer">02:00</strong>
+                                            </span>
+                                            <span>🚫 Uso único</span>
                                         </div>
                                     </div>
                                     
@@ -844,7 +887,7 @@
                     </div>
                     
                     <div class="card-footer text-center">
-                        <div class="d-flex justify-content-center gap-3 mb-2">
+                        <div class="d-flex justify-content-center gap-3 mb-2 flex-wrap">
                             <small><a href="#" class="text-decoration-none"><i class="fas fa-question-circle me-1"></i>Suporte 24h</a></small>
                             <small><a href="#" class="text-decoration-none"><i class="fas fa-shield-alt me-1"></i>Privacidade</a></small>
                             <small><a href="#" class="text-decoration-none"><i class="fas fa-file-alt me-1"></i>Termos</a></small>
