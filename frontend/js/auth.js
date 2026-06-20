@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA (com IDs corretos)
+// frontend/js/auth.js - VERSÃO CORRIGIDA (captcha_code)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -54,7 +54,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 CAPTCHA - CORRIGIDO (IDs corretos)
+    // 🔥 CAPTCHA
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
@@ -90,7 +90,6 @@ class Auth {
                 this.isRegisterCaptchaLoaded = true;
             }
             
-            // 🔥 CORRIGIDO: IDs corretos (loginCaptchaId, registerCaptchaId)
             const hiddenField = document.getElementById(`${sessionType}CaptchaId`);
             if (hiddenField) {
                 hiddenField.value = captchaId;
@@ -100,7 +99,6 @@ class Auth {
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            // 🔥 CORRIGIDO: O ID da imagem é "loginCaptchaImg" e "registerCaptchaImg"
             const imageId = sessionType === 'login' ? 'loginCaptchaImg' : 'registerCaptchaImg';
             const captchaImage = document.getElementById(imageId);
             if (captchaImage) {
@@ -115,7 +113,6 @@ class Auth {
             
             this.startCaptchaTimer(sessionType);
             
-            // 🔥 CORRIGIDO: O ID do input é "loginCaptchaInput" e "registerCaptchaInput"
             const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
             const captchaInput = document.getElementById(inputId);
             if (captchaInput) {
@@ -147,7 +144,6 @@ class Auth {
         const expirySeconds = 120;
         let remaining = expirySeconds;
         
-        // 🔥 CORRIGIDO: IDs corretos
         const timerId = sessionType === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
         const timerElement = document.getElementById(timerId);
         
@@ -237,16 +233,21 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 LOGIN
+    // 🔥 LOGIN - CORRIGIDO (captcha_code)
     // ==============================================
     
     async handleLogin(e) {
         e.preventDefault();
         
-        const email = document.getElementById('loginEmail')?.value;
-        const password = document.getElementById('loginPassword')?.value;
-        const captchaCode = document.getElementById('loginCaptchaInput')?.value;
-        const captchaId = document.getElementById('loginCaptchaId')?.value || this.loginCaptchaId;
+        const emailInput = document.getElementById('loginEmail');
+        const passwordInput = document.getElementById('loginPassword');
+        const captchaInput = document.getElementById('loginCaptchaInput');
+        const captchaIdInput = document.getElementById('loginCaptchaId');
+        
+        const email = emailInput?.value?.trim();
+        const password = passwordInput?.value;
+        const captchaCode = captchaInput?.value?.trim();
+        const captchaId = captchaIdInput?.value || this.loginCaptchaId;
         
         if (!email || !password || !captchaCode) {
             if (window.toastr) {
@@ -272,19 +273,24 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de login...');
             
+            // 🔥 CORREÇÃO CRUCIAL: usar captcha_code (NÃO captcha)
+            const payload = {
+                email: email,
+                password: password,
+                captcha_id: captchaId || this.loginCaptchaId,
+                captcha_code: captchaCode,  // ← CORRIGIDO: antes era "captcha"
+                session_type: 'login'
+            };
+            
+            console.log('📦 Payload:', payload);
+            
             const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Captcha-ID': captchaId || ''
                 },
-                body: JSON.stringify({
-                    email: email,
-                    password: password,
-                    captcha_id: captchaId || this.loginCaptchaId,
-                    captcha_code: captchaCode,
-                    session_type: 'login'
-                })
+                body: JSON.stringify(payload)
             });
             
             const data = await response.json();
@@ -313,9 +319,7 @@ class Auth {
                 this.isAuthenticated = true;
                 
                 this.clearCaptchaTimer('login');
-                const passwordField = document.getElementById('loginPassword');
-                if (passwordField) passwordField.value = '';
-                const captchaInput = document.getElementById('loginCaptchaInput');
+                if (passwordInput) passwordInput.value = '';
                 if (captchaInput) captchaInput.value = '';
                 
                 if (window.toastr) {
@@ -336,7 +340,6 @@ class Auth {
                 }
                 
                 await this.refreshCaptcha('login');
-                const captchaInput = document.getElementById('loginCaptchaInput');
                 if (captchaInput) {
                     captchaInput.value = '';
                     captchaInput.focus();
@@ -361,20 +364,27 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER
+    // 🔥 REGISTER - CORRIGIDO (captcha_code)
     // ==============================================
     
     async handleRegister(e) {
         e.preventDefault();
         
-        // 🔥 CORRIGIDO: IDs corretos (registerName, registerEmail, etc)
-        const name = document.getElementById('registerName')?.value?.trim();
-        const email = document.getElementById('registerEmail')?.value?.trim();
-        const password = document.getElementById('registerPassword')?.value;
-        const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
-        const workshopName = document.getElementById('registerWorkshop')?.value?.trim();
-        const captchaCode = document.getElementById('registerCaptchaInput')?.value?.trim();
-        const captchaId = document.getElementById('registerCaptchaId')?.value || this.registerCaptchaId;
+        const nameInput = document.getElementById('registerName');
+        const emailInput = document.getElementById('registerEmail');
+        const passwordInput = document.getElementById('registerPassword');
+        const confirmPasswordInput = document.getElementById('registerConfirmPassword');
+        const workshopInput = document.getElementById('registerWorkshop');
+        const captchaInput = document.getElementById('registerCaptchaInput');
+        const captchaIdInput = document.getElementById('registerCaptchaId');
+        
+        const name = nameInput?.value?.trim();
+        const email = emailInput?.value?.trim();
+        const password = passwordInput?.value;
+        const confirmPassword = confirmPasswordInput?.value;
+        const workshopName = workshopInput?.value?.trim();
+        const captchaCode = captchaInput?.value?.trim();
+        const captchaId = captchaIdInput?.value || this.registerCaptchaId;
         
         console.log('📝 Tentando registrar:', { name, email, workshopName, captchaId });
         
@@ -424,13 +434,14 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de registro...');
             
+            // 🔥 CORREÇÃO CRUCIAL: usar captcha_code (NÃO captcha)
             const requestBody = {
                 name: name,
                 email: email,
                 password: password,
                 workshop_name: workshopName,
                 captcha_id: captchaId,
-                captcha_code: captchaCode,
+                captcha_code: captchaCode,  // ← CORRIGIDO: antes era "captcha"
                 session_type: 'register'
             };
             
