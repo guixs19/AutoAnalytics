@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO COMPLETA (LOGIN + REGISTER)
+// frontend/js/auth.js - VERSÃO CORRIGIDA (LOGIN + REGISTER)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -353,7 +353,6 @@ class Auth {
     async handleRegister(e) {
         e.preventDefault();
         
-        // 🔥 PEGAR TODOS OS CAMPOS
         const name = document.getElementById('regName')?.value?.trim();
         const email = document.getElementById('regEmail')?.value?.trim();
         const password = document.getElementById('regPassword')?.value;
@@ -364,7 +363,6 @@ class Auth {
         
         console.log('📝 Tentando registrar:', { name, email, workshopName });
         
-        // 🔥 VALIDAÇÕES
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos.');
@@ -401,7 +399,6 @@ class Auth {
             return;
         }
         
-        // 🔥 BLOQUEAR BOTÃO
         const submitBtn = document.getElementById('registerBtn');
         const originalText = submitBtn?.innerHTML;
         if (submitBtn) {
@@ -450,7 +447,6 @@ class Auth {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
                 }
                 
-                // 🔥 REDIRECIONAR PARA O LOGIN
                 setTimeout(() => {
                     console.log('🔀 Redirecionando para /login...');
                     window.location.href = '/login';
@@ -512,11 +508,11 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 SETUP DOS LISTENERS
+    // 🔥 SETUP DOS LISTENERS - CORRIGIDO
     // ==============================================
     
     setupAuthPageListeners() {
-        // 🔥 LOGIN FORM
+        // LOGIN FORM
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
             console.log('📝 Formulário de login encontrado!');
@@ -531,13 +527,12 @@ class Auth {
             }
         }
         
-        // 🔥 REGISTER FORM
+        // REGISTER FORM
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
             console.log('📝 Formulário de registro encontrado!');
             registerForm.addEventListener('submit', (e) => this.handleRegister(e));
             
-            // Carregar CAPTCHA do registro
             this.loadCaptcha('register');
             
             const refreshBtn = document.getElementById('refreshRegisterCaptcha');
@@ -550,7 +545,7 @@ class Auth {
             console.warn('⚠️ Formulário de registro não encontrado!');
         }
         
-        // 🔥 TAB DE REGISTRO
+        // TAB DE REGISTRO
         const registerTab = document.querySelector('#register-tab') || 
                            document.querySelector('button[data-bs-target="#register"]') ||
                            document.querySelector('.tab[data-tab="register"]');
@@ -562,7 +557,7 @@ class Auth {
             });
         }
         
-        // 🔥 PASSWORD TOGGLE
+        // PASSWORD TOGGLE
         document.querySelectorAll('.password-toggle').forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetId = btn.getAttribute('data-target');
@@ -582,7 +577,7 @@ class Auth {
             });
         });
         
-        // 🔥 LOGOUT
+        // LOGOUT
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
@@ -842,28 +837,22 @@ class Auth {
     }
     
     // ==============================================
-    // UI
+    // 🔥 UPDATE UI - CORRIGIDO (com verificação)
     // ==============================================
     
-    showError(message) {
-        const errorDiv = document.getElementById('authMessage');
-        if (errorDiv) {
-            errorDiv.innerHTML = `
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fas fa-exclamation-circle me-2"></i>${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            `;
-            setTimeout(() => {
-                const alert = errorDiv.querySelector('.alert');
-                if (alert) alert.remove();
-            }, 5000);
-        }
-    }
-    
     updateUI() {
+        // 🔥 SÓ EXECUTA SE EXISTIREM ELEMENTOS DE UI
+        // Verifica se estamos em uma página que tem elementos de autenticação
         const authRequiredElements = document.querySelectorAll('.auth-required');
         const guestElements = document.querySelectorAll('.guest-only');
+        
+        // Se não houver elementos de autenticação, não faz nada (evita erros)
+        if (authRequiredElements.length === 0 && guestElements.length === 0) {
+            console.debug('ℹ️ Nenhum elemento de UI de autenticação encontrado. Ignorando updateUI().');
+            return;
+        }
+        
+        console.log('🔄 Atualizando UI - Autenticado:', this.isAuthenticated);
         
         if (this.isAuthenticated) {
             authRequiredElements.forEach(el => el.classList.remove('d-none'));
@@ -897,6 +886,7 @@ class Auth {
         
         this._initializing = false;
         
+        // 🔥 SÓ CHAMA updateUI() SE HOUVER ELEMENTOS
         this.updateUI();
         
         console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
