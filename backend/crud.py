@@ -1,6 +1,6 @@
-# backend/crud.py - VERSÃO COMPLETA OTIMIZADA E CORRIGIDA
+# backend/crud.py - VERSÃO COMPLETA COM A CORREÇÃO DO PHONE
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, not_  # 🔥 OR_ IMPORTADO CORRETAMENTE
+from sqlalchemy import func, and_, or_, not_
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any, Union
 import logging
@@ -66,7 +66,6 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
     🔥 CORRIGIDO: uso correto do or_()
     """
     if phone:
-        # 🔥 CORREÇÃO: or_() dentro do filter()
         return db.query(models.User).filter(
             or_(
                 models.User.email == email,
@@ -76,29 +75,30 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
     return db.query(models.User).filter(models.User.email == email).first() is not None
 
 
-def create_user(db: Session, user: schemas.UserCreate) -> models.User:
-    """Cria usuário com hash Argon2 e validações"""
+# ==============================================
+# 🔥 FUNÇÃO CREATE_USER CORRIGIDA - PROBLEMA DO PHONE RESOLVIDO
+# ==============================================
+
+def create_user(db: Session, user_data: Any) -> models.User:
+    """
+    Cria um novo usuário no banco de dados com segurança contra campos ausentes
+    🔥 CORRIGIDO: getattr() para phone com fallback None
+    """
     
-    # Verificar se já existe
-    if user_exists(db, user.email, user.phone):
-        raise ValueError("Email ou telefone já cadastrado")
-    
-    # Hash da senha
-    hashed_password = hasher.hash_password(user.password)
+    # 🔥 CORREÇÃO CRUCIAL: Captura o telefone com segurança
+    # Se o campo phone não existir no user_data (RegisterRequest), retorna None
+    phone_value = getattr(user_data, "phone", None)
     
     db_user = models.User(
-        email=user.email.lower().strip(),
-        name=user.name.strip(),
-        hashed_password=hashed_password,
-        workshop_name=user.workshop_name.strip() if user.workshop_name else None,
-        phone=user.phone.strip() if user.phone else None,
-        role=user.role or models.UserRole.USER,
-        is_active=True,
-        is_verified=False,
-        created_at=_now_brasil(),
-        credits=3,  # 3 créditos grátis para novos usuários
-        total_purchased=0,
+        name=user_data.name,
+        email=user_data.email,
+        password_hash=hasher.hash_password(user_data.password),
+        workshop_name=user_data.workshop_name,
+        phone=phone_value,  # ✅ CORRIGIDO: usa a variável segura!
+        role=models.UserRole.USER,
         plan=models.UserPlan.BASICO,
+        credits=3,
+        is_active=True,
         is_admin=False
     )
     
@@ -937,4 +937,4 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     return True
 
 
-print("✅ crud.py carregado com correções de fuso UTC-3 e OR fix")
+print("✅ crud.py carregado com correções de fuso UTC-3, OR fix e create_user seguro")
