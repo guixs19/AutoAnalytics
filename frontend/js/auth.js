@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO COMPLETA CORRIGIDA
+// frontend/js/auth.js - VERSÃO COMPLETA (LOGIN + REGISTER)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -218,7 +218,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 LOGIN - COM REDIRECIONAMENTO CORRETO
+    // 🔥 LOGIN
     // ==============================================
     
     async handleLogin(e) {
@@ -347,13 +347,13 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER - CORRIGIDO E FUNCIONANDO
+    // 🔥 REGISTER - CORRIGIDO
     // ==============================================
     
     async handleRegister(e) {
         e.preventDefault();
         
-        // 🔥 PEGAR TODOS OS CAMPOS DO FORMULÁRIO
+        // 🔥 PEGAR TODOS OS CAMPOS
         const name = document.getElementById('regName')?.value?.trim();
         const email = document.getElementById('regEmail')?.value?.trim();
         const password = document.getElementById('regPassword')?.value;
@@ -368,8 +368,6 @@ class Auth {
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos.');
-            } else {
-                alert('Preencha todos os campos.');
             }
             return;
         }
@@ -377,8 +375,6 @@ class Auth {
         if (password.length < 6) {
             if (window.toastr) {
                 toastr.error('Senha deve ter no mínimo 6 caracteres.');
-            } else {
-                alert('Senha deve ter no mínimo 6 caracteres.');
             }
             return;
         }
@@ -386,8 +382,6 @@ class Auth {
         if (password !== confirmPassword) {
             if (window.toastr) {
                 toastr.error('As senhas não coincidem.');
-            } else {
-                alert('As senhas não coincidem.');
             }
             return;
         }
@@ -395,8 +389,6 @@ class Auth {
         if (!captchaCode || captchaCode.length < 4) {
             if (window.toastr) {
                 toastr.error('Digite os 4 números da imagem.');
-            } else {
-                alert('Digite os 4 números da imagem.');
             }
             return;
         }
@@ -404,8 +396,6 @@ class Auth {
         if (!captchaId) {
             if (window.toastr) {
                 toastr.error('CAPTCHA não carregado. Clique em 🔄');
-            } else {
-                alert('CAPTCHA não carregado. Clique em 🔄');
             }
             await this.refreshCaptcha('register');
             return;
@@ -450,8 +440,6 @@ class Auth {
                 const errorMsg = data.detail || data.message || 'Falha no registro';
                 if (window.toastr) {
                     toastr.error(errorMsg);
-                } else {
-                    alert(errorMsg);
                 }
                 await this.refreshCaptcha('register');
                 return false;
@@ -460,8 +448,6 @@ class Auth {
             if (data.success) {
                 if (window.toastr) {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
-                } else {
-                    alert('✅ Conta criada! Faça login para continuar.');
                 }
                 
                 // 🔥 REDIRECIONAR PARA O LOGIN
@@ -479,8 +465,6 @@ class Auth {
             console.error('❌ Erro no registro:', error);
             if (window.toastr) {
                 toastr.error(error.message);
-            } else {
-                alert(error.message);
             }
             await this.refreshCaptcha('register');
             return false;
@@ -528,13 +512,14 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 SETUP DOS LISTENERS - CORRIGIDO
+    // 🔥 SETUP DOS LISTENERS
     // ==============================================
     
     setupAuthPageListeners() {
         // 🔥 LOGIN FORM
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
+            console.log('📝 Formulário de login encontrado!');
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
             this.loadCaptcha('login');
             
@@ -546,7 +531,7 @@ class Auth {
             }
         }
         
-        // 🔥 REGISTER FORM - CORRIGIDO
+        // 🔥 REGISTER FORM
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
             console.log('📝 Formulário de registro encontrado!');
@@ -565,7 +550,7 @@ class Auth {
             console.warn('⚠️ Formulário de registro não encontrado!');
         }
         
-        // 🔥 TAB DE REGISTRO - carregar CAPTCHA quando clicar
+        // 🔥 TAB DE REGISTRO
         const registerTab = document.querySelector('#register-tab') || 
                            document.querySelector('button[data-bs-target="#register"]') ||
                            document.querySelector('.tab[data-tab="register"]');
