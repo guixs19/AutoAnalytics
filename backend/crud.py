@@ -1,4 +1,4 @@
-# backend/crud.py - VERSÃO COMPLETA COM A CORREÇÃO DO PHONE
+# backend/crud.py - VERSÃO CORRIGIDA (hashed_password)
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, not_
 from datetime import datetime, date, timedelta, timezone
@@ -76,23 +76,25 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
 
 
 # ==============================================
-# 🔥 FUNÇÃO CREATE_USER CORRIGIDA - PROBLEMA DO PHONE RESOLVIDO
+# 🔥 FUNÇÃO CREATE_USER CORRIGIDA - hashed_password
 # ==============================================
 
 def create_user(db: Session, user_data: Any) -> models.User:
     """
     Cria um novo usuário no banco de dados com segurança contra campos ausentes
     🔥 CORRIGIDO: getattr() para phone com fallback None
+    🔥 CORRIGIDO: hashed_password (NÃO password_hash)
     """
     
     # 🔥 CORREÇÃO CRUCIAL: Captura o telefone com segurança
     # Se o campo phone não existir no user_data (RegisterRequest), retorna None
     phone_value = getattr(user_data, "phone", None)
     
+    # 🔥 CORREÇÃO: usar hashed_password (o nome correto do campo no models.py)
     db_user = models.User(
         name=user_data.name,
         email=user_data.email,
-        password_hash=hasher.hash_password(user_data.password),
+        hashed_password=hasher.hash_password(user_data.password),  # ✅ CORRIGIDO: hashed_password
         workshop_name=user_data.workshop_name,
         phone=phone_value,  # ✅ CORRIGIDO: usa a variável segura!
         role=models.UserRole.USER,
@@ -937,4 +939,4 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     return True
 
 
-print("✅ crud.py carregado com correções de fuso UTC-3, OR fix e create_user seguro")
+print("✅ crud.py carregado com correções de fuso UTC-3, OR fix, create_user seguro e hashed_password")
