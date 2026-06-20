@@ -1,7 +1,9 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA (com phone, validação e máscara)
+// frontend/js/auth.js - VERSÃO SINCRONIZADA COM AUTH_ROUTES.PY E AUTH.PY
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
+ * 🔥 Token expira em 15 minutos (conforme security.py)
+ * 🔥 Sincronizado com auth_routes.py e auth.py
  */
 
 class Auth {
@@ -22,6 +24,11 @@ class Auth {
         this._refreshPromise = null;
         this._uiUpdateTimeout = null;
         this._initializing = false;
+        
+        // 🔥 TIMERS PARA LIMPEZA AUTOMÁTICA (15 MINUTOS - conforme security.py)
+        this._tokenExpiryTimer = null;
+        this._tokenCheckInterval = null;
+        this.pendingRequests = [];
         
         this.init();
     }
@@ -54,7 +61,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 CAPTCHA
+    // 🔥 CAPTCHA - /api/auth/captcha/generate
     // ==============================================
     
     async loadCaptcha(sessionType = 'login') {
@@ -233,7 +240,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 LOGIN - CORRIGIDO (captcha_code)
+    // 🔥 LOGIN - POST /api/auth/login
     // ==============================================
     
     async handleLogin(e) {
@@ -273,7 +280,7 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de login...');
             
-            // 🔥 CORREÇÃO CRUCIAL: usar captcha_code (NÃO captcha)
+            // 🔥 Payload compatível com auth_routes.py (LoginRequest)
             const payload = {
                 email: email,
                 password: password,
@@ -295,6 +302,7 @@ class Auth {
             
             const data = await response.json();
             
+            // 🔥 Resposta compatível com auth_routes.py
             if (response.ok && (data.success || data.access_token)) {
                 console.log('✅ Login bem-sucedido!');
                 
@@ -321,6 +329,9 @@ class Auth {
                 this.clearCaptchaTimer('login');
                 if (passwordInput) passwordInput.value = '';
                 if (captchaInput) captchaInput.value = '';
+                
+                // 🔥 INICIA MONITORAMENTO DO TOKEN (15 MINUTOS)
+                this.startTokenMonitoring();
                 
                 if (window.toastr) {
                     toastr.success('Login realizado com sucesso!');
@@ -364,7 +375,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER - CORRIGIDO (com phone, validação e máscara)
+    // 🔥 REGISTER - POST /api/auth/register
     // ==============================================
     
     async handleRegister(e) {
@@ -394,7 +405,7 @@ class Auth {
         // 🔥 VALIDAÇÕES
         // ==============================================
         
-        // 1. Campos obrigatórios
+        // 1. Campos obrigatórios (name, email, password, workshop_name)
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos obrigatórios.');
@@ -402,11 +413,10 @@ class Auth {
             return;
         }
         
-        // 2. Validação de telefone (opcional)
+        // 2. Validação de telefone (opcional - compatível com auth.py)
         if (phone) {
             const phoneClean = phone.replace(/\D/g, '');
             
-            // Verifica se tem pelo menos 10 dígitos (DDD + número)
             if (phoneClean.length > 0 && phoneClean.length < 10) {
                 if (window.toastr) {
                     toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
@@ -414,7 +424,6 @@ class Auth {
                 return;
             }
             
-            // Verifica se tem mais de 11 dígitos
             if (phoneClean.length > 11) {
                 if (window.toastr) {
                     toastr.warning('Telefone deve ter no máximo 11 dígitos.');
@@ -423,7 +432,7 @@ class Auth {
             }
         }
         
-        // 3. Senha
+        // 3. Senha (mínimo 6 caracteres - compatível com auth.py)
         if (password.length < 6) {
             if (window.toastr) {
                 toastr.error('Senha deve ter no mínimo 6 caracteres.');
@@ -439,7 +448,7 @@ class Auth {
             return;
         }
         
-        // 5. CAPTCHA
+        // 5. CAPTCHA (compatível com auth.py)
         if (!captchaCode || captchaCode.length < 4) {
             if (window.toastr) {
                 toastr.error('Digite os 4 números da imagem.');
@@ -456,7 +465,7 @@ class Auth {
         }
         
         // ==============================================
-        // 🔥 ENVIAR REGISTRO
+        // 🔥 ENVIAR REGISTRO - Compatível com auth.py
         // ==============================================
         
         const submitBtn = document.getElementById('registerBtn');
@@ -469,12 +478,13 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de registro...');
             
+            // 🔥 Payload compatível com auth.py (RegisterRequest)
             const requestBody = {
                 name: name,
                 email: email,
                 password: password,
                 workshop_name: workshopName,
-                phone: phone || null,
+                phone: phone || null,  // Opcional - compatível com auth.py
                 captcha_id: captchaId,
                 captcha_code: captchaCode,
                 session_type: 'register'
@@ -494,6 +504,7 @@ class Auth {
             const data = await response.json();
             console.log('📥 Resposta:', data);
             
+            // 🔥 Resposta compatível com auth.py
             if (!response.ok) {
                 const errorMsg = data.detail || data.message || 'Falha no registro';
                 if (window.toastr) {
@@ -517,6 +528,7 @@ class Auth {
                 if (phoneInput) phoneInput.value = '';
                 if (captchaInput) captchaInput.value = '';
                 
+                // Redireciona para login (compatível com auth.py redirect_to)
                 setTimeout(() => {
                     console.log('🔀 Redirecionando para /login...');
                     window.location.href = '/login';
@@ -543,7 +555,7 @@ class Auth {
     }
     
     // ==============================================
-    // LOGOUT
+    // 🔥 LOGOUT - POST /api/auth/logout
     // ==============================================
     
     async logout() {
@@ -565,6 +577,7 @@ class Auth {
             }
         }
         
+        this.stopTokenMonitoring();
         this.clearTokens();
         this.isAuthenticated = false;
         this.currentUser = null;
@@ -575,6 +588,152 @@ class Auth {
     clearTokens() {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+    }
+    
+    // ==============================================
+    // 🔥 MONITORAMENTO DE TOKEN (15 MINUTOS)
+    // ==============================================
+    
+    startTokenMonitoring() {
+        // Limpa timers anteriores
+        if (this._tokenExpiryTimer) {
+            clearTimeout(this._tokenExpiryTimer);
+            this._tokenExpiryTimer = null;
+        }
+        if (this._tokenCheckInterval) {
+            clearInterval(this._tokenCheckInterval);
+            this._tokenCheckInterval = null;
+        }
+        
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            console.log('❌ Sem token para monitorar');
+            return;
+        }
+        
+        console.log('⏰ Iniciando monitoramento de token (15min)');
+        
+        // 🔥 VERIFICAÇÃO PERIÓDICA (a cada 60 segundos) - GET /api/auth/check-token
+        this._tokenCheckInterval = setInterval(() => {
+            this.checkTokenHealth();
+        }, 60000);
+        
+        // 🔥 LIMPEZA AUTOMÁTICA APÓS 15 MINUTOS (conforme security.py)
+        this._tokenExpiryTimer = setTimeout(() => {
+            console.log('⏰ Token expirado (15min) - limpando localStorage');
+            this.clearTokens();
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            
+            if (window.toastr) {
+                toastr.warning('⏰ Sessão expirada. Faça login novamente.');
+            }
+            
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 1500);
+        }, 15 * 60 * 1000); // 15 minutos em milissegundos
+    }
+    
+    stopTokenMonitoring() {
+        if (this._tokenExpiryTimer) {
+            clearTimeout(this._tokenExpiryTimer);
+            this._tokenExpiryTimer = null;
+        }
+        if (this._tokenCheckInterval) {
+            clearInterval(this._tokenCheckInterval);
+            this._tokenCheckInterval = null;
+        }
+    }
+    
+    async checkTokenHealth() {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                this.handleTokenExpired();
+                return;
+            }
+            
+            // 🔥 GET /api/auth/check-token
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.status === 401) {
+                console.log('🔄 Token expirou, tentando refresh...');
+                const refreshed = await this.refreshTokenSafely();
+                if (!refreshed) {
+                    this.handleTokenExpired();
+                }
+            }
+        } catch (error) {
+            console.warn('Erro ao verificar token:', error);
+        }
+    }
+    
+    // ==============================================
+    // 🔥 REFRESH TOKEN - POST /api/auth/refresh
+    // ==============================================
+    
+    async refreshTokenSafely() {
+        if (this._isRefreshing) {
+            return new Promise((resolve) => {
+                this.pendingRequests.push(resolve);
+            });
+        }
+        
+        this._isRefreshing = true;
+        
+        try {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) return false;
+            
+            // 🔥 POST /api/auth/refresh
+            const response = await fetch(`${this.apiBase}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    refresh_token: refreshToken,
+                    old_access_token: localStorage.getItem('access_token') 
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('access_token', data.access_token);
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+                
+                // Reinicia o monitoramento
+                this.stopTokenMonitoring();
+                this.startTokenMonitoring();
+                
+                console.log('✅ Token refresh realizado com sucesso');
+                return true;
+            }
+            return false;
+        } catch (error) {
+            return false;
+        } finally {
+            this._isRefreshing = false;
+        }
+    }
+    
+    handleTokenExpired() {
+        console.log('⏰ Token expirado - limpando sessão');
+        this.stopTokenMonitoring();
+        this.clearTokens();
+        this.isAuthenticated = false;
+        this.currentUser = null;
+        
+        if (window.toastr) {
+            toastr.warning('⏰ Sessão expirada. Faça login novamente.');
+        }
+        
+        setTimeout(() => {
+            window.location.href = '/login';
+        }, 1500);
     }
     
     // ==============================================
@@ -678,6 +837,7 @@ class Auth {
         }
         
         try {
+            // 🔥 GET /api/auth/check-token
             const response = await fetch(`${this.apiBase}/auth/check-token`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -686,6 +846,7 @@ class Auth {
             
             const data = await response.json();
             
+            // 🔥 Resposta compatível com auth_routes.py (check-token)
             if (response.ok && (data.status === 'valid' || data.status === 'refreshed')) {
                 this.isAuthenticated = true;
                 
@@ -705,6 +866,9 @@ class Auth {
                 };
                 
                 this.currentUser = this.userData;
+                
+                // 🔥 INICIA MONITORAMENTO DO TOKEN
+                this.startTokenMonitoring();
                 
                 return true;
             }
@@ -745,6 +909,7 @@ class Auth {
         
         this._refreshPromise = (async () => {
             try {
+                // 🔥 POST /api/auth/refresh
                 const response = await fetch(`${this.apiBase}/auth/refresh`, {
                     method: 'POST',
                     headers: {
@@ -758,6 +923,7 @@ class Auth {
                 
                 const data = await response.json();
                 
+                // 🔥 Resposta compatível com auth_routes.py (refresh)
                 if (response.ok && data.access_token) {
                     localStorage.setItem('access_token', data.access_token);
                     if (data.refresh_token) {
@@ -779,6 +945,10 @@ class Auth {
                     }
                     
                     this.isAuthenticated = true;
+                    
+                    // Reinicia o monitoramento
+                    this.stopTokenMonitoring();
+                    this.startTokenMonitoring();
                     
                     console.log('✅ Token refresh realizado com sucesso');
                     return true;

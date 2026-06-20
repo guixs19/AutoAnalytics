@@ -5,33 +5,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>AutoAnalytics - Login</title>
     
-    <!-- 🔥 BLOQUEIO CORRETO: Se já estiver logado, vai para o dashboard -->
+    <!-- 🔥 BLOQUEIO CORRETO: Só redireciona se token for VÁLIDO -->
     <script>
         (function() {
             const token = localStorage.getItem('access_token');
-            const isLogged = token !== null && token !== '';
             
-            if (isLogged) {
-                console.log('🔄 Usuário já autenticado. Redirecionando para a Dashboard...');
-                window.location.replace('/dashboard');
+            // Se NÃO tiver token, fica na página de login
+            if (!token || token === '' || token === 'undefined' || token === 'null') {
+                console.log('📝 Nenhum token encontrado. Página de login carregada.');
+                return;
             }
+            
+            console.log('🔄 Token encontrado. Verificando validade...');
+            
+            // 🔥 Verifica se o token é válido ANTES de redirecionar (compatível com auth_routes.py)
+            fetch('/api/auth/check-token', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => {
+                if (res.ok) {
+                    console.log('✅ Token válido - redirecionando para dashboard');
+                    window.location.replace('/dashboard');
+                } else {
+                    console.log('❌ Token inválido - removendo');
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    // Recarrega a página para mostrar o login limpo
+                    location.reload();
+                }
+            })
+            .catch(() => {
+                console.log('⚠️ Erro ao verificar token - removendo');
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                location.reload();
+            });
         })();
     </script>
     
+    <!-- ============================================== -->
+    <!-- 🔥 CDN - COM CONFIGURAÇÕES CORRETAS -->
+    <!-- ============================================== -->
+    
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" 
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer">
     
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
-    <!-- 🔥 JQUERY - OBRIGATÓRIO PARA TOASTR -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"
+            crossorigin="anonymous"
+            referrerpolicy="no-referrer">
+    </script>
     
-    <!-- 🔥 TOASTR - CSS + JS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <!-- Toastr -->
+    <link rel="stylesheet" 
+          href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"
+            crossorigin="anonymous"
+            referrerpolicy="no-referrer">
+    </script>
+    
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" 
+          rel="stylesheet"
+          crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+            crossorigin="anonymous">
+    </script>
     
     <style>
+        /* ===== TODOS OS ESTILOS ===== */
         * {
             box-sizing: border-box;
             margin: 0;
@@ -118,7 +168,6 @@
             margin-top: 4px;
         }
 
-        /* 🔥 AUTH TABS */
         .auth-tabs {
             display: flex;
             border-bottom: 2px solid #edf2f7;
@@ -165,7 +214,6 @@
             to { transform: scaleX(1); }
         }
 
-        /* 🔥 AUTH TAB CONTENT */
         .auth-tab-content {
             display: none;
             animation: fadeIn 0.3s ease-out;
@@ -648,6 +696,21 @@
             color: #cbd5e0;
         }
 
+        /* 🔥 BOTÃO DE EMERGÊNCIA - LIMPA TUDO */
+        .emergency-clear {
+            background: none;
+            border: none;
+            color: #dc3545;
+            font-size: 0.7rem;
+            cursor: pointer;
+            text-decoration: underline;
+            transition: color 0.2s;
+        }
+
+        .emergency-clear:hover {
+            color: #b91c1c;
+        }
+
         @media (max-width: 480px) {
             .login-card {
                 padding: 24px 16px;
@@ -767,10 +830,11 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 🔥 TAB LOGIN -->
+        <!-- 🔥 TAB LOGIN - COMPATÍVEL COM auth_routes.py -->
         <!-- ========================================== -->
         <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel" aria-labelledby="tab-login-btn">
             <form id="loginForm" novalidate>
+                <!-- Email -->
                 <div class="form-group">
                     <label for="loginEmail"><i class="fas fa-envelope"></i> E-mail</label>
                     <div class="input-wrapper">
@@ -779,6 +843,7 @@
                     </div>
                 </div>
 
+                <!-- Senha -->
                 <div class="form-group">
                     <label for="loginPassword"><i class="fas fa-lock"></i> Senha</label>
                     <div class="input-wrapper password-wrapper">
@@ -791,7 +856,7 @@
                     <a href="#" class="forgot-password" tabindex="3"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Esqueceu a senha?</a>
                 </div>
 
-                <!-- CAPTCHA LOGIN -->
+                <!-- 🔥 CAPTCHA LOGIN - /api/auth/captcha/generate -->
                 <div class="captcha-container" role="group" aria-label="Validação de segurança">
                     <label for="loginCaptchaInput"><i class="fas fa-shield-alt"></i> Verificação de Segurança</label>
                     <div class="sr-only" id="loginCaptchaDescription">
@@ -819,6 +884,7 @@
                         </button>
                     </div>
 
+                    <!-- 🔥 Campo captcha_code - compatível com auth_routes.py -->
                     <input type="text" 
                            name="captcha" 
                            id="loginCaptchaInput" 
@@ -853,10 +919,11 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 🔥 TAB REGISTER - COM CAMPO PHONE -->
+        <!-- 🔥 TAB REGISTER - COMPATÍVEL COM auth.py -->
         <!-- ========================================== -->
         <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel" aria-labelledby="tab-register-btn">
             <form id="registerForm" novalidate>
+                <!-- Nome (obrigatório) -->
                 <div class="form-group">
                     <label for="registerName"><i class="fas fa-user"></i> Nome Completo</label>
                     <div class="input-wrapper">
@@ -865,6 +932,7 @@
                     </div>
                 </div>
 
+                <!-- Email (obrigatório) -->
                 <div class="form-group">
                     <label for="registerEmail"><i class="fas fa-envelope"></i> E-mail</label>
                     <div class="input-wrapper">
@@ -873,6 +941,7 @@
                     </div>
                 </div>
 
+                <!-- Senha e Confirmação -->
                 <div class="row" style="display: flex; gap: 12px; flex-wrap: wrap;">
                     <div class="form-group" style="flex: 1; min-width: 140px;">
                         <label for="registerPassword"><i class="fas fa-lock"></i> Senha</label>
@@ -905,6 +974,7 @@
                     </div>
                 </div>
 
+                <!-- Nome da Oficina (obrigatório) -->
                 <div class="form-group">
                     <label for="registerWorkshop"><i class="fas fa-wrench"></i> Nome da Oficina</label>
                     <div class="input-wrapper">
@@ -913,7 +983,7 @@
                     </div>
                 </div>
 
-                <!-- 🔥 CAMPO PHONE - ADICIONADO -->
+                <!-- 🔥 CAMPO PHONE - OPCIONAL (compatível com auth.py) -->
                 <div class="form-group">
                     <label for="registerPhone"><i class="fas fa-phone"></i> Telefone <small style="color: #718096;">(opcional)</small></label>
                     <div class="input-wrapper">
@@ -926,7 +996,7 @@
                     </small>
                 </div>
 
-                <!-- CAPTCHA REGISTER -->
+                <!-- 🔥 CAPTCHA REGISTER - /api/auth/captcha/generate -->
                 <div class="captcha-container" role="group" aria-label="Validação de segurança">
                     <label for="registerCaptchaInput"><i class="fas fa-shield-alt"></i> Verificação de Segurança</label>
                     <div class="sr-only" id="registerCaptchaDescription">
@@ -953,6 +1023,7 @@
                         </button>
                     </div>
 
+                    <!-- 🔥 Campo captcha_code - compatível com auth.py -->
                     <input type="text" 
                            name="captcha" 
                            id="registerCaptchaInput" 
@@ -972,6 +1043,7 @@
                     </div>
                 </div>
 
+                <!-- Termos -->
                 <div class="form-check">
                     <input type="checkbox" class="form-check-input" id="terms" required>
                     <label class="form-check-label" for="terms">
@@ -995,6 +1067,14 @@
         <!-- MENSAGEM -->
         <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
 
+        <!-- 🔥 BOTÃO DE EMERGÊNCIA - LIMPA TUDO -->
+        <div class="text-center mt-3">
+            <button class="emergency-clear" onclick="emergencyClear()">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                Problemas para entrar? Limpar dados da sessão
+            </button>
+        </div>
+
         <!-- FOOTER -->
         <div class="login-footer">
             <div class="links">
@@ -1008,13 +1088,10 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS -->
+    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
     <!-- ============================================== -->
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-
+    <!-- 1. CONFIGURAÇÃO DO TOASTR -->
     <script>
         toastr.options = {
             closeButton: true,
@@ -1026,6 +1103,22 @@
         };
     </script>
 
+    <!-- 2. FUNÇÃO DE EMERGÊNCIA -->
+    <script>
+        function emergencyClear() {
+            if (confirm('⚠️ Isso vai limpar todos os seus dados de sessão. Você será redirecionado para a página de login. Continuar?')) {
+                localStorage.clear();
+                sessionStorage.clear();
+                document.cookie.split(";").forEach(function(c) { 
+                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                });
+                alert('✅ Dados de sessão limpos com sucesso! A página será recarregada.');
+                window.location.href = '/login';
+            }
+        }
+    </script>
+
+    <!-- 3. GERENCIADOR DE TABS -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🔧 Inicializando gerenciador de tabs...');
@@ -1037,22 +1130,18 @@
                     const tabName = this.getAttribute('data-tab');
                     console.log(`📝 Alternando para tab: ${tabName}`);
                     
-                    // 1. Remove active de todas as abas
                     document.querySelectorAll('.auth-tab').forEach(b => {
                         b.classList.remove('active');
                         b.setAttribute('aria-selected', 'false');
                     });
                     
-                    // 2. Ativa a aba atual
                     this.classList.add('active');
                     this.setAttribute('aria-selected', 'true');
                     
-                    // 3. Oculta todos os conteúdos
                     document.querySelectorAll('.auth-tab-content').forEach(c => {
                         c.classList.remove('active');
                     });
                     
-                    // 4. Mostra o conteúdo correspondente usando o data-target
                     const targetId = this.getAttribute('data-target');
                     if (targetId) {
                         const targetContent = document.querySelector(targetId);
@@ -1062,7 +1151,6 @@
                         }
                     }
                     
-                    // 5. Carrega o CAPTCHA de registo se for a aba correta
                     if (tabName === 'register') {
                         setTimeout(() => {
                             if (window.appAuth && typeof window.appAuth.loadCaptcha === 'function') {
@@ -1075,7 +1163,6 @@
                 });
             });
             
-            // 🔥 Forçar carregamento caso inicie na aba de registo
             const registerTab = document.querySelector('.auth-tab[data-target="#register-form-wrapper"]');
             if (registerTab && registerTab.classList.contains('active')) {
                 setTimeout(() => {
@@ -1091,6 +1178,7 @@
         });
     </script>
 
+    <!-- 4. PASSWORD TOGGLE -->
     <script>
         document.querySelectorAll('.password-toggle').forEach(function(button) {
             button.addEventListener('click', function() {
@@ -1113,7 +1201,7 @@
         });
     </script>
 
-    <!-- 🔥 AUTH.JS - CARREGADO POR ÚLTIMO -->
+    <!-- 5. 🔥 AUTH.JS - CARREGADO POR ÚLTIMO -->
     <script src="/static/js/auth.js"></script>
 </body>
 </html>

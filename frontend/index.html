@@ -7,16 +7,13 @@
     <script>
         (function() {
             // Verifica de forma síncrona se há indícios de sessão ativa no localStorage
-            // Se o usuário não passou pelo login, bloqueia o carregamento do resto da página
             const token = localStorage.getItem('access_token');
             const isLogged = token !== null && token !== '';
             
             // Se NÃO estiver logado, bloqueia e redireciona para o login
             if (!isLogged) {
                 console.log('🔒 Acesso não autorizado. Desviando para a tela de login...');
-                // Usamos .replace() para o usuário não ficar preso ao clicar no botão "Voltar"
                 window.location.replace('/login');
-                // Impede a execução do resto do script
                 throw new Error('Redirecionando para login');
             }
             
@@ -54,6 +51,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
+        /* ===== TODOS OS ESTILOS ===== */
         * {
             margin: 0;
             padding: 0;
@@ -879,7 +877,7 @@
                             </li>
                             <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.2);"></li>
                             <li>
-                                <!-- 🔥 LOGOUT CORRIGIDO - Chama o método do auth.js -->
+                                <!-- 🔥 LOGOUT - Chama o método do auth.js -->
                                 <a class="dropdown-item" href="#" onclick="event.preventDefault(); window.appAuth.logout();" style="color: rgba(255,255,255,0.8);">
                                     <i class="fas fa-sign-out-alt me-2"></i>Sair
                                 </a>
@@ -1266,17 +1264,21 @@
     <!-- ============================================== -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('📄 Index: DOM carregado, iniciando verificações...');
+            
             // 🔥 SEGUNDA VERIFICAÇÃO (fallback) - caso o bloqueio imediato não tenha funcionado
             const token = localStorage.getItem('access_token');
-            if (!token) {
+            if (!token || token === '' || token === 'undefined' || token === 'null') {
                 console.log('🔒 Fallback: Token não encontrado. Redirecionando...');
                 window.location.href = '/login';
                 return;
             }
             
+            // 🔥 Inicializa AOS
             AOS.init({ once: true, duration: 1000 });
             gsap.registerPlugin(ScrollTrigger);
 
+            // 🔥 Navbar scroll effect
             window.addEventListener('scroll', function() {
                 const navbar = document.getElementById('mainNavbar');
                 if (window.scrollY > 50) {
@@ -1286,6 +1288,7 @@
                 }
             });
 
+            // 🔥 Animações GSAP
             gsap.from('.hero-title', {
                 duration: 1,
                 y: 100,
@@ -1305,25 +1308,138 @@
                 ease: 'power3.out'
             });
             
-            // 🔥 VERIFICAÇÃO CORRIGIDA: usa window.autoAnalytics (definido no app.js)
-            setTimeout(() => {
-                if (window.autoAnalytics) {
-                    console.log('✅ App inicializado com sucesso');
-                    
-                    // Carregar status premium após inicialização
+            // ==============================================
+            // 🔥 VERIFICAÇÃO DO APP - CORRIGIDA
+            // ==============================================
+            
+            // Função para verificar se o app está carregado
+            function checkAppLoaded() {
+                // Verifica se window.appAuth existe (auth.js)
+                const authLoaded = window.appAuth !== undefined && window.appAuth !== null;
+                
+                // Verifica se window.app existe (app.js)
+                const appLoaded = window.app !== undefined && window.app !== null;
+                
+                // Verifica se window.autoAnalytics existe (alias do app.js)
+                const autoAnalyticsLoaded = window.autoAnalytics !== undefined && window.autoAnalytics !== null;
+                
+                console.log('📊 Status de carregamento:');
+                console.log(`   - auth.js: ${authLoaded ? '✅' : '❌'} (window.appAuth)`);
+                console.log(`   - app.js: ${appLoaded ? '✅' : '❌'} (window.app)`);
+                console.log(`   - autoAnalytics: ${autoAnalyticsLoaded ? '✅' : '❌'} (window.autoAnalytics)`);
+                
+                return authLoaded && (appLoaded || autoAnalyticsLoaded);
+            }
+            
+            // Função para carregar status premium
+            function loadPremiumStatusIfAvailable() {
+                try {
+                    // Tenta usar window.loadPremiumStatus (exportado pelo auth.js)
                     if (typeof window.loadPremiumStatus === 'function') {
+                        console.log('📊 Carregando status premium via window.loadPremiumStatus...');
                         window.loadPremiumStatus();
-                        if (typeof window.startPremiumStatusPolling === 'function') {
-                            window.startPremiumStatusPolling(60000);
+                        return true;
+                    }
+                    
+                    // Tenta usar window.app.loadPremiumStatus
+                    if (window.app && typeof window.app.loadPremiumStatus === 'function') {
+                        console.log('📊 Carregando status premium via window.app.loadPremiumStatus...');
+                        window.app.loadPremiumStatus();
+                        return true;
+                    }
+                    
+                    // Tenta usar window.autoAnalytics.loadPremiumStatus
+                    if (window.autoAnalytics && typeof window.autoAnalytics.loadPremiumStatus === 'function') {
+                        console.log('📊 Carregando status premium via window.autoAnalytics.loadPremiumStatus...');
+                        window.autoAnalytics.loadPremiumStatus();
+                        return true;
+                    }
+                    
+                    console.warn('⚠️ Nenhuma função loadPremiumStatus encontrada');
+                    return false;
+                } catch (error) {
+                    console.warn('⚠️ Erro ao carregar status premium:', error);
+                    return false;
+                }
+            }
+            
+            // Função para iniciar polling de status premium
+            function startPremiumPollingIfAvailable() {
+                try {
+                    if (typeof window.startPremiumStatusPolling === 'function') {
+                        console.log('📊 Iniciando polling de status premium (60s)...');
+                        window.startPremiumStatusPolling(60000);
+                        return true;
+                    }
+                    
+                    if (window.app && typeof window.app.startPremiumStatusPolling === 'function') {
+                        console.log('📊 Iniciando polling via window.app...');
+                        window.app.startPremiumStatusPolling(60000);
+                        return true;
+                    }
+                    
+                    if (window.autoAnalytics && typeof window.autoAnalytics.startPremiumStatusPolling === 'function') {
+                        console.log('📊 Iniciando polling via window.autoAnalytics...');
+                        window.autoAnalytics.startPremiumStatusPolling(60000);
+                        return true;
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.warn('⚠️ Erro ao iniciar polling:', error);
+                    return false;
+                }
+            }
+            
+            // 🔥 Tenta carregar o app imediatamente
+            if (checkAppLoaded()) {
+                console.log('✅ App já carregado!');
+                loadPremiumStatusIfAvailable();
+                startPremiumPollingIfAvailable();
+            } else {
+                // 🔥 Aguarda o app carregar (com timeout)
+                console.log('⏳ Aguardando carregamento do app...');
+                let attempts = 0;
+                const maxAttempts = 30;
+                
+                const waitForApp = setInterval(() => {
+                    attempts++;
+                    
+                    if (checkAppLoaded()) {
+                        clearInterval(waitForApp);
+                        console.log(`✅ App carregado após ${attempts} tentativas!`);
+                        loadPremiumStatusIfAvailable();
+                        startPremiumPollingIfAvailable();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(waitForApp);
+                        console.error('❌ Timeout: App não carregou após 30 tentativas');
+                        if (typeof toastr !== 'undefined') {
+                            toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
                         }
                     }
-                } else {
-                    console.error('❌ App não carregado - Verifique se o script app.js foi carregado');
-                    if (typeof toastr !== 'undefined') {
-                        toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
-                    }
+                }, 200);
+            }
+            
+            // 🔥 Listener para evento authReady (disparado pelo auth.js)
+            document.addEventListener('authReady', function(event) {
+                console.log('📡 Evento authReady recebido:', event.detail);
+                if (event.detail && event.detail.isAuthenticated) {
+                    loadPremiumStatusIfAvailable();
+                    startPremiumPollingIfAvailable();
                 }
-            }, 1500);
+            });
+            
+            // 🔥 Listener para evento creditsUpdated (disparado pelo auth.js)
+            document.addEventListener('creditsUpdated', function(event) {
+                console.log('📡 Evento creditsUpdated recebido:', event.detail);
+                // Atualiza elementos de créditos se necessário
+                const creditsDisplay = document.getElementById('creditsDisplay');
+                if (creditsDisplay && event.detail && event.detail.display) {
+                    creditsDisplay.textContent = event.detail.display;
+                }
+            });
+            
+            console.log('✅ Index: Inicialização concluída!');
         });
     </script>
 </body>

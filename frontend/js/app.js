@@ -1,341 +1,671 @@
-// frontend/js/app.js - VERSÃO PRODUÇÃO (200KB) - TOTALMENTE CORRIGIDA E SINCRONIZADA
-// Limite: 200KB | Sistema de créditos premium | API relativa para VPS
+// frontend/js/auth.js - VERSÃO SINCRONIZADA COM AUTH_ROUTES.PY, AUTH.PY E PAYMENT.JS
+/**
+ * Módulo de Autenticação - AutoAnalytics
+ * FLUXO: login → dashboard | register → login
+ * 🔥 Token expira em 15 minutos (conforme security.py)
+ * 🔥 Sincronizado com auth_routes.py, auth.py e payment.js
+ */
 
-class AutoAnalytics {
+class Auth {
     constructor() {
-        // 🔥 PRODUÇÃO: Detecta ambiente automaticamente
-        const isLocalhost = window.location.hostname === 'localhost' || 
-                           window.location.hostname === '127.0.0.1';
+        // 🔥 API_URL - SINCRONIZADA COM PAYMENT.JS
+        this.apiBase = (() => {
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                                window.location.hostname === '127.0.0.1';
+            return isLocalhost ? 'http://localhost:8000/api' : '/api';
+        })();
         
-        // 🔥 CORRIGIDO: Usa a mesma lógica de API base do backend
-        this.apiBase = isLocalhost 
-            ? 'http://localhost:8000/api'
-            : '/api';
-        
-        console.log(`🌐 API Base: ${this.apiBase} (${isLocalhost ? 'localhost' : 'produção'})`);
-        
-        // 🔥 LIMITE: 200KB (sincronizado com backend)
-        this.MAX_FILE_SIZE_KB = 200;
-        this.MAX_FILE_SIZE_BYTES = this.MAX_FILE_SIZE_KB * 1024;
-        this.MAX_CREDITS_BALANCE = 3;
-        
-        this.currentProcessId = null;
-        this.pollInterval = null;
-        this.fileData = null;
-        this.columns = [];
-        this.dataTypes = {};
+        this.currentUser = null;
+        this._isAuthenticated = false;
+        this.userData = null;
+        this.loginCaptchaId = null;
+        this.registerCaptchaId = null;
+        this.loginCaptchaTimer = null;
+        this.registerCaptchaTimer = null;
         this.initialized = false;
-        this.authCheckInterval = null;
+        this.isRegisterCaptchaLoaded = false;
         
-        this.tokenExpiryTimer = null;
-        this.tokenCheckInterval = null;
-        this.isRefreshing = false;
+        this._isRefreshing = false;
+        this._refreshPromise = null;
+        this._uiUpdateTimeout = null;
+        this._initializing = false;
         this.pendingRequests = [];
         
-        this.waitForAuth();
+        // 🔥 TIMERS PARA LIMPEZA AUTOMÁTICA (15 MINUTOS - conforme security.py)
+        this._tokenExpiryTimer = null;
+        this._tokenCheckInterval = null;
+        this._creditsUpdateInterval = null;
+        
+        // 🔥 EXPORTA FUNÇÕES PARA USO GLOBAL (payment.js usa)
+        this._exposeGlobalFunctions();
+        
+        this.init();
     }
     
-    async waitForAuth() {
-        console.log('⏳ Aguardando auth.js inicializar...');
+    // ==============================================
+    // 🔥 EXPORTA FUNÇÕES GLOBAIS (para payment.js)
+    // ==============================================
+    
+    _exposeGlobalFunctions() {
+        // 🔥 window.appAuth já é a instância
+        // Mas adicionamos aliases para payment.js
         
-        for (let i = 0; i < 50; i++) {
-            if (window.appAuth) {
-                console.log('✅ auth.js encontrado!');
-                
-                if (window.appAuth.initialized === false) {
-                    console.log('⏳ Aguardando inicialização do auth...');
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    continue;
-                }
-                
-                if (this.isLoginPage() || this.isRegisterPage()) {
-                    console.log('📝 Página de autenticação - app não será inicializado');
-                    return;
-                }
-                
-                // 🔥 Suporta tanto propriedade quanto função
-                let isAuthenticated = false;
-                if (typeof window.appAuth.isAuthenticated === 'function') {
-                    isAuthenticated = window.appAuth.isAuthenticated();
-                } else {
-                    isAuthenticated = window.appAuth.isAuthenticated;
-                }
-                
-                if (!isAuthenticated) {
-                    console.log('❌ Usuário não autenticado');
-                    this.redirectToLogin();
-                    return;
-                }
-                
-                console.log('✅ Usuário autenticado, inicializando app...');
-                this.init();
-                return;
+        if (!window.appAuth) {
+            window.appAuth = this;
+        }
+        
+        // 🔥 Aliases para payment.js
+        window.isAdmin = () => this.isAdmin();
+        window.getCreditsDisplay = () => this.getCreditsDisplay();
+        window.updateCreditsDisplay = () => this.updateCreditsDisplay();
+        window.fetchWithAuth = (url, options) => this.fetchWithAuth(url, options);
+        
+        // 🔥 Aliases para status premium (payment.js usa)
+        window.loadPremiumStatus = () => {
+            if (this.loadPremiumStatus) {
+                return this.loadPremiumStatus();
             }
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+            return null;
+        };
         
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            console.log('📝 Página de autenticação - app não será inicializado');
-            return;
-        }
-        
-        console.log('❌ Timeout aguardando auth.js');
-        this.redirectToLogin();
-    }
-    
-    isLoginPage() {
-        return window.location.pathname.includes('login.html') || 
-               window.location.pathname === '/login' ||
-               window.location.pathname === '/';
-    }
-    
-    isRegisterPage() {
-        return window.location.pathname.includes('register.html') || 
-               window.location.pathname === '/register';
-    }
-    
-    isPlanosPage() {
-        return window.location.pathname.includes('planos.html') || 
-               window.location.pathname === '/planos';
-    }
-    
-    isCheckoutPage() {
-        return window.location.pathname.includes('checkout.html') || 
-               window.location.pathname === '/checkout';
-    }
-    
-    redirectToLogin() {
-        if (!this.isLoginPage() && !this.isRegisterPage() && 
-            !this.isPlanosPage() && !this.isCheckoutPage()) {
-            console.log('🔄 Redirecionando para login...');
-            window.location.href = '/login';
-        }
-    }
-    
-    redirectToPlanos() {
-        if (!this.isPlanosPage() && !this.isLoginPage() && !this.isRegisterPage()) {
-            console.log('💰 Redirecionando para planos (créditos insuficientes)...');
-            this.showNotification('💰 Créditos insuficientes! Adquira o plano premium.', 'warning');
-            setTimeout(() => {
-                window.location.href = '/planos';
-            }, 1500);
-        }
-    }
-    
-    isAdmin() {
-        if (window.appAuth && window.appAuth.isAdmin) {
-            return typeof window.appAuth.isAdmin === 'function' ? window.appAuth.isAdmin() : window.appAuth.isAdmin;
-        }
-        return false;
-    }
-    
-    isPremium() {
-        if (window.appAuth && window.appAuth.isPremium) {
-            return typeof window.appAuth.isPremium === 'function' ? window.appAuth.isPremium() : window.appAuth.isPremium;
-        }
-        return false;
-    }
-    
-    getCurrentUser() {
-        if (window.appAuth && window.appAuth.getCurrentUser) {
-            return window.appAuth.getCurrentUser();
-        }
-        return {};
-    }
-    
-    getCredits() {
-        if (window.appAuth && window.appAuth.getCredits) {
-            return window.appAuth.getCredits();
-        }
-        return this.getCurrentUser().credits || 0;
-    }
-    
-    getCreditsDisplay() {
-        if (window.appAuth && window.appAuth.getCreditsDisplay) {
-            return window.appAuth.getCreditsDisplay();
-        }
-        
-        const user = this.getCurrentUser();
-        
-        if (user.is_admin || this.isAdmin()) {
-            return '∞';
-        }
-        
-        if (this.isPremium() || user.plan === 'premium_mensal') {
-            const credits = user.credits || 0;
-            return `${credits}/${this.MAX_CREDITS_BALANCE}`;
-        }
-        
-        return String(user.credits || 0);
-    }
-    
-    updateCreditsDisplay() {
-        if (window.appAuth && window.appAuth.updateCreditsDisplay) {
-            window.appAuth.updateCreditsDisplay();
-        }
-        
-        const uploadCreditsSpan = document.getElementById('uploadCredits');
-        if (uploadCreditsSpan) {
-            uploadCreditsSpan.textContent = this.getCreditsDisplay();
-        }
-        
-        const creditsCountSpan = document.getElementById('creditsCount');
-        if (creditsCountSpan) {
-            creditsCountSpan.textContent = this.getCreditsDisplay();
-        }
-    }
-    
-    async loadUserCredits() {
-        if (window.appAuth && window.appAuth.loadUserCredits) {
-            const result = await window.appAuth.loadUserCredits();
-            
-            if (result && result.welcome_message) {
-                this.showNotification(result.welcome_message, 'success');
-                const hasSeenWelcome = localStorage.getItem('has_seen_welcome');
-                if (!hasSeenWelcome && result.is_new_user) {
-                    setTimeout(() => this.showCreditsInfoModal(), 1500);
-                    localStorage.setItem('has_seen_welcome', 'true');
-                }
+        window.startPremiumStatusPolling = (interval) => {
+            if (this.startPremiumStatusPolling) {
+                return this.startPremiumStatusPolling(interval);
             }
-            
-            this.updateCreditsDisplay();
-            return result;
-        }
-        return false;
+            return null;
+        };
+        
+        window.receiveDailyCredit = () => {
+            if (this.receiveDailyCredit) {
+                return this.receiveDailyCredit();
+            }
+            return null;
+        };
+        
+        // 🔥 Alias para logout (usado no index.html)
+        window.logout = () => this.logout();
+        
+        console.log('✅ Auth: Funções globais exportadas para payment.js');
     }
     
-    showCreditsInfoModal() {
-        let modal = document.getElementById('creditsInfoModal');
-        
-        if (!modal) {
-            const modalHtml = `
-                <div class="modal fade" id="creditsInfoModal" tabindex="-1" data-bs-backdrop="static">
-                    <div class="modal-dialog modal-dialog-centered">
-                        <div class="modal-content rounded-4">
-                            <div class="modal-header bg-success text-white border-0">
-                                <h5 class="modal-title">
-                                    <i class="fas fa-gift me-2"></i>
-                                    🎉 Créditos Grátis Adicionados!
-                                </h5>
-                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body text-center py-4">
-                                <i class="fas fa-coins fa-5x text-warning mb-3"></i>
-                                <h3 class="fw-bold">3 Créditos Grátis!</h3>
-                                <p class="text-muted mb-3">Você ganhou <strong>3 créditos</strong> para testar o sistema!</p>
-                                
-                                <div class="alert alert-info text-start mt-3">
-                                    <i class="fas fa-info-circle me-2"></i>
-                                    <strong>Como funciona o sistema de créditos:</strong>
-                                    <ul class="mt-2 mb-0 small">
-                                        <li>✅ Cada análise consome <strong>1 crédito</strong></li>
-                                        <li>✅ Limite máximo de <strong>3 créditos acumulados</strong></li>
-                                        <li>⭐ <strong>Plano Premium:</strong> 1 crédito novo por dia</li>
-                                        <li>📁 Limite de <strong>200KB por arquivo</strong></li>
-                                    </ul>
-                                </div>
-                            </div>
-                            <div class="modal-footer border-0 justify-content-center">
-                                <button type="button" class="btn btn-gradient px-4" data-bs-dismiss="modal">
-                                    <i class="fas fa-rocket me-2"></i>
-                                    Começar a Usar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            modal = document.getElementById('creditsInfoModal');
-        }
-        
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
+    // ==============================================
+    // GETTER / SETTER
+    // ==============================================
+    
+    get isAuthenticated() {
+        return this._isAuthenticated;
     }
     
-    async checkCreditsForAnalysis() {
-        if (this.isAdmin()) return true;
-        
-        if (this.isPlanosPage()) {
-            return false;
+    set isAuthenticated(value) {
+        const changed = this._isAuthenticated !== value;
+        this._isAuthenticated = value;
+        if (changed) {
+            console.log(`🔄 Estado de autenticação: ${value}`);
+            this._scheduleUIUpdate();
         }
-        
+    }
+    
+    _scheduleUIUpdate() {
+        if (this._uiUpdateTimeout) {
+            clearTimeout(this._uiUpdateTimeout);
+        }
+        this._uiUpdateTimeout = setTimeout(() => {
+            this.updateUI();
+            this._uiUpdateTimeout = null;
+        }, 50);
+    }
+    
+    // ==============================================
+    // 🔥 CAPTCHA - /api/auth/captcha/generate
+    // ==============================================
+    
+    async loadCaptcha(sessionType = 'login') {
         try {
-            // 🔥 CORRIGIDO: Usa /api/payments/check-analysis (sincronizado com backend)
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/check-analysis`);
-            if (response && response.ok) {
-                const data = await response.json();
-                if (data.has_credits) {
-                    return true;
-                } else {
-                    this.showNotification(data.message || '💰 Créditos insuficientes!', 'warning');
-                    if (!this.isPlanosPage()) {
-                        setTimeout(() => {
-                            window.location.href = '/planos';
-                        }, 1500);
-                    }
-                    return false;
+            console.log(`🔄 Carregando CAPTCHA para: ${sessionType}`);
+            
+            const url = `${this.apiBase}/auth/captcha/generate?session_type=${sessionType}&t=${Date.now()}`;
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
                 }
-            }
-        } catch (error) {
-            console.error('Erro ao verificar créditos:', error);
-        }
-        
-        const credits = this.getCredits();
-        if (credits <= 0) {
-            this.showNotification('❌ Você não tem créditos disponíveis!', 'error');
-            if (!this.isPlanosPage()) {
-                setTimeout(() => {
-                    window.location.href = '/planos';
-                }, 1500);
-            }
-            return false;
-        }
-        
-        return true;
-    }
-    
-    async claimDailyCredit() {
-        if (!this.isPremium()) {
-            this.showNotification('⭐ Assine o plano premium para ganhar créditos diários!', 'info');
-            return;
-        }
-        
-        try {
-            // 🔥 CORRIGIDO: Usa /api/payments/premium/check-daily
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium/check-daily`, {
-                method: 'POST'
             });
             
-            if (response && response.ok) {
-                const data = await response.json();
-                if (data.credits_added > 0) {
-                    this.showNotification(data.message || '⭐ Você ganhou 1 crédito do plano premium!', 'success');
-                    await this.loadUserCredits();
-                    await this.loadPremiumStatus();
-                    this.updateCreditsDisplay();
-                } else if (data.message) {
-                    this.showNotification(data.message, 'info');
+            if (!response.ok) {
+                throw new Error(`Erro HTTP ${response.status}`);
+            }
+            
+            const captchaId = response.headers.get('X-Captcha-ID');
+            
+            if (!captchaId) {
+                throw new Error('CAPTCHA ID não recebido');
+            }
+            
+            console.log(`✅ CAPTCHA ID recebido: ${captchaId}`);
+            
+            if (sessionType === 'login') {
+                this.loginCaptchaId = captchaId;
+            } else {
+                this.registerCaptchaId = captchaId;
+                this.isRegisterCaptchaLoaded = true;
+            }
+            
+            const hiddenField = document.getElementById(`${sessionType}CaptchaId`);
+            if (hiddenField) {
+                hiddenField.value = captchaId;
+                console.log(`📝 Hidden field ${sessionType}CaptchaId atualizado`);
+            }
+            
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            const imageId = sessionType === 'login' ? 'loginCaptchaImg' : 'registerCaptchaImg';
+            const captchaImage = document.getElementById(imageId);
+            if (captchaImage) {
+                if (captchaImage.src && captchaImage.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(captchaImage.src);
+                }
+                captchaImage.src = imageUrl;
+                console.log(`🖼️ Imagem CAPTCHA atualizada: #${imageId}`);
+            } else {
+                console.warn(`⚠️ Elemento #${imageId} não encontrado`);
+            }
+            
+            this.startCaptchaTimer(sessionType);
+            
+            const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+            const captchaInput = document.getElementById(inputId);
+            if (captchaInput) {
+                captchaInput.value = '';
+                captchaInput.disabled = false;
+                captchaInput.placeholder = 'Digite os 4 números';
+                captchaInput.focus();
+            }
+            
+            return captchaId;
+            
+        } catch (error) {
+            console.error('❌ Erro ao carregar CAPTCHA:', error);
+            this.showCaptchaError(sessionType);
+            return null;
+        }
+    }
+    
+    startCaptchaTimer(sessionType) {
+        if (sessionType === 'login' && this.loginCaptchaTimer) {
+            clearInterval(this.loginCaptchaTimer);
+            this.loginCaptchaTimer = null;
+        }
+        if (sessionType === 'register' && this.registerCaptchaTimer) {
+            clearInterval(this.registerCaptchaTimer);
+            this.registerCaptchaTimer = null;
+        }
+        
+        const expirySeconds = 120;
+        let remaining = expirySeconds;
+        
+        const timerId = sessionType === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
+        const timerElement = document.getElementById(timerId);
+        
+        if (timerElement) {
+            timerElement.textContent = '02:00';
+            timerElement.classList.remove('expiring', 'expired');
+        }
+        
+        const timer = setInterval(() => {
+            remaining--;
+            
+            if (timerElement) {
+                const minutes = Math.floor(remaining / 60);
+                const seconds = remaining % 60;
+                timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                if (remaining <= 10) {
+                    timerElement.classList.add('expiring');
+                } else {
+                    timerElement.classList.remove('expiring');
                 }
             }
-        } catch (error) {
-            console.error('Erro ao receber crédito:', error);
-            this.showNotification('Erro ao receber crédito. Tente novamente.', 'error');
+            
+            if (remaining <= 0) {
+                clearInterval(timer);
+                if (timerElement) {
+                    timerElement.textContent = '00:00';
+                    timerElement.classList.add('expired');
+                }
+                
+                const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+                const captchaInput = document.getElementById(inputId);
+                if (captchaInput) {
+                    captchaInput.disabled = true;
+                    captchaInput.placeholder = 'Expirado - Clique em 🔄';
+                }
+            }
+        }, 1000);
+        
+        if (sessionType === 'login') {
+            this.loginCaptchaTimer = timer;
+        } else {
+            this.registerCaptchaTimer = timer;
         }
     }
     
-    buyCredits() {
-        this.redirectToPlanos();
+    clearCaptchaTimer(sessionType) {
+        if (sessionType === 'login' && this.loginCaptchaTimer) {
+            clearInterval(this.loginCaptchaTimer);
+            this.loginCaptchaTimer = null;
+        }
+        if (sessionType === 'register' && this.registerCaptchaTimer) {
+            clearInterval(this.registerCaptchaTimer);
+            this.registerCaptchaTimer = null;
+        }
     }
+    
+    resetCaptchaTimer(sessionType) {
+        this.clearCaptchaTimer(sessionType);
+        
+        const timerId = sessionType === 'login' ? 'loginCaptchaTimer' : 'registerCaptchaTimer';
+        const timerElement = document.getElementById(timerId);
+        if (timerElement) {
+            timerElement.textContent = '02:00';
+            timerElement.classList.remove('expiring', 'expired');
+        }
+        
+        const inputId = sessionType === 'login' ? 'loginCaptchaInput' : 'registerCaptchaInput';
+        const captchaInput = document.getElementById(inputId);
+        if (captchaInput) {
+            captchaInput.disabled = false;
+            captchaInput.placeholder = 'Digite os 4 números';
+        }
+    }
+    
+    async refreshCaptcha(sessionType = 'login') {
+        this.resetCaptchaTimer(sessionType);
+        await this.loadCaptcha(sessionType);
+    }
+    
+    showCaptchaError(sessionType = 'login') {
+        const imageId = sessionType === 'login' ? 'loginCaptchaImg' : 'registerCaptchaImg';
+        const captchaImage = document.getElementById(imageId);
+        if (captchaImage) {
+            captchaImage.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="350" height="125" viewBox="0 0 350 125"%3E%3Crect width="350" height="125" fill="%23e53e3e"/%3E%3Ctext x="175" y="68" font-family="monospace" font-size="16" fill="white" text-anchor="middle"%3E⚠️ ERRO%3C/text%3E%3C/svg%3E';
+        }
+    }
+    
+    // ==============================================
+    // 🔥 LOGIN - POST /api/auth/login
+    // ==============================================
+    
+    async handleLogin(e) {
+        e.preventDefault();
+        
+        const emailInput = document.getElementById('loginEmail');
+        const passwordInput = document.getElementById('loginPassword');
+        const captchaInput = document.getElementById('loginCaptchaInput');
+        const captchaIdInput = document.getElementById('loginCaptchaId');
+        
+        const email = emailInput?.value?.trim();
+        const password = passwordInput?.value;
+        const captchaCode = captchaInput?.value?.trim();
+        const captchaId = captchaIdInput?.value || this.loginCaptchaId;
+        
+        if (!email || !password || !captchaCode) {
+            if (window.toastr) {
+                toastr.error('Por favor, preencha todos os campos.');
+            }
+            return;
+        }
+        
+        if (captchaCode.length < 4) {
+            if (window.toastr) {
+                toastr.error('Digite os 4 números da imagem.');
+            }
+            return;
+        }
+        
+        const submitBtn = document.getElementById('loginBtn');
+        const originalText = submitBtn?.innerHTML;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Entrando...';
+        }
+        
+        try {
+            console.log('🔄 Enviando requisição de login...');
+            
+            // 🔥 Payload compatível com auth_routes.py (LoginRequest)
+            const payload = {
+                email: email,
+                password: password,
+                captcha_id: captchaId || this.loginCaptchaId,
+                captcha_code: captchaCode,
+                session_type: 'login'
+            };
+            
+            console.log('📦 Payload:', payload);
+            
+            const response = await fetch(`${this.apiBase}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': captchaId || ''
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            const data = await response.json();
+            
+            // 🔥 Resposta compatível com auth_routes.py
+            if (response.ok && (data.success || data.access_token)) {
+                console.log('✅ Login bem-sucedido!');
+                
+                if (data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                }
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+                
+                this.userData = {
+                    email: data.user_email || email,
+                    name: data.user_name || 'Usuário',
+                    workshop_name: data.workshop_name,
+                    role: data.role,
+                    plan: data.plan,
+                    credits: data.credits || 0,
+                    is_admin: data.is_admin || false,
+                    credits_display: data.credits_display || String(data.credits || 0)
+                };
+                
+                this.currentUser = this.userData;
+                this.isAuthenticated = true;
+                
+                this.clearCaptchaTimer('login');
+                if (passwordInput) passwordInput.value = '';
+                if (captchaInput) captchaInput.value = '';
+                
+                // 🔥 INICIA MONITORAMENTO DO TOKEN (15 MINUTOS)
+                this.startTokenMonitoring();
+                
+                // 🔥 INICIA ATUALIZAÇÃO DE CRÉDITOS (payment.js usa)
+                this.startCreditsUpdateInterval();
+                
+                if (window.toastr) {
+                    toastr.success('Login realizado com sucesso!');
+                }
+                
+                // 🔥 Atualiza UI de créditos para payment.js
+                this.updateCreditsDisplay();
+                
+                setTimeout(() => {
+                    console.log('🔀 Redirecionando para /dashboard...');
+                    window.location.href = '/dashboard';
+                }, 600);
+                
+                return true;
+                
+            } else {
+                const errorMsg = data.detail || data.message || 'Erro ao realizar login.';
+                if (window.toastr) {
+                    toastr.error(errorMsg);
+                }
+                
+                await this.refreshCaptcha('login');
+                if (captchaInput) {
+                    captchaInput.value = '';
+                    captchaInput.focus();
+                }
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro na requisição de login:', error);
+            if (window.toastr) {
+                toastr.error('Erro de comunicação com o servidor.');
+            }
+            await this.refreshCaptcha('login');
+            return false;
+            
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        }
+    }
+    
+    // ==============================================
+    // 🔥 REGISTER - POST /api/auth/register
+    // ==============================================
+    
+    async handleRegister(e) {
+        e.preventDefault();
+        
+        const nameInput = document.getElementById('registerName');
+        const emailInput = document.getElementById('registerEmail');
+        const passwordInput = document.getElementById('registerPassword');
+        const confirmPasswordInput = document.getElementById('registerConfirmPassword');
+        const workshopInput = document.getElementById('registerWorkshop');
+        const phoneInput = document.getElementById('registerPhone');
+        const captchaInput = document.getElementById('registerCaptchaInput');
+        const captchaIdInput = document.getElementById('registerCaptchaId');
+        
+        const name = nameInput?.value?.trim();
+        const email = emailInput?.value?.trim();
+        const password = passwordInput?.value;
+        const confirmPassword = confirmPasswordInput?.value;
+        const workshopName = workshopInput?.value?.trim();
+        const phone = phoneInput?.value?.trim();
+        const captchaCode = captchaInput?.value?.trim();
+        const captchaId = captchaIdInput?.value || this.registerCaptchaId;
+        
+        console.log('📝 Tentando registrar:', { name, email, workshopName, phone, captchaId });
+        
+        // ==============================================
+        // 🔥 VALIDAÇÕES
+        // ==============================================
+        
+        // 1. Campos obrigatórios (name, email, password, workshop_name)
+        if (!name || !email || !password || !workshopName) {
+            if (window.toastr) {
+                toastr.error('Preencha todos os campos obrigatórios.');
+            }
+            return;
+        }
+        
+        // 2. Validação de telefone (opcional - compatível com auth.py)
+        if (phone) {
+            const phoneClean = phone.replace(/\D/g, '');
+            
+            if (phoneClean.length > 0 && phoneClean.length < 10) {
+                if (window.toastr) {
+                    toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
+                }
+                return;
+            }
+            
+            if (phoneClean.length > 11) {
+                if (window.toastr) {
+                    toastr.warning('Telefone deve ter no máximo 11 dígitos.');
+                }
+                return;
+            }
+        }
+        
+        // 3. Senha (mínimo 6 caracteres - compatível com auth.py)
+        if (password.length < 6) {
+            if (window.toastr) {
+                toastr.error('Senha deve ter no mínimo 6 caracteres.');
+            }
+            return;
+        }
+        
+        // 4. Confirmação de senha
+        if (password !== confirmPassword) {
+            if (window.toastr) {
+                toastr.error('As senhas não coincidem.');
+            }
+            return;
+        }
+        
+        // 5. CAPTCHA (compatível com auth.py)
+        if (!captchaCode || captchaCode.length < 4) {
+            if (window.toastr) {
+                toastr.error('Digite os 4 números da imagem.');
+            }
+            return;
+        }
+        
+        if (!captchaId) {
+            if (window.toastr) {
+                toastr.error('CAPTCHA não carregado. Clique em 🔄');
+            }
+            await this.refreshCaptcha('register');
+            return;
+        }
+        
+        // ==============================================
+        // 🔥 ENVIAR REGISTRO - Compatível com auth.py
+        // ==============================================
+        
+        const submitBtn = document.getElementById('registerBtn');
+        const originalText = submitBtn?.innerHTML;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Criando conta...';
+        }
+        
+        try {
+            console.log('🔄 Enviando requisição de registro...');
+            
+            // 🔥 Payload compatível com auth.py (RegisterRequest)
+            const requestBody = {
+                name: name,
+                email: email,
+                password: password,
+                workshop_name: workshopName,
+                phone: phone || null,  // Opcional - compatível com auth.py
+                captcha_id: captchaId,
+                captcha_code: captchaCode,
+                session_type: 'register'
+            };
+            
+            console.log('📦 Body:', requestBody);
+            
+            const response = await fetch(`${this.apiBase}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Captcha-ID': captchaId
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            const data = await response.json();
+            console.log('📥 Resposta:', data);
+            
+            // 🔥 Resposta compatível com auth.py
+            if (!response.ok) {
+                const errorMsg = data.detail || data.message || 'Falha no registro';
+                if (window.toastr) {
+                    toastr.error(errorMsg);
+                }
+                await this.refreshCaptcha('register');
+                return false;
+            }
+            
+            if (data.success) {
+                if (window.toastr) {
+                    toastr.success('✅ Conta criada! Faça login para continuar.');
+                }
+                
+                // 🔥 Limpa o formulário
+                if (nameInput) nameInput.value = '';
+                if (emailInput) emailInput.value = '';
+                if (passwordInput) passwordInput.value = '';
+                if (confirmPasswordInput) confirmPasswordInput.value = '';
+                if (workshopInput) workshopInput.value = '';
+                if (phoneInput) phoneInput.value = '';
+                if (captchaInput) captchaInput.value = '';
+                
+                // Redireciona para login (compatível com auth.py redirect_to)
+                setTimeout(() => {
+                    console.log('🔀 Redirecionando para /login...');
+                    window.location.href = '/login';
+                }, 2000);
+                
+                return true;
+            }
+            
+            throw new Error(data.message || 'Erro no registro');
+            
+        } catch (error) {
+            console.error('❌ Erro no registro:', error);
+            if (window.toastr) {
+                toastr.error(error.message || 'Erro ao criar conta. Tente novamente.');
+            }
+            await this.refreshCaptcha('register');
+            return false;
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        }
+    }
+    
+    // ==============================================
+    // 🔥 LOGOUT - POST /api/auth/logout
+    // ==============================================
+    
+    async logout() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        
+        if (refreshToken) {
+            try {
+                await fetch(`${this.apiBase}/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken
+                    })
+                });
+            } catch (error) {
+                console.error('Logout API error:', error);
+            }
+        }
+        
+        this.stopTokenMonitoring();
+        this.stopCreditsUpdateInterval();
+        this.clearTokens();
+        this.isAuthenticated = false;
+        this.currentUser = null;
+        
+        window.location.href = '/login';
+    }
+    
+    clearTokens() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+    }
+    
+    // ==============================================
+    // 🔥 MONITORAMENTO DE TOKEN (15 MINUTOS)
+    // ==============================================
     
     startTokenMonitoring() {
-        if (this.tokenExpiryTimer) {
-            clearTimeout(this.tokenExpiryTimer);
-            this.tokenExpiryTimer = null;
+        // Limpa timers anteriores
+        if (this._tokenExpiryTimer) {
+            clearTimeout(this._tokenExpiryTimer);
+            this._tokenExpiryTimer = null;
         }
-        if (this.tokenCheckInterval) {
-            clearInterval(this.tokenCheckInterval);
-            this.tokenCheckInterval = null;
+        if (this._tokenCheckInterval) {
+            clearInterval(this._tokenCheckInterval);
+            this._tokenCheckInterval = null;
         }
         
         const token = localStorage.getItem('access_token');
@@ -344,41 +674,39 @@ class AutoAnalytics {
             return;
         }
         
-        try {
-            const payload = this.decodeJWT(token);
-            if (payload && payload.exp) {
-                const expiresAt = payload.exp * 1000;
-                const now = Date.now();
-                const timeUntilExpiry = expiresAt - now;
-                
-                if (timeUntilExpiry <= 0) {
-                    this.handleTokenExpired();
-                } else {
-                    const refreshTime = Math.max(1000, timeUntilExpiry - 30000);
-                    this.tokenExpiryTimer = setTimeout(() => {
-                        this.refreshTokenSafely();
-                    }, refreshTime);
-                }
-            }
-        } catch (e) {
-            console.warn('Erro ao decodificar token:', e);
-        }
+        console.log('⏰ Iniciando monitoramento de token (15min)');
         
-        this.tokenCheckInterval = setInterval(() => {
+        // 🔥 VERIFICAÇÃO PERIÓDICA (a cada 60 segundos) - GET /api/auth/check-token
+        this._tokenCheckInterval = setInterval(() => {
             this.checkTokenHealth();
-        }, 30000);
+        }, 60000);
+        
+        // 🔥 LIMPEZA AUTOMÁTICA APÓS 15 MINUTOS (conforme security.py)
+        this._tokenExpiryTimer = setTimeout(() => {
+            console.log('⏰ Token expirado (15min) - limpando localStorage');
+            this.clearTokens();
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            this.stopCreditsUpdateInterval();
+            
+            if (window.toastr) {
+                toastr.warning('⏰ Sessão expirada. Faça login novamente.');
+            }
+            
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 1500);
+        }, 15 * 60 * 1000); // 15 minutos em milissegundos
     }
     
-    decodeJWT(token) {
-        try {
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            return JSON.parse(jsonPayload);
-        } catch (e) {
-            return null;
+    stopTokenMonitoring() {
+        if (this._tokenExpiryTimer) {
+            clearTimeout(this._tokenExpiryTimer);
+            this._tokenExpiryTimer = null;
+        }
+        if (this._tokenCheckInterval) {
+            clearInterval(this._tokenCheckInterval);
+            this._tokenCheckInterval = null;
         }
     }
     
@@ -390,12 +718,13 @@ class AutoAnalytics {
                 return;
             }
             
-            // 🔥 CORRIGIDO: Usa /api/auth/check-token
+            // 🔥 GET /api/auth/check-token
             const response = await fetch(`${this.apiBase}/auth/check-token`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
             if (response.status === 401) {
+                console.log('🔄 Token expirou, tentando refresh...');
                 const refreshed = await this.refreshTokenSafely();
                 if (!refreshed) {
                     this.handleTokenExpired();
@@ -406,24 +735,31 @@ class AutoAnalytics {
         }
     }
     
+    // ==============================================
+    // 🔥 REFRESH TOKEN - POST /api/auth/refresh
+    // ==============================================
+    
     async refreshTokenSafely() {
-        if (this.isRefreshing) {
+        if (this._isRefreshing) {
             return new Promise((resolve) => {
                 this.pendingRequests.push(resolve);
             });
         }
         
-        this.isRefreshing = true;
+        this._isRefreshing = true;
         
         try {
             const refreshToken = localStorage.getItem('refresh_token');
             if (!refreshToken) return false;
             
-            // 🔥 CORRIGIDO: Usa /api/auth/refresh
+            // 🔥 POST /api/auth/refresh
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
+                body: JSON.stringify({ 
+                    refresh_token: refreshToken,
+                    old_access_token: localStorage.getItem('access_token') 
+                })
             });
             
             if (response.ok) {
@@ -432,948 +768,618 @@ class AutoAnalytics {
                 if (data.refresh_token) {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
+                
+                // 🔥 Atualiza dados do usuário
+                if (data.user_email) {
+                    this.userData = {
+                        ...this.userData,
+                        email: data.user_email,
+                        name: data.user_name,
+                        workshop_name: data.workshop_name,
+                        role: data.role,
+                        plan: data.plan,
+                        credits: data.credits || 0,
+                        is_admin: data.is_admin || false,
+                        credits_display: data.credits_display || String(data.credits || 0)
+                    };
+                    this.currentUser = this.userData;
+                }
+                
+                // Reinicia o monitoramento
+                this.stopTokenMonitoring();
                 this.startTokenMonitoring();
-                this.pendingRequests.forEach(resolve => resolve(true));
-                this.pendingRequests = [];
+                
+                // 🔥 Atualiza créditos para payment.js
+                this.updateCreditsDisplay();
+                
+                console.log('✅ Token refresh realizado com sucesso');
                 return true;
             }
             return false;
         } catch (error) {
             return false;
         } finally {
-            this.isRefreshing = false;
+            this._isRefreshing = false;
         }
     }
     
     handleTokenExpired() {
-        this.showNotification('⏰ Sua sessão expirou. Faça login novamente.', 'warning');
+        console.log('⏰ Token expirado - limpando sessão');
+        this.stopTokenMonitoring();
+        this.stopCreditsUpdateInterval();
+        this.clearTokens();
+        this.isAuthenticated = false;
+        this.currentUser = null;
         
-        if (this.tokenExpiryTimer) clearTimeout(this.tokenExpiryTimer);
-        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
+        if (window.toastr) {
+            toastr.warning('⏰ Sessão expirada. Faça login novamente.');
+        }
         
         setTimeout(() => {
-            if (window.appAuth && window.appAuth.logout) {
-                window.appAuth.logout();
-            } else {
-                localStorage.clear();
-                window.location.href = '/login';
-            }
+            window.location.href = '/login';
         }, 1500);
     }
     
-    stopTokenMonitoring() {
-        if (this.tokenExpiryTimer) clearTimeout(this.tokenExpiryTimer);
-        if (this.tokenCheckInterval) clearInterval(this.tokenCheckInterval);
+    // ==============================================
+    // 🔥 CRÉDITOS E STATUS PREMIUM (PARA PAYMENT.JS)
+    // ==============================================
+    
+    startCreditsUpdateInterval() {
+        if (this._creditsUpdateInterval) {
+            clearInterval(this._creditsUpdateInterval);
+            this._creditsUpdateInterval = null;
+        }
+        
+        // 🔥 Atualiza créditos a cada 30 segundos (para payment.js)
+        this._creditsUpdateInterval = setInterval(() => {
+            this.loadUserCredits();
+        }, 30000);
+        
+        console.log('⏰ Iniciando atualização de créditos (30s)');
     }
     
-    async init() {
-        console.log('🚀 Inicializando AutoAnalytics App...');
-        console.log(`📁 Limite máximo: ${this.MAX_FILE_SIZE_KB}KB por arquivo`);
-        
-        if (this.isLoginPage() || this.isRegisterPage()) {
-            return;
-        }
-        
-        let isAuth = false;
-        if (window.appAuth) {
-            if (typeof window.appAuth.isAuthenticated === 'function') {
-                isAuth = window.appAuth.isAuthenticated();
-            } else {
-                isAuth = window.appAuth.isAuthenticated;
-            }
-        }
-        
-        if (!isAuth) {
-            this.redirectToLogin();
-            return;
-        }
-        
-        this.startTokenMonitoring();
-        this.initializeElements();
-        this.bindEvents();
-        
-        setTimeout(async () => {
-            await this.loadUserCredits();
-            await this.loadDashboardStats();
-            await this.loadAnalysisHistory();
-            this.updateCreditsDisplay();
-            
-            if (this.isPremium()) {
-                await this.loadPremiumStatus();
-            }
-            
-            this.setupLogout();
-            this.initialized = true;
-            
-            console.log('✅ App inicializado com sucesso');
-            console.log(`💰 Créditos: ${this.getCreditsDisplay()}`);
-            console.log(`📁 Limite: ${this.MAX_FILE_SIZE_KB}KB`);
-        }, 500);
-    }
-    
-    // ===== VALIDAÇÃO DE TAMANHO (200KB) - CORRIGIDA =====
-    
-    validateFileSize(file) {
-        const fileSizeKB = file.size / 1024;
-        
-        console.log(`📁 Verificando arquivo: ${file.name}`);
-        console.log(`📊 Tamanho: ${fileSizeKB.toFixed(2)}KB / ${this.MAX_FILE_SIZE_KB}KB`);
-        
-        if (file.size > this.MAX_FILE_SIZE_BYTES) {
-            this.showFileSizeWarning(file);
-            this.fileData = null;
-            if (this.uploadButton) {
-                this.uploadButton.disabled = true;
-                this.uploadButton.innerHTML = `❌ Arquivo excede ${this.MAX_FILE_SIZE_KB}KB`;
-            }
-            return false;
-        }
-        
-        this.hideFileSizeWarning();
-        return true;
-    }
-    
-    showFileSizeWarning(file) {
-        const fileSizeKB = (file.size / 1024).toFixed(2);
-        const warningEl = document.getElementById('sizeWarning');
-        
-        if (warningEl) {
-            warningEl.innerHTML = `
-                <div class="alert alert-warning py-2 mb-0 mt-2">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Arquivo muito grande!</strong> O ficheiro tem ${fileSizeKB}KB. 
-                    O limite máximo permitido é de ${this.MAX_FILE_SIZE_KB}KB.
-                    <button type="button" class="btn-close btn-sm float-end" data-bs-dismiss="alert"></button>
-                </div>
-            `;
-            warningEl.classList.add('show');
-        }
-        
-        if (this.uploadButton) {
-            this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `❌ Arquivo excede ${this.MAX_FILE_SIZE_KB}KB`;
-        }
-        
-        this.showNotification(`⚠️ Arquivo excede o limite de ${this.MAX_FILE_SIZE_KB}KB!`, 'error');
-    }
-    
-    hideFileSizeWarning() {
-        const warningEl = document.getElementById('sizeWarning');
-        if (warningEl) {
-            warningEl.classList.remove('show');
+    stopCreditsUpdateInterval() {
+        if (this._creditsUpdateInterval) {
+            clearInterval(this._creditsUpdateInterval);
+            this._creditsUpdateInterval = null;
         }
     }
     
-    clearSizeWarningContent() {
-        const warningEl = document.getElementById('sizeWarning');
-        if (warningEl) {
-            warningEl.innerHTML = '';
-            warningEl.classList.remove('show');
-        }
-    }
-    
-    async handleUpload(e) {
-        e.preventDefault();
-        
-        const file = this.fileInput?.files[0];
-        if (!file) {
-            this.showNotification('❌ Selecione um arquivo primeiro', 'warning');
-            return;
-        }
-        
-        if (!this.validateFileSize(file)) {
-            return;
-        }
-        
-        const validTypes = ['.xlsx', '.xls', '.csv'];
-        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-        if (!validTypes.includes(fileExt)) {
-            this.showNotification('❌ Formato não suportado. Use Excel (.xlsx, .xls) ou CSV', 'error');
-            this.resetFileSelection();
-            return;
-        }
-        
-        if (!this.isAdmin()) {
-            const creditsCheck = await this.checkCreditsForAnalysis();
-            if (!creditsCheck) return;
-        }
-        
-        this.setUploadLoading(true);
+    async loadUserCredits() {
+        if (!this.isAuthenticated) return false;
         
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('analysis_type', 'auto');
-            formData.append('ai_model', 'auto');
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
             
-            const token = localStorage.getItem('access_token');
-            // 🔥 CORRIGIDO: Usa /api/upload-auto (sincronizado com backend)
-            const response = await fetch(`${this.apiBase}/upload-auto`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && (data.id || data.process_id)) {
-                this.currentProcessId = data.process_id || data.id;
-                this.showNotification('🚀 Análise iniciada com sucesso!', 'success');
-                
-                await this.loadUserCredits();
-                this.updateCreditsDisplay();
-                
-                this.showProgress();
-                this.startProgressPolling();
-                
-                if (this.fileInput) this.fileInput.value = '';
-                if (this.selectedFile) this.selectedFile.classList.add('d-none');
-                this.clearSizeWarningContent();
-                
-                await this.loadAnalysisHistory();
-            } else {
-                const errorMsg = data?.detail || data?.error || 'Erro no upload';
-                if (errorMsg.includes('Créditos insuficientes')) {
-                    this.showNotification('💰 Créditos insuficientes!', 'warning');
-                    this.redirectToPlanos();
-                } else {
-                    this.showNotification('❌ ' + errorMsg, 'error');
-                }
-                this.setUploadLoading(false);
-            }
-        } catch (error) {
-            console.error('Erro no upload:', error);
-            this.showNotification('❌ Erro ao processar arquivo', 'error');
-            this.setUploadLoading(false);
-        }
-    }
-    
-    setUploadLoading(loading) {
-        if (!this.uploadButton) return;
-        
-        this.uploadButton.disabled = loading;
-        if (loading) {
-            this.uploadButton.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Processando...';
-        } else {
-            const icon = this.isAdmin() ? '👑' : (this.isPremium() ? '⭐' : '🚀');
-            const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
-            this.uploadButton.innerHTML = `${icon} Iniciar Análise <span class="credit-badge">${creditText}</span>`;
-        }
-    }
-    
-    handleDragEnter(e) {
-        e.preventDefault();
-        if (this.dropArea) {
-            this.dropArea.classList.add('dragover-glow');
-        }
-    }
-    
-    handleDrop(e) {
-        e.preventDefault();
-        if (this.dropArea) {
-            this.dropArea.classList.remove('dragover-glow');
-        }
-        
-        const files = e.dataTransfer.files;
-        if (files.length > 0 && this.fileInput) {
-            this.fileInput.files = files;
-            this.handleFileSelect();
-        }
-    }
-    
-    async handleFileSelect() {
-        const file = this.fileInput?.files[0];
-        if (!file) return;
-        
-        if (file.size > this.MAX_FILE_SIZE_BYTES) {
-            this.validateFileSize(file);
-            return;
-        }
-        
-        if (!this.validateFile(file)) return;
-        
-        this.displayFileInfo(file);
-        await this.analyzeFile(file);
-    }
-    
-    validateFile(file) {
-        const validExtensions = ['.csv', '.xlsx', '.xls'];
-        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-        
-        if (!validExtensions.includes(ext)) {
-            this.showNotification('❌ Formato não suportado. Use CSV ou Excel', 'error');
-            this.resetFileSelection();
-            return false;
-        }
-        return true;
-    }
-    
-    displayFileInfo(file) {
-        const fileSizeKB = (file.size / 1024).toFixed(2);
-        
-        if (this.fileName) this.fileName.textContent = file.name;
-        if (this.fileSize) {
-            this.fileSize.textContent = `${this.formatFileSize(file.size)} (${fileSizeKB}KB)`;
-        }
-        
-        if (this.selectedFile) {
-            this.selectedFile.classList.remove('d-none');
-        }
-    }
-    
-    async analyzeFile(file) {
-        this.showNotification(`🔍 Analisando arquivo (${(file.size/1024).toFixed(2)}KB)...`, 'info');
-        
-        try {
-            let data, columns, types;
-            
-            if (file.name.endsWith('.csv')) {
-                const result = await this.parseCSV(file);
-                data = result.data;
-                columns = result.columns;
-                types = result.types;
-            } else {
-                const result = await this.parseExcel(file);
-                data = result.data;
-                columns = result.columns;
-                types = result.types;
-            }
-            
-            this.fileData = data;
-            this.columns = columns;
-            this.dataTypes = types;
-            
-            this.showTechPreview(data, columns, types);
-            
-            if (this.uploadButton) {
-                this.uploadButton.disabled = false;
-                const creditText = this.isAdmin() ? 'Admin' : `${this.getCreditsDisplay()} créditos`;
-                this.uploadButton.innerHTML = `🚀 Iniciar Análise <span class="credit-badge">${creditText}</span>`;
-            }
-            
-            this.showNotification('✅ Arquivo analisado! Pronto para processar.', 'success');
-        } catch (error) {
-            console.error('Erro ao analisar arquivo:', error);
-            this.showNotification('❌ Erro ao analisar arquivo', 'error');
-            this.resetFileSelection();
-        }
-    }
-    
-    parseCSV(file) {
-        return new Promise((resolve, reject) => {
-            if (typeof Papa === 'undefined') {
-                reject(new Error('PapaParse não carregado'));
-                return;
-            }
-            
-            Papa.parse(file, {
-                header: true,
-                preview: 20,
-                dynamicTyping: true,
-                complete: (result) => {
-                    if (result.data && result.data.length > 0) {
-                        const columns = result.meta.fields || [];
-                        const types = {};
-                        
-                        columns.forEach(col => {
-                            const values = result.data.map(row => row[col]).filter(v => v !== null);
-                            if (values.length === 0) {
-                                types[col] = 'unknown';
-                            } else if (values.every(v => typeof v === 'number')) {
-                                types[col] = 'numeric';
-                            } else if (values.every(v => !isNaN(Date.parse(v)))) {
-                                types[col] = 'date';
-                            } else {
-                                types[col] = 'text';
-                            }
-                        });
-                        
-                        resolve({
-                            data: result.data.slice(0, 10),
-                            columns,
-                            types
-                        });
-                    } else {
-                        reject(new Error('Arquivo vazio'));
-                    }
-                },
-                error: reject
-            });
-        });
-    }
-    
-    parseExcel(file) {
-        return new Promise((resolve, reject) => {
-            if (typeof XLSX === 'undefined') {
-                reject(new Error('XLSX não carregado'));
-                return;
-            }
-            
-            const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                    
-                    if (jsonData.length > 0) {
-                        const headers = jsonData[0].map(h => String(h).trim());
-                        const rows = jsonData.slice(1, 11).map(row => {
-                            const obj = {};
-                            headers.forEach((header, index) => {
-                                obj[header] = row[index];
-                            });
-                            return obj;
-                        });
-                        
-                        const types = {};
-                        headers.forEach(col => {
-                            const values = rows.map(row => row[col]).filter(v => v !== undefined);
-                            if (values.length === 0) {
-                                types[col] = 'unknown';
-                            } else if (values.every(v => typeof v === 'number')) {
-                                types[col] = 'numeric';
-                            } else if (values.every(v => !isNaN(Date.parse(v)))) {
-                                types[col] = 'date';
-                            } else {
-                                types[col] = 'text';
-                            }
-                        });
-                        
-                        resolve({
-                            data: rows,
-                            columns: headers,
-                            types
-                        });
-                    } else {
-                        reject(new Error('Arquivo vazio'));
-                    }
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            
-            reader.onerror = reject;
-            reader.readAsArrayBuffer(file);
-        });
-    }
-    
-    showTechPreview(data, columns, types) {
-        const previewSection = document.getElementById('dataPreview');
-        if (!previewSection) return;
-        
-        const numericCount = columns.filter(c => types[c] === 'numeric').length;
-        const textCount = columns.filter(c => types[c] === 'text').length;
-        
-        let html = `
-            <div class="preview-container mt-3">
-                <h6><i class="fas fa-chart-line me-2"></i>Pré-visualização</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered">
-                        <thead class="table-light">
-                            <tr>
-                                ${columns.slice(0, 6).map(col => `<th>${this.truncate(col, 20)}</th>`).join('')}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.slice(0, 5).map(row => `
-                                <tr>
-                                    ${columns.slice(0, 6).map(col => {
-                                        let value = row[col];
-                                        if (value === undefined || value === null) value = '—';
-                                        return `<td>${this.truncate(String(value), 20)}</td>`;
-                                    }).join('')}
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="text-muted small mt-2">
-                    📊 ${columns.length} colunas (${numericCount} numéricas, ${textCount} texto)
-                </div>
-                <div class="text-success small mt-1">
-                    ✅ Limite: ${this.MAX_FILE_SIZE_KB}KB
-                </div>
-            </div>
-        `;
-        
-        previewSection.innerHTML = html;
-        previewSection.classList.remove('d-none');
-    }
-    
-    truncate(str, max) {
-        if (!str) return '';
-        return str.length > max ? str.substring(0, max) + '…' : str;
-    }
-    
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
-    showProgress() {
-        let container = document.getElementById('progressContainer');
-        
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'progressContainer';
-            container.className = 'mt-4';
-            container.innerHTML = `
-                <div class="card">
-                    <div class="card-body">
-                        <h6><i class="fas fa-spinner fa-spin me-2"></i>Processando...</h6>
-                        <div class="progress">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" style="width: 0%"></div>
-                        </div>
-                        <div class="text-muted small mt-2" id="statusText">Iniciando...</div>
-                    </div>
-                </div>
-            `;
-            
-            const uploadCard = document.querySelector('.upload-card');
-            if (uploadCard) {
-                uploadCard.insertAdjacentElement('afterend', container);
-            }
-        }
-    }
-    
-    startProgressPolling() {
-        if (this.pollInterval) clearInterval(this.pollInterval);
-        
-        this.pollInterval = setInterval(async () => {
-            if (!this.currentProcessId) return;
-            
-            try {
-                // 🔥 CORRIGIDO: Usa /api/status/{process_id}
-                const status = await this.getStatus(this.currentProcessId);
-                
-                const progressBar = document.getElementById('progressBar');
-                const statusText = document.getElementById('statusText');
-                
-                if (progressBar) progressBar.style.width = `${status.progress || 0}%`;
-                if (statusText) statusText.textContent = this.getStatusMessage(status);
-                
-                if (status.status === 'completed' || status.status === 'error') {
-                    clearInterval(this.pollInterval);
-                    
-                    if (status.status === 'completed') {
-                        this.showResult(status);
-                        await this.loadDashboardStats();
-                        await this.loadUserCredits();
-                        await this.loadAnalysisHistory();
-                        this.updateCreditsDisplay();
-                        const container = document.getElementById('progressContainer');
-                        if (container) container.remove();
-                    }
-                    
-                    this.setUploadLoading(false);
-                }
-            } catch (error) {
-                console.error('Polling error:', error);
-            }
-        }, 2000);
-    }
-    
-    async getStatus(processId) {
-        try {
-            const response = await fetch(`${this.apiBase}/status/${processId}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-            });
-            return await response.json();
-        } catch {
-            return { status: 'unknown' };
-        }
-    }
-    
-    getStatusMessage(status) {
-        const messages = {
-            'uploaded': '📤 Arquivo recebido',
-            'detecting': '🔍 Detectando padrões...',
-            'analyzing': '📊 Analisando dados...',
-            'training': '🧠 Treinando modelo...',
-            'completed': '✅ Concluído!',
-            'error': '❌ Erro no processamento'
-        };
-        return messages[status.status] || '⏳ Processando...';
-    }
-    
-    showResult(result) {
-        const resultContainer = document.getElementById('resultContainer');
-        if (!resultContainer) return;
-        
-        resultContainer.style.display = 'block';
-        
-        const analysisInfo = result.analysis_info || {};
-        const stats = result.prediction_stats || {};
-        
-        resultContainer.innerHTML = `
-            <div class="card mt-3 border-success">
-                <div class="card-body">
-                    <h5 class="card-title text-success">📊 RESULTADO</h5>
-                    <div class="row mt-3">
-                        <div class="col-md-4">
-                            <div class="text-center">
-                                <h3>${stats.total || 0}</h3>
-                                <small>Registros</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="text-center">
-                                <h3>${analysisInfo.features_count || 0}</h3>
-                                <small>Features</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="text-center">
-                                <h3>${analysisInfo.model_used || 'AutoML'}</h3>
-                                <small>Modelo</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    async loadAnalysisHistory() {
-        if (this.isLoginPage() || this.isRegisterPage()) return;
-        
-        try {
-            // 🔥 CORRIGIDO: Usa /api/analyses/history
-            const response = await this.fetchWithAuth(`${this.apiBase}/analyses/history`);
             if (response && response.ok) {
                 const data = await response.json();
-                const analyses = data.analyses || data;
-                this.displayHistory(analyses);
+                
+                if (data.success) {
+                    if (this.userData) {
+                        this.userData.credits = data.credits;
+                        this.userData.credits_display = data.credits_display || String(data.credits);
+                    }
+                    
+                    this.updateCreditsDisplay();
+                    return true;
+                }
             }
-        } catch (error) {
-            console.error('Erro ao carregar histórico:', error);
-        }
-    }
-    
-    displayHistory(analyses) {
-        const container = document.getElementById('recentAnalyses');
-        if (!container) return;
-        
-        if (!analyses || analyses.length === 0) {
-            container.innerHTML = `
-                <div class="timeline-item">
-                    <div class="timeline-marker"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 text-muted">Nenhuma análise</p>
-                    </div>
-                </div>
-            `;
-            return;
-        }
-        
-        const html = analyses.slice(0, 5).map(a => {
-            const date = new Date(a.created_at);
-            const statusClass = a.status === 'completed' ? 'bg-success' : 'bg-secondary';
             
-            return `
-                <div class="timeline-item">
-                    <div class="timeline-marker ${statusClass}"></div>
-                    <div class="timeline-content">
-                        <p class="mb-1 small fw-bold">${this.escapeHtml(a.filename || 'Análise')}</p>
-                        <small class="text-muted">${date.toLocaleDateString('pt-BR')}</small>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        container.innerHTML = html;
-    }
-    
-    async loadDashboardStats() {
-        if (this.isLoginPage() || this.isRegisterPage()) return;
-        
-        try {
-            // 🔥 CORRIGIDO: Usa /api/stats
-            const response = await this.fetchWithAuth(`${this.apiBase}/stats`);
-            if (response && response.ok) {
-                const stats = await response.json();
-                
-                const totalAnalises = document.getElementById('totalAnalises');
-                const analisesHoje = document.getElementById('analisesHoje');
-                
-                if (totalAnalises) totalAnalises.textContent = stats.total_analises || 0;
-                if (analisesHoje) analisesHoje.textContent = stats.analises_hoje || 0;
-            }
+            return false;
+            
         } catch (error) {
-            console.error('Erro ao carregar stats:', error);
+            console.error('Erro ao carregar créditos:', error);
+            return false;
         }
     }
+    
+    getCredits() {
+        return this.userData?.credits || 0;
+    }
+    
+    getCreditsDisplay() {
+        if (this.isAdmin()) return '∞';
+        if (this.isPremium()) {
+            const credits = this.getCredits();
+            return `${credits}/3`;
+        }
+        return String(this.getCredits());
+    }
+    
+    updateCreditsDisplay() {
+        // 🔥 Atualiza todos os elementos de créditos
+        const creditsElements = document.querySelectorAll('.credits-display, .user-credits, #creditsDisplay, #creditsCount, #uploadCredits');
+        const displayValue = this.getCreditsDisplay();
+        
+        creditsElements.forEach(el => {
+            if (el) el.textContent = displayValue;
+        });
+        
+        // 🔥 Atualiza também o badge da navbar
+        const navbarCredits = document.querySelector('.credits-badge #creditsCount');
+        if (navbarCredits) {
+            navbarCredits.textContent = displayValue;
+        }
+        
+        // 🔥 Dispara evento para payment.js
+        window.dispatchEvent(new CustomEvent('creditsUpdated', { 
+            detail: { credits: this.getCredits(), display: displayValue } 
+        }));
+    }
+    
+    isAdmin() {
+        return this.userData?.is_admin === true;
+    }
+    
+    isPremium() {
+        return this.userData?.plan === 'premium_mensal' || this.userData?.plan === 'PREMIUM_MENSAL';
+    }
+    
+    getCurrentUser() {
+        return this.userData || {};
+    }
+    
+    // ==============================================
+    // 🔥 STATUS PREMIUM (PARA PAYMENT.JS)
+    // ==============================================
     
     async loadPremiumStatus() {
-        if (!this.isPremium()) return;
-        
         try {
-            // 🔥 CORRIGIDO: Usa /api/payments/balance
-            const response = await this.fetchWithAuth(`${this.apiBase}/payments/balance`);
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/premium-status`);
             if (response && response.ok) {
                 const data = await response.json();
-                this.displayPremiumInfo(data);
+                this.updatePremiumStatusUI(data);
+                return data;
             }
         } catch (error) {
-            console.error('Erro ao carregar premium:', error);
+            console.error('Erro ao carregar status premium:', error);
+        }
+        return null;
+    }
+    
+    updatePremiumStatusUI(data) {
+        // 🔥 Dispara evento para payment.js processar
+        window.dispatchEvent(new CustomEvent('premiumStatusUpdated', { detail: data }));
+        
+        // 🔥 Se tiver o container, atualiza diretamente
+        const container = document.getElementById('premiumStatusContainer');
+        if (container && window.updatePremiumStatusUI) {
+            window.updatePremiumStatusUI(data);
         }
     }
     
-    displayPremiumInfo(data) {
-        let premiumContainer = document.getElementById('premiumDashboardInfo');
-        
-        if (!premiumContainer) {
-            const uploadCard = document.querySelector('.upload-card');
-            if (!uploadCard) return;
-            
-            premiumContainer = document.createElement('div');
-            premiumContainer.id = 'premiumDashboardInfo';
-            premiumContainer.className = 'alert alert-info mb-4';
-            uploadCard.insertAdjacentElement('beforebegin', premiumContainer);
-        }
-        
-        const daysLeft = data.plan?.days_left || 0;
-        const currentCredits = this.getCredits();
-        
-        premiumContainer.innerHTML = `
-            <div class="d-flex align-items-center justify-content-between flex-wrap">
-                <div>
-                    <i class="fas fa-crown text-warning me-2"></i>
-                    <strong>⭐ PREMIUM ATIVO</strong>
-                    <small class="ms-2">${daysLeft} dias • ${currentCredits}/${this.MAX_CREDITS_BALANCE} créditos</small>
-                </div>
-                <button class="btn btn-sm btn-outline-primary" onclick="window.app?.claimDailyCredit()" ${currentCredits >= this.MAX_CREDITS_BALANCE ? 'disabled' : ''}>
-                    <i class="fas fa-gift me-1"></i> Receber
-                </button>
-            </div>
-        `;
-    }
-    
-    initializeElements() {
-        this.uploadForm = document.getElementById('uploadForm');
-        this.fileInput = document.getElementById('fileInput');
-        this.uploadButton = document.getElementById('uploadButton');
-        this.dropArea = document.getElementById('dropArea');
-        this.selectedFile = document.getElementById('selectedFile');
-        this.fileName = document.getElementById('fileName');
-        this.fileSize = document.getElementById('fileSize');
-        this.totalAnalises = document.getElementById('totalAnalises');
-        this.analisesHoje = document.getElementById('analisesHoje');
-        
-        if (this.uploadButton) {
-            this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo (max ${this.MAX_FILE_SIZE_KB}KB)`;
-        }
-    }
-    
-    bindEvents() {
-        if (this.uploadForm) {
-            this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
-        }
-        
-        if (this.dropArea) {
-            this.dropArea.addEventListener('dragenter', (e) => this.handleDragEnter(e));
-            this.dropArea.addEventListener('dragover', (e) => e.preventDefault());
-            this.dropArea.addEventListener('dragleave', () => {
-                if (this.dropArea) this.dropArea.classList.remove('dragover-glow');
+    async receiveDailyCredit() {
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/payments/daily-credit`, {
+                method: 'POST'
             });
-            this.dropArea.addEventListener('drop', (e) => this.handleDrop(e));
-            this.dropArea.addEventListener('click', () => this.fileInput?.click());
+            
+            if (response && response.ok) {
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (window.toastr) {
+                        toastr.success(data.message || '✅ Crédito recebido com sucesso!');
+                    }
+                    await this.loadUserCredits();
+                    await this.loadPremiumStatus();
+                    this.updateCreditsDisplay();
+                    return data;
+                } else {
+                    if (window.toastr) {
+                        toastr.warning(data.message || '⚠️ Não foi possível receber o crédito.');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao receber crédito:', error);
+            if (window.toastr) {
+                toastr.error('Erro ao receber crédito. Tente novamente.');
+            }
+        }
+        return null;
+    }
+    
+    startPremiumStatusPolling(interval = 60000) {
+        if (this._premiumStatusInterval) {
+            clearInterval(this._premiumStatusInterval);
+            this._premiumStatusInterval = null;
         }
         
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', () => this.handleFileSelect());
-        }
+        this.loadPremiumStatus();
         
-        const removeFileBtn = document.getElementById('removeFile');
-        if (removeFileBtn) {
-            removeFileBtn.addEventListener('click', () => this.resetFileSelection());
-        }
+        this._premiumStatusInterval = setInterval(() => {
+            this.loadPremiumStatus();
+        }, interval);
         
-        const buyCreditsBtn = document.getElementById('buyCreditsBtn');
-        if (buyCreditsBtn) {
-            buyCreditsBtn.addEventListener('click', () => this.buyCredits());
+        console.log(`⏰ Iniciando polling de status premium (${interval/1000}s)`);
+    }
+    
+    stopPremiumStatusPolling() {
+        if (this._premiumStatusInterval) {
+            clearInterval(this._premiumStatusInterval);
+            this._premiumStatusInterval = null;
         }
     }
     
-    resetFileSelection() {
-        if (this.fileInput) this.fileInput.value = '';
-        if (this.selectedFile) this.selectedFile.classList.add('d-none');
-        if (this.uploadButton) {
-            this.uploadButton.disabled = true;
-            this.uploadButton.innerHTML = `📁 Selecione um arquivo (max ${this.MAX_FILE_SIZE_KB}KB)`;
+    // ==============================================
+    // SETUP DOS LISTENERS
+    // ==============================================
+    
+    setupAuthPageListeners() {
+        console.log('🔧 Configurando listeners de autenticação...');
+        
+        // LOGIN FORM
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            console.log('✅ Formulário de login encontrado!');
+            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+            this.loadCaptcha('login');
+            
+            const refreshBtn = document.getElementById('refreshLoginCaptcha');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    this.refreshCaptcha('login');
+                });
+            }
+        } else {
+            console.warn('⚠️ Formulário de login NÃO encontrado!');
         }
         
-        const preview = document.getElementById('dataPreview');
-        if (preview) preview.classList.add('d-none');
+        // REGISTER FORM
+        const registerForm = document.getElementById('registerForm');
+        if (registerForm) {
+            console.log('✅ Formulário de registro encontrado!');
+            registerForm.addEventListener('submit', (e) => this.handleRegister(e));
+            
+            this.loadCaptcha('register');
+            
+            const refreshBtn = document.getElementById('refreshRegisterCaptcha');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    console.log('🔄 Atualizando CAPTCHA de registro...');
+                    this.refreshCaptcha('register');
+                });
+            }
+        } else {
+            console.warn('⚠️ Formulário de registro NÃO encontrado!');
+        }
         
-        this.clearSizeWarningContent();
-        this.fileData = null;
-        this.columns = [];
-    }
-    
-    setupLogout() {
+        // TAB DE REGISTRO
+        const registerTab = document.querySelector('#register-tab') || 
+                           document.querySelector('button[data-bs-target="#register"]') ||
+                           document.querySelector('.tab[data-tab="register"]');
+        if (registerTab) {
+            registerTab.addEventListener('click', () => {
+                if (!this.isRegisterCaptchaLoaded) {
+                    this.loadCaptcha('register');
+                }
+            });
+        }
+        
+        // PASSWORD TOGGLE
+        document.querySelectorAll('.password-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.getAttribute('data-target');
+                const field = document.getElementById(targetId);
+                if (field) {
+                    const icon = btn.querySelector('i');
+                    if (field.type === 'password') {
+                        field.type = 'text';
+                        icon.classList.remove('fa-eye-slash');
+                        icon.classList.add('fa-eye');
+                    } else {
+                        field.type = 'password';
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-eye-slash');
+                    }
+                }
+            });
+        });
+        
+        // LOGOUT
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.stopTokenMonitoring();
-                if (window.appAuth && window.appAuth.logout) {
-                    window.appAuth.logout();
-                } else {
-                    localStorage.clear();
-                    window.location.href = '/login';
+                this.logout();
+            });
+        }
+        
+        console.log('✅ Listeners configurados!');
+    }
+    
+    // ==============================================
+    // TOKEN E AUTENTICAÇÃO
+    // ==============================================
+    
+    async checkToken() {
+        const token = localStorage.getItem('access_token');
+        
+        if (!token) {
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            return false;
+        }
+        
+        try {
+            // 🔥 GET /api/auth/check-token
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
                 }
             });
+            
+            const data = await response.json();
+            
+            // 🔥 Resposta compatível com auth_routes.py (check-token)
+            if (response.ok && (data.status === 'valid' || data.status === 'refreshed')) {
+                this.isAuthenticated = true;
+                
+                if (data.access_token && data.access_token !== token) {
+                    localStorage.setItem('access_token', data.access_token);
+                }
+                if (data.refresh_token) {
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                }
+                
+                this.userData = {
+                    email: data.user || data.user_email,
+                    name: data.name || data.user_name,
+                    is_admin: data.is_admin || false,
+                    credits: data.credits || 0,
+                    credits_display: data.credits_display || '0'
+                };
+                
+                this.currentUser = this.userData;
+                
+                // 🔥 INICIA MONITORAMENTO DO TOKEN
+                this.startTokenMonitoring();
+                this.startCreditsUpdateInterval();
+                this.updateCreditsDisplay();
+                
+                return true;
+            }
+            
+            if (response.status === 401 && localStorage.getItem('refresh_token')) {
+                const refreshed = await this.refreshToken();
+                if (refreshed) {
+                    return this.checkToken();
+                }
+            }
+            
+            this.clearTokens();
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            this.stopCreditsUpdateInterval();
+            return false;
+            
+        } catch (error) {
+            console.error('Token check error:', error);
+            this.isAuthenticated = false;
+            this.currentUser = null;
+            return false;
         }
     }
     
-    async fetchWithAuth(url, options = {}) {
-        if (window.appAuth && window.appAuth.fetchWithAuth) {
-            return window.appAuth.fetchWithAuth(url, options);
+    async refreshToken() {
+        if (this._isRefreshing) {
+            return this._refreshPromise;
         }
         
+        const refreshToken = localStorage.getItem('refresh_token');
+        const accessToken = localStorage.getItem('access_token');
+        
+        if (!refreshToken) {
+            return false;
+        }
+        
+        this._isRefreshing = true;
+        
+        this._refreshPromise = (async () => {
+            try {
+                // 🔥 POST /api/auth/refresh
+                const response = await fetch(`${this.apiBase}/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken,
+                        old_access_token: accessToken || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // 🔥 Resposta compatível com auth_routes.py (refresh)
+                if (response.ok && data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                    if (data.refresh_token) {
+                        localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    
+                    if (data.user_email) {
+                        this.userData = {
+                            ...this.userData,
+                            email: data.user_email,
+                            name: data.user_name,
+                            workshop_name: data.workshop_name,
+                            role: data.role,
+                            plan: data.plan,
+                            credits: data.credits || 0,
+                            is_admin: data.is_admin || false,
+                            credits_display: data.credits_display || String(data.credits || 0)
+                        };
+                        this.currentUser = this.userData;
+                    }
+                    
+                    this.isAuthenticated = true;
+                    
+                    // Reinicia o monitoramento
+                    this.stopTokenMonitoring();
+                    this.startTokenMonitoring();
+                    this.updateCreditsDisplay();
+                    
+                    console.log('✅ Token refresh realizado com sucesso');
+                    return true;
+                }
+                
+                console.warn('❌ Refresh token falhou:', data.message || 'Resposta inválida');
+                return false;
+                
+            } catch (error) {
+                console.error('❌ Token refresh error:', error);
+                return false;
+            } finally {
+                this._isRefreshing = false;
+                this._refreshPromise = null;
+            }
+        })();
+        
+        return this._refreshPromise;
+    }
+    
+    // ==============================================
+    // FETCH WITH AUTH
+    // ==============================================
+    
+    async fetchWithAuth(url, options = {}) {
         const token = localStorage.getItem('access_token');
+        
         if (!token) {
-            this.redirectToLogin();
             return null;
         }
         
         const headers = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
             ...options.headers
         };
+        
+        headers['Authorization'] = `Bearer ${token}`;
         
         try {
             let response = await fetch(url, { ...options, headers });
             
             if (response.status === 401) {
-                const refreshed = await this.refreshTokenSafely();
+                const refreshed = await this.refreshToken();
+                
                 if (refreshed) {
                     const newToken = localStorage.getItem('access_token');
                     headers['Authorization'] = `Bearer ${newToken}`;
                     response = await fetch(url, { ...options, headers });
-                    return response;
+                } else {
+                    this.clearTokens();
+                    this.isAuthenticated = false;
+                    this.currentUser = null;
+                    this.stopCreditsUpdateInterval();
+                    
+                    if (!window.location.pathname.includes('/login')) {
+                        window.location.href = '/login';
+                    }
+                    return null;
                 }
-                this.redirectToLogin();
-                return null;
             }
+            
             return response;
+            
         } catch (error) {
-            console.error('Fetch error:', error);
+            console.error('Erro na requisição:', error);
             return null;
         }
     }
     
-    showNotification(message, type = 'info') {
-        if (window.toastr && typeof window.toastr[type] === 'function') {
-            toastr[type](message);
+    // ==============================================
+    // UPDATE UI
+    // ==============================================
+    
+    updateUI() {
+        const authRequiredElements = document.querySelectorAll('.auth-required');
+        const guestElements = document.querySelectorAll('.guest-only');
+        
+        if (authRequiredElements.length === 0 && guestElements.length === 0) {
             return;
         }
         
-        const bgColor = type === 'success' ? '#48bb78' : 
-                        type === 'error' ? '#f56565' : '#4299e1';
+        console.log('🔄 Atualizando UI - Autenticado:', this.isAuthenticated);
         
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: white;
-            border-left: 4px solid ${bgColor};
-            padding: 12px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            z-index: 10000;
-            animation: slideInRight 0.3s ease;
-        `;
-        notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>${message}`;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => notification.remove(), 5000);
-    }
-    
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-    
-    showCreditsModal() {
-        if (window.appAuth && window.appAuth.showCreditsModal) {
-            window.appAuth.showCreditsModal();
-        } else if (!this.isAdmin()) {
-            this.redirectToPlanos();
+        if (this.isAuthenticated) {
+            authRequiredElements.forEach(el => el.classList.remove('d-none'));
+            guestElements.forEach(el => el.classList.add('d-none'));
+            
+            const userNameElements = document.querySelectorAll('.user-name');
+            userNameElements.forEach(el => {
+                el.textContent = this.userData?.name || 'Usuário';
+            });
+            
+            this.updateCreditsDisplay();
+        } else {
+            authRequiredElements.forEach(el => el.classList.add('d-none'));
+            guestElements.forEach(el => el.classList.remove('d-none'));
         }
+    }
+    
+    // ==============================================
+    // INICIALIZAÇÃO
+    // ==============================================
+    
+    async init() {
+        console.log('🚀 Inicializando Auth...');
+        
+        this._initializing = true;
+        this.initialized = true;
+        
+        await this.checkToken();
+        
+        this.setupAuthPageListeners();
+        
+        this._initializing = false;
+        
+        this.updateUI();
+        
+        console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
+        console.log(`📝 Formulários configurados: login=${!!document.getElementById('loginForm')}, register=${!!document.getElementById('registerForm')}`);
+        console.log(`🌐 API Base: ${this.apiBase}`);
     }
 }
 
-// ===== INSTANCIAÇÃO GLOBAL =====
+// ==============================================
+// 🔥 INSTÂNCIA GLOBAL
+// ==============================================
+
+// Cria instância
+window.appAuth = new Auth();
+
+// 🔥 EXPORTA FUNÇÕES GLOBAIS PARA PAYMENT.JS
+window.isAdmin = () => window.appAuth?.isAdmin() || false;
+window.getCreditsDisplay = () => window.appAuth?.getCreditsDisplay() || '0';
+window.updateCreditsDisplay = () => window.appAuth?.updateCreditsDisplay();
+window.fetchWithAuth = (url, options) => window.appAuth?.fetchWithAuth(url, options);
+window.logout = () => window.appAuth?.logout();
+
+// 🔥 Aliases para payment.js
+window.loadPremiumStatus = () => window.appAuth?.loadPremiumStatus();
+window.startPremiumStatusPolling = (interval) => window.appAuth?.startPremiumStatusPolling(interval);
+window.receiveDailyCredit = () => window.appAuth?.receiveDailyCredit();
+
+// 🔥 Event listener para quando o auth estiver pronto
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 Inicializando app...');
-    window.app = new AutoAnalytics();
+    // Dispara evento para payment.js saber que auth está pronto
+    window.dispatchEvent(new CustomEvent('authReady', { 
+        detail: { 
+            isAuthenticated: window.appAuth?.isAuthenticated || false,
+            user: window.appAuth?.getCurrentUser() || {}
+        } 
+    }));
 });
 
-// Fallback
-if (document.readyState !== 'loading') {
-    window.app = new AutoAnalytics();
-}
-
-// Exportar funções globais
-window.getApp = () => window.app;
-window.claimDailyCredit = () => window.app?.claimDailyCredit();
-window.showCreditsModal = () => window.app?.showCreditsModal();
-
-// CSS
-if (!document.getElementById('appStyles')) {
-    const style = document.createElement('style');
-    style.id = 'appStyles';
-    style.textContent = `
-        @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        .dragover-glow {
-            background: rgba(102,126,234,0.1);
-            border: 2px dashed #667eea !important;
-        }
-        .credit-badge {
-            background: rgba(255,255,255,0.3);
-            padding: 2px 8px;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            margin-left: 8px;
-        }
-        .timeline-item {
-            position: relative;
-            padding-left: 20px;
-            margin-bottom: 15px;
-        }
-        .timeline-marker {
-            position: absolute;
-            left: 0;
-            top: 5px;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #667eea;
-        }
-        .timeline-marker.bg-success { background: #48bb78; }
-        .timeline-content { padding-left: 5px; }
-        .alert-warning {
-            background-color: #fff3cd;
-            border-color: #ffeeba;
-            color: #856404;
-        }
-    `;
-    document.head.appendChild(style);
-}
-
-console.log('✅ app.js carregado - Limite: 200KB - TOTALMENTE CORRIGIDO E SINCRONIZADO');
+console.log('✅ Auth carregado. Use window.appAuth para acessar.');
+console.log('   📌 Funções exportadas para payment.js:');
+console.log('   - isAdmin()');
+console.log('   - getCreditsDisplay()');
+console.log('   - updateCreditsDisplay()');
+console.log('   - fetchWithAuth()');
+console.log('   - loadPremiumStatus()');
+console.log('   - startPremiumStatusPolling()');
+console.log('   - receiveDailyCredit()');
+console.log('   - logout()');
