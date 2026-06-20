@@ -53,7 +53,7 @@ class RegisterRequest(BaseModel):
 # ROTA DE REGISTRO - CORRIGIDA
 # ==============================================
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED)  # 🔥 CORRIGIDO: agora é /register
 async def register(
     register_data: RegisterRequest,
     request: Request,

@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO COM SENTINEL INTEGRADO
+# main.py (na raiz) - VERSÃO CORRIGIDA COM ROTAS CERTAS
 import sys
 import os
 from pathlib import Path
@@ -346,7 +346,7 @@ if frontend_available:
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
-        if token and token.startswith("Bearer "):
+        if token and token.startswith("Bearer ""):
             token = token.replace("Bearer ", "")
         
         if not token:
@@ -543,30 +543,44 @@ async def test_captcha():
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 # ==============================================
-# REGISTRO DE TODAS AS ROTAS DOS ROUTERS
+# 🔥 REGISTRO DE TODAS AS ROTAS DOS ROUTERS (CORRIGIDO)
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
 try:
-    # 1. Rotas de autenticação
+    # 🔥 1. Rotas de autenticação - CORRIGIDO
     from backend.api.auth_routes import router as auth_router
+    from backend.api.auth import router as registration_router  # ← auth.py
+    
+    # 🔥 AMBOS COM O MESMO PREFIXO /api/auth
     app.include_router(auth_router, prefix="/api/auth")
+    app.include_router(registration_router, prefix="/api/auth")  # ← CORRIGIDO: antes era "/api"
+    
     print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
     
     # 2. Rotas de pagamento
-    from backend.api.payment_routes import router as payment_router
-    app.include_router(payment_router, prefix="/api")
-    print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance")
+    try:
+        from backend.api.payment_routes import router as payment_router
+        app.include_router(payment_router, prefix="/api")
+        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance")
+    except ImportError as e:
+        print(f"   ⚠️ Payment routes não disponível: {e}")
     
     # 3. Rotas de upload múltiplo
-    from backend.api.upload_routes import router as upload_router
-    app.include_router(upload_router, prefix="/api")
-    print("   ✅ Rotas UPLOAD: /api/upload-auto, /api/status, /api/analyses/history, /api/stats")
+    try:
+        from backend.api.upload_routes import router as upload_router
+        app.include_router(upload_router, prefix="/api")
+        print("   ✅ Rotas UPLOAD: /api/upload-auto, /api/status, /api/analyses/history, /api/stats")
+    except ImportError as e:
+        print(f"   ⚠️ Upload routes não disponível: {e}")
     
     # 4. Rotas gerais com Gemini
-    from backend.api.routes import router as gemini_router
-    app.include_router(gemini_router, prefix="/api")
-    print("   ✅ Rotas GEMINI: /api/upload, /api/health, /api/test, /api/results")
+    try:
+        from backend.api.routes import router as gemini_router
+        app.include_router(gemini_router, prefix="/api")
+        print("   ✅ Rotas GEMINI: /api/upload, /api/health, /api/test, /api/results")
+    except ImportError as e:
+        print(f"   ⚠️ Gemini routes não disponível: {e}")
     
     # 5. Rotas Proof of Work
     try:
@@ -657,7 +671,8 @@ async def startup_event():
     ║  📊 Observabilidade: ✅ ativa                                     ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🔗 Endpoints principais:                                          ║
-    ║     POST /api/auth/login                                          ║
+    ║     POST /api/auth/register  ← 🔥 ROTA CORRIGIDA                 ║
+    ║     POST /api/auth/login                                         ║
     ║     POST /api/upload-auto (múltiplos arquivos)                    ║
     ║     GET  /api/analyses/history                                    ║
     ║     GET  /api/plans                                               ║
