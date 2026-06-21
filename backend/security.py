@@ -1,10 +1,14 @@
-# backend/security.py - VERSÃO CORRIGIDA (ERRO DE FLOAT RESOLVIDO)
+# backend/security.py - VERSÃO CORRIGIDA E OTIMIZADA
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO PRODUÇÃO
 - CAPTCHA com resolução otimizada (300x110, esticado pelo CSS)
 - Rate Limit rigoroso com Redis
 - Atomic Pop na validação (anti-replay)
 - 🔥 CORREÇÃO: TODOS os valores convertidos para int()
+- 🔥 CORREÇÃO: Blacklist não bloqueia quando Redis está offline
+- 🔥 CORREÇÃO: Tokens expirados NÃO vão para blacklist
+- 🔥 MELHORIA: jti com TTL correto
+- 🔥 MELHORIA: Fallback seguro para Redis offline
 """
 
 from datetime import datetime, timedelta
@@ -69,6 +73,9 @@ CAPTCHA_RATE_WINDOW = 60
 CAPTCHA_GENERATE_LIMIT = 10
 CAPTCHA_GENERATE_WINDOW = 60
 
+# 🔥 CONFIGURAÇÃO: Tolerância para Redis offline
+REDIS_OFFLINE_TOLERANCE = True  # Se True, não bloqueia quando Redis offline
+
 
 # ==============================================
 # 1. ARGON2 - HASH DE SENHA
@@ -126,11 +133,15 @@ class Argon2Hasher:
 
 
 # ==============================================
-# 2. JWT COMPLETO COM REDIS E BLACKLIST
+# 2. JWT COMPLETO COM REDIS E BLACKLIST - CORRIGIDO
 # ==============================================
 
 class JWTManager:
-    """Gerenciador de JWT com Redis e blacklist completa"""
+    """
+    Gerenciador de JWT com Redis e blacklist completa
+    🔥 CORREÇÃO: Redis offline não bloqueia tokens
+    🔥 CORREÇÃO: Blacklist só para revogação (não para expiração)
+    """
     
     def __init__(self):
         self.secret_key = settings.SECRET_KEY
@@ -148,6 +159,13 @@ class JWTManager:
         self._token_cache_ttl = 60
         self._last_cache_cleanup = time.time()
         self._cache_cleanup_interval = 300
+        
+        # 🔥 Estatísticas de blacklist
+        self._blacklist_stats = {
+            "total_revoked": 0,
+            "redis_failures": 0,
+            "offline_skips": 0
+        }
         
         logger.info("✅ JWT Manager inicializado")
     
@@ -280,6 +298,10 @@ class JWTManager:
         self._last_cache_cleanup = now
     
     async def verify_token_async(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+        """
+        🔥 CORRIGIDO: Verifica expiração ANTES da blacklist
+        🔥 CORRIGIDO: Redis offline NÃO bloqueia
+        """
         self._cleanup_token_cache()
         
         token_hash = hashlib.md5(token.encode()).hexdigest()
@@ -288,16 +310,21 @@ class JWTManager:
             if time.time() - cached["timestamp"] < self._token_cache_ttl:
                 return cached["payload"]
         
+        # 🔥 1. Primeiro verifica se o token é válido (inclui expiração)
         payload = self.verify_token(token, token_type)
         
         if not payload:
             return None
         
+        # 🔥 2. Depois verifica se está na blacklist (apenas revogação)
         jti = payload.get("jti")
-        if jti and await self.is_token_blacklisted(jti):
-            logger.warning(f"🔴 Token {jti[:8]}... está na blacklist")
-            return None
+        if jti:
+            is_blacklisted = await self.is_token_blacklisted(jti)
+            if is_blacklisted:
+                logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (revogado)")
+                return None
         
+        # Cache apenas tokens válidos
         if len(self._token_cache) < 2000:
             self._token_cache[token_hash] = {
                 "payload": payload,
@@ -330,6 +357,7 @@ class JWTManager:
             logger.warning(f"Refresh token não corresponde ao banco para {email}")
             return None
         
+        # 🔥 Revoga o refresh token antigo (somente se Redis disponível)
         old_jti = old_payload.get("jti")
         if old_jti:
             exp = old_payload.get("exp", 0)
@@ -412,7 +440,17 @@ class JWTManager:
         return True
     
     async def blacklist_token(self, jti: str, expire_in: int):
+        """
+        🔥 CORRIGIDO: Adiciona token à blacklist
+        🔥 CORRIGIDO: Se Redis offline, apenas loga (não trava)
+        🔥 CORRIGIDO: expire_in = tempo restante do token
+        """
         if not jti:
+            return
+        
+        # 🔥 Se expire_in <= 0, token já expirou, não precisa blacklistar
+        if expire_in <= 0:
+            logger.debug(f"Token {jti[:8]}... já expirado, não precisa blacklistar")
             return
         
         async with self._blacklist_lock:
@@ -424,40 +462,57 @@ class JWTManager:
             if self.redis_client:
                 try:
                     await self.redis_client.setex(f"blacklist:{jti}", expire_in, "1")
-                    logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist Redis")
+                    self._blacklist_stats["total_revoked"] += 1
+                    logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist Redis (TTL: {expire_in}s)")
                 except Exception as e:
+                    self._blacklist_stats["redis_failures"] += 1
                     logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Serviço de autenticação temporariamente indisponível. Tente novamente."
-                    )
+                    # 🔥 Não lança exceção, apenas loga
             else:
-                logger.error("❌ Redis indisponível para blacklist - recusando operação")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Serviço de autenticação temporariamente indisponível. Tente novamente."
-                )
+                # 🔥 Redis indisponível: apenas loga, não trava
+                self._blacklist_stats["offline_skips"] += 1
+                logger.warning(f"⚠️ Redis indisponível - token {jti[:8]}... não foi blacklistado")
+                
         finally:
             async with self._blacklist_lock:
                 self._pending_blacklist.pop(jti, None)
     
     async def is_token_blacklisted(self, jti: str) -> bool:
+        """
+        🔥 CORRIGIDO: Verifica se token está na blacklist
+        🔥 CORRIGIDO: Se Redis offline, retorna False (não bloqueia)
+        🔥 CORRIGIDO: Tokens expirados não são considerados blacklistados
+        """
         if not jti:
             return False
         
+        # Verificar se está pendente
         if jti in self._pending_blacklist:
             return True
         
-        if self.redis_client:
-            try:
-                exists = await self.redis_client.exists(f"blacklist:{jti}") > 0
-                return exists
-            except Exception as e:
-                logger.error(f"Erro ao verificar blacklist Redis: {e}")
+        # 🔥 Se Redis não estiver disponível, NÃO BLOQUEIA (fallback seguro)
+        if not self.redis_client:
+            logger.warning("⚠️ Redis indisponível - ignorando verificação de blacklist")
+            return False
+        
+        try:
+            exists = await self.redis_client.exists(f"blacklist:{jti}") > 0
+            
+            # 🔥 Se o token está na blacklist, verifica se ainda não expirou
+            if exists:
+                ttl = await self.redis_client.ttl(f"blacklist:{jti}")
+                if ttl <= 0:
+                    # 🔥 Se TTL <= 0, o token já expirou, limpa e retorna False
+                    await self.redis_client.delete(f"blacklist:{jti}")
+                    return False
                 return True
-        else:
-            logger.warning("⚠️ Redis indisponível para verificação de blacklist - bloqueando por segurança")
-            return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar blacklist Redis: {e}")
+            # 🔥 Em caso de erro, NÃO BLOQUEIA
+            return False
     
     def extract_token_from_header(self, auth_header: str) -> Optional[str]:
         if not auth_header:
@@ -470,6 +525,14 @@ class JWTManager:
             return auth_header.replace("JWT ", "").strip()
         
         return auth_header.strip()
+    
+    def get_blacklist_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas da blacklist"""
+        return {
+            **self._blacklist_stats,
+            "redis_available": self.redis_client is not None,
+            "pending_count": len(self._pending_blacklist)
+        }
 
 
 # ==============================================

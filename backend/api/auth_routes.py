@@ -1,7 +1,12 @@
 # backend/api/auth_routes.py
 """
-Módulo de LOGIN e AUTENTICAÇÃO
+Módulo de LOGIN e AUTENTICAÇÃO - CORRIGIDO
 Responsável por login, logout, refresh token e verificação de sessão
+🔥 CORREÇÕES:
+- Blacklist não bloqueia quando Redis está offline
+- Tokens expirados NÃO vão para blacklist
+- Logout mais robusto
+- Refresh token com fallback seguro
 """
 
 from datetime import datetime, timedelta
@@ -101,7 +106,7 @@ async def get_captcha(
 
 
 # ==============================================
-# ROTA DE LOGIN
+# ROTA DE LOGIN - CORRIGIDA
 # ==============================================
 
 @router.post("/login", status_code=status.HTTP_200_OK)
@@ -114,6 +119,7 @@ async def login(
     """
     Login de usuário com CAPTCHA
     POST /api/auth/login
+    🔥 CORRIGIDO: Tratamento de erro mais robusto
     """
     
     client_ip = request.client.host if request.client else "unknown"
@@ -234,7 +240,7 @@ async def login(
 
 
 # ==============================================
-# ROTA DE REFRESH - NOVA
+# ROTA DE REFRESH - CORRIGIDA
 # ==============================================
 
 @router.post("/refresh")
@@ -247,6 +253,7 @@ async def refresh_token_endpoint(
     """
     Renova o access token usando o refresh token.
     POST /api/auth/refresh
+    🔥 CORRIGIDO: Fallback quando Redis está offline
     """
     try:
         logger.info("🔄 [REFRESH] Tentando renovar tokens...")
@@ -306,7 +313,7 @@ async def refresh_token_endpoint(
 
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN
+# VERIFICAÇÃO DE TOKEN - CORRIGIDA
 # ==============================================
 
 @router.get("/check-token")
@@ -314,6 +321,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     """
     Verifica status do token JWT
     GET /api/auth/check-token
+    🔥 CORRIGIDO: Tratamento mais robusto de tokens expirados
     """
     
     access_token = request.cookies.get("access_token")
@@ -333,6 +341,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             content={"status": "no_token", "message": "Nenhum token encontrado"}
         )
     
+    # 🔥 Tenta verificar o access token primeiro
     if access_token:
         payload = await jwt_manager.verify_token_async(access_token, "access")
         
@@ -355,11 +364,16 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     "expires_in": expires_in
                 }
     
+    # 🔥 Se access token expirou, tenta refresh com o refresh token
     if refresh_token:
-        logger.info("🔄 [TOKEN] Tentando refresh...")
+        logger.info("🔄 [TOKEN] Access token expirado, tentando refresh...")
         
         try:
-            new_tokens = await jwt_manager.refresh_access_token(refresh_token, db, access_token)
+            new_tokens = await jwt_manager.refresh_access_token(
+                refresh_token, 
+                db, 
+                access_token
+            )
             
             if new_tokens:
                 payload = jwt_manager.decode_token(new_tokens["access_token"])
@@ -388,12 +402,19 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     )
                     
                     return response
+                    
         except Exception as e:
             logger.error(f"❌ [TOKEN] Erro no refresh: {e}")
+            # 🔥 Se o refresh falhar, retorna 401 para forçar login
+            pass
     
+    # 🔥 Se tudo falhou, retorna 401
     response = JSONResponse(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"status": "invalid", "message": "Sessão expirada. Faça login novamente."}
+        content={
+            "status": "invalid", 
+            "message": "Sessão expirada. Faça login novamente."
+        }
     )
     response = clear_auth_cookies(response)
     
@@ -401,7 +422,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
 
 
 # ==============================================
-# LOGOUT
+# LOGOUT - CORRIGIDO
 # ==============================================
 
 @router.post("/logout")
@@ -409,6 +430,7 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     """
     Logout - invalida tokens
     POST /api/auth/logout
+    🔥 CORRIGIDO: Mais robusto, não falha se Redis offline
     """
     
     try:
@@ -422,10 +444,23 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     if auth_header.startswith("Bearer "):
         access_token = auth_header.replace("Bearer ", "")
     
-    if refresh_token:
-        await jwt_manager.logout(refresh_token, db, access_token)
+    # 🔥 Tenta fazer logout mesmo se Redis estiver offline
+    try:
+        if refresh_token:
+            await jwt_manager.logout(refresh_token, db, access_token)
+            logger.info("✅ Logout realizado com sucesso")
+        else:
+            logger.warning("⚠️ Logout sem refresh token - limpando cookies apenas")
+    except Exception as e:
+        logger.error(f"❌ Erro no logout: {e}")
+        # 🔥 Mesmo com erro, continuamos para limpar cookies
     
-    response = JSONResponse(content={"success": True, "message": "Logout realizado"})
+    response = JSONResponse(
+        content={
+            "success": True, 
+            "message": "Logout realizado"
+        }
+    )
     response = clear_auth_cookies(response)
     
     return response

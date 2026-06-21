@@ -1,7 +1,11 @@
-# backend/api/auth.py - VERSÃO CORRIGIDA
+# backend/api/auth.py - VERSÃO CORRIGIDA E OTIMIZADA
 """
 Módulo de REGISTRO de usuários
 Responsável apenas por cadastro de novos usuários
+🔥 CORREÇÕES:
+- Fallback quando Redis offline
+- Tratamento de erro melhorado
+- Validação de telefone mais rigorosa
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -38,7 +42,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=100)
     workshop_name: str = Field(..., min_length=2, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)  # 🔥 ADICIONADO
+    phone: Optional[str] = Field(None, max_length=20)
     captcha_id: str
     captcha_code: str
     session_type: str = "register"
@@ -55,11 +59,13 @@ class RegisterRequest(BaseModel):
             cleaned = ''.join(filter(str.isdigit, v))
             if len(cleaned) < 10:
                 raise ValueError('Telefone deve ter pelo menos 10 dígitos')
+            if len(cleaned) > 11:
+                raise ValueError('Telefone deve ter no máximo 11 dígitos')
         return v
 
 
 # ==============================================
-# ROTA DE REGISTRO - CORRIGIDA
+# ROTA DE REGISTRO - CORRIGIDA COM FALLBACK
 # ==============================================
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -71,13 +77,14 @@ async def register(
     """
     Registro de novo usuário
     POST /api/auth/register
+    🔥 CORRIGIDO: Fallback quando Redis offline
     """
     
     client_ip = request.client.host if request.client else "unknown"
     
     logger.info(f"📝 [REGISTER] Tentativa: {register_data.email} | IP: {client_ip}")
     
-    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV
+    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV e fallback
     is_valid = False
     
     # Modo de desenvolvimento: aceita "1234" como código universal
@@ -85,13 +92,25 @@ async def register(
         logger.warning(f"⚠️ [REGISTER] Modo DEV: CAPTCHA 1234 aceito para {register_data.email}")
         is_valid = True
     else:
-        # Validação normal via Redis
-        is_valid = await captcha_manager.validate_captcha_async(
-            captcha_id=register_data.captcha_id,
-            captcha_text=register_data.captcha_code,
-            request=request,
-            session_type=register_data.session_type
-        )
+        try:
+            # Validação normal via Redis
+            is_valid = await captcha_manager.validate_captcha_async(
+                captcha_id=register_data.captcha_id,
+                captcha_text=register_data.captcha_code,
+                request=request,
+                session_type=register_data.session_type
+            )
+        except Exception as e:
+            logger.error(f"❌ [REGISTER] Erro ao validar CAPTCHA: {e}")
+            # 🔥 Se Redis offline e DEV_MODE, permite
+            if DEV_MODE:
+                logger.warning("⚠️ [REGISTER] Modo DEV: CAPTCHA ignorado devido a erro")
+                is_valid = True
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Serviço de CAPTCHA temporariamente indisponível. Tente novamente."
+                )
     
     if not is_valid:
         logger.warning(f"❌ [REGISTER] CAPTCHA inválido | IP: {client_ip}")
@@ -100,8 +119,13 @@ async def register(
             detail="❌ Código CAPTCHA incorreto! Digite os números que aparecem na imagem."
         )
     
-    # VALIDAÇÃO 2: Rate limiting
-    is_rate_ok = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)
+    # 🔥 VALIDAÇÃO 2: Rate limiting com fallback
+    try:
+        is_rate_ok = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)
+    except Exception as e:
+        logger.error(f"❌ [REGISTER] Erro no rate limit: {e}")
+        # 🔥 Se rate limit falhar, permite em modo DEV
+        is_rate_ok = DEV_MODE
     
     if not is_rate_ok:
         raise HTTPException(
@@ -128,8 +152,6 @@ async def register(
     
     # Criar usuário
     try:
-        # 🔥 CORRIGIDO: passando o objeto RegisterRequest diretamente
-        # O crud.create_user vai extrair os campos corretamente
         new_user = crud.create_user(db, register_data)
         
         logger.info(f"✅ [REGISTER] Usuário criado: {new_user.email} | ID: {new_user.id}")
@@ -145,7 +167,7 @@ async def register(
         }
         
     except Exception as e:
-        logger.error(f"❌ [REGISTER] Erro: {e}")
+        logger.error(f"❌ [REGISTER] Erro ao criar usuário: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
