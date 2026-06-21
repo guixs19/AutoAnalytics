@@ -1,36 +1,42 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V2.0 COMPLETO
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V3.2 (COM PoW INTEGRADO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
  * 🔥 RESPONSABILIDADES:
  * 1. Gerencia o estado global da aplicação
- * 2. Sincroniza todos os módulos (auth, dashboard, payment)
+ * 2. Sincroniza todos os módulos (auth, dashboard, payment, pow)
  * 3. Controla navegação e proteção de rotas
  * 4. Gerencia UI global (navbar, modals, notificações)
  * 5. Exporta funções globais para todas as páginas
  * 6. Gerencia timeout de sessão inativa
  * 7. Handlers de erros globais
  * 8. Renovação automática de token
+ * 9. 🔥 Sincronização com sistema de créditos (MAX_CREDITS_BALANCE = 3)
+ * 10. 🔥 Sincronização com sistema de preço fundador vitalício
+ * 11. 🔥 Sincronização com sistema PoW (Proof of Work)
+ * 
+ * 🔥 CORREÇÕES v3.2:
+ * - Integração com pow-client.js
+ * - Evento powReady
+ * - Funções para gestão de PoW
+ * - Auto-refill quando autenticado
+ * - Limpeza de PoW no logout
  * 
  * FLUXO DE CARREGAMENTO:
  *   1. auth.js → define window.appAuth
- *   2. app.js → orquestra tudo (ESTE ARQUIVO)
- *   3. dashboard.js → funcionalidades do dashboard
- *   4. payment.js → pagamentos e planos
- * 
- * 🔥 COMPATIBILIDADE:
- *   - window.App (instância principal)
- *   - window.app (alias para compatibilidade)
- *   - window.autoAnalytics (alias para compatibilidade)
+ *   2. pow-client.js → define window.powClient (em segundo plano)
+ *   3. app.js → orquestra tudo (ESTE ARQUIVO)
+ *   4. dashboard.js → funcionalidades do dashboard
+ *   5. payment.js → pagamentos e planos (SINCRONIZADO)
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v2.0...');
+    console.log('🚀 Inicializando App (Orquestrador) v3.2...');
 
     // ==============================================
-    // 🔥 CONFIGURAÇÕES GLOBAIS
+    // 🔥 CONFIGURAÇÕES GLOBAIS (SINCRONIZADAS)
     // ==============================================
 
     const CONFIG = {
@@ -40,12 +46,25 @@
         TOKEN_CHECK_INTERVAL: 60000,
         SESSION_TIMEOUT: 15 * 60 * 1000,
         API_BASE: '/api',
-        MAX_LOAD_ATTEMPTS: 10,  // 🔥 LIMITE DE TENTATIVAS
-        LOAD_RETRY_DELAY: 500   // 🔥 DELAY ENTRE TENTATIVAS
+        MAX_LOAD_ATTEMPTS: 10,
+        LOAD_RETRY_DELAY: 500,
+        
+        // 🔥 SINCRONIZADO COM BACKEND
+        MAX_CREDITS_BALANCE: 3,
+        INITIAL_FREE_CREDITS: 3,
+        PROMOTIONAL_PRICE: 97.00,
+        REGULAR_PRICE: 149.90,
+        TOTAL_PROMOTIONAL_SLOTS: 100,
+        DAYS_PREMIUM: 30,
+        TOKEN_EXPIRY_MINUTES: 15,
+        
+        // 🔥 PoW CONFIG
+        POW_AUTO_REFILL_INTERVAL: 30000, // 30 segundos
+        POW_STOCK_SIZE: 2
     };
 
     // ==============================================
-    // 🔥 ESTADO GLOBAL DA APLICAÇÃO
+    // 🔥 ESTADO GLOBAL DA APLICAÇÃO (AMPLIADO)
     // ==============================================
 
     const State = {
@@ -57,12 +76,32 @@
         premiumStatus: null,
         initialized: false,
         lastActivity: Date.now(),
-        loadAttempts: 0,  // 🔥 CONTADOR DE TENTATIVAS
-        isAppReady: false
+        loadAttempts: 0,
+        isAppReady: false,
+        
+        // 🔥 Informações de preço fundador
+        hasPromotionalPrice: false,
+        promotionalPrice: null,
+        isVitalicio: false,
+        
+        // 🔥 Status do crédito diário
+        canReceiveDailyCredit: false,
+        receivedDailyCreditToday: false,
+        daysLeftPremium: 0,
+        maxCreditsBalance: CONFIG.MAX_CREDITS_BALANCE,
+        
+        // 🔥 Status do token
+        tokenValid: false,
+        tokenExpiresAt: null,
+        
+        // 🔥 Status do PoW
+        powReady: false,
+        powSolutionsReady: 0,
+        powAutoRefillActive: false
     };
 
     // ==============================================
-    // 🔥 FUNÇÕES DE UTILIDADE
+    // 🔥 FUNÇÕES DE UTILIDADE (AMPLIADAS)
     // ==============================================
 
     const Utils = {
@@ -78,13 +117,16 @@
         },
 
         showNotification: (message, type = 'info') => {
-            // 🔥 Fallback seguro para toastr
+            // Usar appAuth se disponível
+            if (window.appAuth && window.appAuth.showNotification) {
+                return window.appAuth.showNotification(message, type);
+            }
+            
             if (window.toastr && typeof window.toastr[type] === 'function') {
                 window.toastr[type](message);
                 return true;
             }
             
-            // 🔥 Fallback para alert nativo se toastr não existir
             if (type === 'error' || type === 'warning') {
                 console.warn(`[${type}] ${message}`);
                 alert(`⚠️ ${message}`);
@@ -144,7 +186,6 @@
         goForward: () => window.history.forward(),
         reload: () => window.location.reload(),
 
-        // 🔥 FUNÇÃO PARA ESPERAR O AUTH CARREGAR
         waitForAuth: (maxAttempts = 30) => {
             return new Promise((resolve) => {
                 let attempts = 0;
@@ -164,6 +205,83 @@
                 };
                 checkAuth();
             });
+        },
+
+        // 🔥 CORRIGIDO: Esperar payment.js carregar (mais robusto)
+        waitForPayment: (maxAttempts = 30) => {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const checkPayment = () => {
+                    attempts++;
+                    const hasPayment = (
+                        window.loadPremiumStatus ||
+                        window.receiveDailyCredit ||
+                        window.loadPlans ||
+                        (window.payment && typeof window.payment === 'object')
+                    );
+                    
+                    if (hasPayment) {
+                        console.log(`✅ Payment encontrado após ${attempts} tentativas`);
+                        resolve(true);
+                        return;
+                    }
+                    if (attempts >= maxAttempts) {
+                        console.warn(`⚠️ Payment não encontrado após ${maxAttempts} tentativas`);
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(checkPayment, 200);
+                };
+                checkPayment();
+            });
+        },
+
+        // 🔥 NOVO: Esperar pow-client.js carregar
+        waitForPow: (maxAttempts = 30) => {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const checkPow = () => {
+                    attempts++;
+                    const hasPow = (
+                        window.powClient !== undefined && 
+                        window.powClient !== null &&
+                        typeof window.powClient.preSolve === 'function'
+                    );
+                    
+                    if (hasPow) {
+                        console.log(`✅ PoW encontrado após ${attempts} tentativas`);
+                        resolve(true);
+                        return;
+                    }
+                    if (attempts >= maxAttempts) {
+                        console.warn(`⚠️ PoW não encontrado após ${maxAttempts} tentativas`);
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(checkPow, 200);
+                };
+                checkPow();
+            });
+        },
+
+        // 🔥 Formatar créditos para exibição
+        formatCreditsDisplay: (credits, isPremium = false, maxCredits = CONFIG.MAX_CREDITS_BALANCE) => {
+            const safeCredits = Utils.sanitizeNumber(credits, 0);
+            if (State.isAdmin) return '∞';
+            if (isPremium) {
+                return `${safeCredits}/${maxCredits}`;
+            }
+            return safeCredits.toString();
+        },
+
+        sanitizeNumber: (value, defaultValue = 0) => {
+            const num = parseFloat(String(value).replace(/[^0-9.,-]/g, '').replace(',', '.'));
+            return isNaN(num) ? defaultValue : num;
+        },
+
+        // 🔥 Verificar se o usuário tem preço vitalício
+        hasVitalicioPrice: () => {
+            return State.hasPromotionalPrice && State.promotionalPrice !== null;
         }
     };
 
@@ -243,7 +361,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE UI GLOBAL
+    // 🔥 GERENCIADOR DE UI GLOBAL (AMPLIADO)
     // ==============================================
 
     const UI = {
@@ -273,18 +391,61 @@
                     UI.updateCredits();
                     UI.updateAdminBadge();
                     UI.updatePremiumBadge();
+                    UI.updateVitalicioBadge();
+                    UI.updatePowStatus(); // 🔥 NOVO
                 } catch (e) {
                     console.warn('Erro ao atualizar navbar:', e);
                 }
             }
         },
 
-        updateCredits: () => {
-            if (!window.appAuth) return;
-            
+        // 🔥 NOVO: Atualiza status do PoW na UI
+        updatePowStatus: () => {
             try {
-                const display = window.appAuth.getCreditsDisplay ? window.appAuth.getCreditsDisplay() : '0';
-                State.creditsDisplay = display;
+                if (window.powClient && typeof window.powClient.getStats === 'function') {
+                    const stats = window.powClient.getStats();
+                    State.powSolutionsReady = stats.solutionsReady || 0;
+                    State.powAutoRefillActive = stats.autoRefill || false;
+                    
+                    // Atualizar badge ou indicador se existir
+                    const powBadge = document.getElementById('powStatus');
+                    if (powBadge) {
+                        if (stats.solutionsReady > 0) {
+                            powBadge.textContent = `⚡ ${stats.solutionsReady}`;
+                            powBadge.style.display = 'inline-block';
+                        } else {
+                            powBadge.style.display = 'none';
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar status PoW:', e);
+            }
+        },
+
+        // 🔥 CORRIGIDO: Atualiza créditos usando estado do app
+        updateCredits: () => {
+            try {
+                let credits = State.credits;
+                let isPremium = State.isPremium;
+                let isAdmin = State.isAdmin;
+                
+                if (window.appAuth) {
+                    const authCredits = window.appAuth.getCredits ? window.appAuth.getCredits() : 0;
+                    const authIsPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
+                    const authIsAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
+                    
+                    if (credits === 0 && authCredits > 0) credits = authCredits;
+                    if (!isPremium && authIsPremium) isPremium = authIsPremium;
+                    if (!isAdmin && authIsAdmin) isAdmin = authIsAdmin;
+                }
+                
+                State.credits = credits;
+                State.isPremium = isPremium;
+                State.isAdmin = isAdmin;
+                
+                const formattedDisplay = Utils.formatCreditsDisplay(credits, isPremium, CONFIG.MAX_CREDITS_BALANCE);
+                State.creditsDisplay = formattedDisplay;
                 
                 const selectors = [
                     '.credits-display', '.user-credits', 
@@ -293,11 +454,24 @@
                 ];
                 
                 document.querySelectorAll(selectors.join(',')).forEach(el => {
-                    if (el) el.textContent = display;
+                    if (el) el.textContent = formattedDisplay;
+                });
+
+                document.querySelectorAll('[data-credits-tooltip]').forEach(el => {
+                    if (isPremium) {
+                        el.title = `${credits}/${CONFIG.MAX_CREDITS_BALANCE} créditos (máximo ${CONFIG.MAX_CREDITS_BALANCE})`;
+                    } else {
+                        el.title = `${credits} créditos`;
+                    }
                 });
 
                 window.dispatchEvent(new CustomEvent('creditsUpdated', { 
-                    detail: { credits: State.credits, display: display } 
+                    detail: { 
+                        credits: credits, 
+                        display: formattedDisplay,
+                        maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                        isPremium: isPremium
+                    } 
                 }));
             } catch (e) {
                 console.warn('Erro ao atualizar créditos:', e);
@@ -333,8 +507,42 @@
                 document.querySelectorAll('.premium-badge, .premium-only').forEach(el => {
                     el.style.display = isPremium ? 'inline-block' : 'none';
                 });
+
+                if (isPremium && State.daysLeftPremium > 0) {
+                    document.querySelectorAll('.premium-days-badge').forEach(el => {
+                        el.textContent = `${State.daysLeftPremium} dias`;
+                        el.style.display = 'inline-block';
+                    });
+                } else {
+                    document.querySelectorAll('.premium-days-badge').forEach(el => {
+                        el.style.display = 'none';
+                    });
+                }
+
+                if (isPremium) {
+                    document.body.classList.add('is-premium');
+                } else {
+                    document.body.classList.remove('is-premium');
+                }
             } catch (e) {
                 console.warn('Erro ao atualizar badge premium:', e);
+            }
+        },
+
+        updateVitalicioBadge: () => {
+            const hasVitalicio = State.hasPromotionalPrice && State.promotionalPrice !== null;
+            
+            document.querySelectorAll('.vitalicio-badge, .vitalicio-only').forEach(el => {
+                el.style.display = hasVitalicio ? 'inline-block' : 'none';
+            });
+
+            if (hasVitalicio) {
+                document.querySelectorAll('.vitalicio-price').forEach(el => {
+                    el.textContent = `R$ ${State.promotionalPrice.toFixed(2).replace('.', ',')}`;
+                });
+                document.body.classList.add('has-vitalicio');
+            } else {
+                document.body.classList.remove('has-vitalicio');
             }
         },
 
@@ -400,7 +608,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS GLOBAIS
+    // 🔥 GERENCIADOR DE EVENTOS GLOBAIS (AMPLIADO)
     // ==============================================
 
     const Events = {
@@ -460,18 +668,88 @@
                 });
             });
 
-            // Eventos customizados
-            window.addEventListener('creditsUpdated', () => {
-                UI.updateCredits();
-            });
-
-            window.addEventListener('authReady', () => {
+            // 🔥 Eventos do auth.js
+            window.addEventListener('authReady', (event) => {
+                console.log('📢 Evento authReady recebido');
+                if (event.detail) {
+                    State.isAuthenticated = event.detail.isAuthenticated || false;
+                    State.user = event.detail.user || null;
+                }
                 UI.updateNavbar();
+                
+                // 🔥 Iniciar PoW quando autenticado
+                setTimeout(() => {
+                    Pow.startAutoRefill();
+                }, 1000);
             });
 
-            window.addEventListener('premiumStatusUpdated', () => {
-                UI.updatePremiumBadge();
+            // 🔥 CORRIGIDO: Evento authLogout
+            window.addEventListener('authLogout', () => {
+                console.log('📢 Evento authLogout recebido');
+                State.isAuthenticated = false;
+                State.user = null;
+                State.credits = 0;
+                State.isPremium = false;
+                State.isAdmin = false;
+                State.hasPromotionalPrice = false;
+                State.promotionalPrice = null;
+                UI.updateNavbar();
+                
+                // 🔥 Limpar PoW no logout
+                Pow.reset();
+                Pow.stopAutoRefill();
+            });
+
+            // 🔥 Eventos de créditos
+            window.addEventListener('creditsUpdated', (event) => {
+                if (event.detail) {
+                    State.credits = event.detail.credits || 0;
+                    State.creditsDisplay = event.detail.display || '0';
+                    State.isPremium = event.detail.isPremium || false;
+                }
                 UI.updateCredits();
+            });
+
+            // 🔥 Eventos de status premium
+            window.addEventListener('premiumStatusUpdated', (event) => {
+                if (event.detail) {
+                    State.isPremium = event.detail.isPremium || false;
+                    State.daysLeftPremium = event.detail.daysLeft || 0;
+                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
+                    State.promotionalPrice = event.detail.promotionalPrice || null;
+                    State.canReceiveDailyCredit = event.detail.canReceiveDailyCredit || false;
+                    State.receivedDailyCreditToday = event.detail.receivedDailyCreditToday || false;
+                }
+                UI.updatePremiumBadge();
+                UI.updateVitalicioBadge();
+                UI.updateCredits();
+            });
+
+            // 🔥 Eventos do payment.js
+            window.addEventListener('dailyCreditReceived', (event) => {
+                if (event.detail && event.detail.success) {
+                    Utils.showNotification('🎉 Crédito diário recebido!', 'success');
+                    UI.updateCredits();
+                }
+            });
+
+            window.addEventListener('promotionStatusUpdated', (event) => {
+                if (event.detail) {
+                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
+                    State.promotionalPrice = event.detail.promotionalPrice || null;
+                    UI.updateVitalicioBadge();
+                }
+            });
+
+            // 🔥 Evento do PoW
+            window.addEventListener('powReady', (event) => {
+                console.log('📢 Evento powReady recebido');
+                State.powReady = true;
+                if (event.detail) {
+                    State.powSolutionsReady = event.detail.solutionsReady || 0;
+                    State.powAutoRefillActive = event.detail.autoRefill || false;
+                }
+                UI.updatePowStatus();
             });
 
             // 🔥 Handlers de erros globais
@@ -503,7 +781,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE CRÉDITOS
+    // 🔥 GERENCIADOR DE CRÉDITOS (AMPLIADO)
     // ==============================================
 
     const Credits = {
@@ -518,6 +796,39 @@
             }
         },
 
+        loadPremiumStatus: async () => {
+            if (window.loadPremiumStatus) {
+                try {
+                    const status = await window.loadPremiumStatus();
+                    if (status) {
+                        State.isPremium = status.is_premium || false;
+                        State.daysLeftPremium = status.days_left || 0;
+                        State.hasPromotionalPrice = status.promotional_price_locked || false;
+                        State.promotionalPrice = status.promotional_price || null;
+                        State.canReceiveDailyCredit = status.can_receive_today || false;
+                        State.receivedDailyCreditToday = status.received_today || false;
+                        State.credits = status.credits_balance || 0;
+                        
+                        window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
+                            detail: {
+                                isPremium: State.isPremium,
+                                daysLeft: State.daysLeftPremium,
+                                hasPromotionalPrice: State.hasPromotionalPrice,
+                                promotionalPrice: State.promotionalPrice,
+                                canReceiveDailyCredit: State.canReceiveDailyCredit,
+                                receivedDailyCreditToday: State.receivedDailyCreditToday
+                            }
+                        }));
+                        
+                        return status;
+                    }
+                } catch (e) {
+                    console.warn('Erro ao carregar status premium:', e);
+                }
+            }
+            return null;
+        },
+
         startPolling: () => {
             Credits.load();
             
@@ -526,11 +837,39 @@
             }, CONFIG.CREDITS_UPDATE_INTERVAL);
             
             console.log(`⏰ Atualização de créditos: ${CONFIG.CREDITS_UPDATE_INTERVAL/1000}s`);
+        },
+
+        startPremiumPolling: () => {
+            Credits.loadPremiumStatus();
+            
+            setInterval(() => {
+                Credits.loadPremiumStatus();
+            }, CONFIG.CREDITS_UPDATE_INTERVAL);
+            
+            console.log(`⏰ Atualização de status premium: ${CONFIG.CREDITS_UPDATE_INTERVAL/1000}s`);
+        },
+
+        receiveDailyCredit: async () => {
+            if (window.receiveDailyCredit) {
+                try {
+                    const result = await window.receiveDailyCredit();
+                    if (result && result.success) {
+                        Utils.showNotification('✅ Crédito diário recebido com sucesso!', 'success');
+                        await Credits.load();
+                        await Credits.loadPremiumStatus();
+                        return result;
+                    }
+                } catch (e) {
+                    console.warn('Erro ao receber crédito diário:', e);
+                    Utils.showNotification('Erro ao receber crédito. Tente novamente.', 'error');
+                }
+            }
+            return null;
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE AUTENTICAÇÃO
+    // 🔥 GERENCIADOR DE AUTENTICAÇÃO (CORRIGIDO)
     // ==============================================
 
     const Auth = {
@@ -577,6 +916,7 @@
             console.log(`⏰ Verificação de token: ${CONFIG.TOKEN_CHECK_INTERVAL/1000}s`);
         },
 
+        // 🔥 CORRIGIDO: Processa resposta 'refreshed'
         checkRenewal: async () => {
             if (!window.appAuth) return;
             
@@ -595,6 +935,7 @@
                         if (refreshed) {
                             console.log('✅ Token renovado com sucesso!');
                             Auth.resetSessionTimer();
+                            State.tokenValid = true;
                         } else {
                             console.log('❌ Falha ao renovar token, fazendo logout...');
                             Utils.showNotification('Sessão expirada. Faça login novamente.', 'warning');
@@ -604,6 +945,17 @@
                         }
                     }
                 } else if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.status === 'refreshed' && data.access_token) {
+                        console.log('🔄 Token renovado via check-token');
+                        State.tokenValid = true;
+                        if (data.credits !== undefined) {
+                            State.credits = data.credits;
+                            UI.updateCredits();
+                        }
+                    }
+                    
                     Auth.resetSessionTimer();
                 }
             } catch (error) {
@@ -611,7 +963,6 @@
             }
         },
 
-        // 🔥 FUNÇÃO PARA ESPERAR O APP FICAR PRONTO
         waitForAppReady: (maxAttempts = CONFIG.MAX_LOAD_ATTEMPTS) => {
             return new Promise((resolve) => {
                 let attempts = 0;
@@ -644,66 +995,165 @@
     };
 
     // ==============================================
-    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO
+    // 🔥 GERENCIADOR DE PoW (NOVO)
     // ==============================================
 
-    async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v2.0...');
+    const Pow = {
+        /**
+         * Verifica se o PoW está disponível
+         */
+        isAvailable: () => {
+            return window.powClient !== undefined && window.powClient !== null;
+        },
 
-        // 1. Proteger rotas
-        if (!Router.protect()) {
-            console.log('⏳ Redirecionado, interrompendo inicialização');
-            return;
+        /**
+         * Inicia o PoW e auto-refill
+         */
+        startAutoRefill: () => {
+            if (!Pow.isAvailable()) {
+                console.log('⏳ PoW não disponível, aguardando...');
+                // Tenta novamente após 2 segundos
+                setTimeout(() => Pow.startAutoRefill(), 2000);
+                return;
+            }
+
+            try {
+                if (typeof window.powClient.startAutoRefill === 'function') {
+                    window.powClient.startAutoRefill(CONFIG.POW_AUTO_REFILL_INTERVAL);
+                    State.powAutoRefillActive = true;
+                    console.log(`⚡ PoW auto-refill iniciado (${CONFIG.POW_AUTO_REFILL_INTERVAL/1000}s)`);
+                    
+                    // Pré-calcular imediatamente
+                    setTimeout(() => {
+                        if (typeof window.powClient.preSolve === 'function') {
+                            window.powClient.preSolve();
+                        }
+                    }, 100);
+                    
+                    // Disparar evento
+                    window.dispatchEvent(new CustomEvent('powReady', {
+                        detail: {
+                            solutionsReady: State.powSolutionsReady,
+                            autoRefill: true
+                        }
+                    }));
+                }
+            } catch (e) {
+                console.warn('Erro ao iniciar PoW auto-refill:', e);
+            }
+        },
+
+        /**
+         * Para o auto-refill do PoW
+         */
+        stopAutoRefill: () => {
+            if (!Pow.isAvailable()) return;
+            
+            try {
+                if (typeof window.powClient.stopAutoRefill === 'function') {
+                    window.powClient.stopAutoRefill();
+                    State.powAutoRefillActive = false;
+                    console.log('⏹️ PoW auto-refill parado');
+                }
+            } catch (e) {
+                console.warn('Erro ao parar PoW auto-refill:', e);
+            }
+        },
+
+        /**
+         * Reseta o estado do PoW
+         */
+        reset: () => {
+            if (!Pow.isAvailable()) return;
+            
+            try {
+                if (typeof window.powClient.reset === 'function') {
+                    window.powClient.reset();
+                    State.powSolutionsReady = 0;
+                    console.log('🔄 PoW resetado');
+                }
+            } catch (e) {
+                console.warn('Erro ao resetar PoW:', e);
+            }
+        },
+
+        /**
+         * Prepara PoW para upload (drag & drop)
+         */
+        prepareForUpload: async () => {
+            if (!Pow.isAvailable()) {
+                console.log('⏳ PoW não disponível para preparar upload');
+                return false;
+            }
+
+            try {
+                if (typeof window.powClient.prepareForUpload === 'function') {
+                    const result = await window.powClient.prepareForUpload();
+                    
+                    // Atualiza status
+                    if (typeof window.powClient.getStats === 'function') {
+                        const stats = window.powClient.getStats();
+                        State.powSolutionsReady = stats.solutionsReady || 0;
+                        UI.updatePowStatus();
+                    }
+                    
+                    return result;
+                }
+            } catch (e) {
+                console.warn('Erro ao preparar PoW para upload:', e);
+            }
+            return false;
+        },
+
+        /**
+         * Obtém estatísticas do PoW
+         */
+        getStats: () => {
+            if (!Pow.isAvailable()) {
+                return { available: false, solutionsReady: 0 };
+            }
+
+            try {
+                if (typeof window.powClient.getStats === 'function') {
+                    const stats = window.powClient.getStats();
+                    return {
+                        available: true,
+                        solutionsReady: stats.solutionsReady || 0,
+                        maxStock: stats.maxStock || CONFIG.POW_STOCK_SIZE,
+                        autoRefill: stats.autoRefill || false,
+                        isSolving: stats.isSolving || false,
+                        isAuthenticated: stats.isAuthenticated || false,
+                        lastSolutionAge: stats.lastSolutionAge || null
+                    };
+                }
+            } catch (e) {
+                console.warn('Erro ao obter stats PoW:', e);
+            }
+            return { available: false, solutionsReady: 0 };
+        },
+
+        /**
+         * Upload com PoW
+         */
+        uploadWithPow: async (file, endpoint = '/api/upload-auto') => {
+            if (!Pow.isAvailable()) {
+                throw new Error('PoW não disponível');
+            }
+
+            try {
+                if (typeof window.powClient.uploadWithPow === 'function') {
+                    return await window.powClient.uploadWithPow(file, endpoint);
+                }
+            } catch (e) {
+                console.error('Erro no upload com PoW:', e);
+                throw e;
+            }
+            throw new Error('Método uploadWithPow não disponível');
         }
-
-        // 2. Aguardar auth.js carregar
-        const authLoaded = await Utils.waitForAuth(30);
-        if (!authLoaded) {
-            console.warn('⚠️ Auth não carregou. Tentando continuar...');
-        }
-
-        // 3. Sincronizar com auth.js
-        const isAuth = await Sync.syncAuth();
-
-        // 4. Se estiver autenticado, sincroniza com payment
-        if (isAuth) {
-            await Sync.syncPayment();
-        }
-
-        // 5. Configurar UI global
-        UI.setupModals();
-        UI.updateNavbar();
-
-        // 6. Configurar eventos globais
-        Events.setup();
-
-        // 7. Configurar navegação
-        Router.setupNavigation();
-
-        // 8. Marcar como inicializado
-        State.initialized = true;
-
-        console.log('✅ App (Orquestrador) v2.0 inicializado com sucesso!');
-        console.log(`📌 Autenticado: ${isAuth}`);
-        console.log(`📌 Página: ${Utils.getCurrentPath()}`);
-        console.log(`📌 Admin: ${State.isAdmin}`);
-        console.log(`📌 Premium: ${State.isPremium}`);
-        console.log(`📌 Créditos: ${State.creditsDisplay}`);
-
-        // 🔥 Dispara evento de app pronto
-        window.dispatchEvent(new CustomEvent('appReady', { 
-            detail: { 
-                isAuthenticated: isAuth,
-                user: State.user,
-                credits: State.credits,
-                isAdmin: State.isAdmin,
-                isPremium: State.isPremium
-            } 
-        }));
-    }
+    };
 
     // ==============================================
-    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS
+    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS (CORRIGIDA)
     // ==============================================
 
     const Sync = {
@@ -722,11 +1172,19 @@
                     State.credits = userData.credits || 0;
                     State.isAdmin = userData.is_admin || false;
                     State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
+                    State.tokenValid = true;
                     
                     UI.updateNavbar();
                     Credits.startPolling();
                     Auth.startTokenCheck();
                     Auth.startSessionTimer();
+                    
+                    // 🔥 Iniciar PoW após sincronização
+                    setTimeout(() => {
+                        Pow.startAutoRefill();
+                    }, 1000);
+                } else {
+                    State.tokenValid = false;
                 }
 
                 return isAuth;
@@ -736,19 +1194,84 @@
             }
         },
 
+        // 🔥 CORRIGIDO: Sincronização com payment mais robusta
         syncPayment: async () => {
             if (!window.appAuth) return;
             
             try {
-                if (window.appAuth.loadPremiumStatus) {
-                    await window.appAuth.loadPremiumStatus();
-                }
+                const paymentLoaded = await Utils.waitForPayment(30);
                 
-                if (window.appAuth.startPremiumStatusPolling) {
-                    window.appAuth.startPremiumStatusPolling(60000);
+                if (paymentLoaded) {
+                    if (typeof window.loadPremiumStatus === 'function') {
+                        await Credits.loadPremiumStatus();
+                    } else {
+                        console.warn('⚠️ loadPremiumStatus não disponível');
+                    }
+                    
+                    Credits.startPremiumPolling();
+                    console.log('✅ Payment sincronizado com sucesso!');
+                } else {
+                    console.warn('⚠️ Payment não carregou. Algumas funcionalidades podem estar indisponíveis.');
+                    setTimeout(() => {
+                        if (typeof window.loadPremiumStatus === 'function') {
+                            Credits.loadPremiumStatus();
+                        }
+                    }, 5000);
                 }
             } catch (e) {
                 console.warn('Erro ao sincronizar payment:', e);
+            }
+        },
+
+        syncPromotion: async () => {
+            try {
+                const token = localStorage.getItem('access_token');
+                if (!token) return;
+                
+                const response = await fetch('/api/payments/promotion-status', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    State.hasPromotionalPrice = data.user_locked_price !== null;
+                    State.promotionalPrice = data.user_locked_price || null;
+                    
+                    window.dispatchEvent(new CustomEvent('promotionStatusUpdated', {
+                        detail: {
+                            hasPromotionalPrice: State.hasPromotionalPrice,
+                            promotionalPrice: State.promotionalPrice
+                        }
+                    }));
+                }
+            } catch (e) {
+                console.warn('Erro ao sincronizar promoção:', e);
+            }
+        },
+
+        // 🔥 NOVO: Sincronização com PoW
+        syncPow: async () => {
+            try {
+                const powLoaded = await Utils.waitForPow(20);
+                
+                if (powLoaded) {
+                    console.log('✅ PoW sincronizado com sucesso!');
+                    
+                    // Verifica se já está autenticado para iniciar
+                    if (Utils.isAuthenticated()) {
+                        Pow.startAutoRefill();
+                    }
+                    
+                    return true;
+                } else {
+                    console.warn('⚠️ PoW não carregou. Algumas funcionalidades podem estar indisponíveis.');
+                    return false;
+                }
+            } catch (e) {
+                console.warn('Erro ao sincronizar PoW:', e);
+                return false;
             }
         }
     };
@@ -769,8 +1292,30 @@
         credits: Credits,
         auth: Auth,
         sync: Sync,
+        pow: Pow, // 🔥 NOVO: Módulo PoW
         
-        // Funções utilitárias para outras páginas
+        // Funções para sistema de créditos
+        getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
+        getCreditsBalance: () => State.credits,
+        isPremium: () => State.isPremium,
+        hasVitalicio: () => State.hasPromotionalPrice,
+        getPromotionalPrice: () => State.promotionalPrice,
+        canReceiveDailyCredit: () => State.canReceiveDailyCredit,
+        getDaysLeftPremium: () => State.daysLeftPremium,
+        receiveDailyCredit: Credits.receiveDailyCredit,
+        loadPremiumStatus: Credits.loadPremiumStatus,
+        isTokenValid: () => State.tokenValid,
+        
+        // 🔥 NOVO: Funções para PoW
+        isPowAvailable: Pow.isAvailable,
+        getPowStats: Pow.getStats,
+        preparePowForUpload: Pow.prepareForUpload,
+        uploadWithPow: Pow.uploadWithPow,
+        startPowAutoRefill: Pow.startAutoRefill,
+        stopPowAutoRefill: Pow.stopAutoRefill,
+        resetPow: Pow.reset,
+        
+        // Funções utilitárias
         showNotification: Utils.showNotification,
         updateCredits: UI.updateCredits,
         updateNavbar: UI.updateNavbar,
@@ -784,10 +1329,85 @@
         reload: Utils.reload,
         getQueryParam: Utils.getQueryParam,
         waitForAuth: Utils.waitForAuth,
+        formatCreditsDisplay: Utils.formatCreditsDisplay,
+        waitForPayment: Utils.waitForPayment,
+        waitForPow: Utils.waitForPow,
         
         // Inicialização
         init: initApp
     };
+
+    // ==============================================
+    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO (AMPLIADA)
+    // ==============================================
+
+    async function initApp() {
+        console.log('🚀 Inicializando App (Orquestrador) v3.2...');
+
+        // 1. Proteger rotas
+        if (!Router.protect()) {
+            console.log('⏳ Redirecionado, interrompendo inicialização');
+            return;
+        }
+
+        // 2. Aguardar auth.js carregar
+        const authLoaded = await Utils.waitForAuth(30);
+        if (!authLoaded) {
+            console.warn('⚠️ Auth não carregou. Tentando continuar...');
+        }
+
+        // 3. Sincronizar com auth.js
+        const isAuth = await Sync.syncAuth();
+
+        // 4. Se estiver autenticado, sincroniza com payment, promoção e PoW
+        if (isAuth) {
+            // Sincronizar PoW em paralelo
+            Sync.syncPow().catch(e => console.warn('Erro sync Pow:', e));
+            
+            await Sync.syncPayment();
+            await Sync.syncPromotion();
+        }
+
+        // 5. Configurar UI global
+        UI.setupModals();
+        UI.updateNavbar();
+
+        // 6. Configurar eventos globais
+        Events.setup();
+
+        // 7. Configurar navegação
+        Router.setupNavigation();
+
+        // 8. Marcar como inicializado
+        State.initialized = true;
+
+        console.log('✅ App (Orquestrador) v3.2 inicializado com sucesso!');
+        console.log(`📌 Autenticado: ${isAuth}`);
+        console.log(`📌 Página: ${Utils.getCurrentPath()}`);
+        console.log(`📌 Admin: ${State.isAdmin}`);
+        console.log(`📌 Premium: ${State.isPremium}`);
+        console.log(`📌 Créditos: ${State.creditsDisplay}`);
+        console.log(`📌 Preço Vitalício: ${State.hasPromotionalPrice ? `R$ ${State.promotionalPrice}` : 'Não'}`);
+        console.log(`📌 Crédito Diário: ${State.canReceiveDailyCredit ? 'Disponível' : 'Já recebido'}`);
+        console.log(`📌 Token Válido: ${State.tokenValid}`);
+        console.log(`📌 PoW: ${State.powReady ? '✅ Disponível' : '⏳ Aguardando'}`);
+
+        // 🔥 Dispara evento de app pronto
+        window.dispatchEvent(new CustomEvent('appReady', { 
+            detail: { 
+                isAuthenticated: isAuth,
+                user: State.user,
+                credits: State.credits,
+                isAdmin: State.isAdmin,
+                isPremium: State.isPremium,
+                maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                hasVitalicio: State.hasPromotionalPrice,
+                promotionalPrice: State.promotionalPrice,
+                tokenValid: State.tokenValid,
+                powReady: State.powReady
+            } 
+        }));
+    }
 
     // ==============================================
     // 🔥 EXPORTAÇÕES GLOBAIS
@@ -796,7 +1416,7 @@
     // Instância principal
     window.App = AppInstance;
     
-    // 🔥 ALIASES PARA COMPATIBILIDADE (CORREÇÃO DO LOOP)
+    // Aliases para compatibilidade
     window.app = AppInstance;
     window.autoAnalytics = AppInstance;
 
@@ -813,11 +1433,31 @@
     window.goBack = Utils.goBack;
     window.getQueryParam = Utils.getQueryParam;
 
+    // 🔥 NOVAS EXPORTAÇÕES (sincronizadas com auth.js, payment.js e pow-client.js)
+    window.getMaxCredits = () => CONFIG.MAX_CREDITS_BALANCE;
+    window.getCreditsBalance = () => State.credits;
+    window.isPremium = () => State.isPremium;
+    window.hasVitalicio = () => State.hasPromotionalPrice;
+    window.getPromotionalPrice = () => State.promotionalPrice;
+    window.canReceiveDailyCredit = () => State.canReceiveDailyCredit;
+    window.getDaysLeftPremium = () => State.daysLeftPremium;
+    window.receiveDailyCredit = Credits.receiveDailyCredit;
+    window.loadPremiumStatus = Credits.loadPremiumStatus;
+    window.isTokenValid = () => State.tokenValid;
+
+    // 🔥 NOVAS EXPORTAÇÕES PoW
+    window.isPowAvailable = Pow.isAvailable;
+    window.getPowStats = Pow.getStats;
+    window.preparePowForUpload = Pow.prepareForUpload;
+    window.uploadWithPow = Pow.uploadWithPow;
+    window.startPowAutoRefill = Pow.startAutoRefill;
+    window.stopPowAutoRefill = Pow.stopAutoRefill;
+    window.resetPow = Pow.reset;
+
     // ==============================================
     // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
     // ==============================================
 
-    // 🔥 CORREÇÃO: Evita múltiplas inicializações
     if (window._appInitialized) {
         console.log('⚠️ App já inicializado, ignorando...');
     } else {
@@ -826,12 +1466,11 @@
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
-            // 🔥 Pequeno delay para garantir que auth.js carregou
             setTimeout(initApp, 100);
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v2.0 carregado!');
+    console.log('✅ app.js (Orquestrador) v3.2 carregado!');
     console.log('   📌 Aliases criados:');
     console.log('   - window.App (instância principal)');
     console.log('   - window.app (alias para compatibilidade)');
@@ -840,10 +1479,15 @@
     console.log('   - App.showNotification()');
     console.log('   - App.updateCredits()');
     console.log('   - App.navigate()');
-    console.log('   - App.showLoading()');
-    console.log('   - App.hideLoading()');
     console.log('   - App.isAuthenticated()');
-    console.log('   - App.goBack()');
-    console.log('   - App.getQueryParam()');
+    console.log('   - App.isTokenValid()');
+    console.log('   🔥 NOVAS FUNÇÕES (PoW):');
+    console.log('   - App.isPowAvailable()');
+    console.log('   - App.getPowStats()');
+    console.log('   - App.preparePowForUpload()');
+    console.log('   - App.uploadWithPow()');
+    console.log('   - App.startPowAutoRefill()');
+    console.log('   - App.stopPowAutoRefill()');
+    console.log('   - App.resetPow()');
 
 })();

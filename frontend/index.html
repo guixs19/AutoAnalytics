@@ -169,6 +169,43 @@
             transform: translateY(-2px);
         }
 
+        /* 🔥 POW STATUS - NOVO */
+        .pow-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            background: rgba(40, 167, 69, 0.15);
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            color: #48bb78;
+            cursor: default;
+        }
+
+        .pow-status.loading {
+            background: rgba(245, 166, 35, 0.15);
+            border-color: rgba(245, 166, 35, 0.3);
+            color: #f5a623;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .pow-status.error {
+            background: rgba(220, 53, 69, 0.15);
+            border-color: rgba(220, 53, 69, 0.3);
+            color: #dc3545;
+        }
+
+        .pow-status i {
+            font-size: 0.7rem;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         /* ===== HERO / CONTEÚDO ===== */
         .hero-section {
             min-height: 100vh;
@@ -663,6 +700,10 @@
                 font-size: 0.7rem;
                 padding: 0.3rem 0.8rem;
             }
+            .pow-status {
+                font-size: 0.55rem;
+                padding: 0.15rem 0.4rem;
+            }
         }
 
         @media (max-width: 480px) {
@@ -703,6 +744,12 @@
                         <i class="fas fa-coins"></i>
                         <span id="creditsCount">0</span>
                     </div>
+                    
+                    <!-- 🔥🔥🔥 POW STATUS - NOVO -->
+                    <span class="pow-status loading" id="powStatus" title="Proof of Work - Proteção anti-bot">
+                        <i class="fas fa-shield-alt"></i>
+                        <span id="powStatusText">Carregando...</span>
+                    </span>
                     
                     <!-- 🔥 PLANOS -->
                     <a href="/planos" class="btn-planos">
@@ -992,16 +1039,23 @@
     <!-- XLSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
-    <!-- 🔥 AUTH - PRIMEIRO -->
+    <!-- ============================================== -->
+    <!-- 🔥 ORDEM DE CARREGAMENTO DOS SCRIPTS -->
+    <!-- ============================================== -->
+    
+    <!-- 1️⃣ AUTH - PRIMEIRO -->
     <script src="/static/js/auth.js"></script>
     
-    <!-- 🔥 APP - ORQUESTRADOR -->
+    <!-- 2️⃣ 🔥🔥🔥 POW - SEGUNDO (ANTES DO APP) -->
+    <script src="/static/js/pow-client.js?v=2.0"></script>
+    
+    <!-- 3️⃣ APP - ORQUESTRADOR -->
     <script src="/static/js/app.js"></script>
     
-    <!-- 🔥 DASHBOARD - FUNCIONALIDADES -->
+    <!-- 4️⃣ DASHBOARD - FUNCIONALIDADES -->
     <script src="/static/js/dashboard.js"></script>
     
-    <!-- 🔥 PAYMENT - PAGAMENTOS -->
+    <!-- 5️⃣ PAYMENT - PAGAMENTOS -->
     <script src="/static/js/payment.js?v=2.0"></script>
 
     <!-- ============================================== -->
@@ -1018,7 +1072,50 @@
             escapeHtml: true
         };
 
-        // AOS
+        // 🔥 FUNÇÃO PARA ATUALIZAR STATUS DO POW
+        function updatePowStatus() {
+            try {
+                const powStatusEl = document.getElementById('powStatus');
+                const powTextEl = document.getElementById('powStatusText');
+                
+                if (!powStatusEl || !powTextEl) return;
+                
+                // Verifica se o PoW está disponível via App
+                let stats = null;
+                if (window.App && typeof window.App.getPowStats === 'function') {
+                    stats = window.App.getPowStats();
+                } else if (window.powClient && typeof window.powClient.getStats === 'function') {
+                    stats = window.powClient.getStats();
+                }
+                
+                if (stats && stats.available !== false) {
+                    const solutionsReady = stats.solutionsReady || 0;
+                    const maxStock = stats.maxStock || 2;
+                    
+                    if (solutionsReady > 0) {
+                        powStatusEl.className = 'pow-status';
+                        powTextEl.textContent = `${solutionsReady}/${maxStock} PoW`;
+                        powStatusEl.title = `${solutionsReady} soluções PoW prontas para upload`;
+                    } else if (stats.isSolving) {
+                        powStatusEl.className = 'pow-status loading';
+                        powTextEl.textContent = 'Calculando...';
+                        powStatusEl.title = 'Calculando PoW em background';
+                    } else {
+                        powStatusEl.className = 'pow-status loading';
+                        powTextEl.textContent = 'Preparando...';
+                        powStatusEl.title = 'Preparando proteção anti-bot';
+                    }
+                } else {
+                    powStatusEl.className = 'pow-status error';
+                    powTextEl.textContent = 'Indisponível';
+                    powStatusEl.title = 'PoW não disponível';
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar status PoW:', e);
+            }
+        }
+
+        // 🔥 AOS
         document.addEventListener('DOMContentLoaded', function() {
             AOS.init({ once: true, duration: 800, offset: 50 });
             gsap.registerPlugin(ScrollTrigger);
@@ -1097,6 +1194,7 @@
             if (checkAppLoaded()) {
                 loadPremiumStatusIfAvailable();
                 startPremiumPollingIfAvailable();
+                updatePowStatus();
             } else {
                 let attempts = 0;
                 const maxAttempts = 30;
@@ -1106,6 +1204,7 @@
                         clearInterval(waitForApp);
                         loadPremiumStatusIfAvailable();
                         startPremiumPollingIfAvailable();
+                        updatePowStatus();
                     } else if (attempts >= maxAttempts) {
                         clearInterval(waitForApp);
                         console.error('❌ Timeout: App não carregou');
@@ -1118,6 +1217,7 @@
                 if (event.detail && event.detail.isAuthenticated) {
                     loadPremiumStatusIfAvailable();
                     startPremiumPollingIfAvailable();
+                    setTimeout(updatePowStatus, 2000);
                 }
             });
 
@@ -1128,7 +1228,16 @@
                 }
             });
 
+            // 🔥 Evento de PoW
+            document.addEventListener('powReady', function() {
+                setTimeout(updatePowStatus, 500);
+            });
+
+            // 🔥 Atualizar PoW a cada 10 segundos
+            setInterval(updatePowStatus, 10000);
+
             console.log('✅ Dashboard carregado com sucesso!');
+            console.log('⚡ PoW Status ativo - Proteção anti-bot');
         });
     </script>
 </body>

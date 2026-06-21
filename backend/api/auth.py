@@ -1,12 +1,12 @@
-# backend/api/auth.py - SEM CAPTCHA
+# backend/api/auth.py - VERSÃO CORRIGIDA (SINCRONIZADA COM SECURITY.PY)
 """
 Módulo de REGISTRO de usuários - SEM CAPTCHA
 Responsável apenas por cadastro de novos usuários
 🔥 CORREÇÕES:
-- Fallback quando Redis offline
-- Tratamento de erro melhorado
-- Validação de telefone mais rigorosa
-- ✅ CAPTCHA REMOVIDO COMPLETAMENTE
+- ✅ Sincronizado com security.py corrigido
+- ✅ Fallback quando Redis offline
+- ✅ Tratamento de erro melhorado
+- ✅ Validação de telefone mais rigorosa
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -70,12 +70,12 @@ async def register(
     
     logger.info(f"📝 [REGISTER] Tentativa: {register_data.email} | IP: {client_ip}")
     
-    # Rate limiting
+    # Rate limiting (com fallback)
     try:
         is_rate_ok = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)
     except Exception as e:
         logger.error(f"❌ [REGISTER] Erro no rate limit: {e}")
-        is_rate_ok = True
+        is_rate_ok = True  # ✅ Fallback: permite se Redis estiver offline
     
     if not is_rate_ok:
         raise HTTPException(
@@ -93,7 +93,8 @@ async def register(
     
     # Telefone único (se fornecido)
     if register_data.phone:
-        existing_phone = crud.get_user_by_phone(db, register_data.phone)
+        cleaned_phone = ''.join(filter(str.isdigit, register_data.phone))
+        existing_phone = crud.get_user_by_phone(db, cleaned_phone)
         if existing_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,13 +1,12 @@
-# backend/api/auth_routes.py - SEM CAPTCHA
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA (SINCRONIZADA COM SECURITY.PY)
 """
 Módulo de LOGIN e AUTENTICAÇÃO - SEM CAPTCHA
 Responsável por login, logout, refresh token e verificação de sessão
 🔥 CORREÇÕES:
-- Blacklist não bloqueia quando Redis está offline
-- Tokens expirados NÃO vão para blacklist
-- Logout mais robusto
-- Refresh token com fallback seguro
-- ✅ CAPTCHA REMOVIDO COMPLETAMENTE
+- ✅ Sincronizado com security.py corrigido
+- ✅ verify_token_async → verify_token (nome correto)
+- ✅ Tratamento de erros melhorado
+- ✅ Fallback para Redis offline
 """
 
 from datetime import datetime, timedelta
@@ -71,8 +70,13 @@ async def login(
     logger.info(f"🔐 [LOGIN] Tentativa: {login_data.email} | IP: {client_ip}")
     
     # Rate limiting
-    is_ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
-    is_email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
+    try:
+        is_ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
+        is_email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
+    except Exception as e:
+        logger.warning(f"⚠️ Rate limit indisponível: {e}")
+        is_ip_allowed = True
+        is_email_allowed = True
     
     if not is_ip_allowed or not is_email_allowed:
         raise HTTPException(
@@ -147,7 +151,7 @@ async def login(
 
 
 # ==============================================
-# ROTA DE REFRESH
+# ROTA DE REFRESH (CORRIGIDA)
 # ==============================================
 
 @router.post("/refresh")
@@ -164,6 +168,7 @@ async def refresh_token_endpoint(
     try:
         logger.info("🔄 [REFRESH] Tentando renovar tokens...")
         
+        # 🔥 CORRIGIDO: refresh_access_token já está assíncrono
         new_tokens = await jwt_manager.refresh_access_token(
             refresh_token=data.refresh_token,
             db=db,
@@ -177,6 +182,7 @@ async def refresh_token_endpoint(
                 detail="Refresh token inválido ou expirado"
             )
         
+        # 🔥 CORRIGIDO: decode_token é síncrono (não precisa de await)
         payload = jwt_manager.decode_token(new_tokens["access_token"])
         email = payload.get("sub") or payload.get("email")
         user = crud.get_user_by_email(db, email)
@@ -219,7 +225,7 @@ async def refresh_token_endpoint(
 
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN
+# VERIFICAÇÃO DE TOKEN (CORRIGIDA)
 # ==============================================
 
 @router.get("/check-token")
@@ -246,34 +252,39 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             content={"status": "no_token", "message": "Nenhum token encontrado"}
         )
     
-    # Tenta verificar o access token primeiro
+    # 🔥 CORRIGIDO: verify_token agora é assíncrono e unificado
     if access_token:
-        payload = await jwt_manager.verify_token_async(access_token, "access")
-        
-        if payload:
-            email = payload.get("sub") or payload.get("email")
-            user = crud.get_user_by_email(db, email)
+        try:
+            # 🔥 CORRIGIDO: método agora é verify_token (sem _async)
+            payload = await jwt_manager.verify_token(access_token, "access")
             
-            if user and user.is_active:
-                exp = payload.get("exp", 0)
-                now = datetime.utcnow().timestamp()
-                expires_in = max(0, int(exp - now))
+            if payload:
+                email = payload.get("sub") or payload.get("email")
+                user = crud.get_user_by_email(db, email)
                 
-                return {
-                    "status": "valid",
-                    "user": user.email,
-                    "name": user.name,
-                    "is_admin": user.is_admin,
-                    "credits": user.credits,
-                    "credits_display": "∞" if user.is_admin else str(user.credits),
-                    "expires_in": expires_in
-                }
+                if user and user.is_active:
+                    exp = payload.get("exp", 0)
+                    now = datetime.utcnow().timestamp()
+                    expires_in = max(0, int(exp - now))
+                    
+                    return {
+                        "status": "valid",
+                        "user": user.email,
+                        "name": user.name,
+                        "is_admin": user.is_admin,
+                        "credits": user.credits,
+                        "credits_display": "∞" if user.is_admin else str(user.credits),
+                        "expires_in": expires_in
+                    }
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao verificar access token: {e}")
     
     # Se access token expirou, tenta refresh com o refresh token
     if refresh_token:
         logger.info("🔄 [TOKEN] Access token expirado, tentando refresh...")
         
         try:
+            # 🔥 CORRIGIDO: refresh_access_token já está assíncrono
             new_tokens = await jwt_manager.refresh_access_token(
                 refresh_token, 
                 db, 
@@ -281,6 +292,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             )
             
             if new_tokens:
+                # 🔥 CORRIGIDO: decode_token é síncrono
                 payload = jwt_manager.decode_token(new_tokens["access_token"])
                 email = payload.get("sub") or payload.get("email")
                 user = crud.get_user_by_email(db, email)
@@ -310,7 +322,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                     
         except Exception as e:
             logger.error(f"❌ [TOKEN] Erro no refresh: {e}")
-            pass
     
     # Se tudo falhou, retorna 401
     response = JSONResponse(
@@ -326,7 +337,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
 
 
 # ==============================================
-# LOGOUT
+# LOGOUT (CORRIGIDO)
 # ==============================================
 
 @router.post("/logout")
@@ -347,7 +358,7 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     if auth_header.startswith("Bearer "):
         access_token = auth_header.replace("Bearer ", "")
     
-    # Tenta fazer logout mesmo se Redis estiver offline
+    # 🔥 CORRIGIDO: logout é assíncrono
     try:
         if refresh_token:
             await jwt_manager.logout(refresh_token, db, access_token)

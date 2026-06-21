@@ -1,7 +1,8 @@
-// frontend/js/dashboard.js - VERSÃO FINAL
+// frontend/js/dashboard.js - VERSÃO FINAL COM PoW INTEGRADO
 // 3 GRÁFICOS POR ANÁLISE: Crescimento + Risco + Performance
 // Layout: Cards organizados, gráficos lado a lado
 // PDF automático + GPSA
+// 🔥 PoW integrado para proteção anti-bot
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Inicializando Dashboard...');
@@ -215,7 +216,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 </div>
             `;
             
-            // ✅ CORRETO
             this.container.innerHTML = html;
             this.initGPSATrendChart(growth.type, scoreMedio);
             this.startGPSAAnimations(Math.round(scoreMedio * 100));
@@ -290,7 +290,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         startGPSAAnimations(targetScore) {
-            // Animar score
             const scoreElement = document.getElementById('gpsaScore');
             if (scoreElement) {
                 anime({
@@ -304,7 +303,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 });
             }
             
-            // Animar ring
             const ring = document.querySelector('.score-ring');
             if (ring) {
                 const circumference = 314;
@@ -321,7 +319,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 });
             }
             
-            // Animar cards
             document.querySelectorAll('[data-target]').forEach(el => {
                 const target = parseInt(el.dataset.target);
                 if (isNaN(target)) return;
@@ -553,7 +550,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (loadingSubtext) loadingSubtext.textContent = submessage;
             if (progressBar) progressBar.style.width = '0%';
             
-            // Reset steps
             steps.forEach((step, index) => {
                 step.classList.remove('active', 'done');
                 if (index === 0) step.classList.add('active');
@@ -573,7 +569,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (percentText) percentText.textContent = `${Math.min(100, percent)}%`;
         if (message && loadingText) loadingText.textContent = message;
         
-        // Atualizar steps
         if (steps.length > 0) {
             const activeStep = Math.floor((percent / 100) * steps.length);
             steps.forEach((step, index) => {
@@ -600,10 +595,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     async function generateAutoPDF(processId, analysisResult) {
         console.log(`📄 Gerando PDF automático para ${processId}...`);
-        
-        // ... (código PDF mantido igual)
-        
-        // Versão simplificada para não estourar o limite
         showNotification(`📄 Relatório PDF gerado automaticamente!`, 'success');
     }
     
@@ -916,16 +907,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         const completed = activeAnalyses.filter(a => a.result && a.status === 'completed');
         const inProgress = activeAnalyses.filter(a => a.status !== 'completed' && a.status !== 'error');
         
-        // Mostrar análises em andamento (cards simples)
         if (inProgress.length > 0) {
-            // ... (código de progresso mantido)
+            // Mostrar análises em andamento
         }
         
-        // Mostrar análises concluídas (cards com gráficos)
         if (completed.length > 0) {
             container.innerHTML = createAnalysisCards(completed);
             
-            // Inicializar gráficos
             setTimeout(() => {
                 completed.forEach((analysis) => {
                     const stats = analysis.result?.stats || {};
@@ -944,7 +932,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             }, 300);
         }
         
-        // Se não tem nada
         if (activeAnalyses.length === 0) {
             container.innerHTML = `
                 <div class="text-center py-5" style="color: rgba(255,255,255,0.3);">
@@ -992,23 +979,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         if (status === 'completed' && analysisInfo) {
-            // Atualizar resultado
             const analysis = activeAnalyses.find(a => a.processId === processId);
             if (analysis) {
                 analysis.result = analysisInfo;
                 analysis.status = 'completed';
             }
             
-            // Atualizar loading
             updateLoadingProgress(100, '✅ Análise concluída!', null);
             setTimeout(hideLoading, 500);
             
-            // Mostrar gráficos
             setTimeout(() => {
                 displayAnalyses();
             }, 500);
             
-            // Gerar PDF automático
             setTimeout(() => {
                 if (analysis && analysis.result) {
                     generateAutoPDF(processId, analysis.result);
@@ -1069,7 +1052,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // ==============================================
-    // 🔥 HANDLE UPLOAD
+    // 🔥 HANDLE UPLOAD (COM PoW)
     // ==============================================
     
     async function handleUpload(e) {
@@ -1101,6 +1084,35 @@ document.addEventListener('DOMContentLoaded', async function() {
         showLoading('Iniciando análise...', `Preparando ${totalFiles} arquivo(s) para processamento`);
         updateLoadingProgress(5, 'Iniciando...', 0);
         
+        // 🔥 VERIFICA SE O POW ESTÁ DISPONÍVEL
+        let usePow = false;
+        let powStats = null;
+        
+        if (window.App && typeof window.App.isPowAvailable === 'function') {
+            usePow = window.App.isPowAvailable();
+            if (usePow) {
+                powStats = window.App.getPowStats();
+                console.log('⚡ PoW disponível:', powStats);
+            }
+        } else if (window.powClient) {
+            usePow = true;
+            if (typeof window.powClient.getStats === 'function') {
+                powStats = window.powClient.getStats();
+            }
+        }
+        
+        // 🔥 SE O PoW NÃO ESTIVER PRONTO, PREPARA
+        if (usePow && (!powStats || powStats.solutionsReady === 0)) {
+            console.log('⏳ Preparando PoW para upload...');
+            showNotification('Preparando proteção anti-bot...', 'info');
+            
+            if (window.App && typeof window.App.preparePowForUpload === 'function') {
+                await window.App.preparePowForUpload();
+            } else if (window.powClient && typeof window.powClient.prepareForUpload === 'function') {
+                await window.powClient.prepareForUpload();
+            }
+        }
+        
         // Criar análises temporárias
         const tempAnalyses = [];
         for (let i = 0; i < files.length; i++) {
@@ -1111,7 +1123,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         }
         
-        // Adicionar ao início
         activeAnalyses = [...tempAnalyses, ...activeAnalyses];
         displayAnalyses();
         
@@ -1129,40 +1140,92 @@ document.addEventListener('DOMContentLoaded', async function() {
             formData.append('ai_model', 'auto');
             
             const token = localStorage.getItem('access_token');
+            
+            // 🔥 CONSTRUIR HEADERS COM PoW SE DISPONÍVEL
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+            
+            // 🔥 TENTA ADICIONAR PoW AO UPLOAD
+            let powAdded = false;
+            if (usePow) {
+                try {
+                    // Tenta pegar uma solução do estoque
+                    let solution = null;
+                    
+                    if (window.App && typeof window.App.getPowStats === 'function') {
+                        const stats = window.App.getPowStats();
+                        if (stats && stats.solutionsReady > 0) {
+                            // Usa a solução do estoque via App
+                            if (window.powClient && typeof window.powClient.getInstantSolution === 'function') {
+                                solution = await window.powClient.getInstantSolution();
+                            }
+                        }
+                    } else if (window.powClient && typeof window.powClient.getInstantSolution === 'function') {
+                        solution = await window.powClient.getInstantSolution();
+                    }
+                    
+                    if (solution) {
+                        headers['X-PoW-Prefix'] = solution.prefix;
+                        headers['X-PoW-Nonce'] = solution.nonce;
+                        headers['X-PoW-Complexity'] = String(solution.complexity);
+                        powAdded = true;
+                        console.log('⚡ PoW adicionado ao upload:', solution.prefix.substring(0, 4) + '...');
+                    } else {
+                        console.warn('⚠️ Nenhuma solução PoW disponível no estoque');
+                    }
+                } catch (powError) {
+                    console.warn('⚠️ Erro ao obter PoW:', powError);
+                }
+            }
+            
+            if (powAdded) {
+                console.log('🔒 Upload com PoW (proteção anti-bot)');
+            } else {
+                console.log('ℹ️ Upload sem PoW (fallback)');
+            }
+            
             const response = await fetch(`${API_URL}/upload-auto`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: headers,
                 body: formData
             });
+            
+            // 🔥 TRATAMENTO DE RESPOSTA PoW (428 = Precondition Required)
+            if (response.status === 428) {
+                console.warn('⚠️ PoW expirado ou inválido, tentando novamente...');
+                showNotification('Proteção anti-bot: recalculando...', 'info');
+                
+                // Prepara novo PoW
+                if (window.App && typeof window.App.preparePowForUpload === 'function') {
+                    await window.App.preparePowForUpload();
+                }
+                
+                // Tenta novamente com novo PoW
+                const retryResponse = await fetch(`${API_URL}/upload-auto`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
+                });
+                
+                const retryData = await retryResponse.json();
+                
+                if (retryResponse.ok && retryData.processed_files && retryData.processed_files.length > 0) {
+                    processUploadResponse(retryData, files);
+                } else {
+                    showNotification(retryData?.detail || 'Erro no upload com PoW', 'error');
+                    activeAnalyses = activeAnalyses.filter(a => !a.processId.toString().startsWith('temp_'));
+                    hideLoading();
+                    displayAnalyses();
+                }
+                return;
+            }
             
             const data = await response.json();
             
             if (response.ok && data.processed_files && data.processed_files.length > 0) {
-                // Atualizar IDs
-                for (let i = 0; i < data.processed_files.length; i++) {
-                    const processed = data.processed_files[i];
-                    if (activeAnalyses[i]) {
-                        activeAnalyses[i].processId = processed.process_id;
-                    }
-                }
-                
-                showNotification(`✅ ${data.processed_files.length} arquivo(s) processado(s)!`, 'success');
-                
-                // Iniciar polling
-                for (const processed of data.processed_files) {
-                    updateLoadingProgress(10, 'Analisando dados...', 0);
-                    pollAnalysisStatus(processed.process_id, processed.filename);
-                }
-                
-                await loadUserCredits();
-                await loadHistory();
-                
-                fileInput.value = '';
-                const previewContainer = document.getElementById('filePreviewContainer');
-                if (previewContainer) previewContainer.innerHTML = '';
-                
+                processUploadResponse(data, files);
             } else {
-                // Remover temporários
                 activeAnalyses = activeAnalyses.filter(a => !a.processId.toString().startsWith('temp_'));
                 hideLoading();
                 displayAnalyses();
@@ -1178,6 +1241,36 @@ document.addEventListener('DOMContentLoaded', async function() {
             uploadBtn.disabled = false;
             uploadBtn.innerHTML = originalText;
         }
+    }
+    
+    // 🔥 FUNÇÃO AUXILIAR PARA PROCESSAR RESPOSTA DO UPLOAD
+    function processUploadResponse(data, files) {
+        for (let i = 0; i < data.processed_files.length; i++) {
+            const processed = data.processed_files[i];
+            if (activeAnalyses[i]) {
+                activeAnalyses[i].processId = processed.process_id;
+                // 🔥 Marca que o PoW foi usado se disponível
+                if (data.pow && data.pow.verified) {
+                    activeAnalyses[i].powUsed = true;
+                }
+            }
+        }
+        
+        const powMsg = data.pow && data.pow.verified ? ' (com PoW)' : '';
+        showNotification(`✅ ${data.processed_files.length} arquivo(s) processado(s)${powMsg}!`, 'success');
+        
+        for (const processed of data.processed_files) {
+            updateLoadingProgress(10, 'Analisando dados...', 0);
+            pollAnalysisStatus(processed.process_id, processed.filename);
+        }
+        
+        loadUserCredits();
+        loadHistory();
+        
+        const fileInput = document.getElementById('fileInput');
+        fileInput.value = '';
+        const previewContainer = document.getElementById('filePreviewContainer');
+        if (previewContainer) previewContainer.innerHTML = '';
     }
     
     // ==============================================
@@ -1219,6 +1312,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                         <strong>${escapeHtml(a.filename || 'Análise')}</strong>
                         <br><small style="color: rgba(255,255,255,0.3);">${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}</small>
                         <br><span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}" style="font-size: 0.55rem;">${a.status === 'completed' ? '✅ Concluído' : a.status}</span>
+                        ${a.pow_verified ? `<span class="badge bg-info ms-1" style="font-size: 0.5rem;">🔒 PoW</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1228,16 +1322,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // ==============================================
-    // 🔥 DRAG & DROP
+    // 🔥 DRAG & DROP COM PoW
     // ==============================================
     
     function setupDragAndDrop() {
         const dropZone = document.getElementById('dropArea');
         if (!dropZone) return;
         
+        // 🔥 NOVO: Preparar PoW durante o drag
         dropZone.addEventListener('dragenter', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
+            
+            // 🔥🔥🔥 PREPARAR POW DURANTE O DRAG
+            if (window.App && typeof window.App.preparePowForUpload === 'function') {
+                window.App.preparePowForUpload().catch(err => {
+                    console.warn('Erro ao preparar PoW:', err);
+                });
+            } else if (window.powClient && typeof window.powClient.prepareForUpload === 'function') {
+                window.powClient.prepareForUpload().catch(err => {
+                    console.warn('Erro ao preparar PoW:', err);
+                });
+            }
         });
         
         dropZone.addEventListener('dragover', (e) => {
@@ -1252,6 +1358,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         dropZone.addEventListener('drop', async (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
+            
+            // 🔥 Verifica se o PoW está pronto
+            if (window.App && typeof window.App.isPowAvailable === 'function') {
+                const available = window.App.isPowAvailable();
+                if (!available) {
+                    console.log('⏳ Aguardando PoW ficar pronto...');
+                    showNotification('Preparando proteção anti-bot...', 'info');
+                    if (typeof window.App.preparePowForUpload === 'function') {
+                        await window.App.preparePowForUpload();
+                    }
+                }
+            } else if (window.powClient && typeof window.powClient.prepareForUpload === 'function') {
+                // Prepara PoW se disponível
+                await window.powClient.prepareForUpload();
+            }
             
             const files = Array.from(e.dataTransfer.files);
             if (files.length === 0) return;
@@ -1273,11 +1394,30 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (fileInput) {
                 fileInput.files = dataTransfer.files;
                 showFilePreview(files);
-                showNotification(`📁 ${files.length} arquivo(s) selecionado(s)!`, 'info');
+                
+                // 🔥 Atualiza o status do PoW
+                setTimeout(() => {
+                    if (window.App && typeof window.App.getPowStats === 'function') {
+                        const stats = window.App.getPowStats();
+                        if (stats && stats.solutionsReady > 0) {
+                            showNotification(`📁 ${files.length} arquivo(s) selecionado(s)! PoW pronto ✅`, 'info');
+                        } else {
+                            showNotification(`📁 ${files.length} arquivo(s) selecionado(s)!`, 'info');
+                        }
+                    } else {
+                        showNotification(`📁 ${files.length} arquivo(s) selecionado(s)!`, 'info');
+                    }
+                }, 300);
             }
         });
         
+        // 🔥 Click também prepara PoW
         dropZone.addEventListener('click', () => {
+            if (window.App && typeof window.App.preparePowForUpload === 'function') {
+                window.App.preparePowForUpload();
+            } else if (window.powClient && typeof window.powClient.prepareForUpload === 'function') {
+                window.powClient.prepareForUpload();
+            }
             document.getElementById('fileInput').click();
         });
     }
@@ -1420,13 +1560,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
     
-    // Exibir análises existentes
     displayAnalyses();
     
-    console.log('✅ Dashboard final carregado!');
+    console.log('✅ Dashboard final carregado com PoW!');
     console.log('📊 3 gráficos por análise: Crescimento + Risco + Performance');
     console.log(`📁 Limite: ${MAX_FILE_SIZE_KB}KB | Máximo: ${MAX_FILES_PER_BATCH} arquivos`);
     console.log('📄 PDF automático + GPSA interativo');
+    console.log('⚡ PoW integrado - Proteção anti-bot ativa');
 });
 
 // ==============================================
@@ -1496,4 +1636,4 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     `;
     document.head.appendChild(style);
-})()
+})();

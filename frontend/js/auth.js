@@ -1,11 +1,24 @@
-// frontend/js/auth.js - VERSÃO SEM CAPTCHA
+// frontend/js/auth.js - VERSÃO CORRIGIDA (SINCRONIZADA COM BACKEND)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
  * 🔥 Token expira em 15 minutos (conforme security.py)
- * 🔥 Sincronizado com auth_routes.py e auth.py
+ * 🔥 Sincronizado com auth_routes.py, auth.py e security.py
  * ✅ CAPTCHA REMOVIDO COMPLETAMENTE
+ * 🔥 CORREÇÕES:
+ *   - checkToken() processa corretamente status 'refreshed'
+ *   - refreshToken() envia old_access_token
+ *   - fetchWithAuth() atualiza token após refresh
+ *   - Constantes sincronizadas com backend
+ *   - getCreditsDisplay() usa MAX_CREDITS_BALANCE
  */
+
+// ==============================================
+// 🔥 CONSTANTES SINCRONIZADAS COM BACKEND
+// ==============================================
+const MAX_CREDITS_BALANCE = 3;
+const TOKEN_EXPIRY_MINUTES = 15; // security.py
+const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 class Auth {
     constructor() {
@@ -21,10 +34,11 @@ class Auth {
         this._uiUpdateTimeout = null;
         this._initializing = false;
         
-        // 🔥 TIMERS PARA LIMPEZA AUTOMÁTICA (15 MINUTOS - conforme security.py)
+        // 🔥 TIMERS PARA LIMPEZA AUTOMÁTICA
         this._tokenExpiryTimer = null;
         this._tokenCheckInterval = null;
         this.pendingRequests = [];
+        this._lastTokenCheck = 0;
         
         this.init();
     }
@@ -69,9 +83,6 @@ class Auth {
         const email = emailInput?.value?.trim();
         const password = passwordInput?.value;
         
-        console.log('🔍 DETALHES DO LOGIN:');
-        console.log('  📧 Email:', email);
-        
         if (!email || !password) {
             if (window.toastr) {
                 toastr.error('Por favor, preencha todos os campos.');
@@ -87,16 +98,11 @@ class Auth {
         }
         
         try {
-            console.log('🔄 Enviando requisição de login...');
-            
-            // 🔥 PAYLOAD SEM CAPTCHA
             const payload = {
                 email: email,
                 password: password,
                 session_type: 'login'
             };
-            
-            console.log('📦 PAYLOAD ENVIADO:', JSON.stringify(payload, null, 2));
             
             const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
@@ -107,7 +113,6 @@ class Auth {
             });
             
             const data = await response.json();
-            console.log('📥 RESPOSTA DO SERVIDOR:', data);
             
             if (response.ok && (data.success || data.access_token)) {
                 console.log('✅ Login bem-sucedido!');
@@ -126,7 +131,8 @@ class Auth {
                     role: data.role,
                     plan: data.plan,
                     credits: data.credits || 0,
-                    is_admin: data.is_admin || false
+                    is_admin: data.is_admin || false,
+                    credits_display: data.credits_display || String(data.credits || 0)
                 };
                 
                 this.currentUser = this.userData;
@@ -134,7 +140,7 @@ class Auth {
                 
                 if (passwordInput) passwordInput.value = '';
                 
-                // 🔥 INICIA MONITORAMENTO DO TOKEN (15 MINUTOS)
+                // 🔥 INICIA MONITORAMENTO DO TOKEN
                 this.startTokenMonitoring();
                 
                 if (window.toastr) {
@@ -142,7 +148,6 @@ class Auth {
                 }
                 
                 setTimeout(() => {
-                    console.log('🔀 Redirecionando para /dashboard...');
                     window.location.href = '/dashboard';
                 }, 600);
                 
@@ -152,7 +157,6 @@ class Auth {
                 let errorMsg = data.detail || data.message || 'Erro ao realizar login.';
                 
                 if (response.status === 422) {
-                    console.error('❌ Erro 422 - Validação falhou:', data);
                     if (data.detail && Array.isArray(data.detail)) {
                         errorMsg = data.detail.map(err => 
                             `${err.loc?.join('.') || 'campo'}: ${err.msg}`
@@ -204,13 +208,10 @@ class Auth {
         const workshopName = workshopInput?.value?.trim();
         const phone = phoneInput?.value?.trim();
         
-        console.log('📝 Tentando registrar:', { name, email, workshopName, phone });
-        
         // ==============================================
         // 🔥 VALIDAÇÕES
         // ==============================================
         
-        // 1. Campos obrigatórios
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos obrigatórios.');
@@ -218,17 +219,14 @@ class Auth {
             return;
         }
         
-        // 2. Validação de telefone (opcional)
         if (phone) {
             const phoneClean = phone.replace(/\D/g, '');
-            
             if (phoneClean.length > 0 && phoneClean.length < 10) {
                 if (window.toastr) {
                     toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
                 }
                 return;
             }
-            
             if (phoneClean.length > 11) {
                 if (window.toastr) {
                     toastr.warning('Telefone deve ter no máximo 11 dígitos.');
@@ -237,7 +235,6 @@ class Auth {
             }
         }
         
-        // 3. Senha (mínimo 6 caracteres)
         if (password.length < 6) {
             if (window.toastr) {
                 toastr.error('Senha deve ter no mínimo 6 caracteres.');
@@ -245,17 +242,12 @@ class Auth {
             return;
         }
         
-        // 4. Confirmação de senha
         if (password !== confirmPassword) {
             if (window.toastr) {
                 toastr.error('As senhas não coincidem.');
             }
             return;
         }
-        
-        // ==============================================
-        // 🔥 ENVIAR REGISTRO - SEM CAPTCHA
-        // ==============================================
         
         const submitBtn = document.getElementById('registerBtn');
         const originalText = submitBtn?.innerHTML;
@@ -265,9 +257,6 @@ class Auth {
         }
         
         try {
-            console.log('🔄 Enviando requisição de registro...');
-            
-            // 🔥 PAYLOAD SEM CAPTCHA
             const requestBody = {
                 name: name,
                 email: email,
@@ -276,8 +265,6 @@ class Auth {
                 phone: phone || null,
                 session_type: 'register'
             };
-            
-            console.log('📦 Body:', requestBody);
             
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
@@ -288,13 +275,11 @@ class Auth {
             });
             
             const data = await response.json();
-            console.log('📥 Resposta:', data);
             
             if (!response.ok) {
                 let errorMsg = data.detail || data.message || 'Falha no registro';
                 
                 if (response.status === 422) {
-                    console.error('❌ Erro 422 - Validação falhou:', data);
                     if (data.detail && Array.isArray(data.detail)) {
                         errorMsg = data.detail.map(err => 
                             `${err.loc?.join('.') || 'campo'}: ${err.msg}`
@@ -315,7 +300,6 @@ class Auth {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
                 }
                 
-                // 🔥 Limpa o formulário
                 if (nameInput) nameInput.value = '';
                 if (emailInput) emailInput.value = '';
                 if (passwordInput) passwordInput.value = '';
@@ -324,7 +308,6 @@ class Auth {
                 if (phoneInput) phoneInput.value = '';
                 
                 setTimeout(() => {
-                    console.log('🔀 Redirecionando para /login...');
                     window.location.href = '/login';
                 }, 2000);
                 
@@ -353,13 +336,16 @@ class Auth {
     
     async logout() {
         const refreshToken = localStorage.getItem('refresh_token');
+        const accessToken = localStorage.getItem('access_token');
         
         if (refreshToken) {
             try {
+                // 🔥 CORRIGIDO: Envia ambos os tokens para blacklist
                 await fetch(`${this.apiBase}/auth/logout`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': accessToken ? `Bearer ${accessToken}` : ''
                     },
                     body: JSON.stringify({
                         refresh_token: refreshToken
@@ -374,6 +360,10 @@ class Auth {
         this.clearTokens();
         this.isAuthenticated = false;
         this.currentUser = null;
+        this.userData = null;
+        
+        // 🔥 Dispara evento de logout
+        window.dispatchEvent(new CustomEvent('authLogout'));
         
         window.location.href = '/login';
     }
@@ -384,7 +374,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 MONITORAMENTO DE TOKEN (15 MINUTOS)
+    // 🔥 MONITORAMENTO DE TOKEN (SINCRONIZADO COM BACKEND)
     // ==============================================
     
     startTokenMonitoring() {
@@ -403,17 +393,34 @@ class Auth {
             return;
         }
         
-        console.log('⏰ Iniciando monitoramento de token (15min)');
+        // 🔥 Calcular tempo restante do token baseado no payload
+        let remainingTime = TOKEN_EXPIRY_MINUTES * 60 * 1000;
+        try {
+            const payload = this._parseJwt(token);
+            if (payload && payload.exp) {
+                const now = Math.floor(Date.now() / 1000);
+                const exp = payload.exp;
+                if (exp > now) {
+                    remainingTime = (exp - now) * 1000;
+                    console.log(`⏰ Token expira em ${Math.floor(remainingTime / 60000)} minutos`);
+                }
+            }
+        } catch (e) {
+            console.warn('Não foi possível decodificar token para expiração');
+        }
         
+        // 🔥 Verificação a cada 30 segundos
         this._tokenCheckInterval = setInterval(() => {
             this.checkTokenHealth();
-        }, 60000);
+        }, 30000);
         
+        // 🔥 Expiração com base no tempo real do token
         this._tokenExpiryTimer = setTimeout(() => {
-            console.log('⏰ Token expirado (15min) - limpando localStorage');
+            console.log('⏰ Token expirado - limpando localStorage');
             this.clearTokens();
             this.isAuthenticated = false;
             this.currentUser = null;
+            this.userData = null;
             
             if (window.toastr) {
                 toastr.warning('⏰ Sessão expirada. Faça login novamente.');
@@ -422,7 +429,22 @@ class Auth {
             setTimeout(() => {
                 window.location.href = '/login';
             }, 1500);
-        }, 15 * 60 * 1000);
+        }, remainingTime + 5000); // +5 segundos de margem
+        
+        console.log(`⏰ Monitoramento iniciado (${Math.floor(remainingTime / 60000)}min)`);
+    }
+    
+    _parseJwt(token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (e) {
+            return null;
+        }
     }
     
     stopTokenMonitoring() {
@@ -437,6 +459,11 @@ class Auth {
     }
     
     async checkTokenHealth() {
+        // Evita verificações muito frequentes
+        const now = Date.now();
+        if (now - this._lastTokenCheck < 5000) return;
+        this._lastTokenCheck = now;
+        
         try {
             const token = localStorage.getItem('access_token');
             if (!token) {
@@ -448,11 +475,41 @@ class Auth {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
+            const data = await response.json();
+            
+            // 🔥 CORRIGIDO: Processa status 'refreshed'
             if (response.status === 401) {
                 console.log('🔄 Token expirou, tentando refresh...');
-                const refreshed = await this.refreshTokenSafely();
+                const refreshed = await this.refreshToken();
                 if (!refreshed) {
                     this.handleTokenExpired();
+                }
+            } else if (response.ok) {
+                // 🔥 CORRIGIDO: Atualiza token se foi renovado
+                if (data.status === 'refreshed' && data.access_token) {
+                    console.log('🔄 Token renovado via check-token');
+                    localStorage.setItem('access_token', data.access_token);
+                    if (data.refresh_token) {
+                        localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    
+                    // Reinicia monitoramento com novo token
+                    this.stopTokenMonitoring();
+                    this.startTokenMonitoring();
+                }
+                
+                // Atualiza dados do usuário
+                if (data.user) {
+                    this.userData = {
+                        ...this.userData,
+                        email: data.user,
+                        name: data.name,
+                        is_admin: data.is_admin || false,
+                        credits: data.credits || 0,
+                        credits_display: data.credits_display || String(data.credits || 0)
+                    };
+                    this.currentUser = this.userData;
+                    this.updateCreditsDisplay();
                 }
             }
         } catch (error) {
@@ -461,7 +518,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REFRESH TOKEN - POST /api/auth/refresh
+    // 🔥 REFRESH TOKEN - POST /api/auth/refresh (CORRIGIDO)
     // ==============================================
     
     async refreshTokenSafely() {
@@ -475,14 +532,17 @@ class Auth {
         
         try {
             const refreshToken = localStorage.getItem('refresh_token');
+            const accessToken = localStorage.getItem('access_token');
+            
             if (!refreshToken) return false;
             
+            // 🔥 CORRIGIDO: Envia old_access_token
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     refresh_token: refreshToken,
-                    old_access_token: localStorage.getItem('access_token') 
+                    old_access_token: accessToken || null
                 })
             });
             
@@ -493,6 +553,23 @@ class Auth {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
                 
+                // Atualiza dados do usuário
+                if (data.user_email) {
+                    this.userData = {
+                        ...this.userData,
+                        email: data.user_email,
+                        name: data.user_name,
+                        workshop_name: data.workshop_name,
+                        role: data.role,
+                        plan: data.plan,
+                        credits: data.credits || 0,
+                        is_admin: data.is_admin || false,
+                        credits_display: data.credits_display || String(data.credits || 0)
+                    };
+                    this.currentUser = this.userData;
+                    this.updateCreditsDisplay();
+                }
+                
                 this.stopTokenMonitoring();
                 this.startTokenMonitoring();
                 
@@ -501,10 +578,21 @@ class Auth {
             }
             return false;
         } catch (error) {
+            console.error('❌ Erro no refresh:', error);
             return false;
         } finally {
             this._isRefreshing = false;
+            // Resolve pendentes
+            while (this.pendingRequests.length) {
+                const resolve = this.pendingRequests.pop();
+                resolve(false);
+            }
         }
+    }
+    
+    // Alias para compatibilidade
+    async refreshToken() {
+        return this.refreshTokenSafely();
     }
     
     handleTokenExpired() {
@@ -513,6 +601,7 @@ class Auth {
         this.clearTokens();
         this.isAuthenticated = false;
         this.currentUser = null;
+        this.userData = null;
         
         if (window.toastr) {
             toastr.warning('⏰ Sessão expirada. Faça login novamente.');
@@ -530,22 +619,14 @@ class Auth {
     setupAuthPageListeners() {
         console.log('🔧 Configurando listeners de autenticação...');
         
-        // LOGIN FORM
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
-            console.log('✅ Formulário de login encontrado!');
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-        } else {
-            console.warn('⚠️ Formulário de login NÃO encontrado!');
         }
         
-        // REGISTER FORM
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
-            console.log('✅ Formulário de registro encontrado!');
             registerForm.addEventListener('submit', (e) => this.handleRegister(e));
-        } else {
-            console.warn('⚠️ Formulário de registro NÃO encontrado!');
         }
         
         // PASSWORD TOGGLE
@@ -590,6 +671,7 @@ class Auth {
         if (!token) {
             this.isAuthenticated = false;
             this.currentUser = null;
+            this.userData = null;
             return false;
         }
         
@@ -602,31 +684,36 @@ class Auth {
             
             const data = await response.json();
             
+            // 🔥 CORRIGIDO: Processa status 'valid' e 'refreshed'
             if (response.ok && (data.status === 'valid' || data.status === 'refreshed')) {
-                this.isAuthenticated = true;
-                
-                if (data.access_token && data.access_token !== token) {
+                // Se foi renovado, atualiza tokens
+                if (data.status === 'refreshed' && data.access_token) {
                     localStorage.setItem('access_token', data.access_token);
+                    if (data.refresh_token) {
+                        localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    this.stopTokenMonitoring();
+                    this.startTokenMonitoring();
                 }
-                if (data.refresh_token) {
-                    localStorage.setItem('refresh_token', data.refresh_token);
-                }
+                
+                this.isAuthenticated = true;
                 
                 this.userData = {
                     email: data.user || data.user_email,
                     name: data.name || data.user_name,
                     is_admin: data.is_admin || false,
                     credits: data.credits || 0,
-                    credits_display: data.credits_display || '0'
+                    credits_display: data.credits_display || String(data.credits || 0),
+                    plan: data.plan || 'basico'
                 };
                 
                 this.currentUser = this.userData;
-                
-                this.startTokenMonitoring();
+                this.updateCreditsDisplay();
                 
                 return true;
             }
             
+            // Tenta refresh se tiver refresh token
             if (response.status === 401 && localStorage.getItem('refresh_token')) {
                 const refreshed = await this.refreshToken();
                 if (refreshed) {
@@ -637,90 +724,20 @@ class Auth {
             this.clearTokens();
             this.isAuthenticated = false;
             this.currentUser = null;
+            this.userData = null;
             return false;
             
         } catch (error) {
             console.error('Token check error:', error);
             this.isAuthenticated = false;
             this.currentUser = null;
+            this.userData = null;
             return false;
         }
-    }
-    
-    async refreshToken() {
-        if (this._isRefreshing) {
-            return this._refreshPromise;
-        }
-        
-        const refreshToken = localStorage.getItem('refresh_token');
-        const accessToken = localStorage.getItem('access_token');
-        
-        if (!refreshToken) {
-            return false;
-        }
-        
-        this._isRefreshing = true;
-        
-        this._refreshPromise = (async () => {
-            try {
-                const response = await fetch(`${this.apiBase}/auth/refresh`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        refresh_token: refreshToken,
-                        old_access_token: accessToken || null
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok && data.access_token) {
-                    localStorage.setItem('access_token', data.access_token);
-                    if (data.refresh_token) {
-                        localStorage.setItem('refresh_token', data.refresh_token);
-                    }
-                    
-                    if (data.user_email) {
-                        this.userData = {
-                            ...this.userData,
-                            email: data.user_email,
-                            name: data.user_name,
-                            workshop_name: data.workshop_name,
-                            role: data.role,
-                            plan: data.plan,
-                            credits: data.credits,
-                            is_admin: data.is_admin
-                        };
-                        this.currentUser = this.userData;
-                    }
-                    
-                    this.isAuthenticated = true;
-                    this.stopTokenMonitoring();
-                    this.startTokenMonitoring();
-                    
-                    console.log('✅ Token refresh realizado com sucesso');
-                    return true;
-                }
-                
-                console.warn('❌ Refresh token falhou:', data.message || 'Resposta inválida');
-                return false;
-                
-            } catch (error) {
-                console.error('❌ Token refresh error:', error);
-                return false;
-            } finally {
-                this._isRefreshing = false;
-                this._refreshPromise = null;
-            }
-        })();
-        
-        return this._refreshPromise;
     }
     
     // ==============================================
-    // CRÉDITOS
+    // CRÉDITOS (SINCRONIZADO COM BACKEND)
     // ==============================================
     
     async loadUserCredits() {
@@ -735,10 +752,21 @@ class Auth {
                 if (data.success) {
                     if (this.userData) {
                         this.userData.credits = data.credits;
-                        this.userData.credits_display = data.credits_display || String(data.credits);
+                        this.userData.credits_display = data.credits_display || this.getCreditsDisplay();
                     }
                     
                     this.updateCreditsDisplay();
+                    
+                    // 🔥 Dispara evento de atualização
+                    window.dispatchEvent(new CustomEvent('creditsUpdated', {
+                        detail: {
+                            credits: data.credits,
+                            display: data.credits_display,
+                            maxCredits: MAX_CREDITS_BALANCE,
+                            isPremium: this.isPremium()
+                        }
+                    }));
+                    
                     return true;
                 }
             }
@@ -755,20 +783,21 @@ class Auth {
         return this.userData?.credits || 0;
     }
     
+    // 🔥 CORRIGIDO: Usa constante do backend
     getCreditsDisplay() {
         if (this.isAdmin()) return '∞';
         if (this.isPremium()) {
             const credits = this.getCredits();
-            return `${credits}/3`;
+            return `${credits}/${MAX_CREDITS_BALANCE}`;
         }
         return String(this.getCredits());
     }
     
     updateCreditsDisplay() {
-        const creditsElements = document.querySelectorAll('.credits-display, .user-credits, #creditsDisplay, #creditsCount, #uploadCredits');
         const displayValue = this.getCreditsDisplay();
+        const selectors = '.credits-display, .user-credits, #creditsDisplay, #creditsCount, #uploadCredits, .credits-badge span, .credits-value';
         
-        creditsElements.forEach(el => {
+        document.querySelectorAll(selectors).forEach(el => {
             if (el) el.textContent = displayValue;
         });
     }
@@ -786,11 +815,11 @@ class Auth {
     }
     
     // ==============================================
-    // FETCH WITH AUTH
+    // FETCH WITH AUTH (CORRIGIDO)
     // ==============================================
     
     async fetchWithAuth(url, options = {}) {
-        const token = localStorage.getItem('access_token');
+        let token = localStorage.getItem('access_token');
         
         if (!token) {
             return null;
@@ -806,10 +835,12 @@ class Auth {
         try {
             let response = await fetch(url, { ...options, headers });
             
+            // 🔥 CORRIGIDO: Tenta refresh se 401
             if (response.status === 401) {
                 const refreshed = await this.refreshToken();
                 
                 if (refreshed) {
+                    // 🔥 CORRIGIDO: Atualiza token e refaz requisição
                     const newToken = localStorage.getItem('access_token');
                     headers['Authorization'] = `Bearer ${newToken}`;
                     response = await fetch(url, { ...options, headers });
@@ -817,6 +848,7 @@ class Auth {
                     this.clearTokens();
                     this.isAuthenticated = false;
                     this.currentUser = null;
+                    this.userData = null;
                     
                     if (!window.location.pathname.includes('/login')) {
                         window.location.href = '/login';
@@ -840,12 +872,6 @@ class Auth {
     updateUI() {
         const authRequiredElements = document.querySelectorAll('.auth-required');
         const guestElements = document.querySelectorAll('.guest-only');
-        
-        if (authRequiredElements.length === 0 && guestElements.length === 0) {
-            return;
-        }
-        
-        console.log('🔄 Atualizando UI - Autenticado:', this.isAuthenticated);
         
         if (this.isAuthenticated) {
             authRequiredElements.forEach(el => el.classList.remove('d-none'));
@@ -880,7 +906,14 @@ class Auth {
         this.updateUI();
         
         console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
-        console.log(`📝 Formulários configurados: login=${!!document.getElementById('loginForm')}, register=${!!document.getElementById('registerForm')}`);
+        
+        // 🔥 Dispara evento de auth ready
+        window.dispatchEvent(new CustomEvent('authReady', {
+            detail: {
+                isAuthenticated: this.isAuthenticated,
+                user: this.userData
+            }
+        }));
     }
 }
 
@@ -890,6 +923,8 @@ class Auth {
 
 window.appAuth = new Auth();
 
-console.log('✅ Auth carregado. Use window.appAuth para acessar.');
-console.log('   Ex: window.appAuth.isAuthenticated');
-console.log('   ✅ CAPTCHA REMOVIDO COMPLETAMENTE!');
+console.log('✅ Auth carregado (v2.0 - sincronizado com backend)');
+console.log('   ✅ Use window.appAuth para acessar');
+console.log('   ✅ CAPTCHA REMOVIDO');
+console.log(`   ✅ MAX_CREDITS_BALANCE: ${MAX_CREDITS_BALANCE}`);
+console.log(`   ✅ TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES}`);

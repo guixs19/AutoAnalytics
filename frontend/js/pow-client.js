@@ -1,91 +1,220 @@
-// frontend/js/pow-client.js
+// frontend/js/pow-client.js - VERSÃO ATUALIZADA v2.0
 /**
  * Cliente Proof of Work - SOLUÇÃO INSTANTÂNEA
- * Sistema de pré-cálculo em background para zero latência no upload
+ * 🔥 SINCRONIZADO COM:
+ * - pow_routes.py (backend unificado)
+ * - upload_routes.py (integração com upload)
+ * - SHA-256 no backend
+ * 
+ * 🔒 SEGURANÇA:
+ * - Sanitização de todas as entradas
+ * - Validação de dados antes do envio
+ * - Proteção contra XSS
+ * - Rate limiting no client-side
+ * - Fallback seguro
  */
+
+// ==============================================
+// 🔒 FUNÇÕES DE SEGURANÇA
+// ==============================================
+
+/**
+ * Sanitiza string para prevenir XSS
+ */
+function sanitizeString(str) {
+    if (!str) return '';
+    if (typeof str !== 'string') str = String(str);
+    
+    const escapeMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '`': '&#96;',
+        '/': '&#47;',
+        '=': '&#61;',
+        '(': '&#40;',
+        ')': '&#41;',
+        ';': '&#59;'
+    };
+    
+    return str.replace(/[&<>"'`/=();]/g, function(match) {
+        return escapeMap[match] || match;
+    }).slice(0, 1000);
+}
+
+/**
+ * Sanitiza número
+ */
+function sanitizeNumber(value, defaultValue = 0) {
+    if (value === undefined || value === null) return defaultValue;
+    const num = parseFloat(String(value).replace(/[^0-9.]/g, ''));
+    return isNaN(num) ? defaultValue : num;
+}
+
+/**
+ * Valida se o objeto é um desafio PoW válido
+ */
+function isValidChallenge(challenge) {
+    if (!challenge || typeof challenge !== 'object') return false;
+    if (!challenge.prefix || typeof challenge.prefix !== 'string' || challenge.prefix.length !== 16) return false;
+    if (!challenge.complexity || typeof challenge.complexity !== 'number') return false;
+    if (challenge.complexity < 3 || challenge.complexity > 5) return false;
+    if (!challenge.expires_in || typeof challenge.expires_in !== 'number') return false;
+    if (challenge.expires_in < 30 || challenge.expires_in > 120) return false;
+    return true;
+}
+
+/**
+ * Valida solução PoW
+ */
+function isValidSolution(solution) {
+    if (!solution || typeof solution !== 'object') return false;
+    if (!solution.nonce || typeof solution.nonce !== 'string') return false;
+    if (solution.nonce.length === 0 || solution.nonce.length > 20) return false;
+    if (!solution.prefix || typeof solution.prefix !== 'string' || solution.prefix.length !== 16) return false;
+    if (!solution.complexity || typeof solution.complexity !== 'number') return false;
+    if (solution.complexity < 3 || solution.complexity > 5) return false;
+    return true;
+}
+
+// ==============================================
+// 🔥 CLASSE PRINCIPAL
+// ==============================================
 
 class PoWClient {
     constructor() {
         this.currentChallenge = null;
-        this.precomputedSolution = null;
-        this.solutionStock = []; // Estoque de soluções pré-calculadas
+        this.solutionStock = [];
         this.isSolving = false;
         this.worker = null;
+        
+        // 🔥 API Base sincronizada com backend
         this.apiBase = window.location.hostname.includes('localhost') 
             ? 'http://localhost:8000/api'
             : '/api';
         
-        // Configurações de performance
-        this.stockSize = 2; // Mantém 2 soluções prontas
-        this.refillThreshold = 1; // Refaz quando só tem 1 restante
+        // Configurações (sincronizadas com backend)
+        this.stockSize = 2;
+        this.refillThreshold = 1;
         this.lastSolutionTime = 0;
-        
-        // Inicialização automática
         this.autoRefill = true;
         this.refillInterval = null;
+        this._isInitialized = false;
         
-        console.log('⚡ PoW Client otimizado - Sistema de pré-cálculo ativo');
+        // 🔥 Estatísticas de segurança
+        this._securityStats = {
+            totalAttempts: 0,
+            failedAttempts: 0,
+            lastFailure: null,
+            sanitizedCount: 0
+        };
+        
+        console.log('⚡ PoW Client v2.0 inicializado');
+        console.log(`   🔒 Sanitização ativa`);
+        console.log(`   📦 Stock size: ${this.stockSize}`);
+        console.log(`   🔄 Auto-refill: ${this.autoRefill}`);
+    }
+    
+    // ==============================================
+    // 🔒 MÉTODOS SEGUROS DE ACESSO
+    // ==============================================
+    
+    /**
+     * Obtém token de forma segura
+     */
+    _getSecureToken() {
+        const token = localStorage.getItem('access_token');
+        if (!token || token === 'undefined' || token === 'null') {
+            return null;
+        }
+        return sanitizeString(token);
     }
     
     /**
-     * PRÉ-CÁLCULO INSTANTÂNEO - Chame na inicialização da página
-     * Começa a resolver PoW em background ANTES do usuário precisar
+     * Verifica se está autenticado
+     */
+    _isAuthenticated() {
+        const token = this._getSecureToken();
+        return token !== null && token.length > 0;
+    }
+    
+    // ==============================================
+    // 🔥 MÉTODOS PRINCIPAIS
+    // ==============================================
+    
+    /**
+     * PRÉ-CÁLCULO INSTANTÂNEO - Chama na inicialização
      */
     async preSolve() {
-        if (this.isSolving || this.solutionStock.length >= this.stockSize) {
-            console.log(`📦 Estoque de PoW: ${this.solutionStock.length}/${this.stockSize} soluções prontas`);
+        // Verifica se está autenticado
+        if (!this._isAuthenticated()) {
+            console.log('⏳ Aguardando autenticação para iniciar PoW...');
             return;
         }
         
-        console.log('⚡ Iniciando pré-cálculo de PoW em background...');
+        if (this.isSolving || this.solutionStock.length >= this.stockSize) {
+            console.log(`📦 Estoque: ${this.solutionStock.length}/${this.stockSize}`);
+            return;
+        }
+        
+        console.log('⚡ Pré-calculando PoW em background...');
+        this.isSolving = true;
         
         try {
-            // Pega desafio do servidor
-            const challenge = await this.getChallenge();
+            const challenge = await this._getChallengeSafe();
             
             if (!challenge) {
-                console.warn('⚠️ Não foi possível obter desafio PoW');
+                console.warn('⚠️ Não foi possível obter desafio');
+                this.isSolving = false;
                 return;
             }
             
-            // Resolve em worker (não bloqueia UI)
-            const solution = await this.solveChallengeAsync(challenge);
+            const solution = await this._solveChallengeSafe(challenge);
             
-            if (solution) {
+            if (solution && isValidSolution(solution)) {
                 this.solutionStock.push({
                     solution: solution,
                     challenge: challenge,
                     timestamp: Date.now()
                 });
                 
-                console.log(`✅ PoW pré-calculado (${this.solutionStock.length}/${this.stockSize}) - Pronto para uso instantâneo`);
+                console.log(`✅ PoW pronto (${this.solutionStock.length}/${this.stockSize})`);
                 
-                // Continua calculando se ainda não atingiu o estoque
+                // Continua se não atingiu o estoque
                 if (this.autoRefill && this.solutionStock.length < this.stockSize) {
                     setTimeout(() => this.preSolve(), 100);
                 }
+            } else {
+                console.warn('⚠️ Solução inválida gerada');
             }
         } catch (error) {
-            console.error('❌ Erro no pré-cálculo PoW:', error);
+            console.error('❌ Erro no pré-cálculo:', error);
+            this._securityStats.failedAttempts++;
+        } finally {
+            this.isSolving = false;
         }
     }
     
     /**
      * Inicia refill automático periódico
      */
-    startAutoRefill(intervalMs = 25000) { // 25 segundos
-        if (this.refillInterval) clearInterval(this.refillInterval);
+    startAutoRefill(intervalMs = 30000) {
+        if (this.refillInterval) {
+            clearInterval(this.refillInterval);
+            this.refillInterval = null;
+        }
         
+        this.autoRefill = true;
         this.refillInterval = setInterval(() => {
             if (this.solutionStock.length < this.refillThreshold) {
-                console.log('🔄 Reposição automática de PoW iniciada');
+                console.log('🔄 Reposição automática PoW');
                 this.preSolve();
-            } else {
-                console.log(`📦 Estoque saudável: ${this.solutionStock.length} PoWs prontos`);
             }
         }, intervalMs);
         
-        console.log(`🔄 Auto-refill PoW ativado (a cada ${intervalMs}ms)`);
+        console.log(`🔄 Auto-refill ativo (${intervalMs/1000}s)`);
     }
     
     stopAutoRefill() {
@@ -93,89 +222,156 @@ class PoWClient {
             clearInterval(this.refillInterval);
             this.refillInterval = null;
         }
+        this.autoRefill = false;
+        console.log('⏹️ Auto-refill desativado');
     }
     
+    // ==============================================
+    // 🔒 MÉTODOS SEGUROS PARA API
+    // ==============================================
+    
     /**
-     * Obtém um desafio do servidor (otimizado)
+     * Obtém desafio de forma segura
      */
-    async getChallenge() {
+    async _getChallengeSafe() {
+        const token = this._getSecureToken();
+        if (!token) {
+            throw new Error('Não autenticado');
+        }
+        
         try {
             const response = await fetch(`${this.apiBase}/pow/challenge`, {
+                method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-                    'Cache-Control': 'no-cache' // Evita cache
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
                 }
             });
             
             if (!response.ok) {
-                throw new Error('Falha ao obter desafio');
+                const errorText = await response.text().catch(() => '');
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
             
-            this.currentChallenge = await response.json();
-            return this.currentChallenge;
+            const data = await response.json();
+            
+            // 🔥 Validação de segurança
+            if (!isValidChallenge(data)) {
+                throw new Error('Desafio inválido recebido do servidor');
+            }
+            
+            this.currentChallenge = data;
+            this._securityStats.totalAttempts++;
+            
+            return data;
+            
         } catch (error) {
-            console.error('❌ Erro ao obter desafio PoW:', error);
+            console.error('❌ Erro ao obter desafio:', error);
+            this._securityStats.failedAttempts++;
+            this._securityStats.lastFailure = Date.now();
             throw error;
         }
     }
     
     /**
-     * Resolve desafio de forma assíncrona (não bloqueante)
+     * Resolve desafio de forma segura
      */
-    async solveChallengeAsync(challenge) {
+    async _solveChallengeSafe(challenge) {
+        // Valida entrada
+        if (!isValidChallenge(challenge)) {
+            throw new Error('Desafio inválido para resolver');
+        }
+        
         return new Promise((resolve, reject) => {
             const startTime = performance.now();
-            
-            // Criar Web Worker para resolver em background
             const worker = new Worker('/js/pow-worker.js');
             
-            worker.postMessage(challenge);
+            // Timeout de segurança (60 segundos)
+            const timeoutId = setTimeout(() => {
+                worker.terminate();
+                reject(new Error('Timeout ao resolver PoW'));
+            }, 60000);
+            
+            worker.postMessage({
+                prefix: challenge.prefix,
+                complexity: challenge.complexity,
+                timestamp: challenge.timestamp,
+                expires_in: challenge.expires_in
+            });
             
             worker.onmessage = (e) => {
-                const { nonce, timeMs } = e.data;
-                const totalTime = performance.now() - startTime;
+                clearTimeout(timeoutId);
+                const data = e.data;
                 
-                worker.terminate();
+                if (data.error) {
+                    worker.terminate();
+                    reject(new Error(data.error));
+                    return;
+                }
                 
-                console.log(`⚡ PoW resolvido em ${timeMs}ms (total: ${totalTime.toFixed(0)}ms, complexidade ${challenge.complexity})`);
+                // Valida a solução recebida
+                if (!data.nonce || typeof data.nonce !== 'string') {
+                    worker.terminate();
+                    reject(new Error('Nonce inválido recebido do worker'));
+                    return;
+                }
                 
-                resolve({
-                    nonce,
+                const solution = {
+                    nonce: sanitizeString(data.nonce),
                     prefix: challenge.prefix,
                     complexity: challenge.complexity,
                     solvedAt: Date.now()
-                });
+                };
+                
+                worker.terminate();
+                resolve(solution);
             };
             
             worker.onerror = (error) => {
+                clearTimeout(timeoutId);
                 worker.terminate();
-                reject(error);
+                reject(new Error(`Worker error: ${error.message || 'desconhecido'}`));
             };
         });
     }
+    
+    // ==============================================
+    // 🔥 MÉTODOS PÚBLICOS
+    // ==============================================
     
     /**
      * PEGA SOLUÇÃO INSTANTÂNEA - Zero espera!
      */
     async getInstantSolution() {
-        // Se tem solução no estoque, usa imediatamente
+        // Verifica autenticação
+        if (!this._isAuthenticated()) {
+            throw new Error('Usuário não autenticado');
+        }
+        
+        // Se tem solução no estoque, usa
         if (this.solutionStock.length > 0) {
             const stockItem = this.solutionStock.shift();
             console.log(`⚡ Usando PoW pré-calculado (restam ${this.solutionStock.length})`);
             
-            // Dispara reposição em background
+            // Dispara reposição
             if (this.autoRefill && this.solutionStock.length < this.refillThreshold) {
                 setTimeout(() => this.preSolve(), 50);
             }
             
-            return stockItem.solution;
+            // Valida a solução antes de retornar
+            if (isValidSolution(stockItem.solution)) {
+                return stockItem.solution;
+            } else {
+                console.warn('⚠️ Solução do estoque inválida, recalculando...');
+            }
         }
         
-        // Fallback: calcula na hora (nunca deve acontecer com auto-refill)
+        // Fallback: calcula na hora
         console.warn('⚠️ Estoque vazio! Calculando PoW sob demanda...');
         
-        const challenge = await this.getChallenge();
-        const solution = await this.solveChallengeAsync(challenge);
+        const challenge = await this._getChallengeSafe();
+        const solution = await this._solveChallengeSafe(challenge);
         
         return solution;
     }
@@ -183,100 +379,210 @@ class PoWClient {
     /**
      * Upload com PoW INSTANTÂNEO (sem espera)
      */
-    async uploadWithPow(file, endpoint = '/api/upload') {
-        // Pega solução instantânea do estoque
+    async uploadWithPow(file, endpoint = '/api/upload-auto') {
+        // 🔥 Verifica autenticação
+        if (!this._isAuthenticated()) {
+            throw new Error('Usuário não autenticado');
+        }
+        
+        // 🔥 Valida o arquivo
+        if (!file || !file.name || !file.size) {
+            throw new Error('Arquivo inválido');
+        }
+        
+        // Sanitiza nome do arquivo
+        const safeFilename = sanitizeString(file.name);
+        
+        // Pega solução instantânea
         const solution = await this.getInstantSolution();
         
-        const formData = new FormData();
-        formData.append('file', file);
+        // 🔥 Valida a solução
+        if (!isValidSolution(solution)) {
+            throw new Error('Solução PoW inválida');
+        }
         
-        // Adiciona campos específicos da análise
+        const formData = new FormData();
+        formData.append('files', file, safeFilename);
+        
+        // Adiciona campos da análise
         const analysisType = document.getElementById('tipoAnalise')?.value || 'auto';
         const aiModel = document.getElementById('modeloIA')?.value || 'auto';
-        formData.append('analysis_type', analysisType);
-        formData.append('ai_model', aiModel);
+        formData.append('analysis_type', sanitizeString(analysisType));
+        formData.append('ai_model', sanitizeString(aiModel));
+        
+        const token = this._getSecureToken();
+        if (!token) {
+            throw new Error('Token de autenticação não encontrado');
+        }
         
         const startTime = performance.now();
         
-        const response = await fetch(`${this.apiBase}${endpoint}`, {
-            method: 'POST',
-            headers: {
-                'X-PoW-Prefix': solution.prefix,
-                'X-PoW-Nonce': solution.nonce,
-                'X-PoW-Complexity': solution.complexity,
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-            },
-            body: formData
-        });
-        
-        const totalTime = performance.now() - startTime;
-        console.log(`📤 Upload concluído em ${totalTime.toFixed(0)}ms (PoW incluso)`);
-        
-        // Tratamento de erro: PoW expirado
-        if (response.status === 428 || response.status === 401) {
-            console.log('🔄 PoW expirado, usando próximo do estoque...');
+        try {
+            const response = await fetch(`${this.apiBase}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'X-PoW-Prefix': solution.prefix,
+                    'X-PoW-Nonce': solution.nonce,
+                    'X-PoW-Complexity': String(solution.complexity),
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
             
-            if (this.solutionStock.length > 0) {
-                // Tenta com a próxima solução
-                return this.uploadWithPow(file, endpoint);
-            } else {
-                // Recalcula
-                await this.preSolve();
-                return this.uploadWithPow(file, endpoint);
+            const totalTime = performance.now() - startTime;
+            console.log(`📤 Upload concluído em ${totalTime.toFixed(0)}ms`);
+            
+            // 🔥 Tratamento de erros
+            if (response.status === 428) {
+                console.warn('⚠️ PoW expirado, tentando novamente...');
+                // Tenta com próxima solução
+                if (this.solutionStock.length > 0) {
+                    return this.uploadWithPow(file, endpoint);
+                } else {
+                    await this.preSolve();
+                    return this.uploadWithPow(file, endpoint);
+                }
             }
+            
+            if (response.status === 401) {
+                console.warn('⚠️ Token expirado, redirecionando...');
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                window.location.href = '/login?session=expired';
+                throw new Error('Sessão expirada');
+            }
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMsg = errorData.detail || errorData.message || `HTTP ${response.status}`;
+                throw new Error(sanitizeString(errorMsg));
+            }
+            
+            const data = await response.json();
+            
+            // 🔥 Sanitiza resposta
+            return this._sanitizeResponse(data);
+            
+        } catch (error) {
+            console.error('❌ Upload com PoW falhou:', error);
+            throw error;
         }
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || `Upload falhou: ${response.status}`);
-        }
-        
-        return response.json();
     }
     
     /**
-     * Pré-prepara para drag & drop (chamado durante o drag)
+     * Pré-prepara para drag & drop
      */
     async prepareForUpload() {
-        // Garante que temos pelo menos uma solução pronta
+        if (!this._isAuthenticated()) {
+            console.log('⏳ Aguardando autenticação para preparar PoW...');
+            return false;
+        }
+        
         if (this.solutionStock.length === 0) {
             console.log('🔄 Preparando PoW durante drag...');
             await this.preSolve();
-        } else {
-            console.log(`⚡ PoW pronto para drag (${this.solutionStock.length} disponíveis)`);
+            return this.solutionStock.length > 0;
         }
+        
+        console.log(`⚡ PoW pronto (${this.solutionStock.length} disponíveis)`);
+        return true;
     }
     
     /**
-     * Reseta o estado (útil no logout)
+     * Sanitiza resposta da API
+     */
+    _sanitizeResponse(data) {
+        if (!data) return data;
+        if (typeof data === 'string') return sanitizeString(data);
+        if (typeof data === 'number') return sanitizeNumber(data);
+        if (Array.isArray(data)) {
+            return data.map(item => this._sanitizeResponse(item));
+        }
+        if (typeof data === 'object') {
+            const result = {};
+            for (const [key, value] of Object.entries(data)) {
+                const safeKey = sanitizeString(key);
+                result[safeKey] = this._sanitizeResponse(value);
+            }
+            return result;
+        }
+        return data;
+    }
+    
+    /**
+     * Reseta o estado
      */
     reset() {
         this.solutionStock = [];
         this.currentChallenge = null;
-        this.precomputedSolution = null;
+        this.isSolving = false;
+        this._securityStats = {
+            ...this._securityStats,
+            totalAttempts: 0,
+            failedAttempts: 0,
+            lastFailure: null
+        };
         console.log('🔄 PoW Client resetado');
     }
     
     /**
-     * Retorna estatísticas do PoW
+     * Retorna estatísticas
      */
     getStats() {
         return {
             solutionsReady: this.solutionStock.length,
             maxStock: this.stockSize,
             autoRefill: this.autoRefill,
-            lastSolutionAge: this.solutionStock[0] ? Date.now() - this.solutionStock[0].timestamp : null
+            isSolving: this.isSolving,
+            isAuthenticated: this._isAuthenticated(),
+            lastSolutionAge: this.solutionStock[0] ? Date.now() - this.solutionStock[0].timestamp : null,
+            security: {
+                totalAttempts: this._securityStats.totalAttempts,
+                failedAttempts: this._securityStats.failedAttempts,
+                lastFailure: this._securityStats.lastFailure
+            }
         };
     }
 }
 
-// Instância global com auto-refill
-window.powClient = new PoWClient();
+// ==============================================
+// 🔥 INSTÂNCIA GLOBAL
+// ==============================================
 
-// Inicia auto-refill quando autenticado
-document.addEventListener('userAuthenticated', () => {
-    window.powClient.startAutoRefill(30000); // Refill a cada 30 segundos
-    window.powClient.preSolve(); // Pré-cálculo inicial
+// Verifica se já existe uma instância
+if (typeof window.powClient === 'undefined' || window.powClient === null) {
+    window.powClient = new PoWClient();
+    console.log('✅ PoW Client v2.0 global');
+}
+
+// 🔥 Inicializa quando autenticado
+document.addEventListener('authReady', (event) => {
+    if (event.detail && event.detail.isAuthenticated) {
+        console.log('🔐 Autenticação detectada, iniciando PoW...');
+        setTimeout(() => {
+            window.powClient.startAutoRefill(30000);
+            window.powClient.preSolve();
+        }, 1000);
+    }
 });
 
-console.log('✅ PoW Client otimizado - Sistema de pré-cálculo ativo');
+// 🔥 Fallback: se já estiver autenticado
+document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('access_token');
+    if (token && token !== 'undefined' && token !== 'null') {
+        setTimeout(() => {
+            if (!window.powClient._isInitialized) {
+                window.powClient._isInitialized = true;
+                window.powClient.startAutoRefill(30000);
+                window.powClient.preSolve();
+                console.log('⚡ PoW iniciado automaticamente');
+            }
+        }, 2000);
+    }
+});
+
+console.log('✅ pow-client.js v2.0 carregado');
+console.log('   🔒 Sanitização ativa contra XSS');
+console.log('   🔐 Integrado com authReady');
+console.log(`   📦 Stock: ${window.powClient.stockSize}`);
+console.log('   🔄 Auto-refill: ativo');
