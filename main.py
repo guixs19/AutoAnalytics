@@ -1,17 +1,20 @@
-# main.py (na raiz) - VERSÃO FINAL CORRIGIDA
+# main.py (na raiz) - VERSÃO FINAL
+# 🔥 CAPTCHA REMOVIDO COMPLETAMENTE
+# 🔥 TOKENS OTIMIZADOS (15min access, 7 dias refresh, jti, blacklist com TTL)
+
 import sys
 import os
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime
 import secrets
 import string
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 import time
 import asyncio
 
 print("=" * 60)
-print("🚀 AUTOANALYTICS v3.2 - COM GOOGLE GEMINI (SEM CAPTCHA)")
+print("🚀 AUTOANALYTICS v3.2 - GOOGLE GEMINI (SEM CAPTCHA)")
+print("🔐 Tokens: 15min access | 7 dias refresh | jti | blacklist com TTL")
 print("=" * 60)
 
 # Configurar paths
@@ -55,22 +58,22 @@ class Settings:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     
+    # 🔥 JWT - CONFIGURAÇÕES OTIMIZADAS
     SECRET_KEY = os.getenv("SECRET_KEY", "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64)))
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-    REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))  # 15 minutos
+    REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))       # 7 dias
     
+    # 🔥 ARGON2 - HASH DE SENHA
     ARGON2_TIME_COST = 3
     ARGON2_MEMORY_COST = 65536
     ARGON2_PARALLELISM = 4
     
     # 🔥 CAPTCHA DESABILITADO
-    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "none")
-    CAPTCHA_CODE_LENGTH = int(os.getenv("CAPTCHA_CODE_LENGTH", "4"))
-    CAPTCHA_EXPIRATION_SECONDS = int(os.getenv("CAPTCHA_EXPIRATION_SECONDS", "120"))
     DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
     
-    CORS_ORIGINS_STR = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5500,http://localhost:3000,http://localhost:5173")
+    # 🔥 CORS
+    CORS_ORIGINS_STR = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5500,http://localhost:3000,http://localhost:5173,https://autoanalytics.site")
     CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_STR.split(",")]
     
     SECURITY_HEADERS = {
@@ -79,10 +82,12 @@ class Settings:
         "X-XSS-Protection": "1; mode=block",
     }
     
+    # 🔥 MERCADO PAGO
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")
     MP_PUBLIC_KEY = os.getenv("MP_PUBLIC_KEY", "")
     DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
     
+    # 🔥 REDIS
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
@@ -175,7 +180,7 @@ else:
 print("\n🔧 Importando FastAPI...")
 
 try:
-    from fastapi import FastAPI, Request, Depends, HTTPException, Cookie
+    from fastapi import FastAPI, Request, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
@@ -191,7 +196,7 @@ except ImportError as e:
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
-    description="Sistema com Google Gemini para oficinas mecânicas - SEM CAPTCHA",
+    description="AutoAnalytics - IA para Oficinas Mecânicas (SEM CAPTCHA)",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
@@ -225,11 +230,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=[
-        "X-Captcha-ID", 
-        "X-Captcha-Expires",
         "X-Auth-Required",
-        "X-Redirect-To",
-        "X-Captcha-Text"
+        "X-Redirect-To"
     ]
 )
 print(f"   ✅ CORS configurado para: {settings.CORS_ORIGINS}")
@@ -317,10 +319,10 @@ else:
     print("\n⚠️ Frontend não disponível, apenas API será servida")
 
 # ==============================================
-# ROTAS HTML - VERSÃO CORRIGIDA
+# ROTAS HTML - SEM CAPTCHA
 # ==============================================
 if frontend_available:
-    print("\n🌐 Configurando rotas HTML com redirecionamentos...")
+    print("\n🌐 Configurando rotas HTML...")
     
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
@@ -381,11 +383,11 @@ if frontend_available:
                 if not file_path.exists():
                     print(f"❌ [DASHBOARD] index.html não encontrado em {file_path}")
                     return HTMLResponse(
-                        content="<h1>Erro: index.html não encontrado na pasta frontend</h1>",
+                        content="<h1>Erro: index.html não encontrado</h1>",
                         status_code=404
                     )
                 
-                print(f"✅ [DASHBOARD] Token válido para {payload.get('email')} - entregando dashboard")
+                print(f"✅ [DASHBOARD] Token válido - entregando dashboard")
                 return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
             else:
                 return HTMLResponse(
@@ -394,7 +396,7 @@ if frontend_available:
                 )
                 
         except Exception as e:
-            print(f"❌ [DASHBOARD] Erro na validação: {e} - redirecionando para /login")
+            print(f"❌ [DASHBOARD] Erro: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
     @app.get("/planos", response_class=HTMLResponse)
@@ -403,7 +405,7 @@ if frontend_available:
         
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", "")  # 🔥 CORRIGIDO
+            access_token = access_token.replace("Bearer ", "")
         
         if not access_token:
             print(f"🔴 [PLANOS] Sem token - redirecionando para /login")
@@ -421,11 +423,11 @@ if frontend_available:
                 if not file_path.exists():
                     print(f"❌ [PLANOS] planos.html não encontrado em {file_path}")
                     return HTMLResponse(
-                        content="<h1>Erro: planos.html não encontrado na pasta frontend</h1>",
+                        content="<h1>Erro: planos.html não encontrado</h1>",
                         status_code=404
                     )
                 
-                print(f"✅ [PLANOS] Token válido para {payload.get('email')} - entregando planos")
+                print(f"✅ [PLANOS] Token válido - entregando planos")
                 return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
             else:
                 return HTMLResponse(
@@ -434,7 +436,7 @@ if frontend_available:
                 )
                 
         except Exception as e:
-            print(f"❌ [PLANOS] Erro na validação: {e} - redirecionando para /login")
+            print(f"❌ [PLANOS] Erro: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
     @app.get("/checkout", response_class=HTMLResponse)
@@ -443,7 +445,7 @@ if frontend_available:
         
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", "")  # 🔥 CORRIGIDO
+            access_token = access_token.replace("Bearer ", "")
         
         if not access_token:
             print(f"🔴 [CHECKOUT] Sem token - redirecionando para /login")
@@ -461,11 +463,11 @@ if frontend_available:
                 if not file_path.exists():
                     print(f"❌ [CHECKOUT] checkout.html não encontrado em {file_path}")
                     return HTMLResponse(
-                        content="<h1>Erro: checkout.html não encontrado na pasta frontend</h1>",
+                        content="<h1>Erro: checkout.html não encontrado</h1>",
                         status_code=404
                     )
                 
-                print(f"✅ [CHECKOUT] Token válido para {payload.get('email')} - entregando checkout")
+                print(f"✅ [CHECKOUT] Token válido - entregando checkout")
                 return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
             else:
                 return HTMLResponse(
@@ -474,7 +476,7 @@ if frontend_available:
                 )
                 
         except Exception as e:
-            print(f"❌ [CHECKOUT] Erro na validação: {e} - redirecionando para /login")
+            print(f"❌ [CHECKOUT] Erro: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
     # Redirecionamentos
@@ -495,34 +497,9 @@ if frontend_available:
         return RedirectResponse(url="/checkout", status_code=301)
     
     print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
-    print("   🔥 Todas com redirecionamento amigável (302/303)")
 
 # ==============================================
-# FUNÇÃO AUXILIAR PARA EXTRAIR TOKEN
-# ==============================================
-async def extract_token(request: Request) -> str:
-    token = request.cookies.get("access_token")
-    if token and token.startswith("Bearer "):
-        token = token.replace("Bearer ", "")
-    if token:
-        return token
-    
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header.replace("Bearer ", "")
-    
-    token = request.headers.get("X-Access-Token", "")
-    if token:
-        return token
-    
-    token = request.query_params.get("token", "")
-    if token:
-        return token
-    
-    return None
-
-# ==============================================
-# CARREGAR MÓDULOS DO BACKEND
+# CARREGAR MÓDULOS DO BACKEND (SEM CAPTCHA)
 # ==============================================
 print("\n📦 Carregando módulos do backend...")
 
@@ -544,7 +521,7 @@ try:
                 print(f"   ⚠️ Não foi possível setar {key}: {e}")
     print("   ✅ Configurações sincronizadas com backend.config")
 except ImportError:
-    print("   ⚠️ backend.config.settings não encontrado, usando configurações locais")
+    print("   ⚠️ backend.config.settings não encontrado")
     backend_settings = settings
 
 try:
@@ -555,14 +532,16 @@ except ImportError as e:
     print(f"   ❌ Erro ao importar database: {e}")
     sys.exit(1)
 
+# 🔥 IMPORTANDO SEM CAPTCHA
 try:
     from backend.security import (
-        hasher, jwt_manager, captcha_manager, rate_limiter,
+        hasher, jwt_manager, rate_limiter,
         get_current_user, get_current_active_user, get_current_admin_user,
         set_auth_cookies, clear_auth_cookies
     )
     from backend.models import User, Analysis, PromotionControl
-    print("   ✅ Módulos de segurança carregados")
+    print("   ✅ Módulos de segurança carregados (SEM CAPTCHA)")
+    print("   🔐 Tokens: 15min access | 7 dias refresh | jti | blacklist com TTL")
 except ImportError as e:
     print(f"   ❌ Erro ao importar security: {e}")
     sys.exit(1)
@@ -587,7 +566,7 @@ print("   ✅ Autenticação habilitada")
 time.sleep(1)
 
 # ==============================================
-# REGISTRO DE ROTAS DOS ROUTERS
+# REGISTRO DE ROTAS (SEM CAPTCHA)
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
@@ -598,8 +577,14 @@ try:
     app.include_router(auth_router, prefix="/api/auth")
     app.include_router(registration_router, prefix="/api/auth")
     
-    print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
-    print("   ❌ Rotas CAPTCHA: DESABILITADAS")
+    print("   ✅ Rotas AUTH:")
+    print("      POST   /api/auth/login     ← 🔥 SEM CAPTCHA")
+    print("      POST   /api/auth/register  ← 🔥 SEM CAPTCHA")
+    print("      POST   /api/auth/refresh   ← 🔥 RENOVA TOKEN")
+    print("      POST   /api/auth/logout    ← 🔥 REVOGA TOKEN")
+    print("      GET    /api/auth/check-token")
+    print("      GET    /api/auth/me")
+    print("   ❌ CAPTCHA: REMOVIDO COMPLETAMENTE")
     
     try:
         from backend.api.payment_routes import router as payment_router
@@ -649,6 +634,12 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "debug": settings.DEBUG,
         "captcha_enabled": False,
+        "auth": {
+            "access_token_expire_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+            "refresh_token_expire_days": settings.REFRESH_TOKEN_EXPIRE_DAYS,
+            "algorithm": settings.ALGORITHM,
+            "blacklist": "Redis com TTL"
+        },
         "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())},
         "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
         "timezone": "America/Sao_Paulo (UTC-3)"
@@ -693,8 +684,8 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
     
-    # 🔥 CAPTCHA DESABILITADO
-    print("   ❌ CAPTCHA: DESABILITADO")
+    # 🔥 SEM CAPTCHA
+    print("   ❌ CAPTCHA: REMOVIDO COMPLETAMENTE")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     frontend_status = "✅" if frontend_available else "❌"
@@ -704,19 +695,28 @@ async def startup_event():
     ║     🎉 {settings.APP_NAME} v{settings.VERSION} INICIADO!                         ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<45} ║
-    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: ❌ DESABILITADO          ║
+    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: ❌ REMOVIDO              ║
     ║  🌐 Frontend: {frontend_status} | 📊 Observabilidade: ✅ ativa          ║
     ║  📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo                    ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║  🔐 TOKENS:                                                        ║
+    ║     Access Token: {settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutos                    ║
+    ║     Refresh Token: {settings.REFRESH_TOKEN_EXPIRE_DAYS} dias                      ║
+    ║     Algoritmo: {settings.ALGORITHM}                                          ║
+    ║     Blacklist: Redis com TTL (tempo restante)                        ║
+    ║     jti: UUID único por token                                      ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🔗 Endpoints principais:                                          ║
     ║     POST /api/auth/register  ← 🔥 SEM CAPTCHA                    ║
     ║     POST /api/auth/login     ← 🔥 SEM CAPTCHA                    ║
+    ║     POST /api/auth/refresh   ← 🔥 RENOVA TOKEN                    ║
+    ║     POST /api/auth/logout    ← 🔥 REVOGA TOKEN                    ║
     ║     POST /api/upload-auto (múltiplos arquivos)                    ║
     ║     GET  /api/auth/check-token                                   ║
     ║     GET  /api/auth/me                                            ║
     ║     GET  /api/health                                             ║
     ╠══════════════════════════════════════════════════════════════════╣
-    ║  🌐 Páginas (com redirecionamento):                               ║
+    ║  🌐 Páginas:                                                      ║
     ║     http://localhost:{settings.PORT}/                             ║
     ║     http://localhost:{settings.PORT}/login                        ║
     ║     http://localhost:{settings.PORT}/dashboard                    ║
@@ -746,7 +746,7 @@ async def shutdown_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao finalizar Sentinel: {e}")
     
-    print("   ❌ CAPTCHA: DESABILITADO")
+    print("   ❌ CAPTCHA: REMOVIDO")
     print("👋 Sistema desligado!")
 
 # ==============================================
@@ -772,7 +772,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
-    print(f"🔢 CAPTCHA: ❌ DESABILITADO")
+    print(f"🔐 Access Token: {settings.ACCESS_TOKEN_EXPIRE_MINUTES}min")
+    print(f"🔐 Refresh Token: {settings.REFRESH_TOKEN_EXPIRE_DAYS}dias")
+    print(f"🔢 CAPTCHA: ❌ REMOVIDO")
     print(f"📊 Observabilidade: ✅ ativa")
     print(f"📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo")
     print(f"🛑 Pressione CTRL+C para parar\n")
