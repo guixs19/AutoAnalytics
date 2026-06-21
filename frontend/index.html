@@ -2,28 +2,24 @@
 <html lang="pt-BR">
 <head>
     <!-- ============================================== -->
-    <!-- 🔥 BLOQUEIO IMEDIATO - EXECUTA ANTES DE TUDO -->
+    <!-- 🔥 BLOQUEIO IMEDIATO -->
     <!-- ============================================== -->
     <script>
         (function() {
-            // Verifica de forma síncrona se há indícios de sessão ativa no localStorage
             const token = localStorage.getItem('access_token');
             const isLogged = token !== null && token !== '';
-            
-            // Se NÃO estiver logado, bloqueia e redireciona para o login
             if (!isLogged) {
                 console.log('🔒 Acesso não autorizado. Desviando para a tela de login...');
                 window.location.replace('/login');
                 throw new Error('Redirecionando para login');
             }
-            
             console.log('✅ Sessão ativa. Carregando dashboard...');
         })();
     </script>
     
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoAnalytics - Dashboard de IA para Oficinas</title>
+    <title>AutoAnalytics - Dashboard</title>
     
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -40,61 +36,63 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- Anime.js para animações -->
+    <!-- Anime.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
     
-    <!-- Toastr para notificações -->
+    <!-- Toastr -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
-    <!-- Bibliotecas para PDF -->
+    <!-- Bibliotecas PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
+    <!-- ============================================== -->
+    <!-- 🔥 ESTILOS - MESMOS DO LOGIN + DASHBOARD -->
+    <!-- ============================================== -->
     <style>
-        /* ===== TODOS OS ESTILOS ===== */
+        /* ===== BASE - MESMO FUNDO DO LOGIN ===== */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             overflow-x: hidden;
+            color: white;
         }
 
-        /* 🔥 NAVBAR ESTILO ORIGINAL */
+        /* 🔥 NAVBAR - ESTILO LOGIN */
         .navbar-modern {
-            background: rgba(102, 126, 234, 0.95);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            padding: 1rem 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            padding: 0.75rem 0;
             position: fixed;
             width: 100%;
             top: 0;
             z-index: 1000;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .navbar-modern.scrolled {
-            padding: 0.5rem 0;
-            background: rgba(102, 126, 234, 0.98);
+            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
         }
 
         .brand-text {
-            font-size: 1.8rem;
+            font-size: 1.6rem;
             font-weight: 800;
-            color: white;
-            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
         }
 
-        .brand-text .gradient-text {
-            color: #f5a623;
+        .brand-text i {
+            -webkit-text-fill-color: initial;
+            color: #667eea;
         }
 
-        /* 🔥 CRÉDITS BADGE - APENAS ELE DOURADO */
+        /* 🔥 CRÉDITS BADGE - DOURADO APENAS AQUI */
         .credits-badge {
             background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
             padding: 0.5rem 1.5rem;
@@ -105,6 +103,7 @@
             transition: transform 0.3s;
             cursor: pointer;
             border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.9rem;
         }
 
         .credits-badge:hover {
@@ -112,64 +111,105 @@
             box-shadow: 0 6px 25px rgba(205, 127, 50, 0.6);
         }
 
-        /* Hero Section */
-        .hero-section {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-            padding: 120px 0 60px;
+        .credits-badge i {
+            margin-right: 0.5rem;
         }
 
-        .hero-bg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+        /* 🔥 USER NAME - DESTAQUE */
+        .user-name-display {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 0.95rem;
+        }
+
+        .user-name-display i {
+            color: #667eea;
+            margin-right: 0.3rem;
+        }
+
+        /* 🔥 BOTÃO PLANOS */
+        .btn-planos {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            opacity: 0.9;
+            color: white;
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.3s;
+            text-decoration: none;
         }
 
-        .hero-title {
-            font-size: 3.5rem;
-            font-weight: 800;
-            line-height: 1.2;
-            margin-bottom: 1.5rem;
+        .btn-planos:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
             color: white;
         }
 
-        .hero-title .gradient-text {
-            color: #f5a623;
+        .btn-planos i {
+            margin-right: 0.4rem;
         }
 
-        .hero-subtitle {
-            font-size: 1.2rem;
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 2rem;
-            max-width: 600px;
+        /* 🔥 BOTÃO SAIR */
+        .btn-sair {
+            background: transparent;
+            border: 2px solid #e53e3e;
+            color: #e53e3e;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.3s;
+            text-decoration: none;
         }
 
-        /* 🔥 UPLOAD CARD */
+        .btn-sair:hover {
+            background: #e53e3e;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* ===== HERO / CONTEÚDO ===== */
+        .hero-section {
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            padding: 100px 0 40px;
+            position: relative;
+        }
+
+        /* ===== CARDS DE UPLOAD ===== */
         .upload-card {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.12);
             backdrop-filter: blur(10px);
-            border-radius: 30px;
-            padding: 2rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             transition: all 0.3s ease;
+            color: white;
         }
 
         .upload-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
-            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
+        .upload-card .card-title {
+            color: white;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .upload-card .card-title i {
+            color: #f5a623;
+            margin-right: 0.5rem;
+        }
+
+        /* 🔥 ÁREA DE UPLOAD */
         .upload-area {
-            border: 3px dashed rgba(255, 255, 255, 0.3);
+            border: 3px dashed rgba(255, 255, 255, 0.35);
             border-radius: 20px;
             padding: 2.5rem;
             text-align: center;
@@ -179,7 +219,7 @@
         }
 
         .upload-area:hover {
-            border-color: rgba(255, 255, 255, 0.6);
+            border-color: rgba(255, 255, 255, 0.7);
             background: rgba(255, 255, 255, 0.05);
         }
 
@@ -189,128 +229,128 @@
             transform: scale(1.02);
         }
 
-        .upload-icon {
-            font-size: 4rem;
+        .upload-area .upload-icon {
+            font-size: 3.5rem;
             color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 1rem;
-            animation: float 3s ease-in-out infinite;
+            margin-bottom: 0.8rem;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+        .upload-area h4 {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
         }
 
-        /* ===== TELA DE CARREGAMENTO ===== */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.92);
-            backdrop-filter: blur(8px);
-            z-index: 9999;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
+        .upload-area p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
         }
 
-        .loading-overlay.show {
-            display: flex;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .spinner-brain {
-            width: 80px;
-            height: 80px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid #f5a623;
-            border-right: 4px solid #cd7f32;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .loading-text {
-            margin-top: 20px;
-            color: #f5a623;
-            font-size: 1.2rem;
-            font-weight: 500;
-        }
-
-        .loading-subtext {
-            color: rgba(255, 255, 255, 0.7);
+        .upload-area .btn-select {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.8rem;
+            border-radius: 50px;
+            font-weight: 600;
             font-size: 0.9rem;
-            margin-top: 8px;
+            transition: all 0.3s;
         }
 
-        .loading-progress {
-            width: 250px;
-            margin-top: 20px;
+        .upload-area .btn-select:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            color: white;
         }
 
-        .loading-progress .progress {
-            height: 6px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .loading-progress .progress-bar {
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-
-        /* Indicador de Processamento */
-        .processing-indicator {
+        /* 🔥 LIMITES INFO */
+        .limit-info {
             background: rgba(0, 0, 0, 0.2);
-            border-radius: 20px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 0.6rem 1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-size: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .limit-info i {
+            color: #f5a623;
+            margin-right: 0.3rem;
+        }
+
+        .limit-info .limit-value {
+            font-weight: 700;
+            color: #f5a623;
+        }
+
+        /* 🔥 CARDS DE ANÁLISE - ORGANIZADOS */
+        .analyses-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.2rem;
+        }
+
+        .analysis-card {
+            animation: fadeInUp 0.5s ease-out;
+        }
+
+        .analysis-card .card {
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            border-radius: 16px !important;
+            color: white;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s;
+            overflow: hidden;
+        }
+
+        .analysis-card .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .analysis-card .card-header {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+            padding: 0.8rem 1.2rem;
+            color: white;
+        }
+
+        .analysis-card .metric-box {
+            background: rgba(0, 0, 0, 0.2) !important;
+            border-radius: 10px;
+            padding: 0.6rem;
             text-align: center;
         }
 
-        .processing-icon {
-            font-size: 3rem;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 1rem;
-        }
-
-        .processing-text {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1rem;
-        }
-
-        .processing-text strong {
+        .analysis-card .metric-value {
             color: #f5a623;
+            font-size: 1.4rem;
+            font-weight: 700;
         }
 
+        .analysis-card .metric-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.7rem;
+        }
+
+        /* 🔥 BOTÃO GRADIENTE */
         .btn-gradient {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 0.75rem 2rem;
+            padding: 0.6rem 1.5rem;
             border-radius: 50px;
             font-weight: 600;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn-gradient:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
             color: white;
         }
 
@@ -320,20 +360,147 @@
             transform: none;
         }
 
-        .btn-outline-danger {
-            background: transparent;
+        /* 🔥 BOTÃO PDF */
+        .btn-pdf {
+            background: rgba(220, 53, 69, 0.2);
             border: 1px solid #dc3545;
             color: #dc3545;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
             transition: all 0.3s;
         }
 
-        .btn-outline-danger:hover {
+        .btn-pdf:hover {
             background: #dc3545;
             color: white;
             transform: translateY(-2px);
         }
 
-        /* Timeline */
+        /* 🔥 TELA DE CARREGAMENTO - ANIMAÇÃO BONITA */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .loading-container {
+            text-align: center;
+            max-width: 500px;
+            padding: 2rem;
+        }
+
+        .loading-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            animation: pulse-icon 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-icon {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+
+        .loading-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #f5a623;
+            margin-bottom: 0.5rem;
+        }
+
+        .loading-subtitle {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .loading-steps {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .loading-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            opacity: 0.4;
+            transition: all 0.5s;
+        }
+
+        .loading-step.active {
+            opacity: 1;
+        }
+
+        .loading-step.done {
+            opacity: 1;
+            color: #48bb78;
+        }
+
+        .loading-step .step-icon {
+            font-size: 1.8rem;
+        }
+
+        .loading-step .step-label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .loading-step.active .step-label {
+            color: #f5a623;
+        }
+
+        .loading-step.done .step-label {
+            color: #48bb78;
+        }
+
+        .loading-progress {
+            width: 100%;
+            max-width: 400px;
+            margin: 1rem auto;
+        }
+
+        .loading-progress .progress {
+            height: 4px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .loading-progress .progress-bar {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        .loading-percent {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        /* 🔥 TIMELINE - HISTÓRICO */
         .timeline {
             position: relative;
             padding-left: 1.5rem;
@@ -352,7 +519,7 @@
 
         .timeline-item {
             position: relative;
-            padding-bottom: 1.5rem;
+            padding-bottom: 1.2rem;
         }
 
         .timeline-item:last-child {
@@ -378,23 +545,24 @@
 
         .timeline-content {
             padding-left: 0.5rem;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.85);
         }
 
         .timeline-content strong {
             color: #f5a623;
         }
 
-        /* Métricas */
+        /* 🔥 MÉTRICAS RÁPIDAS */
         .metric-card {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             padding: 1rem;
+            text-align: center;
         }
 
         .metric-value {
-            font-size: 1.8rem;
+            font-size: 2rem;
             font-weight: 700;
             color: #f5a623;
         }
@@ -404,65 +572,32 @@
             color: rgba(255, 255, 255, 0.6);
         }
 
-        .limit-info {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 0.75rem;
-            margin-bottom: 1rem;
-            text-align: center;
-            font-size: 0.85rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .limit-info i {
-            color: #f5a623;
-            margin-right: 0.5rem;
-        }
-
-        .limit-info .limit-value {
-            font-weight: 700;
-            color: #f5a623;
-        }
-
-        .size-warning {
-            background: rgba(220, 53, 69, 0.2);
-            border: 1px solid #dc3545;
-            color: #f8d7da;
-            border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.8rem;
-            margin-top: 0.5rem;
-            display: none;
-        }
-
-        .size-warning.show {
-            display: block;
-            animation: shake 0.3s ease-in-out;
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
-
-        .admin-badge {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        /* 🔥 MODAL */
+        .modal-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: none;
-            margin-left: 0.5rem;
         }
 
-        body.is-admin .admin-badge {
-            display: inline-block;
+        .modal-content .modal-title {
+            color: white !important;
         }
 
-        /* Toastr */
+        .modal-content .btn-close-white {
+            filter: brightness(0) invert(1);
+        }
+
+        .modal-content .alert-info {
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        .modal-content .alert-info strong {
+            color: #f5a623 !important;
+        }
+
+        /* 🔥 TOASTR */
         .toast-success {
             background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
         }
@@ -476,523 +611,213 @@
             background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important;
         }
 
-        .gradient-text {
-            color: #f5a623;
-        }
-
-        /* Análises em Andamento */
-        .analysis-card {
-            animation: slideInUp 0.3s ease-out;
-            margin-bottom: 1rem;
-        }
-
-        @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .analysis-card .card {
-            transition: all 0.2s;
-            border-radius: 20px !important;
-            background: rgba(255, 255, 255, 0.1) !important;
-            border: 1px solid rgba(255, 255, 255, 0.15) !important;
-            color: white;
-        }
-
-        .analysis-card .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .analysis-card .metric-box {
-            background: rgba(0, 0, 0, 0.2) !important;
-            color: white;
-        }
-        .analysis-card .metric-label {
-            color: rgba(255, 255, 255, 0.6);
-        }
-        .analysis-card .metric-value {
-            color: #f5a623;
-        }
-
-        .file-preview-container {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .file-preview-container .bg-light {
-            background: rgba(0, 0, 0, 0.2) !important;
-            color: white;
-        }
-        .file-preview-container .text-muted {
-            color: rgba(255, 255, 255, 0.6) !important;
-        }
-
-        /* ===== ESTILOS GPSA ===== */
-        .gpsa-dashboard { animation: fadeInUp 0.5s ease-out; }
-        
+        /* 🔥 ANIMAÇÕES */
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(30px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        
-        .impact-card, .trend-chart-card, .insights-card, .score-progress-card {
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            color: white;
-        }
-        
-        .impact-card:hover, .trend-chart-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-        
-        .impact-value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
-        .trend-indicator { font-size: 0.8rem; padding: 4px 8px; background: rgba(0,0,0,0.2); border-radius: 20px; display: inline-block; }
-        .insight-item { transition: all 0.2s; background: rgba(0,0,0,0.15) !important; color: white; }
-        .insight-item:hover { transform: translateX(5px); background: rgba(255, 255, 255, 0.05) !important; }
-        
-        .gpsa-score-circle { position: relative; display: inline-block; }
-        .score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.5s ease-out; }
-        .score-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        .score-number { font-size: 2rem; font-weight: bold; display: block; line-height: 1; color: #f5a623; }
-        
-        .progress-bar { transition: width 3.5s ease-out; }
 
-        .risk-summary {
-            background: rgba(0,0,0,0.2);
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(30px); }
+            to { opacity: 1; transform: translateX(0); }
         }
 
-        .risk-badge {
-            transition: all 0.3s ease;
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
         }
 
-        .risk-badge.high {
-            background: rgba(245, 101, 101, 0.2);
-            border: 1px solid rgba(245, 101, 101, 0.5);
-        }
-        .risk-badge.medium {
-            background: rgba(245, 166, 35, 0.2);
-            border: 1px solid rgba(245, 166, 35, 0.5);
-        }
-        .risk-badge.low {
-            background: rgba(72, 187, 120, 0.2);
-            border: 1px solid rgba(72, 187, 120, 0.5);
-        }
-        .risk-badge:hover {
-            transform: translateY(-2px);
-        }
-        .risk-value {
-            font-size: 1.5rem;
-            color: white;
-        }
-        .risk-label {
-            font-size: 0.75rem;
-            opacity: 0.8;
-            color: rgba(255, 255, 255, 0.7);
-        }
-        .risk-badge .fw-bold {
-            color: white;
-        }
-
-        /* Modais */
-        .modal-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        }
-        .modal-content .modal-title {
-            color: white !important;
-        }
-        .modal-content .text-muted {
-            color: rgba(255, 255, 255, 0.7) !important;
-        }
-        .modal-content .alert-info {
-            background: rgba(255, 255, 255, 0.1) !important;
-            border-color: rgba(255, 255, 255, 0.2) !important;
-            color: rgba(255, 255, 255, 0.8) !important;
-        }
-        .modal-content .alert-info strong {
-            color: #f5a623 !important;
-        }
-        .modal-content .btn-close-white {
-            filter: brightness(0) invert(1);
-        }
-
-        /* Footer */
-        footer {
-            background: rgba(102, 126, 234, 0.95) !important;
-            border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
-        }
-        footer .text-muted {
-            color: rgba(255, 255, 255, 0.6) !important;
-        }
-        footer .badge.bg-light {
-            background: rgba(255, 255, 255, 0.15) !important;
-            color: white !important;
-        }
-
-        /* ============================================== */
-        /* 🔥 ESTILOS DO CARD PREMIUM */
-        /* ============================================== */
-
-        .premium-card {
-            border-radius: 20px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255,255,255,0.15);
-            transition: all 0.3s ease;
-        }
-
-        .premium-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .premium-card.premium-active {
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
-            border-color: #cd7f32;
-        }
-
-        .premium-card.premium-inactive {
-            background: rgba(255,255,255,0.05);
-            border-color: rgba(255,255,255,0.1);
-        }
-
-        .premium-status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .premium-badge {
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            color: white;
-            padding: 0.4rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-        }
-
-        .premium-badge.badge-warning {
-            background: linear-gradient(135deg, #f5a623, #ed8936);
-        }
-
-        .premium-badge.badge-danger {
-            background: linear-gradient(135deg, #f56565, #e53e3e);
-        }
-
-        .premium-progress {
-            margin-bottom: 1rem;
-        }
-
-        .credit-status-card {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.1);
-            transition: all 0.2s ease;
-        }
-
-        .credit-status-card:hover {
-            background: rgba(0,0,0,0.4);
-            transform: translateY(-2px);
-        }
-
-        .premium-message {
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            margin: 0.5rem 0;
-            font-size: 0.9rem;
-        }
-
-        .premium-message-info {
-            background: rgba(102, 126, 234, 0.2);
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            color: rgba(255,255,255,0.8);
-        }
-
-        .premium-message-success {
-            background: rgba(72, 187, 120, 0.2);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
-        }
-
-        .premium-message-warning {
-            background: rgba(245, 166, 35, 0.2);
-            border: 1px solid rgba(245, 166, 35, 0.3);
-            color: #f5a623;
-        }
-
-        .premium-message-warning strong {
-            color: #f56565;
-        }
-
-        .btn-premium {
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-
-        .btn-premium:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(205, 127, 50, 0.4);
-            color: white;
-        }
-
-        .btn-premium-receive {
-            background: linear-gradient(135deg, #48bb78, #38a169);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            animation: pulse-premium 2s ease-in-out infinite;
-        }
-
-        .btn-premium-receive:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
-            color: white;
-        }
-
-        @keyframes pulse-premium {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4); }
-            50% { box-shadow: 0 0 20px 5px rgba(72, 187, 120, 0.2); }
-        }
-
-        .premium-benefits-preview {
-            margin: 1rem 0;
-        }
-
-        .benefit-item {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.3rem 0;
-            color: rgba(255,255,255,0.7);
-            font-size: 0.85rem;
-        }
-
-        .premium-expiring-warning {
-            background: rgba(245, 166, 35, 0.15);
-            border: 1px solid rgba(245, 166, 35, 0.3);
-            border-radius: 10px;
-            padding: 0.5rem 0.75rem;
-            color: #f5a623;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-
-        .premium-footer {
-            margin-top: 1rem;
-            padding-top: 0.75rem;
-            border-top: 1px solid rgba(255,255,255,0.08);
-        }
-
-        .premium-action-cta {
-            padding: 0.5rem;
-            border-radius: 10px;
-            background: rgba(0,0,0,0.2);
-        }
-
-        .premium-status-body {
-            padding: 0.5rem 0;
-        }
-
-        /* Responsividade */
+        /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2.5rem;
-            }
-            .upload-card {
-                padding: 1.5rem;
-            }
-            .impact-value { font-size: 1.8rem; }
-            .score-number { font-size: 1.5rem; }
-            .gpsa-score-circle svg { width: 100px; height: 100px; }
-            .risk-value { font-size: 1.2rem; }
-            .btn-gradient, .btn-outline-danger { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
-            
-            .premium-status-header {
-                flex-direction: column;
-                align-items: flex-start;
+            .navbar-modern .container {
+                flex-wrap: wrap;
                 gap: 0.5rem;
             }
-            .premium-status-header .badge {
-                align-self: flex-start;
+            .brand-text {
+                font-size: 1.2rem;
             }
-            .credit-status-card {
-                padding: 0.75rem !important;
+            .credits-badge {
+                padding: 0.3rem 0.8rem;
+                font-size: 0.75rem;
             }
-            .credit-status-card div:first-child {
-                font-size: 1.5rem !important;
+            .user-name-display {
+                font-size: 0.8rem;
+            }
+            .analyses-grid {
+                grid-template-columns: 1fr;
+            }
+            .loading-steps {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+            .hero-section {
+                padding: 80px 0 20px;
+            }
+            .upload-area {
+                padding: 1.5rem;
+            }
+            .metric-value {
+                font-size: 1.5rem;
+            }
+            .btn-planos, .btn-sair {
+                font-size: 0.7rem;
+                padding: 0.3rem 0.8rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .upload-area .upload-icon {
+                font-size: 2.5rem;
+            }
+            .upload-area h4 {
+                font-size: 0.9rem;
+            }
+            .loading-title {
+                font-size: 1.3rem;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Navbar Moderna -->
+
+    <!-- ============================================== -->
+    <!-- 🔥 NAVBAR - ESTILO LOGIN -->
+    <!-- ============================================== -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
-            <div class="d-flex justify-content-between align-items-center w-100">
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap">
                 <a class="brand-text text-decoration-none" href="/dashboard">
-                    <i class="fas fa-robot me-2"></i>
-                    AutoAnalytics<span class="gradient-text">Pro</span>
+                    <i class="fas fa-chart-line me-2"></i>
+                    Auto<span style="color:#764ba2;">Analytics</span>Pro
                 </a>
                 
-                <div class="d-flex align-items-center gap-3">
-                    <!-- CRÉDITS BADGE - DOURADO -->
-                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
-                        <i class="fas fa-coins me-2"></i>
-                        <span id="creditsCount">0</span> créditos
-                    </div>
-                    
-                    <span class="admin-badge" id="adminBadge">
-                        <i class="fas fa-crown me-1"></i>
-                        Admin
+                <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
+                    <!-- 👤 NOME DO USER - CLARO -->
+                    <span class="user-name-display">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="userName">Usuário</span>
                     </span>
                     
-                    <div class="dropdown">
-                        <button class="btn btn-light rounded-pill px-4" type="button" data-bs-toggle="dropdown" style="background: rgba(255,255,255,0.15); color: white; border-color: rgba(255,255,255,0.2);">
-                            <i class="fas fa-user-circle me-2"></i>
-                            <span id="userName" style="color: white;">Usuário</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end" style="background: rgba(102, 126, 234, 0.95); border-color: rgba(255,255,255,0.2);">
-                            <li>
-                                <span class="dropdown-item-text text-muted small" id="workshopName" style="color: rgba(255,255,255,0.7);">
-                                    <i class="fas fa-wrench me-2"></i>Oficina
-                                </span>
-                            </li>
-                            <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.2);"></li>
-                            <li>
-                                <!-- 🔥 LOGOUT - Chama o método do auth.js -->
-                                <a class="dropdown-item" href="#" onclick="event.preventDefault(); window.appAuth.logout();" style="color: rgba(255,255,255,0.8);">
-                                    <i class="fas fa-sign-out-alt me-2"></i>Sair
-                                </a>
-                            </li>
-                        </ul>
+                    <!-- 🔥 CRÉDITS - DOURADO (SOMENTE AQUI) -->
+                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                        <i class="fas fa-coins"></i>
+                        <span id="creditsCount">0</span>
                     </div>
+                    
+                    <!-- 🔥 PLANOS -->
+                    <a href="/planos" class="btn-planos">
+                        <i class="fas fa-crown"></i> Planos
+                    </a>
+                    
+                    <!-- 🔥 SAIR -->
+                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
+                        <i class="fas fa-sign-out-alt"></i> Sair
+                    </a>
                 </div>
             </div>
         </div>
     </nav>
 
-    <!-- TELA DE CARREGAMENTO GLOBAL -->
+    <!-- ============================================== -->
+    <!-- 🔥 TELA DE CARREGAMENTO - ANIMAÇÃO BONITA -->
+    <!-- ============================================== -->
     <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner-brain"></div>
-        <div class="loading-text" id="loadingText">Processando sua análise...</div>
-        <div class="loading-subtext" id="loadingSubtext">A IA está analisando seus dados</div>
-        <div class="loading-progress" id="loadingProgress">
-            <div class="progress">
-                <div class="progress-bar" id="loadingProgressBar" style="width: 0%"></div>
+        <div class="loading-container">
+            <div class="loading-icon">
+                <i class="fas fa-robot" style="color: #f5a623;"></i>
+            </div>
+            <div class="loading-title" id="loadingTitle">Preparando sua análise</div>
+            <div class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</div>
+            
+            <div class="loading-steps" id="loadingSteps">
+                <div class="loading-step active" data-step="0">
+                    <span class="step-icon">📊</span>
+                    <span class="step-label">ML</span>
+                </div>
+                <div class="loading-step" data-step="1">
+                    <span class="step-icon">🤖</span>
+                    <span class="step-label">IA</span>
+                </div>
+                <div class="loading-step" data-step="2">
+                    <span class="step-icon">📈</span>
+                    <span class="step-label">Dashboard</span>
+                </div>
+            </div>
+            
+            <div class="loading-progress">
+                <div class="progress">
+                    <div class="progress-bar" id="loadingProgressBar" style="width: 0%"></div>
+                </div>
+                <div class="loading-percent" id="loadingPercent">0%</div>
             </div>
         </div>
     </div>
 
-    <!-- Hero Section com Upload -->
+    <!-- ============================================== -->
+    <!-- 🔥 CONTEÚDO PRINCIPAL -->
+    <!-- ============================================== -->
     <section class="hero-section">
-        <div class="hero-bg"></div>
         <div class="container">
-            <div class="row align-items-center min-vh-100">
-                <div class="col-lg-6 mb-5 mb-lg-0" data-aos="fade-right" data-aos-duration="1000">
-                    <span class="badge mb-3 py-2 px-3" style="background: rgba(255,255,255,0.15); color: #f5a623; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-robot me-2"></i>Scikit-learn + IA
-                    </span>
-                    <h1 class="hero-title">
-                        Análise Inteligente para<br>
-                        <span class="gradient-text">sua oficina mecânica</span>
-                    </h1>
-                    <p class="hero-subtitle">
-                        <strong>🚀 Upload automático!</strong><br>
-                        Basta enviar seus arquivos CSV ou Excel. 
-                        O sistema detecta automaticamente os padrões e gera insights poderosos.
-                    </p>
-                    
-                    <div class="row g-3 mb-4">
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Sem seleção de colunas</small>
+            <div class="row g-4">
+                
+                <!-- ===== COLUNA ESQUERDA - MÉTRICAS ===== -->
+                <div class="col-lg-4">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="upload-card" data-aos="fade-right" data-aos-duration="800">
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-chart-simple"></i> Métricas
+                                    </h5>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="totalAnalises">0</div>
+                                            <div class="metric-label">Análises</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="analisesHoje">0</div>
+                                            <div class="metric-label">Hoje</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="creditsDisplay">0</div>
+                                            <div class="metric-label">Créditos Disponíveis</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Detecção automática</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Análise completa</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="fas fa-check-circle text-success me-2"></i>
-                                <small style="color: rgba(255,255,255,0.7);">Resultados em segundos</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Métricas Rápidas -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="totalAnalises">0</div>
-                                <div class="metric-label">Análises</div>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="analisesHoje">0</div>
-                                <div class="metric-label">Hoje</div>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="metric-card text-center p-3">
-                                <div class="metric-value" id="creditsDisplay">0</div>
-                                <div class="metric-label">Créditos</div>
+                        
+                        <!-- 🔥 STATUS PREMIUM -->
+                        <div class="col-12">
+                            <div class="upload-card" id="premiumStatusContainer" data-aos="fade-right" data-aos-delay="100">
+                                <div class="text-center py-2">
+                                    <div class="spinner-border text-warning" role="status" style="color: #f5a623; width: 1.5rem; height: 1.5rem;">
+                                        <span class="visually-hidden">Carregando...</span>
+                                    </div>
+                                    <p class="mt-1 small" style="color: rgba(255,255,255,0.6);">Carregando status...</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <div class="col-lg-6" data-aos="fade-left" data-aos-duration="1000">
-                    <div class="row">
-                        <!-- 🔥 CARD DE STATUS PREMIUM -->
-                        <div class="col-12 mb-4">
-                            <div class="upload-card" id="premiumStatusContainer">
-                                <div class="text-center py-3">
-                                    <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
-                                        <span class="visually-hidden">Carregando...</span>
-                                    </div>
-                                    <p class="mt-2" style="color: rgba(255,255,255,0.6);">Carregando status do plano...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Card de Upload -->
+                <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
+                <div class="col-lg-8">
+                    <div class="row g-3">
+                        <!-- 🔥 UPLOAD -->
                         <div class="col-12">
-                            <div class="upload-card mb-4">
-                                <div class="d-flex align-items-center justify-content-between mb-4">
-                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">
-                                        <i class="fas fa-cloud-upload-alt me-2" style="color: #f5a623;"></i>
-                                        Upload Automático
-                                    </h3>
-                                    <span class="badge py-2 px-3" id="uploadCreditsBadge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white;">
+                            <div class="upload-card" data-aos="fade-left" data-aos-duration="800">
+                                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-cloud-upload-alt"></i> Enviar Arquivos
+                                    </h5>
+                                    <span class="badge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white; padding: 0.3rem 0.8rem;">
                                         <i class="fas fa-coins me-1"></i>
                                         <span id="uploadCredits">0</span> créditos
                                     </span>
@@ -1001,136 +826,96 @@
                                 <!-- Limites -->
                                 <div class="limit-info">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
-                                        <div>
-                                            <i class="fas fa-hard-drive"></i>
-                                            <span>Limite: <strong class="limit-value">200 KB</strong>/arquivo</span>
-                                        </div>
-                                        <div>
-                                            <i class="fas fa-layer-group"></i>
-                                            <span>Máximo: <strong class="limit-value">3 arquivos</strong>/vez</span>
-                                        </div>
-                                        <div>
-                                            <i class="fas fa-coins"></i>
-                                            <span>Custo: <strong class="limit-value">1 crédito</strong>/arquivo</span>
-                                        </div>
+                                        <span><i class="fas fa-hard-drive"></i> <strong class="limit-value">200 KB</strong>/arquivo</span>
+                                        <span><i class="fas fa-layer-group"></i> <strong class="limit-value">3</strong> arquivos/vez</span>
+                                        <span><i class="fas fa-coins"></i> <strong class="limit-value">1</strong> crédito/arquivo</span>
                                     </div>
                                 </div>
                                 
                                 <form id="uploadForm">
-                                    <div class="upload-area mb-4" id="dropArea">
+                                    <div class="upload-area mb-3" id="dropArea">
                                         <div class="upload-icon">
                                             <i class="fas fa-file-excel"></i>
                                         </div>
-                                        <h4 class="h6 mb-2" style="color: rgba(255,255,255,0.8);">Arraste seus arquivos aqui</h4>
-                                        <p class="text-muted small mb-3" style="color: rgba(255,255,255,0.6);">
-                                            <i class="fas fa-file-csv me-1"></i> CSV 
-                                            <i class="fas fa-file-excel ms-2 me-1"></i> Excel
-                                            <i class="fas fa-layer-group ms-2 me-1"></i> Até 3 arquivos
-                                        </p>
-                                        <div class="text-muted small mb-2" style="color: rgba(255,255,255,0.6);">
-                                            <i class="fas fa-info-circle me-1"></i>
-                                            Limite de <strong style="color: #f5a623;">200KB</strong> por arquivo
-                                        </div>
+                                        <h4>Arraste seus arquivos aqui</h4>
+                                        <p class="small">CSV · Excel · Até 3 arquivos</p>
                                         <div>
-                                            <label for="fileInput" class="btn btn-gradient btn-sm">
-                                                <i class="fas fa-folder-open me-2"></i>
-                                                Selecionar Arquivos
+                                            <label for="fileInput" class="btn-select">
+                                                <i class="fas fa-folder-open me-2"></i> Selecionar
                                             </label>
                                             <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
                                         </div>
                                     </div>
                                     
-                                    <div class="size-warning" id="sizeWarning">
-                                        <i class="fas fa-exclamation-triangle me-2"></i>
-                                        <span id="sizeWarningText">Arquivo excede o limite de 200KB!</span>
-                                    </div>
-                                    
-                                    <div id="filePreviewContainer" class="mt-3"></div>
-                                    
-                                    <div class="processing-indicator mb-3">
-                                        <div class="processing-icon">
-                                            <i class="fas fa-robot"></i>
-                                        </div>
-                                        <div class="processing-text">
-                                            <strong>Processamento automático</strong>
-                                            <p class="small text-muted mb-0" style="color: rgba(255,255,255,0.6);">
-                                                O sistema detectará automaticamente:
-                                                <br>• Colunas mais importantes
-                                                <br>• Padrões nos dados
-                                                <br>• Melhor tipo de análise
-                                            </p>
-                                        </div>
-                                    </div>
+                                    <div id="filePreviewContainer" class="mt-2"></div>
                                     
                                     <div class="d-grid">
-                                        <button type="submit" id="uploadButton" class="btn btn-gradient" disabled>
+                                        <button type="submit" id="uploadButton" class="btn-gradient w-100" disabled>
                                             <i class="fas fa-play-circle me-2"></i>
                                             Iniciar Análise
-                                            <span class="badge bg-light text-dark ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>
+                                            <span class="badge ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>
                                         </button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                         
-                        <!-- Análises em Andamento -->
-                        <div class="col-12 mb-4">
-                            <div class="upload-card">
-                                <div class="d-flex align-items-center justify-content-between mb-4">
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-chart-line me-2 fa-lg" style="color: #f5a623;"></i>
-                                        <h3 class="h5 mb-0 fw-bold" style="color: white;">Análises em Andamento</h3>
-                                        <span class="badge ms-2" id="activeAnalysesCount" style="background: #f5a623; color: white;">0</span>
-                                    </div>
-                                </div>
-                                
-                                <div id="activeAnalysesContainer">
-                                    <div class="text-center py-5" style="color: rgba(255,255,255,0.5);">
-                                        <i class="fas fa-cloud-upload-alt fa-3x mb-3 opacity-50"></i>
-                                        <h6>Nenhuma análise em andamento</h6>
-                                        <p class="small">Selecione até 3 arquivos para começar</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Histórico de Análises -->
+                        <!-- 🔥 ANÁLISES EM ANDAMENTO -->
                         <div class="col-12">
-                            <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
-                                <div class="d-flex align-items-center mb-4">
-                                    <i class="fas fa-history me-2" style="color: #f5a623;"></i>
-                                    <h3 class="h5 mb-0 fw-bold" style="color: white;">Histórico de Análises</h3>
+                            <div class="upload-card" data-aos="fade-left" data-aos-delay="100">
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-spinner fa-pulse"></i> Análises
+                                    </h5>
+                                    <span class="badge" style="background: #f5a623; color: white;" id="activeAnalysesCount">0</span>
                                 </div>
-                                
-                                <div class="timeline" id="recentAnalyses" style="max-height: 400px; overflow-y: auto;">
-                                    <div class="timeline-item">
-                                        <div class="timeline-marker"></div>
-                                        <div class="timeline-content">
-                                            <p class="mb-1 small">Carregando histórico...</p>
-                                            <small style="color: rgba(255,255,255,0.5);">Aguarde</small>
-                                        </div>
+                                <div id="activeAnalysesContainer">
+                                    <div class="text-center py-4" style="color: rgba(255,255,255,0.5);">
+                                        <i class="fas fa-cloud-upload-alt fa-2x mb-2 opacity-50"></i>
+                                        <p class="small mb-0">Nenhuma análise em andamento</p>
                                     </div>
-                                </div>
-                                
-                                <div class="mt-3 text-center">
-                                    <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: #f5a623;">
-                                        <i class="fas fa-eye me-1"></i> Ver todas as análises
-                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
+                
+                <!-- ===== LINHA COMPLETA - HISTÓRICO ===== -->
+                <div class="col-12">
+                    <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-history me-2" style="color: #f5a623;"></i>
+                            <h5 class="card-title mb-0">Histórico de Análises</h5>
+                        </div>
+                        <div class="timeline" id="recentAnalyses" style="max-height: 350px; overflow-y: auto;">
+                            <div class="timeline-item">
+                                <div class="timeline-marker"></div>
+                                <div class="timeline-content">
+                                    <p class="mb-1 small">Carregando histórico...</p>
+                                    <small style="color: rgba(255,255,255,0.4);">Aguarde</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: #f5a623;">
+                                <i class="fas fa-eye me-1"></i> Ver todas
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
             </div>
         </div>
     </section>
 
-    <!-- Modal de Créditos -->
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL DE CRÉDITOS -->
+    <!-- ============================================== -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
-                    <h5 class="modal-title" style="color: white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.15);">
+                    <h5 class="modal-title">
                         <i class="fas fa-coins text-warning me-2" style="color: #f5a623;"></i>
                         Meus Créditos
                     </h5>
@@ -1140,33 +925,33 @@
                     <i class="fas fa-coins fa-4x mb-3" style="color: #f5a623;"></i>
                     <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #f5a623;">0</div>
                     <p class="text-muted mb-3" style="color: rgba(255,255,255,0.7);">créditos disponíveis</p>
-                    
                     <div class="alert alert-info small">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong style="color: #f5a623;">Como funcionam os créditos:</strong><br>
-                        • Você começa com <strong style="color: #f5a623;">3 créditos gratuitos</strong><br>
+                        <strong style="color: #f5a623;">Como funcionam:</strong><br>
+                        • Você começa com <strong style="color: #f5a623;">3 créditos grátis</strong><br>
                         • ⭐ Premium ganha 1 crédito por dia<br>
                         • Cada análise consome 1 crédito<br>
                         • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
                         • 🔥 Limite máximo de 3 créditos acumulados
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.2);">
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.15);">
                     <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 0.75rem; border-radius: 50px;">
-                        <i class="fas fa-credit-card me-2"></i>
-                        Comprar mais créditos
+                        <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
                     </a>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modal GPSA -->
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL GPSA -->
+    <!-- ============================================== -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
             <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.2);">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.2);">
-                    <h5 class="modal-title" style="color: white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.15);">
+                    <h5 class="modal-title">
                         <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
                         GPSA - Impacto no Negócio
                     </h5>
@@ -1184,71 +969,46 @@
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-white py-4 mt-5">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <p class="text-muted small mb-0" style="color: rgba(255,255,255,0.6);">
-                        <i class="fas fa-robot me-2" style="color: #f5a623;"></i>
-                        AutoAnalyticsPro © 2024 - IA para oficinas mecânicas
-                    </p>
-                </div>
-                <div class="col-md-6 text-md-end">
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-brain me-1"></i> AutoML
-                    </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-chart-line me-1"></i> Scikit-learn
-                    </span>
-                    <span class="badge py-2 px-3 me-2" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-layer-group me-1"></i> Até 3 arquivos
-                    </span>
-                    <span class="badge py-2 px-3" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.2);">
-                        <i class="fas fa-hard-drive me-1"></i> 200KB Limit
-                    </span>
-                </div>
-            </div>
-        </div>
-    </footer>
-
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRIGIDA -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1. Bootstrap Bundle -->
+    <!-- Bootstrap -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- 2. AOS Animation -->
+    <!-- AOS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     
-    <!-- 3. GSAP -->
+    <!-- GSAP -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
     
-    <!-- 4. Toastr -->
+    <!-- Toastr -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
-    <!-- 5. PapaParse para CSV -->
+    <!-- PapaParse -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     
-    <!-- 6. XLSX para Excel -->
+    <!-- XLSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
-    <!-- 7. 🔥 AUTH - PRIMEIRO (antes de app.js e dashboard.js) -->
+    <!-- 🔥 AUTH - PRIMEIRO -->
     <script src="/static/js/auth.js"></script>
     
-    <!-- 8. APP - LÓGICA PRINCIPAL -->
+    <!-- 🔥 APP - ORQUESTRADOR -->
     <script src="/static/js/app.js"></script>
     
-    <!-- 9. DASHBOARD - UI E GRÁFICOS -->
+    <!-- 🔥 DASHBOARD - FUNCIONALIDADES -->
     <script src="/static/js/dashboard.js"></script>
     
-    <!-- 10. PAYMENT - SISTEMA DE PAGAMENTOS -->
+    <!-- 🔥 PAYMENT - PAGAMENTOS -->
     <script src="/static/js/payment.js?v=2.0"></script>
 
-    <!-- Configuração do Toastr -->
+    <!-- ============================================== -->
+    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO -->
+    <!-- ============================================== -->
     <script>
+        // Toastr
         toastr.options = {
             closeButton: true,
             progressBar: true,
@@ -1257,189 +1017,118 @@
             extendedTimeOut: 1000,
             escapeHtml: true
         };
-    </script>
 
-    <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO - CORRIGIDA -->
-    <!-- ============================================== -->
-    <script>
+        // AOS
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('📄 Index: DOM carregado, iniciando verificações...');
-            
-            // 🔥 SEGUNDA VERIFICAÇÃO (fallback) - caso o bloqueio imediato não tenha funcionado
+            AOS.init({ once: true, duration: 800, offset: 50 });
+            gsap.registerPlugin(ScrollTrigger);
+
+            // Animação GSAP
+            gsap.from('.upload-card', {
+                scrollTrigger: {
+                    trigger: '.upload-card',
+                    start: 'top 90%',
+                    toggleActions: 'play none none reverse'
+                },
+                duration: 0.8,
+                y: 30,
+                opacity: 0,
+                stagger: 0.15,
+                ease: 'power3.out'
+            });
+
+            // Verificação de token
             const token = localStorage.getItem('access_token');
             if (!token || token === '' || token === 'undefined' || token === 'null') {
                 console.log('🔒 Fallback: Token não encontrado. Redirecionando...');
                 window.location.href = '/login';
                 return;
             }
-            
-            // 🔥 Inicializa AOS
-            AOS.init({ once: true, duration: 1000 });
-            gsap.registerPlugin(ScrollTrigger);
 
-            // 🔥 Navbar scroll effect
-            window.addEventListener('scroll', function() {
-                const navbar = document.getElementById('mainNavbar');
-                if (window.scrollY > 50) {
-                    navbar.classList.add('scrolled');
-                } else {
-                    navbar.classList.remove('scrolled');
-                }
-            });
-
-            // 🔥 Animações GSAP
-            gsap.from('.hero-title', {
-                duration: 1,
-                y: 100,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-
-            gsap.from('.upload-card', {
-                scrollTrigger: {
-                    trigger: '.upload-card',
-                    start: 'top 80%',
-                    toggleActions: 'play none none reverse'
-                },
-                duration: 1,
-                x: 100,
-                opacity: 0,
-                ease: 'power3.out'
-            });
-            
-            // ==============================================
-            // 🔥 VERIFICAÇÃO DO APP - CORRIGIDA
-            // ==============================================
-            
-            // Função para verificar se o app está carregado
-            function checkAppLoaded() {
-                // Verifica se window.appAuth existe (auth.js)
-                const authLoaded = window.appAuth !== undefined && window.appAuth !== null;
-                
-                // Verifica se window.app existe (app.js)
-                const appLoaded = window.app !== undefined && window.app !== null;
-                
-                // Verifica se window.autoAnalytics existe (alias do app.js)
-                const autoAnalyticsLoaded = window.autoAnalytics !== undefined && window.autoAnalytics !== null;
-                
-                console.log('📊 Status de carregamento:');
-                console.log(`   - auth.js: ${authLoaded ? '✅' : '❌'} (window.appAuth)`);
-                console.log(`   - app.js: ${appLoaded ? '✅' : '❌'} (window.app)`);
-                console.log(`   - autoAnalytics: ${autoAnalyticsLoaded ? '✅' : '❌'} (window.autoAnalytics)`);
-                
-                return authLoaded && (appLoaded || autoAnalyticsLoaded);
-            }
-            
-            // Função para carregar status premium
+            // Carregar status premium
             function loadPremiumStatusIfAvailable() {
                 try {
-                    // Tenta usar window.loadPremiumStatus (exportado pelo auth.js)
                     if (typeof window.loadPremiumStatus === 'function') {
-                        console.log('📊 Carregando status premium via window.loadPremiumStatus...');
                         window.loadPremiumStatus();
                         return true;
                     }
-                    
-                    // Tenta usar window.app.loadPremiumStatus
                     if (window.app && typeof window.app.loadPremiumStatus === 'function') {
-                        console.log('📊 Carregando status premium via window.app.loadPremiumStatus...');
                         window.app.loadPremiumStatus();
                         return true;
                     }
-                    
-                    // Tenta usar window.autoAnalytics.loadPremiumStatus
                     if (window.autoAnalytics && typeof window.autoAnalytics.loadPremiumStatus === 'function') {
-                        console.log('📊 Carregando status premium via window.autoAnalytics.loadPremiumStatus...');
                         window.autoAnalytics.loadPremiumStatus();
                         return true;
                     }
-                    
-                    console.warn('⚠️ Nenhuma função loadPremiumStatus encontrada');
                     return false;
                 } catch (error) {
-                    console.warn('⚠️ Erro ao carregar status premium:', error);
                     return false;
                 }
             }
-            
-            // Função para iniciar polling de status premium
+
             function startPremiumPollingIfAvailable() {
                 try {
                     if (typeof window.startPremiumStatusPolling === 'function') {
-                        console.log('📊 Iniciando polling de status premium (60s)...');
                         window.startPremiumStatusPolling(60000);
                         return true;
                     }
-                    
                     if (window.app && typeof window.app.startPremiumStatusPolling === 'function') {
-                        console.log('📊 Iniciando polling via window.app...');
                         window.app.startPremiumStatusPolling(60000);
                         return true;
                     }
-                    
                     if (window.autoAnalytics && typeof window.autoAnalytics.startPremiumStatusPolling === 'function') {
-                        console.log('📊 Iniciando polling via window.autoAnalytics...');
                         window.autoAnalytics.startPremiumStatusPolling(60000);
                         return true;
                     }
-                    
                     return false;
                 } catch (error) {
-                    console.warn('⚠️ Erro ao iniciar polling:', error);
                     return false;
                 }
             }
-            
-            // 🔥 Tenta carregar o app imediatamente
+
+            // Aguardar app carregar
+            function checkAppLoaded() {
+                const authLoaded = window.appAuth !== undefined && window.appAuth !== null;
+                const appLoaded = window.app !== undefined && window.app !== null;
+                const autoAnalyticsLoaded = window.autoAnalytics !== undefined && window.autoAnalytics !== null;
+                return authLoaded && (appLoaded || autoAnalyticsLoaded);
+            }
+
             if (checkAppLoaded()) {
-                console.log('✅ App já carregado!');
                 loadPremiumStatusIfAvailable();
                 startPremiumPollingIfAvailable();
             } else {
-                // 🔥 Aguarda o app carregar (com timeout)
-                console.log('⏳ Aguardando carregamento do app...');
                 let attempts = 0;
                 const maxAttempts = 30;
-                
                 const waitForApp = setInterval(() => {
                     attempts++;
-                    
                     if (checkAppLoaded()) {
                         clearInterval(waitForApp);
-                        console.log(`✅ App carregado após ${attempts} tentativas!`);
                         loadPremiumStatusIfAvailable();
                         startPremiumPollingIfAvailable();
                     } else if (attempts >= maxAttempts) {
                         clearInterval(waitForApp);
-                        console.error('❌ Timeout: App não carregou após 30 tentativas');
-                        if (typeof toastr !== 'undefined') {
-                            toastr.error('Erro ao carregar a aplicação. Recarregue a página.');
-                        }
+                        console.error('❌ Timeout: App não carregou');
                     }
                 }, 200);
             }
-            
-            // 🔥 Listener para evento authReady (disparado pelo auth.js)
+
+            // Eventos
             document.addEventListener('authReady', function(event) {
-                console.log('📡 Evento authReady recebido:', event.detail);
                 if (event.detail && event.detail.isAuthenticated) {
                     loadPremiumStatusIfAvailable();
                     startPremiumPollingIfAvailable();
                 }
             });
-            
-            // 🔥 Listener para evento creditsUpdated (disparado pelo auth.js)
+
             document.addEventListener('creditsUpdated', function(event) {
-                console.log('📡 Evento creditsUpdated recebido:', event.detail);
-                // Atualiza elementos de créditos se necessário
                 const creditsDisplay = document.getElementById('creditsDisplay');
                 if (creditsDisplay && event.detail && event.detail.display) {
                     creditsDisplay.textContent = event.detail.display;
                 }
             });
-            
-            console.log('✅ Index: Inicialização concluída!');
+
+            console.log('✅ Dashboard carregado com sucesso!');
         });
     </script>
 </body>

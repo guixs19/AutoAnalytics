@@ -1,14 +1,10 @@
-# backend/security.py - VERSÃO CORRIGIDA E OTIMIZADA
+# backend/security.py - SEM CAPTCHA (VERSÃO SIMPLIFICADA)
 """
-MÓDULO CENTRAL DE SEGURANÇA - VERSÃO PRODUÇÃO
-- CAPTCHA com resolução otimizada (300x110, esticado pelo CSS)
-- Rate Limit rigoroso com Redis
-- Atomic Pop na validação (anti-replay)
-- 🔥 CORREÇÃO: TODOS os valores convertidos para int()
-- 🔥 CORREÇÃO: Blacklist não bloqueia quando Redis está offline
-- 🔥 CORREÇÃO: Tokens expirados NÃO vão para blacklist
-- 🔥 MELHORIA: jti com TTL correto
-- 🔥 MELHORIA: Fallback seguro para Redis offline
+MÓDULO CENTRAL DE SEGURANÇA - VERSÃO SEM CAPTCHA
+- JWT com Redis e blacklist
+- Rate Limit com Redis
+- Argon2 para hash de senhas
+- 🔥 REMOVIDO: CAPTCHA completamente
 """
 
 from datetime import datetime, timedelta
@@ -17,13 +13,9 @@ import secrets
 import hashlib
 import hmac
 import logging
-import io
-import random
-import string
 import time
 import os
 import asyncio
-from functools import lru_cache
 
 # Argon2
 from argon2 import PasswordHasher
@@ -34,25 +26,15 @@ from jose import JWTError, jwt
 
 # FastAPI
 from fastapi import HTTPException, status, Request, Depends
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import JSONResponse, Response
 
 # Redis
 import redis.asyncio as redis
 
-# PIL para geração de imagem com distorção
-try:
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-    logging.warning("⚠️ PIL não disponível. Instale: pip install Pillow")
-
 # Configurações
 from backend.config.settings import settings
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ==============================================
@@ -64,18 +46,6 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=False,
     scheme_name="JWT"
 )
-
-# Rate limit para CAPTCHA (anti-brute force)
-CAPTCHA_RATE_LIMIT = 5
-CAPTCHA_RATE_WINDOW = 60
-
-# Rate limit para geração de CAPTCHA
-CAPTCHA_GENERATE_LIMIT = 10
-CAPTCHA_GENERATE_WINDOW = 60
-
-# 🔥 CONFIGURAÇÃO: Tolerância para Redis offline
-REDIS_OFFLINE_TOLERANCE = True  # Se True, não bloqueia quando Redis offline
-
 
 # ==============================================
 # 1. ARGON2 - HASH DE SENHA
@@ -97,20 +67,15 @@ class Argon2Hasher:
     def hash_password(self, password: str) -> str:
         if not password or len(password) < 6:
             raise ValueError("Senha deve ter no mínimo 6 caracteres")
-        
         try:
             return self.ph.hash(password)
         except Exception as e:
             logger.error(f"Erro ao gerar hash: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Erro interno ao processar senha"
-            )
+            raise HTTPException(status_code=500, detail="Erro interno ao processar senha")
     
     def verify_password(self, password: str, hashed: str) -> bool:
         if not password or not hashed:
             return False
-        
         try:
             return self.ph.verify(hashed, password)
         except VerifyMismatchError:
@@ -133,15 +98,11 @@ class Argon2Hasher:
 
 
 # ==============================================
-# 2. JWT COMPLETO COM REDIS E BLACKLIST - CORRIGIDO
+# 2. JWT COMPLETO COM REDIS E BLACKLIST
 # ==============================================
 
 class JWTManager:
-    """
-    Gerenciador de JWT com Redis e blacklist completa
-    🔥 CORREÇÃO: Redis offline não bloqueia tokens
-    🔥 CORREÇÃO: Blacklist só para revogação (não para expiração)
-    """
+    """Gerenciador de JWT com Redis e blacklist completa"""
     
     def __init__(self):
         self.secret_key = settings.SECRET_KEY
@@ -160,7 +121,6 @@ class JWTManager:
         self._last_cache_cleanup = time.time()
         self._cache_cleanup_interval = 300
         
-        # 🔥 Estatísticas de blacklist
         self._blacklist_stats = {
             "total_revoked": 0,
             "redis_failures": 0,
@@ -172,7 +132,6 @@ class JWTManager:
     async def init_redis(self):
         if self._redis_initialized:
             return
-        
         try:
             self.redis_client = redis.from_url(
                 f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
@@ -193,7 +152,6 @@ class JWTManager:
     
     def _create_token_payload(self, data: Dict[str, Any], token_type: str, expires_delta: timedelta) -> Dict[str, Any]:
         now = datetime.utcnow()
-        
         payload = {
             "sub": data.get("sub") or data.get("email"),
             "email": data.get("email"),
@@ -209,7 +167,6 @@ class JWTManager:
             "iss": "autoanalytics",
             "aud": "autoanalytics-api"
         }
-        
         return {k: v for k, v in payload.items() if v is not None}
     
     def create_access_token(self, data: Dict[str, Any]) -> str:
@@ -233,10 +190,8 @@ class JWTManager:
             "credits": user_data.get("credits", 0),
             "is_admin": user_data.get("is_admin", False)
         }
-        
         access_token = self.create_access_token(payload)
         refresh_token, refresh_jti = self.create_refresh_token(payload)
-        
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -268,103 +223,72 @@ class JWTManager:
     
     def verify_token(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
         payload = self.decode_token(token)
-        
         if not payload:
             return None
-        
         if payload.get("type") != token_type:
             logger.warning(f"Tipo de token inválido: esperado {token_type}, recebido {payload.get('type')}")
             return None
-        
         return payload
     
     def _cleanup_token_cache(self):
         now = time.time()
-        
         if now - self._last_cache_cleanup < self._cache_cleanup_interval:
             return
-        
         expired = [k for k, v in self._token_cache.items() if now - v["timestamp"] > self._token_cache_ttl]
         for k in expired:
             del self._token_cache[k]
-        
         if len(self._token_cache) > 1000:
             sorted_items = sorted(self._token_cache.items(), key=lambda x: x[1]["timestamp"])
             to_remove = int(len(sorted_items) * 0.2)
             for k, _ in sorted_items[:to_remove]:
                 del self._token_cache[k]
             logger.info(f"🧹 Limpeza emergencial cache tokens: {to_remove} removidos")
-        
         self._last_cache_cleanup = now
     
     async def verify_token_async(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
-        """
-        🔥 CORRIGIDO: Verifica expiração ANTES da blacklist
-        🔥 CORRIGIDO: Redis offline NÃO bloqueia
-        """
         self._cleanup_token_cache()
-        
         token_hash = hashlib.md5(token.encode()).hexdigest()
         if token_hash in self._token_cache:
             cached = self._token_cache[token_hash]
             if time.time() - cached["timestamp"] < self._token_cache_ttl:
                 return cached["payload"]
-        
-        # 🔥 1. Primeiro verifica se o token é válido (inclui expiração)
         payload = self.verify_token(token, token_type)
-        
         if not payload:
             return None
-        
-        # 🔥 2. Depois verifica se está na blacklist (apenas revogação)
         jti = payload.get("jti")
-        if jti:
-            is_blacklisted = await self.is_token_blacklisted(jti)
-            if is_blacklisted:
-                logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (revogado)")
-                return None
-        
-        # Cache apenas tokens válidos
+        if jti and await self.is_token_blacklisted(jti):
+            logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (revogado)")
+            return None
         if len(self._token_cache) < 2000:
             self._token_cache[token_hash] = {
                 "payload": payload,
                 "timestamp": time.time()
             }
-        
         return payload
     
     async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
         from backend import crud
-        
         old_payload = await self.verify_token_async(refresh_token, "refresh")
-        
         if not old_payload:
             logger.warning("Refresh token inválido ou expirado")
             return None
-        
         email = old_payload.get("sub") or old_payload.get("email")
         if not email:
             logger.warning("Refresh token sem email")
             return None
-        
         user = crud.get_user_by_email(db, email)
-        
         if not user:
             logger.warning(f"Usuário {email} não encontrado")
             return None
-        
         if not user.validate_refresh_token(refresh_token):
             logger.warning(f"Refresh token não corresponde ao banco para {email}")
             return None
-        
-        # 🔥 Revoga o refresh token antigo (somente se Redis disponível)
         old_jti = old_payload.get("jti")
         if old_jti:
             exp = old_payload.get("exp", 0)
             remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
             await self.blacklist_token(old_jti, remaining)
             logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
-        
         if old_access_token:
             old_access_payload = self.verify_token(old_access_token, "access")
             if old_access_payload:
@@ -373,7 +297,6 @@ class JWTManager:
                     remaining = max(int(old_access_payload.get("exp", 0) - datetime.utcnow().timestamp()), 300)
                     await self.blacklist_token(old_access_jti, remaining)
                     logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
-        
         user_data = {
             "sub": user.email,
             "email": user.email,
@@ -383,21 +306,15 @@ class JWTManager:
             "credits": user.credits,
             "is_admin": user.is_admin
         }
-        
         new_tokens = self.create_token_pair(user_data)
-        
         user.revoke_refresh_token()
-        
         user.set_refresh_token(
             new_tokens["refresh_token"], 
             new_tokens["refresh_jti"],
             self.refresh_expire_days
         )
-        
         db.commit()
-        
         logger.info(f"✅ Tokens renovados para {email}")
-        
         return {
             "access_token": new_tokens["access_token"],
             "refresh_token": new_tokens["refresh_token"],
@@ -407,23 +324,19 @@ class JWTManager:
     
     async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
         from backend import crud
-        
         refresh_payload = await self.verify_token_async(refresh_token, "refresh")
-        
         if refresh_payload:
             email = refresh_payload.get("sub") or refresh_payload.get("email")
             if email:
                 user = crud.get_user_by_email(db, email)
                 if user and user.validate_refresh_token(refresh_token):
                     user.revoke_refresh_token()
-            
             jti = refresh_payload.get("jti")
             if jti:
                 exp = refresh_payload.get("exp", 0)
                 remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
                 await self.blacklist_token(jti, remaining)
                 logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
-        
         if access_token:
             access_payload = self.verify_token(access_token, "access")
             if access_payload:
@@ -433,31 +346,20 @@ class JWTManager:
                     remaining = max(int(exp - datetime.utcnow().timestamp()), 300)
                     await self.blacklist_token(access_jti, remaining)
                     logger.info(f"🔴 Access token {access_jti[:8]}... blacklistado no logout")
-        
         if db:
             db.commit()
-        
         return True
     
     async def blacklist_token(self, jti: str, expire_in: int):
-        """
-        🔥 CORRIGIDO: Adiciona token à blacklist
-        🔥 CORRIGIDO: Se Redis offline, apenas loga (não trava)
-        🔥 CORRIGIDO: expire_in = tempo restante do token
-        """
         if not jti:
             return
-        
-        # 🔥 Se expire_in <= 0, token já expirou, não precisa blacklistar
         if expire_in <= 0:
             logger.debug(f"Token {jti[:8]}... já expirado, não precisa blacklistar")
             return
-        
         async with self._blacklist_lock:
             if jti in self._pending_blacklist:
                 return
             self._pending_blacklist[jti] = time.time()
-        
         try:
             if self.redis_client:
                 try:
@@ -467,67 +369,44 @@ class JWTManager:
                 except Exception as e:
                     self._blacklist_stats["redis_failures"] += 1
                     logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
-                    # 🔥 Não lança exceção, apenas loga
             else:
-                # 🔥 Redis indisponível: apenas loga, não trava
                 self._blacklist_stats["offline_skips"] += 1
                 logger.warning(f"⚠️ Redis indisponível - token {jti[:8]}... não foi blacklistado")
-                
         finally:
             async with self._blacklist_lock:
                 self._pending_blacklist.pop(jti, None)
     
     async def is_token_blacklisted(self, jti: str) -> bool:
-        """
-        🔥 CORRIGIDO: Verifica se token está na blacklist
-        🔥 CORRIGIDO: Se Redis offline, retorna False (não bloqueia)
-        🔥 CORRIGIDO: Tokens expirados não são considerados blacklistados
-        """
         if not jti:
             return False
-        
-        # Verificar se está pendente
         if jti in self._pending_blacklist:
             return True
-        
-        # 🔥 Se Redis não estiver disponível, NÃO BLOQUEIA (fallback seguro)
         if not self.redis_client:
             logger.warning("⚠️ Redis indisponível - ignorando verificação de blacklist")
             return False
-        
         try:
             exists = await self.redis_client.exists(f"blacklist:{jti}") > 0
-            
-            # 🔥 Se o token está na blacklist, verifica se ainda não expirou
             if exists:
                 ttl = await self.redis_client.ttl(f"blacklist:{jti}")
                 if ttl <= 0:
-                    # 🔥 Se TTL <= 0, o token já expirou, limpa e retorna False
                     await self.redis_client.delete(f"blacklist:{jti}")
                     return False
                 return True
-            
             return False
-            
         except Exception as e:
             logger.error(f"Erro ao verificar blacklist Redis: {e}")
-            # 🔥 Em caso de erro, NÃO BLOQUEIA
             return False
     
     def extract_token_from_header(self, auth_header: str) -> Optional[str]:
         if not auth_header:
             return None
-        
         if auth_header.startswith("Bearer "):
             return auth_header.replace("Bearer ", "").strip()
-        
         if auth_header.startswith("JWT "):
             return auth_header.replace("JWT ", "").strip()
-        
         return auth_header.strip()
     
     def get_blacklist_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas da blacklist"""
         return {
             **self._blacklist_stats,
             "redis_available": self.redis_client is not None,
@@ -536,738 +415,7 @@ class JWTManager:
 
 
 # ==============================================
-# 3. PROOF OF WORK MANAGER 
-# ==============================================
-
-class PoWManager:
-    """Proof of Work Manager - Apenas para upload de arquivos"""
-    
-    def __init__(self):
-        self.default_complexity = 4
-        self.mobile_complexity = 3
-        
-        self.redis_client = None
-        self._redis_initialized = False
-        
-        self._memory_cache = {}
-        self._max_memory_cache = 1000
-        self._last_memory_cleanup = time.time()
-        
-        self._challenge_requests = {}
-        self._max_challenges_per_minute = 10
-        self._cache_lock = asyncio.Lock()
-        
-        logger.info("⚡ PoW Manager inicializado (apenas para upload)")
-    
-    async def init_redis(self):
-        if self._redis_initialized:
-            return
-        
-        try:
-            self.redis_client = redis.from_url(
-                f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
-                decode_responses=True,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-                retry_on_timeout=True
-            )
-            await self.redis_client.ping()
-            self._redis_initialized = True
-            logger.info("✅ Redis configurado para PoW Manager")
-        except Exception as e:
-            logger.warning(f"⚠️ Redis não disponível para PoW: {e}")
-            self.redis_client = None
-            self._redis_initialized = True
-    
-    def _get_redis_key(self, prefix: str) -> str:
-        return f"pow:challenge:{prefix}"
-    
-    async def _check_rate_limit(self, client_ip: str) -> bool:
-        now = time.time()
-        
-        if client_ip in self._challenge_requests:
-            self._challenge_requests[client_ip] = [
-                t for t in self._challenge_requests[client_ip] if now - t < 60
-            ]
-        
-        current_count = len(self._challenge_requests.get(client_ip, []))
-        if current_count >= self._max_challenges_per_minute:
-            return False
-        
-        if client_ip not in self._challenge_requests:
-            self._challenge_requests[client_ip] = []
-        self._challenge_requests[client_ip].append(now)
-        
-        if len(self._challenge_requests) > 1000:
-            self._challenge_requests = {
-                ip: timestamps for ip, timestamps in self._challenge_requests.items()
-                if any(now - t < 300 for t in timestamps)
-            }
-        
-        return True
-    
-    async def get_challenge(self, client_ip: str, complexity: int = None) -> dict:
-        if complexity is None:
-            complexity = self.default_complexity
-        
-        if not await self._check_rate_limit(client_ip):
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=429,
-                detail="Muitos desafios PoW solicitados. Aguarde um momento."
-            )
-        
-        prefix = secrets.token_hex(8)
-        expires_in = 120
-        created_at = time.time()
-        
-        if self.redis_client:
-            try:
-                redis_key = self._get_redis_key(prefix)
-                redis_value = f"{complexity}:{created_at + expires_in}:0:{created_at}"
-                await self.redis_client.setex(redis_key, expires_in, redis_value)
-                
-                return {
-                    "prefix": prefix,
-                    "complexity": complexity,
-                    "timestamp": int(created_at),
-                    "expires_in": expires_in
-                }
-            except Exception as e:
-                logger.error(f"Erro ao salvar PoW no Redis: {e}")
-        
-        async with self._cache_lock:
-            self._cleanup_memory_cache()
-            
-            if len(self._memory_cache) >= self._max_memory_cache:
-                logger.warning("⚠️ PoW cache em memória cheio")
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=503,
-                    detail="Servidor sobrecarregado. Tente novamente."
-                )
-            
-            self._memory_cache[prefix] = {
-                "complexity": complexity,
-                "expires_at": created_at + expires_in,
-                "created_at": created_at,
-                "used": False,
-                "ip": client_ip
-            }
-            
-            return {
-                "prefix": prefix,
-                "complexity": complexity,
-                "timestamp": int(created_at),
-                "expires_in": expires_in
-            }
-    
-    async def verify_solution(self, prefix: str, nonce: str, complexity: int, client_ip: str) -> bool:
-        challenge_data = None
-        used_redis = False
-        
-        if self.redis_client:
-            try:
-                redis_key = self._get_redis_key(prefix)
-                value = await self.redis_client.get(redis_key)
-                
-                if value:
-                    used_redis = True
-                    parts = value.split(":")
-                    if len(parts) >= 4:
-                        stored_complexity = int(parts[0])
-                        expires_at = float(parts[1])
-                        used = parts[2] == "1"
-                        
-                        if used:
-                            return False
-                        
-                        if time.time() > expires_at:
-                            await self.redis_client.delete(redis_key)
-                            return False
-                        
-                        if stored_complexity != complexity:
-                            return False
-                        
-                        challenge_data = {"complexity": stored_complexity}
-            except Exception as e:
-                logger.error(f"Erro ao verificar PoW no Redis: {e}")
-        
-        if not challenge_data:
-            async with self._cache_lock:
-                if prefix not in self._memory_cache:
-                    return False
-                
-                cached = self._memory_cache[prefix]
-                
-                if cached.get("used"):
-                    return False
-                
-                if time.time() > cached.get("expires_at", 0):
-                    del self._memory_cache[prefix]
-                    return False
-                
-                if cached.get("complexity") != complexity:
-                    return False
-                
-                challenge_data = cached
-        
-        is_valid = self._validate_pow(prefix, nonce, complexity)
-        
-        if is_valid:
-            if used_redis and self.redis_client:
-                try:
-                    redis_key = self._get_redis_key(prefix)
-                    current = await self.redis_client.get(redis_key)
-                    if current:
-                        parts = current.split(":")
-                        parts[2] = "1"
-                        ttl = await self.redis_client.ttl(redis_key)
-                        if ttl > 0:
-                            await self.redis_client.setex(redis_key, ttl, ":".join(parts))
-                except Exception as e:
-                    logger.error(f"Erro ao marcar PoW como usado: {e}")
-            else:
-                async with self._cache_lock:
-                    if prefix in self._memory_cache:
-                        self._memory_cache[prefix]["used"] = True
-            
-            logger.info(f"✅ PoW válido para {prefix[:8]}...")
-        else:
-            logger.warning(f"❌ PoW inválido para {prefix[:8]}...")
-        
-        return is_valid
-    
-    def _validate_pow(self, prefix: str, nonce: str, complexity: int) -> bool:
-        import hashlib
-        
-        data = f"{prefix}{nonce}".encode()
-        hash_result = hashlib.sha256(data).hexdigest()
-        
-        return hash_result.startswith('0')
-    
-    def _cleanup_memory_cache(self):
-        now = time.time()
-        
-        if now - self._last_memory_cleanup < 60:
-            return
-        
-        expired = [k for k, v in self._memory_cache.items() if now > v.get("expires_at", 0)]
-        for k in expired:
-            del self._memory_cache[k]
-        
-        if len(self._memory_cache) > self._max_memory_cache:
-            sorted_items = sorted(
-                self._memory_cache.items(),
-                key=lambda x: x[1].get("created_at", 0)
-            )
-            to_remove = len(self._memory_cache) - self._max_memory_cache
-            for k, _ in sorted_items[:to_remove]:
-                del self._memory_cache[k]
-            logger.warning(f"⚠️ PoW cache limpo: {to_remove} removidos")
-        
-        self._last_memory_cleanup = now
-    
-    async def cleanup_expired(self):
-        while True:
-            await asyncio.sleep(300)
-            now = time.time()
-            expired_ips = [
-                ip for ip, timestamps in self._challenge_requests.items()
-                if not any(now - t < 300 for t in timestamps)
-            ]
-            for ip in expired_ips:
-                del self._challenge_requests[ip]
-
-
-# ==============================================
-# 4. CAPTCHA - VERSÃO CORRIGIDA (SEM ERRO DE FLOAT)
-# ==============================================
-
-class CaptchaSession:
-    """Sessão de CAPTCHA"""
-    
-    __slots__ = ['captcha_id', 'correct_code', 'ip', 'expires_at', 'used', 'created_at']
-    
-    def __init__(self, captcha_id: str, correct_code: str, ip: str, expires_at: float):
-        self.captcha_id = captcha_id
-        self.correct_code = correct_code
-        self.ip = ip
-        self.expires_at = expires_at
-        self.used = False
-        self.created_at = time.time()
-    
-    def is_expired(self) -> bool:
-        return time.time() > self.expires_at
-    
-    def time_remaining(self) -> int:
-        return max(0, int(self.expires_at - time.time()))
-
-
-class CaptchaStore:
-    """Armazenamento de CAPTCHAs - Atomic Pop (anti-replay)"""
-    
-    def __init__(self):
-        self._store: Dict[str, CaptchaSession] = {}
-        self._user_sessions: Dict[str, str] = {}
-        self._cleanup_interval = 60
-        self._last_cleanup = time.time()
-        self._cleanup_task: Optional[asyncio.Task] = None
-        self._max_store_size = 5000
-        self._store_lock = asyncio.Lock()
-        
-        logger.info("✅ CaptchaStore inicializado (com Atomic Pop)")
-    
-    async def start_cleanup_loop(self):
-        if self._cleanup_task is not None:
-            return
-        
-        async def cleanup_loop():
-            logger.info("🧹 Loop de limpeza do CAPTCHA iniciado")
-            while True:
-                await asyncio.sleep(self._cleanup_interval)
-                await self._cleanup_async()
-        
-        self._cleanup_task = asyncio.create_task(cleanup_loop())
-        logger.info("✅ Cleanup loop do CAPTCHA agendado")
-    
-    async def stop_cleanup_loop(self):
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-            self._cleanup_task = None
-            logger.info("🛑 Cleanup loop do CAPTCHA parado")
-    
-    def _get_user_key(self, ip: str, session_type: str = "login") -> str:
-        return f"{session_type}:{ip}"
-    
-    async def _cleanup_async(self):
-        async with self._store_lock:
-            now = time.time()
-            expired = [cid for cid, s in self._store.items() if s.is_expired()]
-            
-            for cid in expired:
-                for user_key, session_cid in list(self._user_sessions.items()):
-                    if session_cid == cid:
-                        del self._user_sessions[user_key]
-                del self._store[cid]
-            
-            if expired:
-                logger.info(f"🧹 {len(expired)} CAPTCHAs expirados removidos")
-            
-            self._last_cleanup = now
-    
-    async def add(self, captcha_id: str, correct_code: str, ip: str, session_type: str = "login") -> str:
-        async with self._store_lock:
-            now = time.time()
-            
-            if now - self._last_cleanup > self._cleanup_interval:
-                await self._cleanup_async()
-            
-            if len(self._store) >= self._max_store_size:
-                logger.warning(f"⚠️ CaptchaStore cheio ({len(self._store)} itens)")
-                sorted_items = sorted(self._store.items(), key=lambda x: x[1].created_at)
-                to_remove = int(len(sorted_items) * 0.1)
-                for cid, _ in sorted_items[:to_remove]:
-                    for user_key, session_cid in list(self._user_sessions.items()):
-                        if session_cid == cid:
-                            del self._user_sessions[user_key]
-                    del self._store[cid]
-                logger.info(f"🧹 Limpeza emergencial: {to_remove} CAPTCHAs removidos")
-            
-            user_key = self._get_user_key(ip, session_type)
-            
-            if user_key in self._user_sessions:
-                old_id = self._user_sessions[user_key]
-                if old_id in self._store:
-                    del self._store[old_id]
-                    logger.info(f"🔄 CAPTCHA anterior para {user_key} substituído")
-                del self._user_sessions[user_key]
-            
-            expires_at = time.time() + 120
-            session = CaptchaSession(captcha_id, correct_code, ip, expires_at)
-            
-            self._store[captcha_id] = session
-            self._user_sessions[user_key] = captcha_id
-            
-            logger.info(f"🔢 CAPTCHA criado para {user_key}: código = {correct_code}")
-            
-            return captcha_id
-    
-    async def get_and_validate(self, captcha_id: str, user_answer: str, ip: str, session_type: str = "login") -> Tuple[bool, str]:
-        """Atomic Pop - deleta antes de validar"""
-        async with self._store_lock:
-            if time.time() - self._last_cleanup > self._cleanup_interval:
-                await self._cleanup_async()
-            
-            if captcha_id not in self._store:
-                return False, "CAPTCHA não encontrado ou já expirou"
-            
-            session = self._store[captcha_id]
-            user_key = self._get_user_key(ip, session_type)
-            
-            if user_key in self._user_sessions and self._user_sessions[user_key] != captcha_id:
-                logger.warning(f"⚠️ Usuário {user_key} tentou usar CAPTCHA de outra sessão")
-                del self._store[captcha_id]
-                if user_key in self._user_sessions:
-                    del self._user_sessions[user_key]
-                return False, "Desafio não pertence à sua sessão atual"
-            
-            if user_key in self._user_sessions and self._user_sessions[user_key] == captcha_id:
-                del self._user_sessions[user_key]
-            del self._store[captcha_id]
-            
-            user_answer_clean = user_answer.strip().replace(" ", "")
-            
-            if session.is_expired():
-                return False, "Desafio expirado (2 minutos)"
-            
-            if session.used:
-                return False, "Desafio já foi utilizado"
-            
-            if user_answer_clean != session.correct_code:
-                logger.warning(f"❌ CAPTCHA incorreto para {user_key}: esperado {session.correct_code}, recebido {user_answer_clean}")
-                return False, f"Resposta incorreta! Tente novamente."
-            
-            logger.info(f"✅ CAPTCHA {captcha_id[:8]}... validado com sucesso para {user_key}!")
-            
-            return True, "Código correto!"
-    
-    def get_active_captcha_for_user(self, ip: str, session_type: str = "login") -> Optional[str]:
-        user_key = self._get_user_key(ip, session_type)
-        captcha_id = self._user_sessions.get(user_key)
-        
-        if captcha_id and captcha_id in self._store:
-            session = self._store[captcha_id]
-            if not session.is_expired() and not session.used:
-                return captcha_id
-        
-        return None
-    
-    def get_stats(self) -> Dict[str, Any]:
-        return {
-            "total_active": len(self._store),
-            "total_sessions": len(self._user_sessions),
-            "max_size": self._max_store_size,
-            "captcha_type": "optimized_gigantic"
-        }
-
-
-# ==============================================
-# 🔥 CAPTCHA MANAGER - VERSÃO CORRIGIDA
-# ==============================================
-
-class CaptchaManager:
-    """
-    Gerenciador de CAPTCHA - RESOLUÇÃO OTIMIZADA
-    🔥 CORREÇÃO: TODOS os valores convertidos para int()
-    """
-    
-    def __init__(self):
-        self.store = CaptchaStore()
-        self._dev_mode = getattr(settings, 'DEBUG', False)
-        
-        # ============================================================
-        # 🔥 RESOLUÇÃO OTIMIZADA (PRODUÇÃO)
-        # ============================================================
-        self.image_width = 300
-        self.image_height = 110
-        self.font_size = 100
-        
-        # Espaçamento fixo entre caracteres
-        self.char_spacing = 20
-        
-        # Rotação mínima
-        self.rotation_range = (-3, 3)
-        
-        # Linhas finas (width=1)
-        self.line_width = 1
-        self.num_lines = 3
-        
-        # Pontos de ruído
-        self.noise_points = 80
-        # ============================================================
-        
-        # Cache de imagens
-        self._image_cache: Dict[str, Tuple[float, bytes]] = {}
-        self._cache_ttl = 60
-        self._max_cache = 50
-        
-        logger.info("=" * 60)
-        logger.info("🔢 CAPTCHA OTIMIZADO PARA PRODUÇÃO!")
-        logger.info(f"   📐 Dimensões: {self.image_width}x{self.image_height}")
-        logger.info(f"   📝 Tamanho da fonte: {self.font_size}px")
-        logger.info(f"   📏 Espaçamento: {self.char_spacing}px")
-        logger.info(f"   🔄 Rotação: {self.rotation_range}")
-        logger.info(f"   📏 Linhas: {self.num_lines} linhas finas")
-        logger.info(f"   🎯 Ruído: {self.noise_points} pontos")
-        logger.info("=" * 60)
-        
-        if self._dev_mode:
-            logger.info("   🔧 Modo DEV: resposta '1234' aceita automaticamente")
-    
-    def _get_client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-        
-        client_ip = request.client.host if request.client else "127.0.0.1"
-        
-        if client_ip in ["localhost", "::1", "::ffff:127.0.0.1"]:
-            client_ip = "127.0.0.1"
-        
-        return client_ip
-    
-    def generate_number_code(self, length: int = 4) -> str:
-        return ''.join(str(random.randint(0, 9)) for _ in range(length))
-    
-    def _draw_optimized_captcha(self, code: str) -> bytes:
-        """
-        🔥 VERSÃO CORRIGIDA - SEM ERRO DE FLOAT
-        """
-        if not PIL_AVAILABLE:
-            return self._generate_svg_fallback(code)
-        
-        # 🔥 CONVERTER TUDO PARA int() para evitar erro de float
-        width = int(self.image_width)
-        height = int(self.image_height)
-        font_size = int(self.font_size)
-        line_width = int(self.line_width)
-        num_lines = int(self.num_lines)
-        noise_points = int(self.noise_points)
-        char_spacing = int(self.char_spacing)
-        
-        # Cria imagem com fundo gradiente
-        img = Image.new('RGB', (width, height), color='white')
-        draw = ImageDraw.Draw(img)
-        
-        # Fundo com gradiente suave
-        for i in range(height):
-            r = int(80 + (i / height) * 60)
-            g = int(100 + (i / height) * 40)
-            b = int(200 - (i / height) * 60)
-            draw.line([(0, i), (width, i)], fill=(r, g, b))
-        
-        # 🔥 LINHAS FINAS
-        for _ in range(num_lines):
-            x1 = random.randint(0, width)
-            y1 = random.randint(0, height)
-            x2 = random.randint(0, width)
-            y2 = random.randint(0, height)
-            draw.line([(x1, y1), (x2, y2)], fill=(160, 160, 160), width=line_width)
-        
-        # 🔥 PONTOS DE RUÍDO
-        for _ in range(noise_points):
-            x = random.randint(0, width)
-            y = random.randint(0, height)
-            gray = random.randint(120, 200)
-            draw.point((x, y), fill=(gray, gray, gray))
-        
-        # 🔥 CARREGAR FONTE
-        try:
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-            except:
-                try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
-                    font = ImageFont.load_default()
-        except:
-            font = ImageFont.load_default()
-        
-        # 🔥 CALCULAR ESPAÇAMENTO
-        total_chars = len(code)
-        margin = 10
-        
-        try:
-            bbox = draw.textbbox((0, 0), '0', font=font)
-            char_width = int(bbox[2] - bbox[0])
-        except:
-            char_width = int(font_size * 0.6)
-        
-        available_width = int(width - (margin * 2))
-        
-        if total_chars > 1:
-            spacing = int((available_width - (char_width * total_chars)) / (total_chars - 1))
-            spacing = max(5, spacing)
-        else:
-            spacing = 0
-        
-        # 🔥 DESENHAR NÚMEROS
-        start_x = margin
-        
-        for i, char in enumerate(code):
-            x = int(start_x + (i * (char_width + spacing)))
-            y = int((height // 2) - (font_size // 2) + random.randint(-2, 2))
-            angle = random.randint(-3, 3)
-            
-            try:
-                bbox = draw.textbbox((0, 0), char, font=font)
-                char_w = int(bbox[2] - bbox[0] + 10)
-                char_h = int(bbox[3] - bbox[1] + 10)
-            except:
-                char_w = int(char_width + 10)
-                char_h = int(font_size + 10)
-            
-            char_img = Image.new('RGBA', (char_w, char_h), (0, 0, 0, 0))
-            char_draw = ImageDraw.Draw(char_img)
-            
-            # Contorno preto
-            for dx in range(-3, 4):
-                for dy in range(-3, 4):
-                    if abs(dx) + abs(dy) > 0:
-                        char_draw.text((5 + dx, 5 + dy), char, fill=(0, 0, 0, 255), font=font)
-            
-            # Número branco
-            char_draw.text((5, 5), char, fill=(255, 255, 255, 255), font=font)
-            
-            # Brilho
-            char_draw.text((4, 4), char, fill=(255, 255, 255, 150), font=font)
-            
-            rotated = char_img.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
-            rot_w, rot_h = rotated.size
-            paste_x = int(x - (rot_w // 2) + (char_w // 2))
-            paste_y = int(y - (rot_h // 2) + (char_h // 2))
-            
-            img.paste(rotated, (paste_x, paste_y), rotated)
-        
-        # Desfoque mínimo
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.2))
-        
-        # Converter para bytes
-        img_bytes = io.BytesIO()
-        img.save(img_bytes, format='PNG', optimize=True)
-        img_bytes.seek(0)
-        
-        return img_bytes.getvalue()
-    
-    def _generate_svg_fallback(self, code: str) -> bytes:
-        width = int(self.image_width)
-        height = int(self.image_height)
-        font_size = int(self.font_size)
-        
-        svg = f'''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
-  <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4a6cf7" />
-      <stop offset="100%" stop-color="#6c3cb0" />
-    </linearGradient>
-    <filter id="shadow">
-      <feDropShadow dx="2" dy="2" stdDeviation="1.5" flood-color="black" flood-opacity="0.5"/>
-    </filter>
-  </defs>
-  
-  <rect width="{width}" height="{height}" fill="url(#bgGrad)" rx="10" ry="10"/>
-  
-  <g fill="rgba(255,255,255,0.12)">
-    {''.join(f'<circle cx="{random.randint(0, width)}" cy="{random.randint(0, height)}" r="{random.randint(1, 2)}" />' for _ in range(50))}
-  </g>
-  
-  {''.join(f'<line x1="{random.randint(0, width)}" y1="{random.randint(0, height)}" x2="{random.randint(0, width)}" y2="{random.randint(0, height)}" stroke="rgba(255,255,255,0.15)" stroke-width="1" />' for _ in range(3))}
-  
-  <text x="{width // 2}" y="{height // 2 + 12}" 
-        font-family="'Courier New', monospace" font-size="{font_size + 10}" font-weight="bold" 
-        fill="white" text-anchor="middle" dominant-baseline="middle"
-        letter-spacing="40"
-        filter="url(#shadow)">
-    {code}
-  </text>
-</svg>'''
-        
-        return svg.encode('utf-8')
-    
-    async def generate_captcha_image_async(self, request: Request, session_type: str = "login") -> Tuple[bytes, str]:
-        """Gera CAPTCHA com rate limit"""
-        client_ip = self._get_client_ip(request)
-        
-        # Rate limit para geração
-        rate_key = f"captcha_generate:{client_ip}:{session_type}"
-        can_generate = await rate_limiter.check_rate_limit(
-            rate_key,
-            CAPTCHA_GENERATE_LIMIT,
-            CAPTCHA_GENERATE_WINDOW
-        )
-        
-        if not can_generate:
-            logger.warning(f"🚨 Rate limit de geração excedido - IP: {client_ip}")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Muitas tentativas de geração de CAPTCHA. Aguarde {CAPTCHA_GENERATE_WINDOW} segundos."
-            )
-        
-        try:
-            code = self.generate_number_code(4)
-            img_bytes = self._draw_optimized_captcha(code)
-            
-            captcha_id = f"captcha_{secrets.token_urlsafe(12)}_{int(time.time())}"
-            
-            await self.store.add(captcha_id, code, client_ip, session_type)
-            
-            logger.debug(f"🔢 CAPTCHA gerado: {code} para {session_type}:{client_ip}")
-            
-            return img_bytes, captcha_id
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao gerar CAPTCHA: {e}")
-            code = "1234"
-            svg = self._generate_svg_fallback(code)
-            captcha_id = f"captcha_fallback_{secrets.token_urlsafe(8)}_{int(time.time())}"
-            await self.store.add(captcha_id, code, client_ip, session_type)
-            return svg, captcha_id
-    
-    async def validate_captcha_async(self, captcha_id: str, captcha_text: str,
-                                      request: Request, session_type: str = "login") -> bool:
-        """Valida CAPTCHA com rate limit e atomic pop"""
-        client_ip = self._get_client_ip(request)
-        
-        if self._dev_mode and captcha_text == "1234":
-            logger.info("🔧 Modo DEV: resposta '1234' aceita")
-            return True
-        
-        # Rate limit para validação
-        rate_key = f"captcha_validate:{client_ip}:{session_type}"
-        can_validate = await rate_limiter.check_rate_limit(
-            rate_key,
-            CAPTCHA_RATE_LIMIT,
-            CAPTCHA_RATE_WINDOW
-        )
-        
-        if not can_validate:
-            logger.warning(f"🚨 Rate limit de validação excedido - IP: {client_ip}")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Muitas tentativas de CAPTCHA. Aguarde {CAPTCHA_RATE_WINDOW} segundos."
-            )
-        
-        valid, message = await self.store.get_and_validate(
-            captcha_id, captcha_text.strip(), client_ip, session_type
-        )
-        
-        if valid:
-            logger.info(f"✅ CAPTCHA válido para {session_type}:{client_ip}")
-        else:
-            logger.warning(f"❌ CAPTCHA inválido para {session_type}:{client_ip}: {message}")
-        
-        return valid
-    
-    def get_active_captcha(self, request: Request, session_type: str = "login") -> Optional[str]:
-        client_ip = self._get_client_ip(request)
-        return self.store.get_active_captcha_for_user(client_ip, session_type)
-    
-    def get_stats(self) -> Dict[str, Any]:
-        return self.store.get_stats()
-
-
-# ==============================================
-# 5. RATE LIMITER
+# 3. RATE LIMITER
 # ==============================================
 
 class RateLimiter:
@@ -1279,13 +427,11 @@ class RateLimiter:
         self._last_cleanup = datetime.now().timestamp()
         self._redis_initialized = False
         self._max_memory_keys = 5000
-        
         logger.info("✅ Rate Limiter inicializado")
     
     async def init_redis(self):
         if self._redis_initialized:
             return
-        
         try:
             self.redis_client = redis.from_url(
                 f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
@@ -1302,14 +448,12 @@ class RateLimiter:
     
     async def check_rate_limit(self, key: str, max_requests: int, window: int) -> bool:
         now = datetime.now().timestamp()
-        
         if self.redis_client:
             try:
                 pipe = self.redis_client.pipeline()
                 await pipe.incr(f"rate:{key}")
                 await pipe.expire(f"rate:{key}", window)
                 result = await pipe.execute()
-                
                 if result[0] <= max_requests:
                     return True
                 else:
@@ -1318,29 +462,21 @@ class RateLimiter:
             except Exception as e:
                 logger.error(f"Erro no Redis: {e}")
                 return True
-        
-        # Fallback em memória
         if now - self._last_cleanup > 300:
             self._cleanup_memory_cache()
             self._last_cleanup = now
-        
         if key not in self.memory_cache:
             self.memory_cache[key] = []
-        
         self.memory_cache[key] = [t for t in self.memory_cache[key] if t > now - window]
-        
         if len(self.memory_cache[key]) >= max_requests:
             logger.warning(f"Rate limit excedido (memória) - {key}")
             return False
-        
         self.memory_cache[key].append(now)
-        
         if len(self.memory_cache) > self._max_memory_keys:
             to_remove = int(len(self.memory_cache) * 0.2)
             for k in list(self.memory_cache.keys())[:to_remove]:
                 del self.memory_cache[k]
             logger.info(f"🧹 Limpeza rate limit cache: {to_remove} chaves")
-        
         return True
     
     def _cleanup_memory_cache(self):
@@ -1352,24 +488,19 @@ class RateLimiter:
 
 
 # ==============================================
-# 6. INSTÂNCIAS GLOBAIS
+# 4. INSTÂNCIAS GLOBAIS
 # ==============================================
 
 hasher = Argon2Hasher()
 jwt_manager = JWTManager()
-captcha_manager = CaptchaManager()
 rate_limiter = RateLimiter()
-pow_manager = PoWManager()
 
 
 # ==============================================
-# 7. DEPENDÊNCIAS FASTAPI
+# 5. DEPENDÊNCIAS FASTAPI
 # ==============================================
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db = None
-):
+async def get_current_user(token: str = Depends(oauth2_scheme), db = None):
     from sqlalchemy.orm import Session
     from backend.database import SessionLocal
     from backend import crud
@@ -1405,16 +536,13 @@ async def get_current_user(
         if not user:
             logger.warning(f"Usuário {email} não encontrado")
             raise credentials_exception
-        
         return user
     finally:
         if should_close:
             db.close()
 
 
-async def get_current_active_user(
-    current_user = Depends(get_current_user)
-):
+async def get_current_active_user(current_user = Depends(get_current_user)):
     if not current_user.is_active:
         logger.warning(f"Usuário {current_user.email} está inativo")
         raise HTTPException(
@@ -1424,9 +552,7 @@ async def get_current_active_user(
     return current_user
 
 
-async def get_current_admin_user(
-    current_user = Depends(get_current_active_user)
-):
+async def get_current_admin_user(current_user = Depends(get_current_active_user)):
     if not current_user.is_admin:
         logger.warning(f"Usuário {current_user.email} tentou acesso admin")
         raise HTTPException(
@@ -1436,14 +562,10 @@ async def get_current_admin_user(
     return current_user
 
 
-async def get_current_manager_user(
-    current_user = Depends(get_current_active_user)
-):
+async def get_current_manager_user(current_user = Depends(get_current_active_user)):
     if current_user.is_admin:
         return current_user
-    
     role_value = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
-    
     if role_value not in ["admin", "ADMIN", "manager", "MANAGER"]:
         logger.warning(f"Usuário {current_user.email} tentou acesso manager")
         raise HTTPException(
@@ -1453,40 +575,8 @@ async def get_current_manager_user(
     return current_user
 
 
-async def check_captcha(request: Request, session_type: str = "login") -> bool:
-    if captcha_manager._dev_mode:
-        return True
-    
-    captcha_id = request.headers.get("X-Captcha-ID")
-    captcha_text = request.headers.get("X-Captcha-Text")
-    
-    if not captcha_id or not captcha_text:
-        try:
-            body = await request.json()
-            captcha_id = body.get("captcha_id") or body.get("captchaId")
-            captcha_text = body.get("captcha_text") or body.get("captchaText")
-        except:
-            pass
-    
-    if not captcha_id or not captcha_text:
-        raise HTTPException(
-            status_code=400,
-            detail="CAPTCHA ID e resposta são obrigatórios"
-        )
-    
-    valid = await captcha_manager.validate_captcha_async(captcha_id, captcha_text, request, session_type)
-    
-    if not valid:
-        raise HTTPException(
-            status_code=400,
-            detail="Código incorreto! Tente novamente."
-        )
-    
-    return True
-
-
 # ==============================================
-# 8. FUNÇÕES DE UTILIDADE
+# 6. FUNÇÕES DE UTILIDADE
 # ==============================================
 
 def generate_api_key() -> str:
@@ -1531,7 +621,7 @@ def verify_password_reset_token(token: str) -> Optional[str]:
 
 
 # ==============================================
-# 9. FUNÇÕES PARA COOKIES
+# 7. FUNÇÕES PARA COOKIES
 # ==============================================
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str = None, expires_in: int = 3600):
@@ -1544,7 +634,6 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str =
         max_age=expires_in,
         path="/"
     )
-    
     if refresh_token:
         response.set_cookie(
             key="refresh_token",
@@ -1555,7 +644,6 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str =
             max_age=7 * 24 * 60 * 60,
             path="/"
         )
-    
     return response
 
 
@@ -1566,32 +654,18 @@ def clear_auth_cookies(response: Response):
 
 
 # ==============================================
-# 10. FUNÇÃO DE LIMPEZA GLOBAL
-# ==============================================
-
-async def start_cleanup_tasks():
-    """Inicia todas as tarefas de limpeza em background"""
-    await captcha_manager.store.start_cleanup_loop()
-    asyncio.create_task(pow_manager.cleanup_expired())
-    logger.info("✅ Tarefas de limpeza em background iniciadas")
-
-
-# ==============================================
-# 11. EXPORTAÇÕES
+# 8. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
     'hasher',
     'jwt_manager',
-    'captcha_manager',
     'rate_limiter',
-    'pow_manager',
     'oauth2_scheme',
     'get_current_user',
     'get_current_active_user',
     'get_current_admin_user',
     'get_current_manager_user',
-    'check_captcha',
     'generate_api_key',
     'generate_reset_token',
     'hash_token',
@@ -1599,20 +673,13 @@ __all__ = [
     'create_password_reset_token',
     'verify_password_reset_token',
     'set_auth_cookies',
-    'clear_auth_cookies',
-    'start_cleanup_tasks'
+    'clear_auth_cookies'
 ]
 
-print("=" * 70)
-print("🔥 CAPTCHA OTIMIZADO - VERSÃO CORRIGIDA!")
-print("   📐 Dimensões: 300x110 (REDUZIDO)")
-print("   📝 Tamanho da fonte: 100px")
-print("   📏 Espaçamento: 20px")
-print("   🔄 Rotação: -3° a +3°")
-print("   📏 Linhas: 3 finas (width=1)")
-print("   🎯 Ruído: 80 pontos")
-print("   🛡️ Rate limit geração: 10/minuto")
-print("   🛡️ Rate limit validação: 5/minuto")
-print("   🔒 ATOMIC POP (deleta antes de validar)")
-print("   🔥 CORREÇÃO: 'float' object cannot be interpreted as an integer")
-print("=" * 70)
+print("=" * 50)
+print("🔥 SECURITY.PY - SEM CAPTCHA (VERSÃO SIMPLIFICADA)")
+print("   ✅ JWT com blacklist")
+print("   ✅ Rate Limit com Redis")
+print("   ✅ Argon2 para hash de senhas")
+print("   ❌ CAPTCHA REMOVIDO")
+print("=" * 50)

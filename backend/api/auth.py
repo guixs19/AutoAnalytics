@@ -1,11 +1,12 @@
-# backend/api/auth.py - VERSÃO CORRIGIDA E OTIMIZADA
+# backend/api/auth.py - SEM CAPTCHA
 """
-Módulo de REGISTRO de usuários
+Módulo de REGISTRO de usuários - SEM CAPTCHA
 Responsável apenas por cadastro de novos usuários
 🔥 CORREÇÕES:
 - Fallback quando Redis offline
 - Tratamento de erro melhorado
 - Validação de telefone mais rigorosa
+- ✅ CAPTCHA REMOVIDO COMPLETAMENTE
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -13,13 +14,11 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional
 import logging
-import re
 import os
 
 from backend.database import get_db
 from backend import crud
 from backend.security import (
-    captcha_manager,
     rate_limiter,
     hasher
 )
@@ -28,13 +27,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["registration"])
 
-# Flag para modo de desenvolvimento (permitir CAPTCHA fixo "1234")
-# Em produção, deve ser False
-DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
-
 
 # ==============================================
-# MODELOS PYDANTIC - CORRIGIDOS
+# MODELOS PYDANTIC - SEM CAPTCHA
 # ==============================================
 
 class RegisterRequest(BaseModel):
@@ -43,15 +38,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=100)
     workshop_name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
-    captcha_id: str
-    captcha_code: str
     session_type: str = "register"
-    
-    @validator('captcha_code')
-    def validate_captcha_code(cls, v):
-        if not v.isdigit():
-            raise ValueError('CAPTCHA deve conter apenas números')
-        return v
     
     @validator('phone')
     def validate_phone(cls, v):
@@ -65,7 +52,7 @@ class RegisterRequest(BaseModel):
 
 
 # ==============================================
-# ROTA DE REGISTRO - CORRIGIDA COM FALLBACK
+# ROTA DE REGISTRO - SEM CAPTCHA
 # ==============================================
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -75,57 +62,20 @@ async def register(
     db: Session = Depends(get_db)
 ):
     """
-    Registro de novo usuário
+    Registro de novo usuário - SEM CAPTCHA
     POST /api/auth/register
-    🔥 CORRIGIDO: Fallback quando Redis offline
     """
     
     client_ip = request.client.host if request.client else "unknown"
     
     logger.info(f"📝 [REGISTER] Tentativa: {register_data.email} | IP: {client_ip}")
     
-    # 🔥 VALIDAÇÃO DO CAPTCHA - Com suporte para modo DEV e fallback
-    is_valid = False
-    
-    # Modo de desenvolvimento: aceita "1234" como código universal
-    if DEV_MODE and register_data.captcha_code == "1234":
-        logger.warning(f"⚠️ [REGISTER] Modo DEV: CAPTCHA 1234 aceito para {register_data.email}")
-        is_valid = True
-    else:
-        try:
-            # Validação normal via Redis
-            is_valid = await captcha_manager.validate_captcha_async(
-                captcha_id=register_data.captcha_id,
-                captcha_text=register_data.captcha_code,
-                request=request,
-                session_type=register_data.session_type
-            )
-        except Exception as e:
-            logger.error(f"❌ [REGISTER] Erro ao validar CAPTCHA: {e}")
-            # 🔥 Se Redis offline e DEV_MODE, permite
-            if DEV_MODE:
-                logger.warning("⚠️ [REGISTER] Modo DEV: CAPTCHA ignorado devido a erro")
-                is_valid = True
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Serviço de CAPTCHA temporariamente indisponível. Tente novamente."
-                )
-    
-    if not is_valid:
-        logger.warning(f"❌ [REGISTER] CAPTCHA inválido | IP: {client_ip}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="❌ Código CAPTCHA incorreto! Digite os números que aparecem na imagem."
-        )
-    
-    # 🔥 VALIDAÇÃO 2: Rate limiting com fallback
+    # Rate limiting
     try:
         is_rate_ok = await rate_limiter.check_rate_limit(f"register_ip:{client_ip}", 5, 3600)
     except Exception as e:
         logger.error(f"❌ [REGISTER] Erro no rate limit: {e}")
-        # 🔥 Se rate limit falhar, permite em modo DEV
-        is_rate_ok = DEV_MODE
+        is_rate_ok = True
     
     if not is_rate_ok:
         raise HTTPException(
@@ -133,7 +83,7 @@ async def register(
             detail="Muitas tentativas de registro. Aguarde 1 hora."
         )
     
-    # VALIDAÇÃO 3: Email único
+    # Email único
     existing_user = crud.get_user_by_email(db, register_data.email)
     if existing_user:
         raise HTTPException(
@@ -141,7 +91,7 @@ async def register(
             detail="Este email já está cadastrado. Faça login."
         )
     
-    # 🔥 VALIDAÇÃO 4: Telefone único (se fornecido)
+    # Telefone único (se fornecido)
     if register_data.phone:
         existing_phone = crud.get_user_by_phone(db, register_data.phone)
         if existing_phone:

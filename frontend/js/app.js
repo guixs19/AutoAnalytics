@@ -1,4 +1,4 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - VERSÃO 2.0
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V2.0 COMPLETO
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
@@ -17,6 +17,11 @@
  *   2. app.js → orquestra tudo (ESTE ARQUIVO)
  *   3. dashboard.js → funcionalidades do dashboard
  *   4. payment.js → pagamentos e planos
+ * 
+ * 🔥 COMPATIBILIDADE:
+ *   - window.App (instância principal)
+ *   - window.app (alias para compatibilidade)
+ *   - window.autoAnalytics (alias para compatibilidade)
  */
 
 (function() {
@@ -31,10 +36,12 @@
     const CONFIG = {
         MAX_FILES: 3,
         MAX_FILE_SIZE_KB: 200,
-        CREDITS_UPDATE_INTERVAL: 30000, // 30 segundos
-        TOKEN_CHECK_INTERVAL: 60000, // 60 segundos
-        SESSION_TIMEOUT: 15 * 60 * 1000, // 15 minutos de inatividade
-        API_BASE: '/api'
+        CREDITS_UPDATE_INTERVAL: 30000,
+        TOKEN_CHECK_INTERVAL: 60000,
+        SESSION_TIMEOUT: 15 * 60 * 1000,
+        API_BASE: '/api',
+        MAX_LOAD_ATTEMPTS: 10,  // 🔥 LIMITE DE TENTATIVAS
+        LOAD_RETRY_DELAY: 500   // 🔥 DELAY ENTRE TENTATIVAS
     };
 
     // ==============================================
@@ -49,7 +56,9 @@
         creditsDisplay: '0',
         premiumStatus: null,
         initialized: false,
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
+        loadAttempts: 0,  // 🔥 CONTADOR DE TENTATIVAS
+        isAppReady: false
     };
 
     // ==============================================
@@ -69,39 +78,34 @@
         },
 
         showNotification: (message, type = 'info') => {
-            if (window.toastr) {
+            // 🔥 Fallback seguro para toastr
+            if (window.toastr && typeof window.toastr[type] === 'function') {
                 window.toastr[type](message);
-                return;
+                return true;
             }
-            const colors = {
-                success: '#48bb78',
-                error: '#f56565',
-                warning: '#ed8936',
-                info: '#4299e1'
-            };
-            const bgColor = colors[type] || colors.info;
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed; bottom: 20px; right: 20px; 
-                background: white; border-left: 4px solid ${bgColor}; 
-                padding: 12px 20px; border-radius: 8px; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-                z-index: 10000; 
-                animation: slideInRight 0.3s ease;
-            `;
-            notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}" 
-                style="color: ${bgColor}; margin-right: 8px;"></i>${message}`;
-            document.body.appendChild(notification);
-            setTimeout(() => notification.remove(), 5000);
+            
+            // 🔥 Fallback para alert nativo se toastr não existir
+            if (type === 'error' || type === 'warning') {
+                console.warn(`[${type}] ${message}`);
+                alert(`⚠️ ${message}`);
+                return true;
+            }
+            
+            console.log(`[${type}] ${message}`);
+            return true;
         },
 
         isAuthenticated: () => {
-            if (window.appAuth) {
-                return typeof window.appAuth.isAuthenticated === 'function' 
-                    ? window.appAuth.isAuthenticated() 
-                    : window.appAuth.isAuthenticated;
+            try {
+                if (window.appAuth) {
+                    return typeof window.appAuth.isAuthenticated === 'function' 
+                        ? window.appAuth.isAuthenticated() 
+                        : window.appAuth.isAuthenticated;
+                }
+                return !!localStorage.getItem('access_token');
+            } catch (e) {
+                return !!localStorage.getItem('access_token');
             }
-            return !!localStorage.getItem('access_token');
         },
 
         getCurrentPath: () => window.location.pathname,
@@ -138,7 +142,29 @@
 
         goBack: () => window.history.back(),
         goForward: () => window.history.forward(),
-        reload: () => window.location.reload()
+        reload: () => window.location.reload(),
+
+        // 🔥 FUNÇÃO PARA ESPERAR O AUTH CARREGAR
+        waitForAuth: (maxAttempts = 30) => {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const checkAuth = () => {
+                    attempts++;
+                    if (window.appAuth && typeof window.appAuth.isAuthenticated !== 'undefined') {
+                        console.log(`✅ Auth encontrado após ${attempts} tentativas`);
+                        resolve(true);
+                        return;
+                    }
+                    if (attempts >= maxAttempts) {
+                        console.warn(`⚠️ Auth não encontrado após ${maxAttempts} tentativas`);
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(checkAuth, 200);
+                };
+                checkAuth();
+            });
+        }
     };
 
     // ==============================================
@@ -146,25 +172,19 @@
     // ==============================================
 
     const Router = {
-        // Rotas protegidas (precisam de login)
         protectedRoutes: ['/', '/dashboard', '/planos', '/checkout'],
-        
-        // Rotas públicas (não precisam de login)
         publicRoutes: ['/login', '/register'],
 
-        // Verifica se a rota atual é protegida
         isProtected: () => {
             const path = Utils.getCurrentPath();
             return Router.protectedRoutes.some(route => path === route || path.includes(route));
         },
 
-        // Verifica se a rota atual é pública
         isPublic: () => {
             const path = Utils.getCurrentPath();
             return Router.publicRoutes.some(route => path === route || path.includes(route));
         },
 
-        // Protege rotas - redireciona se não autenticado
         protect: () => {
             const isAuth = Utils.isAuthenticated();
             
@@ -183,9 +203,7 @@
             return true;
         },
 
-        // Navegação segura entre páginas
         navigate: (url) => {
-            // Verifica se a página destino precisa de login
             const isProtected = Router.protectedRoutes.some(route => url === route || url.includes(route));
             
             if (isProtected && !Utils.isAuthenticated()) {
@@ -197,9 +215,7 @@
             Utils.redirectTo(url);
         },
 
-        // 🔥 NOVO: Configura navegação após carregar
         setupNavigation: function() {
-            // Clique em links com data-nav
             document.querySelectorAll('[data-nav]').forEach(el => {
                 el.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -210,13 +226,9 @@
                 });
             });
 
-            // Clique em links com href começando com /
             document.querySelectorAll('a[href^="/"]').forEach(el => {
-                // Não sobrescreve links com data-nav
                 if (el.hasAttribute('data-nav')) return;
-                // Não sobrescreve links com target="_blank"
                 if (el.getAttribute('target') === '_blank') return;
-                // Não sobrescreve links que são botões de logout
                 if (el.id === 'logoutBtn') return;
                 
                 el.addEventListener('click', (e) => {
@@ -235,11 +247,9 @@
     // ==============================================
 
     const UI = {
-        // Atualiza a navbar completa
         updateNavbar: () => {
             const isAuth = Utils.isAuthenticated();
             
-            // Mostra/esconde elementos autenticados
             document.querySelectorAll('.auth-required').forEach(el => {
                 el.style.display = isAuth ? 'block' : 'none';
             });
@@ -248,81 +258,86 @@
             });
 
             if (isAuth && window.appAuth) {
-                const userData = window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
-                const name = userData.name || 'Usuário';
-                
-                // Atualiza nome
-                document.querySelectorAll('.user-name').forEach(el => {
-                    el.textContent = name;
-                });
+                try {
+                    const userData = window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
+                    const name = userData.name || 'Usuário';
+                    
+                    document.querySelectorAll('.user-name').forEach(el => {
+                        el.textContent = name;
+                    });
 
-                // Atualiza workshop
-                document.querySelectorAll('.workshop-name').forEach(el => {
-                    el.textContent = userData.workshop_name || 'Oficina';
-                });
+                    document.querySelectorAll('.workshop-name').forEach(el => {
+                        el.textContent = userData.workshop_name || 'Oficina';
+                    });
 
-                // Atualiza créditos
-                UI.updateCredits();
-
-                // Atualiza badges
-                UI.updateAdminBadge();
-                UI.updatePremiumBadge();
+                    UI.updateCredits();
+                    UI.updateAdminBadge();
+                    UI.updatePremiumBadge();
+                } catch (e) {
+                    console.warn('Erro ao atualizar navbar:', e);
+                }
             }
         },
 
-        // Atualiza display de créditos em TODAS as páginas
         updateCredits: () => {
             if (!window.appAuth) return;
             
-            const display = window.appAuth.getCreditsDisplay ? window.appAuth.getCreditsDisplay() : '0';
-            State.creditsDisplay = display;
-            
-            // Atualiza todos os elementos de créditos
-            const selectors = [
-                '.credits-display', '.user-credits', 
-                '#creditsDisplay', '#creditsCount', '#uploadCredits',
-                '.credits-badge span', '.credits-value'
-            ];
-            
-            document.querySelectorAll(selectors.join(',')).forEach(el => {
-                el.textContent = display;
-            });
+            try {
+                const display = window.appAuth.getCreditsDisplay ? window.appAuth.getCreditsDisplay() : '0';
+                State.creditsDisplay = display;
+                
+                const selectors = [
+                    '.credits-display', '.user-credits', 
+                    '#creditsDisplay', '#creditsCount', '#uploadCredits',
+                    '.credits-badge span', '.credits-value'
+                ];
+                
+                document.querySelectorAll(selectors.join(',')).forEach(el => {
+                    if (el) el.textContent = display;
+                });
 
-            // Dispara evento para outros módulos
-            window.dispatchEvent(new CustomEvent('creditsUpdated', { 
-                detail: { credits: State.credits, display: display } 
-            }));
-        },
-
-        // Atualiza badge de administrador
-        updateAdminBadge: () => {
-            if (!window.appAuth) return;
-            const isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
-            State.isAdmin = isAdmin;
-            
-            document.querySelectorAll('.admin-badge, .admin-only').forEach(el => {
-                el.style.display = isAdmin ? 'inline-block' : 'none';
-            });
-
-            if (isAdmin) {
-                document.body.classList.add('is-admin');
-            } else {
-                document.body.classList.remove('is-admin');
+                window.dispatchEvent(new CustomEvent('creditsUpdated', { 
+                    detail: { credits: State.credits, display: display } 
+                }));
+            } catch (e) {
+                console.warn('Erro ao atualizar créditos:', e);
             }
         },
 
-        // Atualiza badge de premium
-        updatePremiumBadge: () => {
+        updateAdminBadge: () => {
             if (!window.appAuth) return;
-            const isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
-            State.isPremium = isPremium;
-            
-            document.querySelectorAll('.premium-badge, .premium-only').forEach(el => {
-                el.style.display = isPremium ? 'inline-block' : 'none';
-            });
+            try {
+                const isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
+                State.isAdmin = isAdmin;
+                
+                document.querySelectorAll('.admin-badge, .admin-only').forEach(el => {
+                    el.style.display = isAdmin ? 'inline-block' : 'none';
+                });
+
+                if (isAdmin) {
+                    document.body.classList.add('is-admin');
+                } else {
+                    document.body.classList.remove('is-admin');
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar badge admin:', e);
+            }
         },
 
-        // Mostra loading global
+        updatePremiumBadge: () => {
+            if (!window.appAuth) return;
+            try {
+                const isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
+                State.isPremium = isPremium;
+                
+                document.querySelectorAll('.premium-badge, .premium-only').forEach(el => {
+                    el.style.display = isPremium ? 'inline-block' : 'none';
+                });
+            } catch (e) {
+                console.warn('Erro ao atualizar badge premium:', e);
+            }
+        },
+
         showLoading: (message = 'Processando...', submessage = '') => {
             const overlay = document.getElementById('loadingOverlay');
             if (overlay) {
@@ -335,10 +350,11 @@
                 if (progress) progress.style.width = '0%';
                 
                 overlay.classList.add('show');
+            } else {
+                console.log('⏳ Loading:', message);
             }
         },
 
-        // Esconde loading global
         hideLoading: () => {
             const overlay = document.getElementById('loadingOverlay');
             if (overlay) {
@@ -346,7 +362,6 @@
             }
         },
 
-        // Atualiza progresso do loading
         updateLoadingProgress: (percent, message = null) => {
             const progress = document.getElementById('loadingProgressBar');
             const text = document.getElementById('loadingText');
@@ -355,24 +370,29 @@
             if (message && text) text.textContent = message;
         },
 
-        // Configura modais globais
         setupModals: () => {
-            // Fechar modais com ESC
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
                     document.querySelectorAll('.modal.show').forEach(modal => {
-                        const instance = bootstrap.Modal.getInstance(modal);
-                        if (instance) instance.hide();
+                        try {
+                            const instance = bootstrap.Modal.getInstance(modal);
+                            if (instance) instance.hide();
+                        } catch (e) {
+                            // Ignora erro se Bootstrap não estiver carregado
+                        }
                     });
                 }
             });
 
-            // Fechar modais clicando fora
             document.querySelectorAll('.modal').forEach(modal => {
                 modal.addEventListener('click', (e) => {
                     if (e.target === modal) {
-                        const instance = bootstrap.Modal.getInstance(modal);
-                        if (instance) instance.hide();
+                        try {
+                            const instance = bootstrap.Modal.getInstance(modal);
+                            if (instance) instance.hide();
+                        } catch (e) {
+                            // Ignora erro se Bootstrap não estiver carregado
+                        }
                     }
                 });
             });
@@ -385,7 +405,7 @@
 
     const Events = {
         setup: () => {
-            // Toggle de senha (em todas as páginas)
+            // Password toggle
             document.querySelectorAll('.password-toggle').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const targetId = btn.getAttribute('data-target');
@@ -394,18 +414,22 @@
                         const icon = btn.querySelector('i');
                         if (field.type === 'password') {
                             field.type = 'text';
-                            icon.classList.remove('fa-eye-slash');
-                            icon.classList.add('fa-eye');
+                            if (icon) {
+                                icon.classList.remove('fa-eye-slash');
+                                icon.classList.add('fa-eye');
+                            }
                         } else {
                             field.type = 'password';
-                            icon.classList.remove('fa-eye');
-                            icon.classList.add('fa-eye-slash');
+                            if (icon) {
+                                icon.classList.remove('fa-eye');
+                                icon.classList.add('fa-eye-slash');
+                            }
                         }
                     }
                 });
             });
 
-            // Logout (em todas as páginas)
+            // Logout
             document.querySelectorAll('#logoutBtn, .logout-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -418,7 +442,7 @@
                 });
             });
 
-            // Navegação por data-nav
+            // Navegação
             document.querySelectorAll('[data-nav]').forEach(el => {
                 el.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -436,36 +460,39 @@
                 });
             });
 
-            // 🔥 Eventos customizados
-            window.addEventListener('creditsUpdated', (e) => {
+            // Eventos customizados
+            window.addEventListener('creditsUpdated', () => {
                 UI.updateCredits();
             });
 
-            window.addEventListener('authReady', (e) => {
+            window.addEventListener('authReady', () => {
                 UI.updateNavbar();
             });
 
-            window.addEventListener('premiumStatusUpdated', (e) => {
+            window.addEventListener('premiumStatusUpdated', () => {
                 UI.updatePremiumBadge();
                 UI.updateCredits();
             });
 
-            // 🔥 NOVO: Handlers de erros globais
+            // 🔥 Handlers de erros globais
             window.addEventListener('unhandledrejection', (event) => {
                 console.error('❌ Erro não tratado (Promise):', event.reason);
-                Utils.showNotification('Erro inesperado. Tente novamente.', 'error');
+                if (event.reason && event.reason.message) {
+                    Utils.showNotification(`Erro: ${event.reason.message}`, 'error');
+                } else {
+                    Utils.showNotification('Erro inesperado. Tente novamente.', 'error');
+                }
             });
 
             window.addEventListener('error', (event) => {
                 console.error('❌ Erro global:', event.error || event.message);
-                // Não mostra para erros de rede (evita spam)
                 if (event.target && event.target.tagName === 'SCRIPT') {
                     return;
                 }
                 Utils.showNotification('Erro na aplicação. Recarregue a página se persistir.', 'error');
             });
 
-            // 🔥 NOVO: Rastrear atividade do usuário para timeout
+            // 🔥 Rastrear atividade do usuário
             ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(event => {
                 document.addEventListener(event, () => {
                     State.lastActivity = Date.now();
@@ -476,77 +503,24 @@
     };
 
     // ==============================================
-    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS
-    // ==============================================
-
-    const Sync = {
-        // Sincroniza com auth.js
-        syncAuth: async () => {
-            if (!window.appAuth) {
-                console.warn('⚠️ Auth não inicializado. Aguardando...');
-                return false;
-            }
-
-            const isAuth = await window.appAuth.checkToken();
-            
-            if (isAuth) {
-                const userData = window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
-                State.user = userData;
-                State.credits = userData.credits || 0;
-                State.isAdmin = userData.is_admin || false;
-                State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
-                
-                // Atualiza UI
-                UI.updateNavbar();
-                
-                // Inicia monitoramento de créditos
-                Credits.startPolling();
-                
-                // Inicia verificação de token
-                Auth.startTokenCheck();
-                
-                // Inicia timer de sessão
-                Auth.startSessionTimer();
-            }
-
-            return isAuth;
-        },
-
-        // Sincroniza com payment.js
-        syncPayment: async () => {
-            if (!window.appAuth) return;
-            
-            // Carrega status premium
-            if (window.appAuth.loadPremiumStatus) {
-                await window.appAuth.loadPremiumStatus();
-            }
-            
-            // Inicia polling de status premium
-            if (window.appAuth.startPremiumStatusPolling) {
-                window.appAuth.startPremiumStatusPolling(60000);
-            }
-        }
-    };
-
-    // ==============================================
     // 🔥 GERENCIADOR DE CRÉDITOS
     // ==============================================
 
     const Credits = {
-        // Carrega créditos do usuário
         load: async () => {
             if (window.appAuth && window.appAuth.loadUserCredits) {
-                await window.appAuth.loadUserCredits();
-                UI.updateCredits();
+                try {
+                    await window.appAuth.loadUserCredits();
+                    UI.updateCredits();
+                } catch (e) {
+                    console.warn('Erro ao carregar créditos:', e);
+                }
             }
         },
 
-        // Inicia polling de créditos
         startPolling: () => {
-            // Carrega imediatamente
             Credits.load();
             
-            // Atualiza periodicamente
             setInterval(() => {
                 Credits.load();
             }, CONFIG.CREDITS_UPDATE_INTERVAL);
@@ -560,17 +534,14 @@
     // ==============================================
 
     const Auth = {
-        // Timer de sessão
         sessionTimeout: null,
 
-        // Inicia timer de sessão inativa
         startSessionTimer: () => {
             if (Auth.sessionTimeout) {
                 clearTimeout(Auth.sessionTimeout);
                 Auth.sessionTimeout = null;
             }
 
-            // Se não estiver autenticado, não inicia timer
             if (!Utils.isAuthenticated()) return;
 
             console.log(`⏰ Timer de sessão: ${CONFIG.SESSION_TIMEOUT/60000} minutos`);
@@ -587,24 +558,18 @@
             }, CONFIG.SESSION_TIMEOUT);
         },
 
-        // Reseta timer de sessão
         resetSessionTimer: () => {
-            // Se não estiver autenticado, não reseta
             if (!Utils.isAuthenticated()) return;
             
-            // Só reseta se já tiver passado 30 segundos da última atividade
             const now = Date.now();
             if (now - State.lastActivity > 30000) {
                 Auth.startSessionTimer();
             }
         },
 
-        // Verifica token periodicamente
         startTokenCheck: () => {
-            // Verifica imediatamente
             Auth.checkRenewal();
             
-            // Verifica periodicamente
             setInterval(() => {
                 Auth.checkRenewal();
             }, CONFIG.TOKEN_CHECK_INTERVAL);
@@ -612,7 +577,6 @@
             console.log(`⏰ Verificação de token: ${CONFIG.TOKEN_CHECK_INTERVAL/1000}s`);
         },
 
-        // Verifica se precisa renovar token
         checkRenewal: async () => {
             if (!window.appAuth) return;
             
@@ -630,7 +594,6 @@
                         const refreshed = await window.appAuth.refreshTokenSafely();
                         if (refreshed) {
                             console.log('✅ Token renovado com sucesso!');
-                            // Reseta timer de sessão
                             Auth.resetSessionTimer();
                         } else {
                             console.log('❌ Falha ao renovar token, fazendo logout...');
@@ -641,12 +604,42 @@
                         }
                     }
                 } else if (response.ok) {
-                    // Token válido, reseta timer
                     Auth.resetSessionTimer();
                 }
             } catch (error) {
                 console.warn('Erro ao verificar token:', error);
             }
+        },
+
+        // 🔥 FUNÇÃO PARA ESPERAR O APP FICAR PRONTO
+        waitForAppReady: (maxAttempts = CONFIG.MAX_LOAD_ATTEMPTS) => {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const checkReady = () => {
+                    attempts++;
+                    State.loadAttempts = attempts;
+                    
+                    const isAuthReady = window.appAuth !== undefined && window.appAuth !== null;
+                    const isAppReady = window.App !== undefined && window.App !== null;
+                    
+                    if (isAuthReady && isAppReady) {
+                        console.log(`✅ App pronto após ${attempts} tentativas`);
+                        State.isAppReady = true;
+                        resolve(true);
+                        return;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        console.warn(`⚠️ App não ficou pronto após ${maxAttempts} tentativas`);
+                        State.isAppReady = false;
+                        resolve(false);
+                        return;
+                    }
+                    
+                    setTimeout(checkReady, CONFIG.LOAD_RETRY_DELAY);
+                };
+                checkReady();
+            });
         }
     };
 
@@ -657,30 +650,37 @@
     async function initApp() {
         console.log('🚀 Inicializando App (Orquestrador) v2.0...');
 
-        // 1. Proteger rotas (redireciona se necessário)
+        // 1. Proteger rotas
         if (!Router.protect()) {
-            return; // Já foi redirecionado
+            console.log('⏳ Redirecionado, interrompendo inicialização');
+            return;
         }
 
-        // 2. Sincronizar com auth.js
+        // 2. Aguardar auth.js carregar
+        const authLoaded = await Utils.waitForAuth(30);
+        if (!authLoaded) {
+            console.warn('⚠️ Auth não carregou. Tentando continuar...');
+        }
+
+        // 3. Sincronizar com auth.js
         const isAuth = await Sync.syncAuth();
 
-        // 3. Se estiver autenticado, sincroniza com payment
+        // 4. Se estiver autenticado, sincroniza com payment
         if (isAuth) {
             await Sync.syncPayment();
         }
 
-        // 4. Configurar UI global
+        // 5. Configurar UI global
         UI.setupModals();
         UI.updateNavbar();
 
-        // 5. Configurar eventos globais
+        // 6. Configurar eventos globais
         Events.setup();
 
-        // 6. Configurar navegação
+        // 7. Configurar navegação
         Router.setupNavigation();
 
-        // 7. Marcar como inicializado
+        // 8. Marcar como inicializado
         State.initialized = true;
 
         console.log('✅ App (Orquestrador) v2.0 inicializado com sucesso!');
@@ -689,9 +689,8 @@
         console.log(`📌 Admin: ${State.isAdmin}`);
         console.log(`📌 Premium: ${State.isPremium}`);
         console.log(`📌 Créditos: ${State.creditsDisplay}`);
-        console.log(`📌 Timeout sessão: ${CONFIG.SESSION_TIMEOUT/60000} minutos`);
 
-        // Dispara evento de app pronto
+        // 🔥 Dispara evento de app pronto
         window.dispatchEvent(new CustomEvent('appReady', { 
             detail: { 
                 isAuthenticated: isAuth,
@@ -704,11 +703,61 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTA FUNÇÕES GLOBAIS
+    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS
     // ==============================================
 
-    // Instância principal
-    window.App = {
+    const Sync = {
+        syncAuth: async () => {
+            if (!window.appAuth) {
+                console.warn('⚠️ Auth não inicializado.');
+                return false;
+            }
+
+            try {
+                const isAuth = await window.appAuth.checkToken();
+                
+                if (isAuth) {
+                    const userData = window.appAuth.getCurrentUser ? window.appAuth.getCurrentUser() : {};
+                    State.user = userData;
+                    State.credits = userData.credits || 0;
+                    State.isAdmin = userData.is_admin || false;
+                    State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
+                    
+                    UI.updateNavbar();
+                    Credits.startPolling();
+                    Auth.startTokenCheck();
+                    Auth.startSessionTimer();
+                }
+
+                return isAuth;
+            } catch (e) {
+                console.error('Erro ao sincronizar auth:', e);
+                return false;
+            }
+        },
+
+        syncPayment: async () => {
+            if (!window.appAuth) return;
+            
+            try {
+                if (window.appAuth.loadPremiumStatus) {
+                    await window.appAuth.loadPremiumStatus();
+                }
+                
+                if (window.appAuth.startPremiumStatusPolling) {
+                    window.appAuth.startPremiumStatusPolling(60000);
+                }
+            } catch (e) {
+                console.warn('Erro ao sincronizar payment:', e);
+            }
+        }
+    };
+
+    // ==============================================
+    // 🔥 CONSTRUÇÃO DA INSTÂNCIA PRINCIPAL
+    // ==============================================
+
+    const AppInstance = {
         // Estado
         state: State,
         config: CONFIG,
@@ -734,12 +783,24 @@
         goForward: Utils.goForward,
         reload: Utils.reload,
         getQueryParam: Utils.getQueryParam,
+        waitForAuth: Utils.waitForAuth,
         
         // Inicialização
         init: initApp
     };
 
-    // Aliases para compatibilidade com código existente
+    // ==============================================
+    // 🔥 EXPORTAÇÕES GLOBAIS
+    // ==============================================
+
+    // Instância principal
+    window.App = AppInstance;
+    
+    // 🔥 ALIASES PARA COMPATIBILIDADE (CORREÇÃO DO LOOP)
+    window.app = AppInstance;
+    window.autoAnalytics = AppInstance;
+
+    // Aliases para funções específicas
     window.showNotification = Utils.showNotification;
     window.escapeHtml = Utils.escapeHtml;
     window.isAuthenticated = Utils.isAuthenticated;
@@ -756,13 +817,25 @@
     // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
     // ==============================================
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initApp);
+    // 🔥 CORREÇÃO: Evita múltiplas inicializações
+    if (window._appInitialized) {
+        console.log('⚠️ App já inicializado, ignorando...');
     } else {
-        initApp();
+        window._appInitialized = true;
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            // 🔥 Pequeno delay para garantir que auth.js carregou
+            setTimeout(initApp, 100);
+        }
     }
 
     console.log('✅ app.js (Orquestrador) v2.0 carregado!');
+    console.log('   📌 Aliases criados:');
+    console.log('   - window.App (instância principal)');
+    console.log('   - window.app (alias para compatibilidade)');
+    console.log('   - window.autoAnalytics (alias para compatibilidade)');
     console.log('   📌 Funções globais disponíveis:');
     console.log('   - App.showNotification()');
     console.log('   - App.updateCredits()');
@@ -772,6 +845,5 @@
     console.log('   - App.isAuthenticated()');
     console.log('   - App.goBack()');
     console.log('   - App.getQueryParam()');
-    console.log('   - window.App (instância completa)');
 
 })();
