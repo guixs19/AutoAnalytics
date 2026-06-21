@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO ATUALIZADA SEM CAPTCHA
+# main.py (na raiz) - VERSÃO FINAL CORRIGIDA
 import sys
 import os
 from pathlib import Path
@@ -65,10 +65,10 @@ class Settings:
     ARGON2_PARALLELISM = 4
     
     # 🔥 CAPTCHA DESABILITADO
-    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "none")  # "none" = desabilitado
+    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "none")
     CAPTCHA_CODE_LENGTH = int(os.getenv("CAPTCHA_CODE_LENGTH", "4"))
     CAPTCHA_EXPIRATION_SECONDS = int(os.getenv("CAPTCHA_EXPIRATION_SECONDS", "120"))
-    DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"  # 🔥 Modo DEV ativado
+    DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
     
     CORS_ORIGINS_STR = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5500,http://localhost:3000,http://localhost:5173")
     CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_STR.split(",")]
@@ -108,7 +108,6 @@ checkout_available = False
 if FRONTEND_DIR.exists():
     print(f"   ✅ Frontend encontrado em: {FRONTEND_DIR}")
     
-    # Verificar arquivos HTML principais
     index_html = FRONTEND_DIR / "index.html"
     login_html = FRONTEND_DIR / "login.html"
     planos_html = FRONTEND_DIR / "planos.html"
@@ -142,7 +141,6 @@ if FRONTEND_DIR.exists():
     else:
         print(f"   ⚠️ checkout.html não encontrado em {checkout_html}")
     
-    # Verificar diretório JS
     js_dir = FRONTEND_DIR / "js"
     if js_dir.exists():
         js_files = ["auth.js", "app.js", "dashboard.js", "payment.js", "pow-client.js", "pow-worker.js"]
@@ -156,7 +154,6 @@ if FRONTEND_DIR.exists():
         os.makedirs(js_dir, exist_ok=True)
         print(f"   ✅ Pasta js criada")
     
-    # Verificar diretório CSS
     css_dir = FRONTEND_DIR / "css"
     if css_dir.exists():
         if (css_dir / "style.css").exists():
@@ -169,7 +166,6 @@ if FRONTEND_DIR.exists():
         print(f"   ✅ Pasta css criada")
 else:
     print(f"   ❌ Frontend NÃO encontrado em: {FRONTEND_DIR}")
-    print(f"   🔧 Criando frontend/js para você...")
     os.makedirs(FRONTEND_DIR / "js", exist_ok=True)
     os.makedirs(FRONTEND_DIR / "css", exist_ok=True)
 
@@ -204,13 +200,12 @@ app = FastAPI(
 app.router.redirect_slashes = False
 
 # ==============================================
-# 🔥 MIDDLEWARE DE LOGGING DO SENTINEL
+# MIDDLEWARE DE LOGGING
 # ==============================================
 print("\n📊 Configurando middleware de observabilidade...")
 
 try:
     from backend.observability.sentinel import LoggingMiddleware, get_metrics_collector
-    
     metrics_collector = get_metrics_collector()
     app.add_middleware(LoggingMiddleware, metrics=metrics_collector)
     print("   ✅ LoggingMiddleware do Sentinel ativado")
@@ -240,7 +235,7 @@ app.add_middleware(
 print(f"   ✅ CORS configurado para: {settings.CORS_ORIGINS}")
 
 # ==============================================
-# ROTAS PARA EVITAR 307 REDIRECTS
+# ROTAS AUXILIARES
 # ==============================================
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -255,7 +250,7 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# 🔥 MIDDLEWARE DE LOG MANUAL
+# MIDDLEWARE DE LOG MANUAL
 # ==============================================
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -322,7 +317,7 @@ else:
     print("\n⚠️ Frontend não disponível, apenas API será servida")
 
 # ==============================================
-# 🔥 ROTAS HTML - VERSÃO CORRIGIDA
+# ROTAS HTML - VERSÃO CORRIGIDA
 # ==============================================
 if frontend_available:
     print("\n🌐 Configurando rotas HTML com redirecionamentos...")
@@ -408,7 +403,7 @@ if frontend_available:
         
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", ")
+            access_token = access_token.replace("Bearer ", "")  # 🔥 CORRIGIDO
         
         if not access_token:
             print(f"🔴 [PLANOS] Sem token - redirecionando para /login")
@@ -448,7 +443,7 @@ if frontend_available:
         
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", ")
+            access_token = access_token.replace("Bearer ", "")  # 🔥 CORRIGIDO
         
         if not access_token:
             print(f"🔴 [CHECKOUT] Sem token - redirecionando para /login")
@@ -482,7 +477,7 @@ if frontend_available:
             print(f"❌ [CHECKOUT] Erro na validação: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
-    # Redirecionamentos para URLs com .html
+    # Redirecionamentos
     @app.get("/planos.html", include_in_schema=False)
     async def redirect_planos_html():
         return RedirectResponse(url="/planos", status_code=301)
@@ -592,24 +587,20 @@ print("   ✅ Autenticação habilitada")
 time.sleep(1)
 
 # ==============================================
-# 🔥 REGISTRO DE TODAS AS ROTAS DOS ROUTERS
+# REGISTRO DE ROTAS DOS ROUTERS
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
 try:
-    # 🔥 1. Rotas de autenticação (login, logout, refresh, check-token)
     from backend.api.auth_routes import router as auth_router
-    
-    # 🔥 2. Rotas de registro (register) - SEM CAPTCHA
     from backend.api.auth import router as registration_router
     
     app.include_router(auth_router, prefix="/api/auth")
     app.include_router(registration_router, prefix="/api/auth")
     
     print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
-    print("   ❌ Rotas CAPTCHA: DESABILITADAS (captcha_manager removido)")
+    print("   ❌ Rotas CAPTCHA: DESABILITADAS")
     
-    # 3. Rotas de pagamento
     try:
         from backend.api.payment_routes import router as payment_router
         app.include_router(payment_router, prefix="/api")
@@ -617,7 +608,6 @@ try:
     except ImportError as e:
         print(f"   ⚠️ Payment routes não disponível: {e}")
     
-    # 4. Rotas de upload múltiplo
     try:
         from backend.api.upload_routes import router as upload_router
         app.include_router(upload_router, prefix="/api")
@@ -625,7 +615,6 @@ try:
     except ImportError as e:
         print(f"   ⚠️ Upload routes não disponível: {e}")
     
-    # 5. Rotas gerais com Gemini (routes.py)
     try:
         from backend.api.routes import router as gemini_router
         app.include_router(gemini_router, prefix="/api")
@@ -633,7 +622,6 @@ try:
     except ImportError as e:
         print(f"   ⚠️ Gemini routes não disponível: {e}")
     
-    # 6. Rotas Proof of Work
     try:
         from backend.api.pow_routes import router as pow_router
         app.include_router(pow_router, prefix="/api")
@@ -660,7 +648,7 @@ async def health_check():
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "environment": settings.ENVIRONMENT,
         "debug": settings.DEBUG,
-        "captcha_enabled": False,  # 🔥 CAPTCHA DESABILITADO
+        "captcha_enabled": False,
         "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())},
         "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
         "timezone": "America/Sao_Paulo (UTC-3)"
@@ -681,7 +669,7 @@ def init_promotion(db: Session):
         print(f"   ✅ Promoção Bronze: {promo.get_remaining_slots()} vagas restantes")
 
 # ==============================================
-# 🔥 EVENTO DE STARTUP
+# EVENTO DE STARTUP
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
@@ -689,7 +677,6 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 60)
     
-    # 🔥 Inicializar Sentinel
     try:
         from backend.observability.sentinel import startup_webhook
         await startup_webhook()
@@ -699,7 +686,6 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao iniciar Sentinel: {e}")
     
-    # Inicializar promoção
     try:
         db = SessionLocal()
         init_promotion(db)
@@ -707,12 +693,8 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
     
-    # 🔥 Cleanup do CAPTCHA DESABILITADO
-    try:
-        # captcha_manager.store.start_cleanup_loop()  # Comentado - CAPTCHA removido
-        print("   ❌ Cleanup loop do CAPTCHA: DESABILITADO")
-    except Exception as e:
-        print(f"   ⚠️ Erro: {e}")
+    # 🔥 CAPTCHA DESABILITADO
+    print("   ❌ CAPTCHA: DESABILITADO")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     frontend_status = "✅" if frontend_available else "❌"
@@ -749,7 +731,7 @@ async def startup_event():
     """)
 
 # ==============================================
-# 🔥 EVENTO DE SHUTDOWN
+# EVENTO DE SHUTDOWN
 # ==============================================
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -764,13 +746,7 @@ async def shutdown_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao finalizar Sentinel: {e}")
     
-    # 🔥 Cleanup do CAPTCHA DESABILITADO
-    try:
-        # await captcha_manager.store.stop_cleanup_loop()  # Comentado
-        print("   ❌ Cleanup loop do CAPTCHA: DESABILITADO")
-    except Exception as e:
-        print(f"   ⚠️ Erro: {e}")
-    
+    print("   ❌ CAPTCHA: DESABILITADO")
     print("👋 Sistema desligado!")
 
 # ==============================================
