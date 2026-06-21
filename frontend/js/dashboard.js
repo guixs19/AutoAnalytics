@@ -215,8 +215,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 </div>
             `;
             
+            // ✅ CORRETO
             this.container.innerHTML = html;
-            this.initGP SATrendChart(growth.type, scoreMedio);
+            this.initGPSATrendChart(growth.type, scoreMedio);
             this.startGPSAAnimations(Math.round(scoreMedio * 100));
         }
         
@@ -1495,4 +1496,4 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     `;
     document.head.appendChild(style);
-})();
+})()

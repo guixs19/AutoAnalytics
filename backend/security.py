@@ -1,10 +1,11 @@
-# backend/security.py - SEM CAPTCHA (VERSÃO SIMPLIFICADA)
+# backend/security.py - SEM CAPTCHA (VERSÃO ATUALIZADA COM BLACKLIST CORRIGIDA)
 """
 MÓDULO CENTRAL DE SEGURANÇA - VERSÃO SEM CAPTCHA
-- JWT com Redis e blacklist
+- JWT com Redis e blacklist (CORRIGIDO)
 - Rate Limit com Redis
 - Argon2 para hash de senhas
 - 🔥 REMOVIDO: CAPTCHA completamente
+- 🔥 CORRIGIDO: Blacklist funcionando em todas as verificações
 """
 
 from datetime import datetime, timedelta
@@ -98,7 +99,7 @@ class Argon2Hasher:
 
 
 # ==============================================
-# 2. JWT COMPLETO COM REDIS E BLACKLIST
+# 2. JWT COMPLETO COM REDIS E BLACKLIST (CORRIGIDO)
 # ==============================================
 
 class JWTManager:
@@ -116,18 +117,25 @@ class JWTManager:
         self._pending_blacklist = {}
         self._blacklist_lock = asyncio.Lock()
         
+        # 🔥 CACHE SEPARADO: token_cache para tokens válidos
         self._token_cache = {}
         self._token_cache_ttl = 60
         self._last_cache_cleanup = time.time()
         self._cache_cleanup_interval = 300
         
+        # 🔥 NOVO: Cache específico para verificações de blacklist
+        self._blacklist_check_cache = {}
+        self._blacklist_cache_ttl = 30  # Menor TTL para blacklist
+        
         self._blacklist_stats = {
             "total_revoked": 0,
             "redis_failures": 0,
-            "offline_skips": 0
+            "offline_skips": 0,
+            "cache_hits": 0,
+            "cache_misses": 0
         }
         
-        logger.info("✅ JWT Manager inicializado")
+        logger.info("✅ JWT Manager inicializado com blacklist corrigida")
     
     async def init_redis(self):
         if self._redis_initialized:
@@ -221,151 +229,191 @@ class JWTManager:
             logger.warning(f"Erro JWT: {e}")
             return None
     
+    # ==============================================
+    # 🔥 VERIFICAÇÃO DE TOKEN COM BLACKLIST (CORRIGIDO)
+    # ==============================================
+    
     def verify_token(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+        """
+        🔥 VERIFICAÇÃO SÍNCRONA COM BLACKLIST
+        """
         payload = self.decode_token(token)
         if not payload:
             return None
+        
         if payload.get("type") != token_type:
             logger.warning(f"Tipo de token inválido: esperado {token_type}, recebido {payload.get('type')}")
             return None
+        
+        # 🔥 VERIFICA BLACKLIST (síncrono)
+        jti = payload.get("jti")
+        if jti:
+            # Verifica pending blacklist (memória)
+            if jti in self._pending_blacklist:
+                logger.warning(f"🔴 Token {jti[:8]}... está na pending blacklist")
+                return None
+            
+            # Verifica cache de blacklist
+            if self._check_blacklist_cache_sync(jti):
+                logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (cache)")
+                return None
+        
+        return payload
+    
+    def _check_blacklist_cache_sync(self, jti: str) -> bool:
+        """
+        🔥 Verifica cache de blacklist (síncrono)
+        """
+        cache_key = f"bl_check:{jti}"
+        if cache_key in self._blacklist_check_cache:
+            cached = self._blacklist_check_cache[cache_key]
+            # Cache expira em 30 segundos
+            if time.time() - cached["timestamp"] < self._blacklist_cache_ttl:
+                self._blacklist_stats["cache_hits"] += 1
+                return cached.get("blacklisted", False)
+        
+        self._blacklist_stats["cache_misses"] += 1
+        
+        # Se não estiver no cache, verifica Redis (se disponível)
+        if self.redis_client:
+            try:
+                # Tenta conexão síncrona
+                exists = self.redis_client.exists(f"blacklist:{jti}")
+                if exists:
+                    ttl = self.redis_client.ttl(f"blacklist:{jti}")
+                    if ttl <= 0:
+                        self.redis_client.delete(f"blacklist:{jti}")
+                        # Cache: não está blacklistado
+                        self._blacklist_check_cache[cache_key] = {
+                            "blacklisted": False,
+                            "timestamp": time.time()
+                        }
+                        return False
+                    # Cache: está blacklistado
+                    self._blacklist_check_cache[cache_key] = {
+                        "blacklisted": True,
+                        "timestamp": time.time()
+                    }
+                    return True
+                # Cache: não está blacklistado
+                self._blacklist_check_cache[cache_key] = {
+                    "blacklisted": False,
+                    "timestamp": time.time()
+                }
+                return False
+            except Exception as e:
+                logger.error(f"Erro sync na blacklist Redis: {e}")
+                return False
+        
+        return False
+    
+    async def verify_token_async(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+        """
+        🔥 VERIFICAÇÃO ASSÍNCRONA COM BLACKLIST E CACHE CORRIGIDO
+        """
+        # 1. Limpeza de cache
+        self._cleanup_token_cache()
+        self._cleanup_blacklist_cache()
+        
+        # 2. Verifica token primeiro
+        payload = self.verify_token(token, token_type)
+        if not payload:
+            return None
+        
+        # 3. Verifica blacklist (assíncrono)
+        jti = payload.get("jti")
+        if jti:
+            # Verifica pending blacklist
+            if jti in self._pending_blacklist:
+                logger.warning(f"🔴 Token {jti[:8]}... está na pending blacklist")
+                return None
+            
+            # Verifica blacklist no Redis (com cache)
+            is_blacklisted = await self.is_token_blacklisted(jti)
+            if is_blacklisted:
+                logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (Redis)")
+                # Invalida cache do token
+                token_hash = hashlib.md5(token.encode()).hexdigest()
+                if token_hash in self._token_cache:
+                    del self._token_cache[token_hash]
+                return None
+        
+        # 4. Cache do token (apenas se válido)
+        token_hash = hashlib.md5(token.encode()).hexdigest()
+        if len(self._token_cache) < 2000:
+            self._token_cache[token_hash] = {
+                "payload": payload,
+                "timestamp": time.time()
+            }
+        
         return payload
     
     def _cleanup_token_cache(self):
+        """Limpeza do cache de tokens"""
         now = time.time()
         if now - self._last_cache_cleanup < self._cache_cleanup_interval:
             return
+        
         expired = [k for k, v in self._token_cache.items() if now - v["timestamp"] > self._token_cache_ttl]
         for k in expired:
             del self._token_cache[k]
+        
         if len(self._token_cache) > 1000:
             sorted_items = sorted(self._token_cache.items(), key=lambda x: x[1]["timestamp"])
             to_remove = int(len(sorted_items) * 0.2)
             for k, _ in sorted_items[:to_remove]:
                 del self._token_cache[k]
             logger.info(f"🧹 Limpeza emergencial cache tokens: {to_remove} removidos")
+        
         self._last_cache_cleanup = now
     
-    async def verify_token_async(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
-        self._cleanup_token_cache()
-        token_hash = hashlib.md5(token.encode()).hexdigest()
-        if token_hash in self._token_cache:
-            cached = self._token_cache[token_hash]
-            if time.time() - cached["timestamp"] < self._token_cache_ttl:
-                return cached["payload"]
-        payload = self.verify_token(token, token_type)
-        if not payload:
-            return None
-        jti = payload.get("jti")
-        if jti and await self.is_token_blacklisted(jti):
-            logger.warning(f"🔴 Token {jti[:8]}... está na blacklist (revogado)")
-            return None
-        if len(self._token_cache) < 2000:
-            self._token_cache[token_hash] = {
-                "payload": payload,
-                "timestamp": time.time()
-            }
-        return payload
+    def _cleanup_blacklist_cache(self):
+        """Limpeza do cache de blacklist"""
+        now = time.time()
+        expired = [k for k, v in self._blacklist_check_cache.items() 
+                   if now - v["timestamp"] > self._blacklist_cache_ttl]
+        for k in expired:
+            del self._blacklist_check_cache[k]
+        
+        if len(self._blacklist_check_cache) > 500:
+            to_remove = int(len(self._blacklist_check_cache) * 0.3)
+            for k in list(self._blacklist_check_cache.keys())[:to_remove]:
+                del self._blacklist_check_cache[k]
     
-    async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
-        from backend import crud
-        old_payload = await self.verify_token_async(refresh_token, "refresh")
-        if not old_payload:
-            logger.warning("Refresh token inválido ou expirado")
-            return None
-        email = old_payload.get("sub") or old_payload.get("email")
-        if not email:
-            logger.warning("Refresh token sem email")
-            return None
-        user = crud.get_user_by_email(db, email)
-        if not user:
-            logger.warning(f"Usuário {email} não encontrado")
-            return None
-        if not user.validate_refresh_token(refresh_token):
-            logger.warning(f"Refresh token não corresponde ao banco para {email}")
-            return None
-        old_jti = old_payload.get("jti")
-        if old_jti:
-            exp = old_payload.get("exp", 0)
-            remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
-            await self.blacklist_token(old_jti, remaining)
-            logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
-        if old_access_token:
-            old_access_payload = self.verify_token(old_access_token, "access")
-            if old_access_payload:
-                old_access_jti = old_access_payload.get("jti")
-                if old_access_jti:
-                    remaining = max(int(old_access_payload.get("exp", 0) - datetime.utcnow().timestamp()), 300)
-                    await self.blacklist_token(old_access_jti, remaining)
-                    logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
-        user_data = {
-            "sub": user.email,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role.value if hasattr(user.role, 'value') else user.role,
-            "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
-            "credits": user.credits,
-            "is_admin": user.is_admin
-        }
-        new_tokens = self.create_token_pair(user_data)
-        user.revoke_refresh_token()
-        user.set_refresh_token(
-            new_tokens["refresh_token"], 
-            new_tokens["refresh_jti"],
-            self.refresh_expire_days
-        )
-        db.commit()
-        logger.info(f"✅ Tokens renovados para {email}")
-        return {
-            "access_token": new_tokens["access_token"],
-            "refresh_token": new_tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": new_tokens["expires_in"]
-        }
-    
-    async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
-        from backend import crud
-        refresh_payload = await self.verify_token_async(refresh_token, "refresh")
-        if refresh_payload:
-            email = refresh_payload.get("sub") or refresh_payload.get("email")
-            if email:
-                user = crud.get_user_by_email(db, email)
-                if user and user.validate_refresh_token(refresh_token):
-                    user.revoke_refresh_token()
-            jti = refresh_payload.get("jti")
-            if jti:
-                exp = refresh_payload.get("exp", 0)
-                remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
-                await self.blacklist_token(jti, remaining)
-                logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
-        if access_token:
-            access_payload = self.verify_token(access_token, "access")
-            if access_payload:
-                access_jti = access_payload.get("jti")
-                if access_jti:
-                    exp = access_payload.get("exp", 0)
-                    remaining = max(int(exp - datetime.utcnow().timestamp()), 300)
-                    await self.blacklist_token(access_jti, remaining)
-                    logger.info(f"🔴 Access token {access_jti[:8]}... blacklistado no logout")
-        if db:
-            db.commit()
-        return True
+    # ==============================================
+    # 🔥 BLACKLIST - REVOGAÇÃO DE TOKENS (CORRIGIDO)
+    # ==============================================
     
     async def blacklist_token(self, jti: str, expire_in: int):
+        """
+        🔥 ADICIONA TOKEN À BLACKLIST
+        """
         if not jti:
             return
+        
         if expire_in <= 0:
             logger.debug(f"Token {jti[:8]}... já expirado, não precisa blacklistar")
             return
+        
+        # 1. Adiciona à pending blacklist (memória)
         async with self._blacklist_lock:
             if jti in self._pending_blacklist:
                 return
             self._pending_blacklist[jti] = time.time()
+        
+        # 2. Adiciona ao Redis
         try:
             if self.redis_client:
                 try:
                     await self.redis_client.setex(f"blacklist:{jti}", expire_in, "1")
                     self._blacklist_stats["total_revoked"] += 1
                     logger.info(f"🔴 Token {jti[:8]}... adicionado à blacklist Redis (TTL: {expire_in}s)")
+                    
+                    # 🔥 Invalida cache de blacklist
+                    cache_key = f"bl_check:{jti}"
+                    if cache_key in self._blacklist_check_cache:
+                        del self._blacklist_check_cache[cache_key]
+                    
                 except Exception as e:
                     self._blacklist_stats["redis_failures"] += 1
                     logger.error(f"Erro ao adicionar à blacklist Redis: {e}")
@@ -377,25 +425,171 @@ class JWTManager:
                 self._pending_blacklist.pop(jti, None)
     
     async def is_token_blacklisted(self, jti: str) -> bool:
+        """
+        🔥 VERIFICA SE TOKEN ESTÁ NA BLACKLIST (COM CACHE)
+        """
         if not jti:
             return False
+        
+        # 1. Verifica pending blacklist
         if jti in self._pending_blacklist:
             return True
+        
+        # 2. Verifica cache de blacklist
+        cache_key = f"bl_check:{jti}"
+        if cache_key in self._blacklist_check_cache:
+            cached = self._blacklist_check_cache[cache_key]
+            if time.time() - cached["timestamp"] < self._blacklist_cache_ttl:
+                self._blacklist_stats["cache_hits"] += 1
+                return cached.get("blacklisted", False)
+        
+        self._blacklist_stats["cache_misses"] += 1
+        
+        # 3. Verifica Redis
         if not self.redis_client:
             logger.warning("⚠️ Redis indisponível - ignorando verificação de blacklist")
             return False
+        
         try:
-            exists = await self.redis_client.exists(f"blacklist:{jti}") > 0
+            exists = await self.redis_client.exists(f"blacklist:{jti}")
             if exists:
                 ttl = await self.redis_client.ttl(f"blacklist:{jti}")
                 if ttl <= 0:
                     await self.redis_client.delete(f"blacklist:{jti}")
+                    # Cache: não está blacklistado
+                    self._blacklist_check_cache[cache_key] = {
+                        "blacklisted": False,
+                        "timestamp": time.time()
+                    }
                     return False
+                
+                # Cache: está blacklistado
+                self._blacklist_check_cache[cache_key] = {
+                    "blacklisted": True,
+                    "timestamp": time.time()
+                }
                 return True
+            
+            # Cache: não está blacklistado
+            self._blacklist_check_cache[cache_key] = {
+                "blacklisted": False,
+                "timestamp": time.time()
+            }
             return False
+            
         except Exception as e:
             logger.error(f"Erro ao verificar blacklist Redis: {e}")
             return False
+    
+    # ==============================================
+    # 🔥 REFRESH E LOGOUT (CORRIGIDO)
+    # ==============================================
+    
+    async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
+        from backend import crud
+        
+        # Verifica refresh token (com blacklist)
+        old_payload = await self.verify_token_async(refresh_token, "refresh")
+        if not old_payload:
+            logger.warning("Refresh token inválido ou expirado")
+            return None
+        
+        email = old_payload.get("sub") or old_payload.get("email")
+        if not email:
+            logger.warning("Refresh token sem email")
+            return None
+        
+        user = crud.get_user_by_email(db, email)
+        if not user:
+            logger.warning(f"Usuário {email} não encontrado")
+            return None
+        
+        if not user.validate_refresh_token(refresh_token):
+            logger.warning(f"Refresh token não corresponde ao banco para {email}")
+            return None
+        
+        # 🔥 Blacklist do refresh token antigo
+        old_jti = old_payload.get("jti")
+        if old_jti:
+            exp = old_payload.get("exp", 0)
+            remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
+            await self.blacklist_token(old_jti, remaining)
+            logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
+        
+        # 🔥 Blacklist do access token antigo (se fornecido)
+        if old_access_token:
+            old_access_payload = self.verify_token(old_access_token, "access")
+            if old_access_payload:
+                old_access_jti = old_access_payload.get("jti")
+                if old_access_jti:
+                    remaining = max(int(old_access_payload.get("exp", 0) - datetime.utcnow().timestamp()), 300)
+                    await self.blacklist_token(old_access_jti, remaining)
+                    logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
+        
+        # Cria novos tokens
+        user_data = {
+            "sub": user.email,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role.value if hasattr(user.role, 'value') else user.role,
+            "plan": user.plan.value if hasattr(user.plan, 'value') else user.plan,
+            "credits": user.credits,
+            "is_admin": user.is_admin
+        }
+        
+        new_tokens = self.create_token_pair(user_data)
+        
+        # Atualiza refresh token no banco
+        user.revoke_refresh_token()
+        user.set_refresh_token(
+            new_tokens["refresh_token"], 
+            new_tokens["refresh_jti"],
+            self.refresh_expire_days
+        )
+        db.commit()
+        
+        logger.info(f"✅ Tokens renovados para {email}")
+        return {
+            "access_token": new_tokens["access_token"],
+            "refresh_token": new_tokens["refresh_token"],
+            "token_type": "bearer",
+            "expires_in": new_tokens["expires_in"]
+        }
+    
+    async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
+        from backend import crud
+        
+        # 🔥 Blacklist do refresh token
+        refresh_payload = await self.verify_token_async(refresh_token, "refresh")
+        if refresh_payload:
+            email = refresh_payload.get("sub") or refresh_payload.get("email")
+            if email:
+                user = crud.get_user_by_email(db, email)
+                if user and user.validate_refresh_token(refresh_token):
+                    user.revoke_refresh_token()
+            
+            jti = refresh_payload.get("jti")
+            if jti:
+                exp = refresh_payload.get("exp", 0)
+                remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
+                await self.blacklist_token(jti, remaining)
+                logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
+        
+        # 🔥 Blacklist do access token
+        if access_token:
+            access_payload = self.verify_token(access_token, "access")
+            if access_payload:
+                access_jti = access_payload.get("jti")
+                if access_jti:
+                    exp = access_payload.get("exp", 0)
+                    remaining = max(int(exp - datetime.utcnow().timestamp()), 300)
+                    await self.blacklist_token(access_jti, remaining)
+                    logger.info(f"🔴 Access token {access_jti[:8]}... blacklistado no logout")
+        
+        if db:
+            db.commit()
+        
+        return True
     
     def extract_token_from_header(self, auth_header: str) -> Optional[str]:
         if not auth_header:
@@ -410,7 +604,9 @@ class JWTManager:
         return {
             **self._blacklist_stats,
             "redis_available": self.redis_client is not None,
-            "pending_count": len(self._pending_blacklist)
+            "pending_count": len(self._pending_blacklist),
+            "cache_size": len(self._blacklist_check_cache),
+            "token_cache_size": len(self._token_cache)
         }
 
 
@@ -462,21 +658,29 @@ class RateLimiter:
             except Exception as e:
                 logger.error(f"Erro no Redis: {e}")
                 return True
+        
+        # Fallback em memória
         if now - self._last_cleanup > 300:
             self._cleanup_memory_cache()
             self._last_cleanup = now
+        
         if key not in self.memory_cache:
             self.memory_cache[key] = []
+        
         self.memory_cache[key] = [t for t in self.memory_cache[key] if t > now - window]
+        
         if len(self.memory_cache[key]) >= max_requests:
             logger.warning(f"Rate limit excedido (memória) - {key}")
             return False
+        
         self.memory_cache[key].append(now)
+        
         if len(self.memory_cache) > self._max_memory_keys:
             to_remove = int(len(self.memory_cache) * 0.2)
             for k in list(self.memory_cache.keys())[:to_remove]:
                 del self.memory_cache[k]
             logger.info(f"🧹 Limpeza rate limit cache: {to_remove} chaves")
+        
         return True
     
     def _cleanup_memory_cache(self):
@@ -497,7 +701,7 @@ rate_limiter = RateLimiter()
 
 
 # ==============================================
-# 5. DEPENDÊNCIAS FASTAPI
+# 5. DEPENDÊNCIAS FASTAPI (CORRIGIDAS)
 # ==============================================
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db = None):
@@ -515,9 +719,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = None):
         logger.warning("Token não fornecido")
         raise credentials_exception
     
+    # 🔥 Usa verify_token_async com blacklist
     payload = await jwt_manager.verify_token_async(token)
     if not payload:
-        logger.warning("Token inválido ou expirado")
+        logger.warning("Token inválido, expirado ou revogado")
         raise credentials_exception
     
     email = payload.get("sub") or payload.get("email")
@@ -677,9 +882,10 @@ __all__ = [
 ]
 
 print("=" * 50)
-print("🔥 SECURITY.PY - SEM CAPTCHA (VERSÃO SIMPLIFICADA)")
-print("   ✅ JWT com blacklist")
+print("🔥 SECURITY.PY - SEM CAPTCHA (VERSÃO ATUALIZADA)")
+print("   ✅ JWT com blacklist (CORRIGIDO)")
 print("   ✅ Rate Limit com Redis")
 print("   ✅ Argon2 para hash de senhas")
+print("   ✅ Cache separado para blacklist")
 print("   ❌ CAPTCHA REMOVIDO")
 print("=" * 50)
