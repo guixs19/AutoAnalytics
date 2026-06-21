@@ -1,9 +1,10 @@
-// frontend/js/auth.js - VERSÃO SINCRONIZADA COM AUTH_ROUTES.PY E AUTH.PY
+// frontend/js/auth.js - VERSÃO CORRIGIDA E OTIMIZADA
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
  * 🔥 Token expira em 15 minutos (conforme security.py)
  * 🔥 Sincronizado com auth_routes.py e auth.py
+ * ✅ CORREÇÃO: captcha_code enviado corretamente
  */
 
 class Auth {
@@ -256,6 +257,14 @@ class Auth {
         const captchaCode = captchaInput?.value?.trim();
         const captchaId = captchaIdInput?.value || this.loginCaptchaId;
         
+        // 🔍 LOG DETALHADO PARA DEBUG
+        console.log('🔍 DETALHES DO LOGIN:');
+        console.log('  📧 Email:', email);
+        console.log('  🔑 CAPTCHA Code:', captchaCode);
+        console.log('  🆔 CAPTCHA ID (input):', captchaIdInput?.value);
+        console.log('  🆔 CAPTCHA ID (classe):', this.loginCaptchaId);
+        console.log('  🆔 CAPTCHA ID (final):', captchaId);
+        
         if (!email || !password || !captchaCode) {
             if (window.toastr) {
                 toastr.error('Por favor, preencha todos os campos.');
@@ -280,16 +289,18 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de login...');
             
-            // 🔥 Payload compatível com auth_routes.py (LoginRequest)
+            // 🔥 PAYLOAD CORRETO - Compatível com auth_routes.py (LoginRequest)
             const payload = {
                 email: email,
                 password: password,
-                captcha_id: captchaId || this.loginCaptchaId,
-                captcha_code: captchaCode,
+                captcha_id: captchaId,  // ✅ CORRETO
+                captcha_code: captchaCode,  // ✅ CORRETO - NÃO É captcha_input!
                 session_type: 'login'
             };
             
-            console.log('📦 Payload:', payload);
+            console.log('📦 PAYLOAD ENVIADO:', JSON.stringify(payload, null, 2));
+            console.log('🔑 captcha_code:', payload.captcha_code);
+            console.log('🆔 captcha_id:', payload.captcha_id);
             
             const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
@@ -301,6 +312,7 @@ class Auth {
             });
             
             const data = await response.json();
+            console.log('📥 RESPOSTA DO SERVIDOR:', data);
             
             // 🔥 Resposta compatível com auth_routes.py
             if (response.ok && (data.success || data.access_token)) {
@@ -345,7 +357,21 @@ class Auth {
                 return true;
                 
             } else {
-                const errorMsg = data.detail || data.message || 'Erro ao realizar login.';
+                // 🔥 TRATAMENTO DE ERRO MELHORADO
+                let errorMsg = data.detail || data.message || 'Erro ao realizar login.';
+                
+                // Se for erro 422, mostra detalhes
+                if (response.status === 422) {
+                    console.error('❌ Erro 422 - Validação falhou:', data);
+                    if (data.detail && Array.isArray(data.detail)) {
+                        errorMsg = data.detail.map(err => 
+                            `${err.loc?.join('.') || 'campo'}: ${err.msg}`
+                        ).join('; ');
+                    } else if (typeof data.detail === 'string') {
+                        errorMsg = data.detail;
+                    }
+                }
+                
                 if (window.toastr) {
                     toastr.error(errorMsg);
                 }
@@ -478,15 +504,15 @@ class Auth {
         try {
             console.log('🔄 Enviando requisição de registro...');
             
-            // 🔥 Payload compatível com auth.py (RegisterRequest)
+            // 🔥 PAYLOAD CORRETO - Compatível com auth.py (RegisterRequest)
             const requestBody = {
                 name: name,
                 email: email,
                 password: password,
                 workshop_name: workshopName,
                 phone: phone || null,  // Opcional - compatível com auth.py
-                captcha_id: captchaId,
-                captcha_code: captchaCode,
+                captcha_id: captchaId,  // ✅ CORRETO
+                captcha_code: captchaCode,  // ✅ CORRETO - NÃO É captcha_input!
                 session_type: 'register'
             };
             
@@ -506,7 +532,20 @@ class Auth {
             
             // 🔥 Resposta compatível com auth.py
             if (!response.ok) {
-                const errorMsg = data.detail || data.message || 'Falha no registro';
+                let errorMsg = data.detail || data.message || 'Falha no registro';
+                
+                // Tratamento especial para erro 422
+                if (response.status === 422) {
+                    console.error('❌ Erro 422 - Validação falhou:', data);
+                    if (data.detail && Array.isArray(data.detail)) {
+                        errorMsg = data.detail.map(err => 
+                            `${err.loc?.join('.') || 'campo'}: ${err.msg}`
+                        ).join('; ');
+                    } else if (typeof data.detail === 'string') {
+                        errorMsg = data.detail;
+                    }
+                }
+                
                 if (window.toastr) {
                     toastr.error(errorMsg);
                 }
