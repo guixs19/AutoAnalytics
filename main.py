@@ -1,4 +1,4 @@
-# main.py (na raiz) - VERSÃO FINAL SINCRONIZADA COM FRONTEND
+# main.py (na raiz) - VERSÃO ATUALIZADA SEM CAPTCHA
 import sys
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ import time
 import asyncio
 
 print("=" * 60)
-print("🚀 AUTOANALYTICS v3.2 - COM GOOGLE GEMINI E CAPTCHA DE NÚMEROS")
+print("🚀 AUTOANALYTICS v3.2 - COM GOOGLE GEMINI (SEM CAPTCHA)")
 print("=" * 60)
 
 # Configurar paths
@@ -64,10 +64,11 @@ class Settings:
     ARGON2_MEMORY_COST = 65536
     ARGON2_PARALLELISM = 4
     
-    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "custom_numbers")
+    # 🔥 CAPTCHA DESABILITADO
+    CAPTCHA_TYPE = os.getenv("CAPTCHA_TYPE", "none")  # "none" = desabilitado
     CAPTCHA_CODE_LENGTH = int(os.getenv("CAPTCHA_CODE_LENGTH", "4"))
     CAPTCHA_EXPIRATION_SECONDS = int(os.getenv("CAPTCHA_EXPIRATION_SECONDS", "120"))
-    DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+    DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"  # 🔥 Modo DEV ativado
     
     CORS_ORIGINS_STR = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5500,http://localhost:3000,http://localhost:5173")
     CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_STR.split(",")]
@@ -194,7 +195,7 @@ except ImportError as e:
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
-    description="Sistema com Google Gemini para oficinas mecânicas - CAPTCHA de números rabiscados",
+    description="Sistema com Google Gemini para oficinas mecânicas - SEM CAPTCHA",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
@@ -210,7 +211,6 @@ print("\n📊 Configurando middleware de observabilidade...")
 try:
     from backend.observability.sentinel import LoggingMiddleware, get_metrics_collector
     
-    # Adicionar middleware de logging
     metrics_collector = get_metrics_collector()
     app.add_middleware(LoggingMiddleware, metrics=metrics_collector)
     print("   ✅ LoggingMiddleware do Sentinel ativado")
@@ -255,7 +255,7 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# 🔥 MIDDLEWARE DE LOG MANUAL (fallback)
+# 🔥 MIDDLEWARE DE LOG MANUAL
 # ==============================================
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -268,7 +268,6 @@ async def log_requests(request: Request, call_next):
     
     response = await call_next(request)
     
-    # DEBUG: Log de erros 404 em arquivos estáticos
     if response.status_code == 404 and path.startswith('/static'):
         print(f"   ❌ ERRO 404 - Arquivo estático não encontrado: {path}")
         relative_path = path.replace('/static/', '')
@@ -323,14 +322,13 @@ else:
     print("\n⚠️ Frontend não disponível, apenas API será servida")
 
 # ==============================================
-# 🔥 ROTAS HTML - VERSÃO CORRIGIDA COM REDIRECIONAMENTOS
+# 🔥 ROTAS HTML - VERSÃO CORRIGIDA
 # ==============================================
 if frontend_available:
     print("\n🌐 Configurando rotas HTML com redirecionamentos...")
     
     @app.get("/", include_in_schema=False)
     async def home(request: Request):
-        """Página inicial - redireciona para dashboard ou login"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -349,7 +347,6 @@ if frontend_available:
     
     @app.get("/login", include_in_schema=False)
     async def login_page(request: Request):
-        """Página de login - redireciona para dashboard se já autenticado"""
         from backend.security import jwt_manager
         
         token = request.cookies.get("access_token")
@@ -365,36 +362,25 @@ if frontend_available:
             return FileResponse(str(FRONTEND_DIR / "login.html"))
         return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
     
-    # ============================================================
-    # 🔥 DASHBOARD - CORRIGIDO (RedirectResponse em vez de JSON)
-    # ============================================================
     @app.get("/dashboard", response_class=HTMLResponse)
     async def route_dashboard(request: Request):
-        """
-        🔥 DASHBOARD - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
-        CORREÇÃO BLINDADA: NUNCA retorna JSON, sempre RedirectResponse
-        """
         from backend.security import jwt_manager
         
-        # 1. Tenta ler o cookie de acesso
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
             access_token = access_token.replace("Bearer ", "")
         
-        # 🚨 CORREÇÃO BLINDADA: Se não houver token, redireciona VISUALMENTE
         if not access_token:
             print(f"🔴 [DASHBOARD] Sem token - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
         
         try:
-            # 2. Valida o token
             payload = await jwt_manager.verify_token_async(access_token, "access")
             
             if not payload:
                 print(f"🔴 [DASHBOARD] Token inválido - redirecionando para /login")
                 return RedirectResponse(url="/login", status_code=303)
             
-            # 3. Token válido - entrega o HTML do dashboard
             if dashboard_available:
                 file_path = FRONTEND_DIR / "index.html"
                 if not file_path.exists():
@@ -416,35 +402,25 @@ if frontend_available:
             print(f"❌ [DASHBOARD] Erro na validação: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
-    # ============================================================
-    # 🔥 PLANOS - CORRIGIDO (com verificação de autenticação)
-    # ============================================================
     @app.get("/planos", response_class=HTMLResponse)
     async def route_planos(request: Request):
-        """
-        🔥 PLANOS - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
-        """
         from backend.security import jwt_manager
         
-        # 1. Tenta ler o cookie de acesso
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", "")
+            access_token = access_token.replace("Bearer ", ")
         
-        # Se não houver token, redireciona para login
         if not access_token:
             print(f"🔴 [PLANOS] Sem token - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
         
         try:
-            # 2. Valida o token
             payload = await jwt_manager.verify_token_async(access_token, "access")
             
             if not payload:
                 print(f"🔴 [PLANOS] Token inválido - redirecionando para /login")
                 return RedirectResponse(url="/login", status_code=303)
             
-            # 3. Token válido - entrega o HTML dos planos
             if planos_available:
                 file_path = FRONTEND_DIR / "planos.html"
                 if not file_path.exists():
@@ -466,19 +442,13 @@ if frontend_available:
             print(f"❌ [PLANOS] Erro na validação: {e} - redirecionando para /login")
             return RedirectResponse(url="/login", status_code=303)
     
-    # ============================================================
-    # 🔥 CHECKOUT - CORRIGIDO (com verificação de autenticação)
-    # ============================================================
     @app.get("/checkout", response_class=HTMLResponse)
     async def route_checkout(request: Request):
-        """
-        🔥 CHECKOUT - REDIRECIONA PARA LOGIN SE NÃO AUTENTICADO
-        """
         from backend.security import jwt_manager
         
         access_token = request.cookies.get("access_token")
         if access_token and access_token.startswith("Bearer "):
-            access_token = access_token.replace("Bearer ", "")
+            access_token = access_token.replace("Bearer ", ")
         
         if not access_token:
             print(f"🔴 [CHECKOUT] Sem token - redirecionando para /login")
@@ -630,21 +600,20 @@ try:
     # 🔥 1. Rotas de autenticação (login, logout, refresh, check-token)
     from backend.api.auth_routes import router as auth_router
     
-    # 🔥 2. Rotas de registro (register)
+    # 🔥 2. Rotas de registro (register) - SEM CAPTCHA
     from backend.api.auth import router as registration_router
     
-    # 🔥 AMBOS COM O MESMO PREFIXO /api/auth
     app.include_router(auth_router, prefix="/api/auth")
     app.include_router(registration_router, prefix="/api/auth")
     
     print("   ✅ Rotas AUTH: /api/auth/login, /api/auth/register, /api/auth/check-token, /api/auth/refresh, /api/auth/logout, /api/auth/me")
-    print("   ✅ Rotas CAPTCHA: /api/auth/captcha/generate (via auth_routes.py)")
+    print("   ❌ Rotas CAPTCHA: DESABILITADAS (captcha_manager removido)")
     
     # 3. Rotas de pagamento
     try:
         from backend.api.payment_routes import router as payment_router
         app.include_router(payment_router, prefix="/api")
-        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance, /api/payments/subscription-status, /api/payments/premium-status, /api/payments/daily-credit")
+        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance, /api/payments/subscription-status, /api/payments/daily-credit")
     except ImportError as e:
         print(f"   ⚠️ Payment routes não disponível: {e}")
     
@@ -691,6 +660,7 @@ async def health_check():
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "environment": settings.ENVIRONMENT,
         "debug": settings.DEBUG,
+        "captcha_enabled": False,  # 🔥 CAPTCHA DESABILITADO
         "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())},
         "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
         "timezone": "America/Sao_Paulo (UTC-3)"
@@ -711,7 +681,7 @@ def init_promotion(db: Session):
         print(f"   ✅ Promoção Bronze: {promo.get_remaining_slots()} vagas restantes")
 
 # ==============================================
-# 🔥 EVENTO DE STARTUP COM SENTINEL
+# 🔥 EVENTO DE STARTUP
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
@@ -719,7 +689,7 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 60)
     
-    # 🔥 Inicializar Sentinel (observabilidade)
+    # 🔥 Inicializar Sentinel
     try:
         from backend.observability.sentinel import startup_webhook
         await startup_webhook()
@@ -737,12 +707,12 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
     
-    # Iniciar cleanup do CAPTCHA
+    # 🔥 Cleanup do CAPTCHA DESABILITADO
     try:
-        asyncio.create_task(captcha_manager.store.start_cleanup_loop())
-        print("   ✅ Cleanup loop do CAPTCHA iniciado")
+        # captcha_manager.store.start_cleanup_loop()  # Comentado - CAPTCHA removido
+        print("   ❌ Cleanup loop do CAPTCHA: DESABILITADO")
     except Exception as e:
-        print(f"   ⚠️ Erro ao iniciar cleanup do CAPTCHA: {e}")
+        print(f"   ⚠️ Erro: {e}")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     frontend_status = "✅" if frontend_available else "❌"
@@ -752,15 +722,14 @@ async def startup_event():
     ║     🎉 {settings.APP_NAME} v{settings.VERSION} INICIADO!                         ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<45} ║
-    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: {settings.CAPTCHA_TYPE}     ║
+    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: ❌ DESABILITADO          ║
     ║  🌐 Frontend: {frontend_status} | 📊 Observabilidade: ✅ ativa          ║
     ║  📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo                    ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║  🔗 Endpoints principais:                                          ║
-    ║     POST /api/auth/register  ← 🔥 ROTA CORRIGIDA                 ║
-    ║     POST /api/auth/login                                         ║
+    ║     POST /api/auth/register  ← 🔥 SEM CAPTCHA                    ║
+    ║     POST /api/auth/login     ← 🔥 SEM CAPTCHA                    ║
     ║     POST /api/upload-auto (múltiplos arquivos)                    ║
-    ║     GET  /api/auth/captcha/generate                             ║
     ║     GET  /api/auth/check-token                                   ║
     ║     GET  /api/auth/me                                            ║
     ║     GET  /api/health                                             ║
@@ -780,13 +749,12 @@ async def startup_event():
     """)
 
 # ==============================================
-# 🔥 EVENTO DE SHUTDOWN COM SENTINEL
+# 🔥 EVENTO DE SHUTDOWN
 # ==============================================
 @app.on_event("shutdown")
 async def shutdown_event():
     print("\n🛑 Desligando sistema...")
     
-    # 🔥 Finalizar Sentinel
     try:
         from backend.observability.sentinel import shutdown_webhook
         await shutdown_webhook()
@@ -796,12 +764,12 @@ async def shutdown_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao finalizar Sentinel: {e}")
     
-    # Parar cleanup do CAPTCHA
+    # 🔥 Cleanup do CAPTCHA DESABILITADO
     try:
-        await captcha_manager.store.stop_cleanup_loop()
-        print("   ✅ Cleanup loop do CAPTCHA parado")
+        # await captcha_manager.store.stop_cleanup_loop()  # Comentado
+        print("   ❌ Cleanup loop do CAPTCHA: DESABILITADO")
     except Exception as e:
-        print(f"   ⚠️ Erro ao parar cleanup do CAPTCHA: {e}")
+        print(f"   ⚠️ Erro: {e}")
     
     print("👋 Sistema desligado!")
 
@@ -818,7 +786,6 @@ async def not_found_exception_handler(request: Request, exc):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     path = request.url.path
-    # 🔥 Para rotas HTML, redireciona em vez de mostrar JSON
     if exc.status_code == 401 and not path.startswith('/api/'):
         return RedirectResponse(url="/login", status_code=302)
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
@@ -829,7 +796,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
-    print(f"🔢 CAPTCHA: {settings.CAPTCHA_TYPE} ({settings.CAPTCHA_CODE_LENGTH} dígitos)")
+    print(f"🔢 CAPTCHA: ❌ DESABILITADO")
     print(f"📊 Observabilidade: ✅ ativa")
     print(f"📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo")
     print(f"🛑 Pressione CTRL+C para parar\n")
