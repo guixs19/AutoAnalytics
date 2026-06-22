@@ -1,4 +1,4 @@
-# backend/crud.py - VERSÃO COMPLETAMENTE SINCRONIZADA COM TODOS OS ARQUIVOS
+# backend/crud.py - VERSÃO CORRIGIDA E MELHORADA
 """
 CRUD - Operações de banco de dados
 SINCRONIZADO COM:
@@ -7,10 +7,11 @@ SINCRONIZADO COM:
 - payment_service.py (sistema de créditos, preços dinâmicos)
 - credits_consumer.py (consumo de créditos, verificação premium)
 - daily_credits_service.py (créditos diários, limite de 3)
+- auth_routes.py (update_last_login)
 """
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, not_, desc, asc
+from sqlalchemy import func, and_, or_, not_, desc, asc, update
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any, Union
 import logging
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # ==============================================
 # 🔥 FUSO HORÁRIO DE BRASÍLIA (UTC-3)
-# SINCRONIZADO COM models.py, schemas.py, daily_credits_service.py
 # ==============================================
 
 TZ_BRASIL = timezone(timedelta(hours=-3))
@@ -46,8 +46,8 @@ def _get_next_day_brasil(days_ahead: int = 1) -> date:
 # CONSTANTES SINCRONIZADAS
 # ==============================================
 
-MAX_CREDITS_PREMIUM = 3  # 🔥 SINCRONIZADO com daily_credits_service.py
-INITIAL_FREE_CREDITS = 3  # 🔥 SINCRONIZADO com create_user
+MAX_CREDITS_PREMIUM = 3
+INITIAL_FREE_CREDITS = 3
 
 
 # ==============================================
@@ -68,16 +68,13 @@ def _is_premium_user(user: models.User) -> bool:
     """
     🔥 FUNÇÃO AUXILIAR SINCRONIZADA COM credits_consumer.py
     Verifica se usuário tem plano premium ativo
-    Lida corretamente com Enum do SQLAlchemy
     """
     if not user:
         return False
     
-    # Usar método is_premium() do modelo se disponível
     if hasattr(user, 'is_premium') and callable(user.is_premium):
         return user.is_premium()
     
-    # Fallback: verificar plan manualmente
     plan = user.plan
     
     if hasattr(plan, 'value'):
@@ -88,11 +85,7 @@ def _is_premium_user(user: models.User) -> bool:
         return plan == "premium_mensal"
 
 def _get_plan_value(user: models.User) -> str:
-    """
-    🔥 FUNÇÃO AUXILIAR SINCRONIZADA COM credits_consumer.py
-    Retorna o valor do plano como string
-    Normaliza Enum para string de forma segura
-    """
+    """Retorna o valor do plano como string"""
     if not user:
         return "basico"
     
@@ -130,10 +123,7 @@ def get_user_by_phone(db: Session, phone: str) -> Optional[models.User]:
 
 
 def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
-    """
-    Verifica se usuário já existe por email ou telefone
-    🔥 SINCRONIZADO: uso correto do or_()
-    """
+    """Verifica se usuário já existe por email ou telefone"""
     email = email.lower().strip() if email else ""
     
     if phone:
@@ -155,36 +145,30 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
 def create_user(db: Session, user_data: Any) -> models.User:
     """
     Cria um novo usuário no banco de dados
-    🔥 SINCRONIZADO COM:
-    - models.py: hashed_password, UTC-3, 3 créditos iniciais
-    - schemas.py: UserCreate
-    - credits_consumer.py: 3 créditos grátis
+    🔥 SINCRONIZADO COM models.py, schemas.py, credits_consumer.py
     """
     
-    # Captura o telefone com segurança
     phone_value = getattr(user_data, "phone", None)
     if phone_value:
         phone_value = phone_value.strip()
     
-    # Captura workshop_name com segurança
     workshop_name = getattr(user_data, "workshop_name", None)
     if workshop_name:
         workshop_name = workshop_name.strip()
     
-    # 🔥 CRIA USUÁRIO COM 3 CRÉDITOS GRÁTIS (sincronizado)
     db_user = models.User(
         name=user_data.name.strip(),
         email=user_data.email.lower().strip(),
-        hashed_password=hasher.hash_password(user_data.password),  # ✅ hashed_password (models.py)
+        hashed_password=hasher.hash_password(user_data.password),
         workshop_name=workshop_name,
         phone=phone_value,
         role=models.UserRole.USER,
         plan=models.UserPlan.BASICO,
-        credits=INITIAL_FREE_CREDITS,  # 🔥 3 créditos grátis
+        credits=INITIAL_FREE_CREDITS,
         is_active=True,
         is_admin=False,
         is_verified=False,
-        created_at=_now_brasil()  # 🔥 UTC-3
+        created_at=_now_brasil()
     )
     
     db.add(db_user)
@@ -198,7 +182,7 @@ def create_user(db: Session, user_data: Any) -> models.User:
 def authenticate_user(db: Session, email: str, password: str) -> Optional[models.User]:
     """
     Autentica usuário usando Argon2
-    🔥 SINCRONIZADO: atualiza last_login com UTC-3
+    🔥 Agora chama update_last_login corretamente
     """
     user = get_user_by_email(db, email.lower().strip())
     
@@ -214,9 +198,8 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[models
         logger.warning(f"Senha incorreta para: {email}")
         return None
     
-    # 🔥 Atualizar último login com UTC-3
-    user.last_login = _now_brasil()
-    safe_commit(db, "Erro ao atualizar último login")
+    # 🔥 CORRIGIDO: Usa a função update_last_login
+    update_last_login(db, user.id)
     
     if user.is_admin:
         logger.info(f"👑 Admin logado: {email}")
@@ -232,7 +215,6 @@ def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.User
     if not db_user:
         return None
     
-    # Converter para dict se for Pydantic model
     if hasattr(user_update, 'dict'):
         update_data = user_update.dict(exclude_unset=True)
     elif hasattr(user_update, 'model_dump'):
@@ -240,32 +222,27 @@ def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.User
     else:
         update_data = user_update.copy() if isinstance(user_update, dict) else {}
     
-    # Validar email
     if 'email' in update_data:
         update_data['email'] = update_data['email'].lower().strip()
         existing = get_user_by_email(db, update_data['email'])
         if existing and existing.id != user_id:
             raise ValueError("Email já está em uso")
     
-    # Validar telefone
     if 'phone' in update_data and update_data['phone']:
         update_data['phone'] = update_data['phone'].strip()
         existing = get_user_by_phone(db, update_data['phone'])
         if existing and existing.id != user_id:
             raise ValueError("Telefone já está em uso")
     
-    # Limpar campos
     if 'name' in update_data and update_data['name']:
         update_data['name'] = update_data['name'].strip()
     
     if 'workshop_name' in update_data and update_data['workshop_name']:
         update_data['workshop_name'] = update_data['workshop_name'].strip()
     
-    # 🔥 CORRIGIDO: usar hashed_password (sincronizado com models.py)
     if 'password' in update_data:
         update_data['hashed_password'] = hasher.hash_password(update_data.pop('password'))
     
-    # Aplicar atualizações
     for key, value in update_data.items():
         if hasattr(db_user, key) and value is not None:
             setattr(db_user, key, value)
@@ -274,6 +251,25 @@ def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.User
     db.refresh(db_user)
     
     logger.info(f"✅ Usuário atualizado: {db_user.email}")
+    return db_user
+
+
+# ==============================================
+# 🔥 NOVO: UPDATE_LAST_LOGIN - CORRIGIDO
+# ==============================================
+
+def update_last_login(db: Session, user_id: int) -> Optional[models.User]:
+    """
+    🔥 Atualiza o timestamp do último login do usuário
+    🔥 SINCRONIZADO: Usa fuso horário UTC-3 (Brasília)
+    🔥 CHAMADO POR: auth_routes.py (login)
+    """
+    db_user = get_user_by_id(db, user_id)
+    if db_user:
+        db_user.last_login = _now_brasil()  # 🔥 Usa UTC-3
+        safe_commit(db, "Erro ao atualizar último login")
+        db.refresh(db_user)
+        logger.debug(f"✅ Último login atualizado para: {db_user.email}")
     return db_user
 
 
@@ -319,7 +315,7 @@ def get_all_admins(db: Session) -> List[models.User]:
 
 
 # ==============================================
-# CRÉDITOS - OPERAÇÕES (SINCRONIZADO COM credits_consumer.py E daily_credits_service.py)
+# CRÉDITOS - OPERAÇÕES
 # ==============================================
 
 def get_user_credits(db: Session, user_id: int) -> int:
@@ -337,11 +333,7 @@ def get_user_credits(db: Session, user_id: int) -> int:
 def get_credits_display(user: models.User) -> str:
     """
     Retorna string formatada para exibição de créditos
-    🔥 SINCRONIZADO COM credits_consumer.py get_credits_display()
-    
-    Admin: "∞" (infinito)
-    Premium: "X/3" (mostra limite)
-    Usuário: número normal
+    Admin: "∞" | Premium: "X/3" | Usuário: número normal
     """
     if user.is_admin:
         return "∞"
@@ -355,10 +347,7 @@ def get_credits_display(user: models.User) -> str:
 
 
 def check_credits(user: models.User, required: int = 1) -> bool:
-    """
-    Verifica se usuário tem créditos suficientes
-    🔥 SINCRONIZADO COM credits_consumer.py can_perform_analysis()
-    """
+    """Verifica se usuário tem créditos suficientes"""
     if user.is_admin:
         return True
     return (user.credits or 0) >= required
@@ -367,20 +356,17 @@ def check_credits(user: models.User, required: int = 1) -> bool:
 def add_credits(db: Session, user_id: int, amount: int, description: str = "") -> bool:
     """
     Adiciona créditos ao usuário com verificação de limite
-    🔥 SINCRONIZADO COM:
-    - credits_consumer.py add_credits_safe()
-    - daily_credits_service.py (limite de 3 créditos para premium)
+    🔥 SINCRONIZADO COM daily_credits_service.py
     """
     user = get_user_by_id(db, user_id)
     if not user or amount <= 0:
-        logger.warning(f"⚠️ Tentativa inválida de adicionar {amount} créditos para user {user_id}")
+        logger.warning(f"⚠️ Tentativa inválida de adicionar {amount} créditos")
         return False
     
     if user.is_admin:
-        logger.info(f"👑 Admin {user.email} - créditos ilimitados (operação ignorada)")
+        logger.info(f"👑 Admin {user.email} - créditos ilimitados")
         return True
     
-    # 🔥 Verificar limite para premium (sincronizado com daily_credits_service)
     is_premium = _is_premium_user(user)
     max_credits = MAX_CREDITS_PREMIUM if is_premium else float('inf')
     
@@ -419,7 +405,6 @@ def deduct_credits(db: Session, user: models.User, amount: int = 1, description:
     
     safe_commit(db, f"Erro ao deduzir {amount} créditos de {user.email}")
     
-    # 🔥 Log específico para premium (sincronizado com credits_consumer.py)
     is_premium = _is_premium_user(user)
     if is_premium and user.credits < MAX_CREDITS_PREMIUM:
         logger.info(f"⭐ Premium {user.email} agora tem {user.credits}/{MAX_CREDITS_PREMIUM} créditos - pode receber mais")
@@ -429,25 +414,14 @@ def deduct_credits(db: Session, user: models.User, amount: int = 1, description:
 
 
 def check_credits_db(db: Session, user_id: int, required: int = 1) -> bool:
-    """
-    Verifica créditos (versão com db)
-    🔥 SINCRONIZADO COM credits_consumer.py can_perform_analysis()
-    """
+    """Verifica créditos (versão com db)"""
     user = get_user_by_id(db, user_id)
     if not user:
         return False
     if user.is_admin:
         return True
     
-    # Verificar se tem créditos suficientes
-    has_credits = (user.credits or 0) >= required
-    
-    if not has_credits:
-        is_premium = _is_premium_user(user)
-        if is_premium and (user.credits or 0) >= MAX_CREDITS_PREMIUM:
-            logger.warning(f"⚠️ Premium {user.email} atingiu limite de {MAX_CREDITS_PREMIUM} créditos")
-    
-    return has_credits
+    return (user.credits or 0) >= required
 
 
 def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: int) -> bool:
@@ -467,16 +441,13 @@ def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: in
     if not from_user.has_credits(amount):
         return False
     
-    # Deduzir do remetente
     from_user.credits -= amount
     
-    # Adicionar ao destinatário (com verificação de limite)
     success = add_credits(db, to_user_id, amount, f"Transferência de {from_user.email}")
     
     if success:
         logger.info(f"💰 {amount} créditos transferidos de {from_user.email} para {to_user.email}")
     else:
-        # Reverter dedução se falhou
         from_user.credits += amount
         safe_commit(db, "Erro ao reverter transferência")
     
@@ -484,14 +455,11 @@ def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: in
 
 
 # ==============================================
-# CRÉDITOS DIÁRIOS - SUPORTE (SINCRONIZADO COM daily_credits_service.py)
+# CRÉDITOS DIÁRIOS - SUPORTE
 # ==============================================
 
 def get_daily_credit_logs(db: Session, user_id: int, days: int = 30, limit: int = None) -> List[models.DailyCreditLog]:
-    """
-    Retorna logs de créditos diários do usuário
-    🔥 SINCRONIZADO COM daily_credits_service.py
-    """
+    """Retorna logs de créditos diários do usuário"""
     query = db.query(models.DailyCreditLog).filter(
         models.DailyCreditLog.user_id == user_id
     ).order_by(desc(models.DailyCreditLog.date))
@@ -507,10 +475,7 @@ def get_daily_credit_logs(db: Session, user_id: int, days: int = 30, limit: int 
 
 
 def has_received_daily_credit_today(db: Session, user_id: int) -> bool:
-    """
-    Verifica se o usuário já recebeu crédito diário hoje
-    🔥 SINCRONIZADO COM daily_credits_service.py
-    """
+    """Verifica se o usuário já recebeu crédito diário hoje"""
     today = _today_brasil()
     
     log = db.query(models.DailyCreditLog).filter(
@@ -522,10 +487,7 @@ def has_received_daily_credit_today(db: Session, user_id: int) -> bool:
 
 
 def get_premium_credit_streak(db: Session, user_id: int) -> int:
-    """
-    Calcula o streak (dias seguidos) de créditos premium
-    🔥 SINCRONIZADO COM daily_credits_service.py
-    """
+    """Calcula o streak (dias seguidos) de créditos premium"""
     logs = db.query(models.DailyCreditLog).filter(
         models.DailyCreditLog.user_id == user_id,
         models.DailyCreditLog.source == "premium_daily"
@@ -534,12 +496,10 @@ def get_premium_credit_streak(db: Session, user_id: int) -> int:
     if not logs:
         return 0
     
-    # Verificar se o último log é de hoje
     today = _today_brasil()
     if logs[0].date != today:
         return 0
     
-    # Calcular streak
     streak = 1
     for i in range(1, len(logs)):
         expected_date = today - timedelta(days=i)
@@ -554,13 +514,12 @@ def get_premium_credit_streak(db: Session, user_id: int) -> int:
 def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
     """
     Verifica se o usuário premium pode receber crédito diário
-    🔥 SINCRONIZADO COM daily_credits_service.py check_premium_daily_credit()
+    🔥 SINCRONIZADO COM daily_credits_service.py
     """
     user = get_user_by_id(db, user_id)
     if not user:
         return {"success": False, "error": "Usuário não encontrado"}
     
-    # 👑 ADMIN
     if user.is_admin:
         return {
             "success": True,
@@ -583,20 +542,18 @@ def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
     today = _today_brasil()
     current_credits = user.credits or 0
     
-    # Verificar limite de créditos
     if current_credits >= MAX_CREDITS_PREMIUM:
         return {
             "success": True,
             "can_receive": False,
             "reason": "max_credits_reached",
-            "message": f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos. Gaste alguns para receber mais!",
+            "message": f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos.",
             "is_premium": True,
             "received_today": False,
             "credits_balance": current_credits,
             "max_credits": MAX_CREDITS_PREMIUM
         }
     
-    # Verificar se já recebeu hoje
     received_today = db.query(models.DailyCreditLog).filter(
         models.DailyCreditLog.user_id == user_id,
         func.date(models.DailyCreditLog.date) == today,
@@ -696,14 +653,11 @@ def cleanup_expired_refresh_tokens(db: Session) -> int:
 
 
 # ==============================================
-# PLANO PREMIUM - OPERAÇÕES (SINCRONIZADO COM TODOS OS ARQUIVOS)
+# PLANO PREMIUM - OPERAÇÕES
 # ==============================================
 
 def activate_premium_plan(db: Session, user_id: int, payment_id: int = None) -> bool:
-    """
-    Ativa plano premium para usuário
-    🔥 SINCRONIZADO COM models.py e payment_service.py
-    """
+    """Ativa plano premium para usuário"""
     user = get_user_by_id(db, user_id)
     if not user:
         return False
@@ -718,10 +672,7 @@ def activate_premium_plan(db: Session, user_id: int, payment_id: int = None) -> 
 
 
 def check_premium_status(db: Session, user_id: int) -> Dict[str, Any]:
-    """
-    Verifica status do plano premium
-    🔥 SINCRONIZADO COM daily_credits_service.py e credits_consumer.py
-    """
+    """Verifica status do plano premium"""
     user = get_user_by_id(db, user_id)
     if not user:
         return {"is_premium": False, "error": "Usuário não encontrado"}
@@ -770,13 +721,13 @@ def downgrade_expired_premium(db: Session) -> int:
     
     if count > 0:
         safe_commit(db, "Erro ao rebaixar planos expirados")
-        logger.info(f"⭐ {count} usuários tiveram plano premium expirado e foram rebaixados")
+        logger.info(f"⭐ {count} usuários tiveram plano premium expirado")
     
     return count
 
 
 # ==============================================
-# PAGAMENTOS - OPERAÇÕES (SINCRONIZADO COM payment_service.py)
+# PAGAMENTOS - OPERAÇÕES
 # ==============================================
 
 def create_payment(
@@ -1205,7 +1156,7 @@ def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
     
     if count > 0:
         safe_commit(db, "Erro ao limpar sessões órfãs")
-        logger.info(f"🧹 {count} sessões órfãs limpas (inativas há {older_than_days}+ dias)")
+        logger.info(f"🧹 {count} sessões órfãs limpas")
     
     return count
 
@@ -1236,11 +1187,11 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     return True
 
 
-print("✅ crud.py carregado - COMPLETAMENTE SINCRONIZADO com:")
-print("   - models.py (hashed_password, UTC-3, UserPlan, PaymentStatus)")
-print("   - schemas.py (UTC-3, default_factory)")
-print("   - payment_service.py (preços dinâmicos, promoções)")
-print("   - credits_consumer.py (consumo de créditos, verificação premium)")
-print("   - daily_credits_service.py (créditos diários, limite de 3)")
-print(f"   - MAX_CREDITS_PREMIUM = {MAX_CREDITS_PREMIUM}")
-print(f"   - INITIAL_FREE_CREDITS = {INITIAL_FREE_CREDITS}")
+print("=" * 70)
+print("✅ crud.py carregado - COMPLETAMENTE SINCRONIZADO")
+print("   🔥 update_last_login() → Função corrigida")
+print("   🔥 MAX_CREDITS_PREMIUM = 3")
+print("   🔥 INITIAL_FREE_CREDITS = 3")
+print("   🔥 UTC-3 (Brasília)")
+print("   🔥 safe_commit() com rollback automático")
+print("=" * 70)
