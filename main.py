@@ -1,6 +1,10 @@
-# main.py (na raiz) - VERSÃO FINAL
+# main.py (na raiz) - VERSÃO FINAL ATUALIZADA
 # 🔥 CAPTCHA REMOVIDO COMPLETAMENTE
 # 🔥 TOKENS OTIMIZADOS (15min access, 7 dias refresh, jti, blacklist com TTL)
+# 🔥 ML PIPELINE INTEGRADO
+# 🔥 SUPORTE A MÚLTIPLOS ARQUIVOS
+# 🔥 SISTEMA DE CRÉDITOS COMPLETO
+# 🔥 PREÇO FUNDADOR VITALÍCIO
 
 import sys
 import os
@@ -12,10 +16,14 @@ from sqlalchemy.orm import Session
 import time
 import asyncio
 
-print("=" * 60)
-print("🚀 AUTOANALYTICS v3.2 - GOOGLE GEMINI (SEM CAPTCHA)")
+print("=" * 70)
+print("🚀 AUTOANALYTICS v3.3 - GOOGLE GEMINI (SEM CAPTCHA)")
 print("🔐 Tokens: 15min access | 7 dias refresh | jti | blacklist com TTL")
-print("=" * 60)
+print("💰 Créditos: 3 grátis | 1/dia premium | limite 3")
+print("🎯 Preço Fundador: R$ 97,00 (100 vagas) | Vitalício")
+print("🤖 ML Pipeline: RandomForest + AutoML + Boosting")
+print("📁 Upload: até 3 arquivos | 200KB cada")
+print("=" * 70)
 
 # Configurar paths
 PROJECT_ROOT = Path(__file__).parent.absolute()
@@ -40,7 +48,7 @@ print(f"🔧 Python path configurado")
 # ==============================================
 class Settings:
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.2.0"
+    VERSION = "3.3.0"
     
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
@@ -49,14 +57,16 @@ class Settings:
     BASE_DIR = str(BACKEND_DIR)
     TEMP_DIR = str(BACKEND_DIR / "temp")
     OUTPUT_DIR = str(BACKEND_DIR / "outputs")
-    MODELS_DIR = str(BACKEND_DIR / "models")
+    MODELS_DIR = str(BACKEND_DIR / "ml" / "models")
     DATA_DIR = str(BACKEND_DIR / "data")
     
     MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "204800"))  # 200KB
+    MAX_FILES_PER_BATCH = 3
     ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_ENABLED = os.getenv("GEMINI_ENABLED", "true").lower() == "true"
     
     # 🔥 JWT - CONFIGURAÇÕES OTIMIZADAS
     SECRET_KEY = os.getenv("SECRET_KEY", "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(64)))
@@ -80,11 +90,16 @@ class Settings:
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
     }
     
     # 🔥 MERCADO PAGO
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")
     MP_PUBLIC_KEY = os.getenv("MP_PUBLIC_KEY", "")
+    MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
+    MP_ENVIRONMENT = os.getenv("MP_ENVIRONMENT", "production")
+    WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "https://seu-dominio.com")
     DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
     
     # 🔥 REDIS
@@ -92,7 +107,21 @@ class Settings:
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     
+    # 🔥 DATABASE
     DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{PROJECT_ROOT}/autoanalytics.db")
+    
+    # 🔥 ML CONFIG
+    ML_MODEL_CACHE_ENABLED = os.getenv("ML_MODEL_CACHE_ENABLED", "true").lower() == "true"
+    ML_MAX_FILE_SIZE_KB = int(os.getenv("ML_MAX_FILE_SIZE_KB", "200"))
+    ML_MAX_FILES_PER_BATCH = int(os.getenv("ML_MAX_FILES_PER_BATCH", "3"))
+    
+    # 🔥 CRÉDITOS
+    MAX_CREDITS_BALANCE = 3
+    INITIAL_FREE_CREDITS = 3
+    PROMOTIONAL_PRICE = 97.00
+    REGULAR_PRICE = 149.90
+    TOTAL_PROMOTIONAL_SLOTS = 100
+    DAYS_PREMIUM = 30
 
 settings = Settings()
 
@@ -148,7 +177,10 @@ if FRONTEND_DIR.exists():
     
     js_dir = FRONTEND_DIR / "js"
     if js_dir.exists():
-        js_files = ["auth.js", "app.js", "dashboard.js", "payment.js", "pow-client.js", "pow-worker.js"]
+        js_files = [
+            "auth.js", "app.js", "dashboard.js", "payment.js", 
+            "pow-client.js", "pow-worker.js"
+        ]
         for js_file in js_files:
             if (js_dir / js_file).exists():
                 print(f"   ✅ js/{js_file}")
@@ -333,7 +365,7 @@ if frontend_available:
             token = token.replace("Bearer ", "")
         
         if token:
-            payload = await jwt_manager.verify_token_async(token, "access")
+            payload = await jwt_manager.verify_token(token, "access")
             if payload and dashboard_available:
                 return FileResponse(str(FRONTEND_DIR / "index.html"))
         
@@ -351,7 +383,7 @@ if frontend_available:
             token = token.replace("Bearer ", "")
         
         if token:
-            payload = await jwt_manager.verify_token_async(token, "access")
+            payload = await jwt_manager.verify_token(token, "access")
             if payload and dashboard_available:
                 return RedirectResponse(url="/dashboard", status_code=302)
         
@@ -372,7 +404,7 @@ if frontend_available:
             return RedirectResponse(url="/login", status_code=303)
         
         try:
-            payload = await jwt_manager.verify_token_async(access_token, "access")
+            payload = await jwt_manager.verify_token(access_token, "access")
             
             if not payload:
                 print(f"🔴 [DASHBOARD] Token inválido - redirecionando para /login")
@@ -412,7 +444,7 @@ if frontend_available:
             return RedirectResponse(url="/login", status_code=303)
         
         try:
-            payload = await jwt_manager.verify_token_async(access_token, "access")
+            payload = await jwt_manager.verify_token(access_token, "access")
             
             if not payload:
                 print(f"🔴 [PLANOS] Token inválido - redirecionando para /login")
@@ -452,7 +484,7 @@ if frontend_available:
             return RedirectResponse(url="/login", status_code=303)
         
         try:
-            payload = await jwt_manager.verify_token_async(access_token, "access")
+            payload = await jwt_manager.verify_token(access_token, "access")
             
             if not payload:
                 print(f"🔴 [CHECKOUT] Token inválido - redirecionando para /login")
@@ -499,7 +531,7 @@ if frontend_available:
     print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
-# CARREGAR MÓDULOS DO BACKEND (SEM CAPTCHA)
+# CARREGAR MÓDULOS DO BACKEND
 # ==============================================
 print("\n📦 Carregando módulos do backend...")
 
@@ -532,20 +564,28 @@ except ImportError as e:
     print(f"   ❌ Erro ao importar database: {e}")
     sys.exit(1)
 
-# 🔥 IMPORTANDO SEM CAPTCHA
+# 🔥 IMPORTANDO SEGURANÇA
 try:
     from backend.security import (
         hasher, jwt_manager, rate_limiter,
         get_current_user, get_current_active_user, get_current_admin_user,
         set_auth_cookies, clear_auth_cookies
     )
-    from backend.models import User, Analysis, PromotionControl
+    from backend.models import User, Analysis, PromotionControl, Payment, DailyCreditLog
     print("   ✅ Módulos de segurança carregados (SEM CAPTCHA)")
     print("   🔐 Tokens: 15min access | 7 dias refresh | jti | blacklist com TTL")
 except ImportError as e:
     print(f"   ❌ Erro ao importar security: {e}")
     sys.exit(1)
 
+# 🔥 IMPORTAR CRUD
+try:
+    from backend import crud
+    print(f"   ✅ CRUD carregado (MAX_CREDITS_PREMIUM = {crud.MAX_CREDITS_PREMIUM})")
+except ImportError as e:
+    print(f"   ⚠️ CRUD não disponível: {e}")
+
+# 🔥 IMPORTAR SERVIÇOS
 try:
     from backend.services.daily_credits_service import DailyCreditsService
     print("   ✅ DailyCreditsService carregado")
@@ -560,13 +600,49 @@ except ImportError as e:
             return {"has_premium": False, "credits": {"current_balance": 0}, "max_credits": 3}
     DailyCreditsService = DailyCreditsService
 
+try:
+    from backend.services.credits_consumer import (
+        can_perform_analysis, consume_analysis_credit, get_credits_display
+    )
+    print("   ✅ CreditsConsumer carregado")
+except ImportError as e:
+    print(f"   ⚠️ CreditsConsumer não disponível: {e}")
+
+# 🔥 IMPORTAR ML PIPELINE
+try:
+    from backend.ml.preprocessing import pipeline, process_file_content
+    print("   ✅ ML Pipeline carregado")
+    print(f"      📊 Modelo: {pipeline.model_source if hasattr(pipeline, 'model_source') else 'desconhecido'}")
+    print(f"      🔤 Encoding: automático (chardet)")
+    print(f"      💾 Cache: TTL 60s")
+except ImportError as e:
+    print(f"   ⚠️ ML Pipeline não disponível: {e}")
+    # Criar pipeline mock
+    class MockPipeline:
+        def __init__(self):
+            self.model_source = "placeholder"
+            self.is_initialized = False
+        async def initialize(self):
+            self.is_initialized = True
+            return True
+        async def predict(self, df, filename=None):
+            return {"success": False, "error": "ML não disponível"}
+        def get_status(self):
+            return {"initialized": False, "model_source": "placeholder"}
+        def get_encoding_stats(self):
+            return {"encodings": {}, "total_success": 0}
+    pipeline = MockPipeline()
+    
+    async def process_file_content(content, filename):
+        return {"success": False, "error": "ML não disponível"}
+
 AUTH_ENABLED = True
 print("   ✅ Autenticação habilitada")
 
 time.sleep(1)
 
 # ==============================================
-# REGISTRO DE ROTAS (SEM CAPTCHA)
+# REGISTRO DE ROTAS
 # ==============================================
 print("\n📦 Registrando rotas dos routers...")
 
@@ -589,14 +665,32 @@ try:
     try:
         from backend.api.payment_routes import router as payment_router
         app.include_router(payment_router, prefix="/api")
-        print("   ✅ Rotas PAYMENT: /api/payments/*, /api/plans, /api/balance, /api/payments/subscription-status, /api/payments/daily-credit")
+        print("   ✅ Rotas PAYMENT:")
+        print("      GET    /api/payments/plans")
+        print("      GET    /api/payments/balance")
+        print("      GET    /api/payments/promotion-status")
+        print("      POST   /api/payments/create-pix")
+        print("      GET    /api/payments/pix-qrcode/{id}")
+        print("      GET    /api/payments/status/{id}")
+        print("      POST   /api/payments/cancel/{id}")
+        print("      GET    /api/payments/subscription-status")
+        print("      POST   /api/payments/premium/check-daily")
+        print("      POST   /api/payments/webhook")
+        print("      💰 Preço Fundador: R$ 97,00 (100 vagas)")
+        print("      🔒 Preço Vitalício: para quem comprou na promoção")
     except ImportError as e:
         print(f"   ⚠️ Payment routes não disponível: {e}")
     
     try:
         from backend.api.upload_routes import router as upload_router
         app.include_router(upload_router, prefix="/api")
-        print("   ✅ Rotas UPLOAD: /api/upload-auto, /api/status, /api/analyses/history, /api/stats")
+        print("   ✅ Rotas UPLOAD:")
+        print("      POST   /api/upload-auto (até 3 arquivos)")
+        print("      GET    /api/status/{process_id}")
+        print("      GET    /api/analyses/history")
+        print("      GET    /api/analysis/result/{process_id}")
+        print("      📁 ML Pipeline: encodings automático")
+        print("      💰 Consumo de crédito após análise")
     except ImportError as e:
         print(f"   ⚠️ Upload routes não disponível: {e}")
     
@@ -610,9 +704,15 @@ try:
     try:
         from backend.api.pow_routes import router as pow_router
         app.include_router(pow_router, prefix="/api")
-        print("   ✅ Rotas POW: /api/pow/*")
-    except ImportError:
-        print("   ⚠️ POW não disponível")
+        print("   ✅ Rotas POW:")
+        print("      GET    /api/pow/challenge")
+        print("      POST   /api/pow/verify")
+        print("      GET    /api/pow/stats")
+        print("      GET    /api/pow/health")
+        print("      🔒 SHA-256 Anti-Bot")
+        print("      ⏰ Challenge TTL: 120s")
+    except ImportError as e:
+        print(f"   ⚠️ POW não disponível: {e}")
     
     print("   ✅ TODOS OS ROUTERS REGISTRADOS!")
     
@@ -640,8 +740,29 @@ async def health_check():
             "algorithm": settings.ALGORITHM,
             "blacklist": "Redis com TTL"
         },
-        "frontend": {"available": frontend_available, "path": str(FRONTEND_DIR.absolute())},
+        "credits": {
+            "max_balance": settings.MAX_CREDITS_BALANCE,
+            "initial_free": settings.INITIAL_FREE_CREDITS,
+            "premium_daily": 1
+        },
+        "promotion": {
+            "price": settings.PROMOTIONAL_PRICE,
+            "regular_price": settings.REGULAR_PRICE,
+            "total_slots": settings.TOTAL_PROMOTIONAL_SLOTS,
+            "vitalicio": True
+        },
+        "ml_pipeline": {
+            "available": pipeline.is_initialized if hasattr(pipeline, 'is_initialized') else False,
+            "model_source": pipeline.model_source if hasattr(pipeline, 'model_source') else "unknown",
+            "encoding": "auto (chardet)",
+            "cache": "TTL 60s"
+        },
+        "frontend": {
+            "available": frontend_available, 
+            "path": str(FRONTEND_DIR.absolute())
+        },
         "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
+        "max_files_per_batch": settings.MAX_FILES_PER_BATCH,
         "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
@@ -652,21 +773,30 @@ def init_promotion(db: Session):
     from backend.models import PromotionControl
     promo = db.query(PromotionControl).first()
     if not promo:
-        promo = PromotionControl()
+        promo = PromotionControl(
+            total_slots=settings.TOTAL_PROMOTIONAL_SLOTS,
+            used_slots=0,
+            promotional_price=settings.PROMOTIONAL_PRICE,
+            regular_price=settings.REGULAR_PRICE,
+            is_active=True
+        )
         db.add(promo)
         db.commit()
-        print("   ✅ Promoção Bronze inicializada")
+        print(f"   ✅ Promoção Bronze inicializada: {settings.TOTAL_PROMOTIONAL_SLOTS} vagas a R$ {settings.PROMOTIONAL_PRICE}")
     else:
-        print(f"   ✅ Promoção Bronze: {promo.get_remaining_slots()} vagas restantes")
+        remaining = promo.get_remaining_slots()
+        print(f"   ✅ Promoção Bronze: {remaining}/{settings.TOTAL_PROMOTIONAL_SLOTS} vagas restantes")
+        if remaining <= 0:
+            print(f"   ⚠️ PROMOÇÃO ESGOTADA! Preço cheio: R$ {settings.REGULAR_PRICE}")
 
 # ==============================================
 # EVENTO DE STARTUP
 # ==============================================
 @app.on_event("startup")
 async def startup_event():
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("🚀 INICIALIZANDO SISTEMA...")
-    print("=" * 60)
+    print("=" * 70)
     
     try:
         from backend.observability.sentinel import startup_webhook
@@ -684,50 +814,81 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
     
-    # 🔥 SEM CAPTCHA
+    # 🔥 INICIALIZAR ML PIPELINE
+    try:
+        if hasattr(pipeline, 'initialize'):
+            await pipeline.initialize()
+            print("   ✅ ML Pipeline inicializado")
+            if hasattr(pipeline, 'get_status'):
+                status = pipeline.get_status()
+                print(f"      📊 Modelo: {status.get('model_source', 'unknown')}")
+                print(f"      💾 Cache: {status.get('cache_size', 0)} itens")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao inicializar ML Pipeline: {e}")
+    
+    # 🔥 INICIALIZAR REDIS (opcional)
+    try:
+        from backend.security import jwt_manager
+        await jwt_manager.init_redis()
+        print("   ✅ Redis inicializado (JWT blacklist)")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao inicializar Redis: {e}")
+    
+    # ❌ SEM CAPTCHA
     print("   ❌ CAPTCHA: REMOVIDO COMPLETAMENTE")
     
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     frontend_status = "✅" if frontend_available else "❌"
+    ml_status = "✅" if (hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
     
     print(f"""
-    ╔══════════════════════════════════════════════════════════════════╗
+    ╔══════════════════════════════════════════════════════════════════════════════╗
     ║     🎉 {settings.APP_NAME} v{settings.VERSION} INICIADO!                         ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<45} ║
-    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: ❌ REMOVIDO              ║
-    ║  🌐 Frontend: {frontend_status} | 📊 Observabilidade: ✅ ativa          ║
-    ║  📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo                    ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║  🔐 TOKENS:                                                        ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<50} ║
+    ║  🤖 Gemini: {gemini_status} | 🔢 CAPTCHA: ❌ REMOVIDO                      ║
+    ║  🤖 ML Pipeline: {ml_status} | 📊 Observabilidade: ✅ ativa                ║
+    ║  🌐 Frontend: {frontend_status}                                             ║
+    ║  📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB | {settings.MAX_FILES_PER_BATCH} arquivos/vez        ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  💰 CRÉDITOS:                                                               ║
+    ║     Grátis: {settings.INITIAL_FREE_CREDITS} iniciais                                ║
+    ║     Premium: 1/dia | Máximo: {settings.MAX_CREDITS_BALANCE} acumulados                  ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🎯 PREÇO FUNDADOR:                                                         ║
+    ║     Promocional: R$ {settings.PROMOTIONAL_PRICE:.2f} ({settings.TOTAL_PROMOTIONAL_SLOTS} vagas)       ║
+    ║     Regular: R$ {settings.REGULAR_PRICE:.2f}                                  ║
+    ║     Vitalício: ✅ para quem comprar na promoção                            ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🔐 TOKENS:                                                                ║
     ║     Access Token: {settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutos                    ║
     ║     Refresh Token: {settings.REFRESH_TOKEN_EXPIRE_DAYS} dias                      ║
     ║     Algoritmo: {settings.ALGORITHM}                                          ║
-    ║     Blacklist: Redis com TTL (tempo restante)                        ║
-    ║     jti: UUID único por token                                      ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║  🔗 Endpoints principais:                                          ║
-    ║     POST /api/auth/register  ← 🔥 SEM CAPTCHA                    ║
-    ║     POST /api/auth/login     ← 🔥 SEM CAPTCHA                    ║
-    ║     POST /api/auth/refresh   ← 🔥 RENOVA TOKEN                    ║
-    ║     POST /api/auth/logout    ← 🔥 REVOGA TOKEN                    ║
-    ║     POST /api/upload-auto (múltiplos arquivos)                    ║
-    ║     GET  /api/auth/check-token                                   ║
-    ║     GET  /api/auth/me                                            ║
-    ║     GET  /api/health                                             ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║  🌐 Páginas:                                                      ║
-    ║     http://localhost:{settings.PORT}/                             ║
-    ║     http://localhost:{settings.PORT}/login                        ║
-    ║     http://localhost:{settings.PORT}/dashboard                    ║
-    ║     http://localhost:{settings.PORT}/planos                       ║
-    ║     http://localhost:{settings.PORT}/checkout                     ║
-    ║     http://localhost:{settings.PORT}/api/docs                     ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║  📁 Frontend: {FRONTEND_DIR.absolute()}                              ║
-    ║  🗄️  Database: {db_path}                                           ║
-    ║  🕐 Timezone: America/Sao_Paulo (UTC-3)                           ║
-    ╚══════════════════════════════════════════════════════════════════╝
+    ║     Blacklist: Redis com TTL (fallback DB)                                 ║
+    ║     jti: UUID único por token                                              ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🔗 Endpoints principais:                                                  ║
+    ║     POST /api/auth/register  ← 🔥 SEM CAPTCHA                             ║
+    ║     POST /api/auth/login     ← 🔥 SEM CAPTCHA                             ║
+    ║     POST /api/auth/refresh   ← 🔥 RENOVA TOKEN                            ║
+    ║     POST /api/auth/logout    ← 🔥 REVOGA TOKEN                            ║
+    ║     POST /api/upload-auto (múltiplos arquivos)                            ║
+    ║     POST /api/payments/create-pix (PIX real)                              ║
+    ║     GET  /api/payments/promotion-status (vagas)                           ║
+    ║     GET  /api/pow/challenge (PoW anti-bot)                                ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  🌐 Páginas:                                                              ║
+    ║     http://localhost:{settings.PORT}/                                     ║
+    ║     http://localhost:{settings.PORT}/login                                ║
+    ║     http://localhost:{settings.PORT}/dashboard                            ║
+    ║     http://localhost:{settings.PORT}/planos                               ║
+    ║     http://localhost:{settings.PORT}/checkout                             ║
+    ║     http://localhost:{settings.PORT}/api/docs                             ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  📁 Frontend: {FRONTEND_DIR.absolute():<50} ║
+    ║  🗄️  Database: {db_path}                                                 ║
+    ║  🕐 Timezone: America/Sao_Paulo (UTC-3)                                  ║
+    ╚══════════════════════════════════════════════════════════════════════════════╝
     """)
 
 # ==============================================
@@ -745,6 +906,14 @@ async def shutdown_event():
         print(f"   ⚠️ Sentinel não disponível: {e}")
     except Exception as e:
         print(f"   ⚠️ Erro ao finalizar Sentinel: {e}")
+    
+    # 🔥 LIMPAR CACHE DO ML
+    try:
+        if hasattr(pipeline, 'clear_cache'):
+            pipeline.clear_cache()
+            print("   ✅ Cache do ML Pipeline limpo")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao limpar cache ML: {e}")
     
     print("   ❌ CAPTCHA: REMOVIDO")
     print("👋 Sistema desligado!")
@@ -772,11 +941,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 IA: Google Gemini")
+    print(f"🤖 ML: RandomForest + AutoML + Boosting")
     print(f"🔐 Access Token: {settings.ACCESS_TOKEN_EXPIRE_MINUTES}min")
     print(f"🔐 Refresh Token: {settings.REFRESH_TOKEN_EXPIRE_DAYS}dias")
     print(f"🔢 CAPTCHA: ❌ REMOVIDO")
+    print(f"💰 Créditos: {settings.INITIAL_FREE_CREDITS} grátis | {settings.MAX_CREDITS_BALANCE} máx")
+    print(f"🎯 Preço Fundador: R$ {settings.PROMOTIONAL_PRICE} ({settings.TOTAL_PROMOTIONAL_SLOTS} vagas)")
     print(f"📊 Observabilidade: ✅ ativa")
-    print(f"📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB por arquivo")
+    print(f"📁 Limite: {settings.MAX_FILE_SIZE // 1024}KB | {settings.MAX_FILES_PER_BATCH} arquivos")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
     uvicorn.run(

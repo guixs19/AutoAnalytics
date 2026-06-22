@@ -24,7 +24,7 @@ from backend.security import get_current_active_user
 from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 
 # 🔥🔥🔥 NOVO: Importa o pipeline de ML
-from backend.ml.preprocessing import process_file_content, pipeline
+from backend.preprocessing import process_file_content, pipeline
 
 # 🔥 PoW (se existir)
 try:
