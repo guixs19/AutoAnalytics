@@ -1,4 +1,4 @@
-// payment.js - VERSÃO ATUALIZADA v2.1
+// payment.js - VERSÃO COMPLETA v2.2 (COM ATUALIZAÇÃO DE VAGAS EM TEMPO REAL)
 // ==============================================
 // SINCRONIZADO COM:
 // - payment_routes.py (preço fundador vitalício, webhook)
@@ -46,18 +46,12 @@ window.paymentLoaded = true;
 // 🔒 FUNÇÕES DE SEGURANÇA CONTRA XSS (CAMADA MÚLTIPLA)
 // ==============================================
 
-/**
- * Sanitização de HTML - Remove tags e scripts maliciosos
- * Usa múltiplas camadas de proteção
- */
 function sanitizeHTML(str) {
     if (!str) return '';
     if (typeof str !== 'string') str = String(str);
     
-    // 1ª camada: Remover tags HTML
     let clean = str.replace(/<[^>]*>/g, '');
     
-    // 2ª camada: Escapar caracteres especiais
     const escapeMap = {
         '&': '&amp;',
         '<': '&lt;',
@@ -76,7 +70,6 @@ function sanitizeHTML(str) {
         return escapeMap[match] || match;
     });
     
-    // 3ª camada: Remover padrões de script
     clean = clean.replace(/javascript:/gi, '');
     clean = clean.replace(/on\w+\s*=/gi, '');
     clean = clean.replace(/eval\s*\(/gi, '');
@@ -84,38 +77,27 @@ function sanitizeHTML(str) {
     clean = clean.replace(/confirm\s*\(/gi, '');
     clean = clean.replace(/prompt\s*\(/gi, '');
     
-    // 4ª camada: Limitar tamanho (evita DoS)
     clean = clean.slice(0, 5000);
     
     return clean;
 }
 
-/**
- * Sanitização de números - Garante que é um número válido
- */
 function sanitizeNumber(value, defaultValue = 0) {
     if (value === undefined || value === null) return defaultValue;
     const num = parseFloat(String(value).replace(/[^0-9.,-]/g, '').replace(',', '.'));
     return isNaN(num) ? defaultValue : num;
 }
 
-/**
- * Sanitização de CPF - Remove caracteres não numéricos
- */
 function sanitizeCPF(cpf) {
     if (!cpf) return '';
     return String(cpf).replace(/\D/g, '');
 }
 
-/**
- * Validação de CPF (completa)
- */
 function validateCPF(cpf) {
     const clean = sanitizeCPF(cpf);
     
     if (clean.length !== 11) return false;
     
-    // Eliminar CPFs inválidos conhecidos
     const invalidCPFs = [
         '00000000000', '11111111111', '22222222222',
         '33333333333', '44444444444', '55555555555',
@@ -124,7 +106,6 @@ function validateCPF(cpf) {
     ];
     if (invalidCPFs.includes(clean)) return false;
     
-    // Validação do dígito verificador
     let sum = 0;
     let remainder;
     
@@ -146,9 +127,6 @@ function validateCPF(cpf) {
     return true;
 }
 
-/**
- * Sanitização de objeto completo (recursivo)
- */
 function sanitizeObject(obj) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj === 'string') return sanitizeHTML(obj);
@@ -167,9 +145,6 @@ function sanitizeObject(obj) {
     return obj;
 }
 
-/**
- * Sanitização de resposta da API (antes de exibir)
- */
 function sanitizeResponse(data) {
     return sanitizeObject(data);
 }
@@ -224,16 +199,11 @@ function formatCreditsDisplay(credits, isPremiumUser = false) {
 // 🔥 REQUISIÇÕES AUTENTICADAS (USANDO appAuth)
 // ==============================================
 
-/**
- * 🔥 CORRIGIDO: Usa window.appAuth.fetchWithAuth como fonte única
- */
 async function fetchWithAuth(url, options = {}) {
-    // ✅ Usar window.appAuth se disponível (fonte única)
     if (window.appAuth && window.appAuth.fetchWithAuth) {
         return window.appAuth.fetchWithAuth(url, options);
     }
     
-    // 🔥 Fallback: Usar token do localStorage (apenas para compatibilidade)
     console.warn('⚠️ appAuth não disponível, usando fallback fetchWithAuth');
     
     const token = localStorage.getItem('access_token');
@@ -251,7 +221,6 @@ async function fetchWithAuth(url, options = {}) {
     try {
         const response = await fetch(url, { ...options, headers });
         
-        // Tratar token expirado
         if (response.status === 401) {
             const refreshToken = localStorage.getItem('refresh_token');
             if (refreshToken) {
@@ -296,7 +265,6 @@ async function fetchWithAuth(url, options = {}) {
 function showNotification(message, type = 'info') {
     const safeMessage = sanitizeHTML(message);
     
-    // ✅ Usar appAuth se disponível
     if (window.appAuth && window.appAuth.showNotification) {
         return window.appAuth.showNotification(safeMessage, type);
     }
@@ -332,15 +300,11 @@ function showNotification(message, type = 'info') {
 // 🔥 ATUALIZAR CRÉDITOS (COM EVENTO)
 // ==============================================
 
-/**
- * 🔥 CORRIGIDO: Atualiza créditos e dispara evento para app.js
- */
 async function updateCreditsDisplay() {
     try {
         let credits = getCredits();
         let isPremiumUser = isPremium();
         
-        // Se appAuth tem loadUserCredits, usar para dados atualizados
         if (window.appAuth && window.appAuth.loadUserCredits) {
             await window.appAuth.loadUserCredits();
             credits = window.appAuth.getCredits ? window.appAuth.getCredits() : 0;
@@ -349,7 +313,6 @@ async function updateCreditsDisplay() {
         
         const displayText = formatCreditsDisplay(credits, isPremiumUser);
         
-        // Atualizar elementos DOM
         const selectors = [
             '.credits-display', '.user-credits', 
             '#creditsDisplay', '#creditsCount', '#uploadCredits',
@@ -360,7 +323,6 @@ async function updateCreditsDisplay() {
             if (el) el.textContent = displayText;
         });
         
-        // 🔥 DISPARAR EVENTO PARA APP.JS
         window.dispatchEvent(new CustomEvent('creditsUpdated', {
             detail: {
                 credits: credits,
@@ -374,6 +336,151 @@ async function updateCreditsDisplay() {
     } catch (error) {
         console.error('Erro ao atualizar créditos:', error);
         return false;
+    }
+}
+
+// ==============================================
+// 🔥🔥🔥 ATUALIZAR STATUS DA PROMOÇÃO (VAGAS EM TEMPO REAL)
+// ==============================================
+
+async function updatePromotionStatus() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/payments/promotion-status`);
+        if (response && response.ok) {
+            const data = await response.json();
+            
+            console.log(`📊 Promoção atualizada: ${data.remaining_slots}/${data.total_slots} vagas`);
+            
+            // 🔥 Atualiza o número de vagas
+            const vagasNumber = document.querySelector('.vagas-number');
+            if (vagasNumber) {
+                vagasNumber.textContent = data.remaining_slots;
+            }
+            
+            // 🔥 Atualiza a barra de progresso
+            const vagasProgress = document.querySelector('.vagas-progress-bar');
+            if (vagasProgress) {
+                const percentual = ((data.total_slots - data.remaining_slots) / data.total_slots) * 100;
+                vagasProgress.style.width = `${Math.min(100, percentual)}%`;
+            }
+            
+            // 🔥 Atualiza o label de vagas
+            const vagasLabel = document.querySelector('.vagas-label');
+            if (vagasLabel) {
+                const labelSpan = vagasLabel.querySelector('span');
+                if (labelSpan) {
+                    labelSpan.textContent = data.remaining_slots;
+                }
+            }
+            
+            // 🔥 Atualiza o preço
+            const priceTag = document.getElementById('planoPreco');
+            if (priceTag) {
+                const isSoldOut = data.remaining_slots <= 0;
+                const precoAtual = isSoldOut ? data.regular_price : data.promotional_price;
+                priceTag.innerHTML = `R$ ${precoAtual.toFixed(2).replace('.', ',')}<small>/mês</small>`;
+            }
+            
+            // 🔥 Atualiza o badge principal
+            const bronzeBadge = document.querySelector('.bronze-badge');
+            if (bronzeBadge) {
+                if (data.remaining_slots <= 0) {
+                    bronzeBadge.textContent = '⛔ PROMOÇÃO ENCERRADA';
+                } else if (data.user_locked_price) {
+                    bronzeBadge.textContent = '🔥 SEU PREÇO VITALÍCIO';
+                } else {
+                    bronzeBadge.textContent = '🔥 PROMOÇÃO FUNDADOR';
+                }
+            }
+            
+            // 🔥 Atualiza o badge de economia
+            const economyBadge = document.querySelector('.economy-badge');
+            if (economyBadge) {
+                if (data.remaining_slots > 0 && !data.user_locked_price) {
+                    const economia = data.regular_price - data.promotional_price;
+                    economyBadge.textContent = `🔥 ECONOMIZE R$ ${economia.toFixed(2).replace('.', ',')} 🔥`;
+                    economyBadge.style.display = 'inline-block';
+                    economyBadge.style.background = '';
+                } else if (data.user_locked_price) {
+                    economyBadge.textContent = '🔒 PREÇO BLOQUEADO - VITALÍCIO';
+                    economyBadge.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+                    economyBadge.style.display = 'inline-block';
+                } else {
+                    economyBadge.style.display = 'none';
+                }
+            }
+            
+            // 🔥 Atualiza o badge de urgência
+            const urgentBadge = document.querySelector('.vagas-urgent');
+            if (urgentBadge) {
+                if (data.remaining_slots <= 20 && data.remaining_slots > 0) {
+                    urgentBadge.style.display = 'block';
+                    const urgentText = urgentBadge.querySelector('strong');
+                    if (urgentText) {
+                        urgentText.textContent = `🔥 URGENTE! ÚLTIMAS ${data.remaining_slots} VAGAS! 🔥`;
+                    }
+                } else {
+                    urgentBadge.style.display = 'none';
+                }
+            }
+            
+            // 🔥 Atualiza a mensagem de vagas restantes
+            const vagasMuted = document.querySelector('.vagas-counter .text-muted, .vagas-counter .mt-2 .small');
+            if (vagasMuted && data.remaining_slots > 0 && !data.user_locked_price) {
+                vagasMuted.textContent = `Apenas as primeiras ${data.total_slots} pessoas pagam R$ ${data.promotional_price.toFixed(2).replace('.', ',')} (vitalício)`;
+            }
+            
+            // 🔥 Atualiza o botão de compra
+            const buyButton = document.getElementById('buyButton');
+            if (buyButton) {
+                const isSoldOut = data.remaining_slots <= 0;
+                const isUserLocked = data.user_locked_price !== null && data.user_locked_price !== undefined;
+                const precoAtual = isSoldOut ? data.regular_price : data.promotional_price;
+                
+                if (isUserLocked) {
+                    buyButton.innerHTML = `
+                        <i class="fas fa-bolt me-2"></i>
+                        RENOVAR MEU PLANO
+                        <small class="d-block fs-10">Pagamento vitalício garantido</small>
+                    `;
+                } else if (isSoldOut) {
+                    buyButton.innerHTML = `
+                        <i class="fas fa-bolt me-2"></i>
+                        COMPRAR POR R$ ${precoAtual.toFixed(2).replace('.', ',')}
+                        <small class="d-block fs-10">Promoção encerrada</small>
+                    `;
+                } else {
+                    buyButton.innerHTML = `
+                        <i class="fas fa-bolt me-2"></i>
+                        🔥 GARANTIR PREÇO FUNDADOR R$ ${precoAtual.toFixed(2).replace('.', ',')}
+                        <small class="d-block fs-10">${data.remaining_slots} vagas restantes</small>
+                    `;
+                }
+                
+                // 🔥 Atualiza o onclick para manter a referência correta
+                buyButton.onclick = function() {
+                    window.openCpfModal('premium_mensal');
+                };
+            }
+            
+            // 🔥 Dispara evento para outros módulos
+            window.dispatchEvent(new CustomEvent('promotionStatusUpdated', {
+                detail: {
+                    remaining_slots: data.remaining_slots,
+                    total_slots: data.total_slots,
+                    promotional_price: data.promotional_price,
+                    regular_price: data.regular_price,
+                    is_active: data.is_active,
+                    user_locked_price: data.user_locked_price,
+                    current_price: data.remaining_slots > 0 ? data.promotional_price : data.regular_price
+                }
+            }));
+            
+            return data;
+        }
+    } catch (error) {
+        console.warn('Erro ao atualizar status da promoção:', error);
+        return null;
     }
 }
 
@@ -398,9 +505,6 @@ async function loadPlans() {
     }
 }
 
-/**
- * 🔥 RENDERIZAÇÃO DO PLANO BRONZE COM SISTEMA FUNDADOR VITALÍCIO
- */
 async function renderBronzePlan(plans, fullData = null) {
     const container = document.getElementById('plansContainer');
     if (!container) return;
@@ -427,7 +531,6 @@ async function renderBronzePlan(plans, fullData = null) {
         return;
     }
     
-    // 🔥 BUSCAR STATUS REAL DA PROMOÇÃO NO BACKEND
     let promoData = {
         remaining_slots: TOTAL_PROMOTIONAL_SLOTS,
         total_slots: TOTAL_PROMOTIONAL_SLOTS,
@@ -461,7 +564,6 @@ async function renderBronzePlan(plans, fullData = null) {
     const percentual = (vagasUsadas / totalVagas) * 100;
     const isUrgent = vagasRestantes <= 20 && vagasRestantes > 0;
     
-    // 🔥 MENSAGEM PERSONALIZADA PARA QUEM JÁ TEM PREÇO VITALÍCIO
     let precoMessage = '';
     if (isUserLocked) {
         precoMessage = `
@@ -727,14 +829,12 @@ function openCpfModal(planId) {
         `;
         document.body.appendChild(cpfModal);
         
-        // 🔥 MÁSCARA DE CPF SEGURA
         const cpfInput = document.getElementById('cpfInput');
         if (cpfInput) {
             cpfInput.addEventListener('input', function(e) {
                 let value = e.target.value.replace(/\D/g, '');
                 if (value.length > 11) value = value.slice(0, 11);
                 
-                // Aplicar máscara
                 if (value.length > 9) {
                     value = value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
                 } else if (value.length > 6) {
@@ -751,9 +851,6 @@ function openCpfModal(planId) {
     modal.show();
 }
 
-/**
- * 🔥 PROCESSAR CPF COM VALIDAÇÃO COMPLETA
- */
 async function proceedWithCpf(planId) {
     const cpfInput = document.getElementById('cpfInput');
     const cpfError = document.getElementById('cpfError');
@@ -762,7 +859,6 @@ async function proceedWithCpf(planId) {
     
     const cpfLimpo = sanitizeCPF(cpfInput.value);
     
-    // 🔥 VALIDAÇÃO COMPLETA DO CPF
     if (!validateCPF(cpfLimpo)) {
         if (cpfError) {
             cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
@@ -771,11 +867,9 @@ async function proceedWithCpf(planId) {
         return;
     }
     
-    // Fechar modal
     const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
     if (cpfModal) cpfModal.hide();
     
-    // 🔥 Prosseguir com pagamento
     await selectPlan(planId, 'pix', cpfLimpo);
 }
 
@@ -797,7 +891,6 @@ async function selectPlan(planId, method, cpf = null) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processando...';
         
-        // Timeout de segurança
         setTimeout(() => {
             if (btn) {
                 btn.disabled = false;
@@ -806,7 +899,6 @@ async function selectPlan(planId, method, cpf = null) {
         }, 30000);
     }
     
-    // 🔥 CONSTRUIR CORPO DA REQUISIÇÃO (SEGURO)
     const requestBody = { plan_id: sanitizeHTML(planId) };
     
     if (cpf) {
@@ -843,7 +935,6 @@ async function selectPlan(planId, method, cpf = null) {
                 if (safeData.payment_id) {
                     showPixModalSecure(safeData.payment_id, safeData);
                 } else if (safeData.checkout_url) {
-                    // URL segura (sanitizada)
                     const safeUrl = sanitizeHTML(safeData.checkout_url);
                     window.location.href = safeUrl;
                 } else {
@@ -888,7 +979,6 @@ async function showPixModalSecure(paymentId, paymentData) {
     const modalContent = document.getElementById('pixContent');
     if (!modalContent) return;
     
-    // Sanitizar dados
     const safePaymentData = sanitizeResponse(paymentData);
     const safePaymentId = sanitizeNumber(paymentId);
     
@@ -1032,9 +1122,6 @@ function startCountdown(seconds) {
     }, 1000);
 }
 
-/**
- * 🔥 COPIA CÓDIGO PIX COM SEGURANÇA
- */
 function copyPixCodeSecure() {
     const codeElement = document.getElementById('pixCodeText');
     if (codeElement && codeElement.textContent) {
@@ -1131,7 +1218,22 @@ function startPaymentPollingSecure(paymentId) {
                     
                     await updateCreditsDisplay();
                     
-                    // 🔥 Disparar eventos para app.js
+                    // 🔥🔥🔥 ATUALIZAR VAGAS EM TEMPO REAL 🔥🔥🔥
+                    setTimeout(async () => {
+                        // 1. Atualiza status da promoção
+                        if (typeof window.updatePromotionStatus === 'function') {
+                            const result = await window.updatePromotionStatus();
+                            if (result) {
+                                console.log(`✅ Vagas atualizadas: ${result.remaining_slots}/${result.total_slots}`);
+                            }
+                        }
+                        
+                        // 2. Recarrega os planos (fallback)
+                        if (typeof window.loadPlans === 'function') {
+                            window.loadPlans();
+                        }
+                    }, 1500);
+                    
                     if (window.loadSubscriptionStatus) {
                         setTimeout(() => {
                             window.loadSubscriptionStatus();
@@ -1322,9 +1424,6 @@ function updatePlanStatusCard(subscriptionData) {
 // 🔥 STATUS PREMIUM COMPLETO (COM CRÉDITO DIÁRIO)
 // ==============================================
 
-/**
- * 🔥 CORRIGIDO: Carrega status premium e dispara evento para app.js
- */
 async function loadPremiumStatus() {
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/premium-status`);
@@ -1333,7 +1432,6 @@ async function loadPremiumStatus() {
             const safeData = sanitizeResponse(data);
             updatePremiumStatusUI(safeData);
             
-            // 🔥 DISPARAR EVENTO PARA APP.JS
             window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
                 detail: {
                     isPremium: safeData.is_premium || false,
@@ -1396,10 +1494,6 @@ function updatePremiumStatusUI(data) {
         return;
     }
     
-    // ==========================================
-    // USUÁRIO PREMIUM - STATUS DETALHADO
-    // ==========================================
-    
     const daysLeft = sanitizeNumber(safeData.days_left, 0);
     const creditsBalance = sanitizeNumber(safeData.credits_balance, 0);
     const maxCredits = sanitizeNumber(safeData.max_credits_balance, MAX_CREDITS_BALANCE);
@@ -1458,7 +1552,6 @@ function updatePremiumStatusUI(data) {
     
     container.innerHTML = `
         <div class="premium-card premium-active">
-            <!-- HEADER -->
             <div class="premium-status-header">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-crown" style="color: #f5a623; font-size: 1.5rem;"></i>
@@ -1479,7 +1572,6 @@ function updatePremiumStatusUI(data) {
                 </span>
             </div>
             
-            <!-- PROGRESSO DO PLANO -->
             <div class="premium-progress">
                 <div class="d-flex justify-content-between small mb-1">
                     <span style="color: rgba(255,255,255,0.6);">Progresso do plano (${totalDays} dias)</span>
@@ -1494,7 +1586,6 @@ function updatePremiumStatusUI(data) {
                 </div>
             </div>
             
-            <!-- CARDS DE CRÉDITOS -->
             <div class="row g-3 mb-3">
                 <div class="col-4">
                     <div class="credit-status-card text-center p-3 rounded-3">
@@ -1533,7 +1624,6 @@ function updatePremiumStatusUI(data) {
                 </div>
             </div>
             
-            <!-- MENSAGEM DE AÇÃO -->
             <div class="premium-message ${isAtMaxCredits ? 'premium-message-warning' : (canReceiveToday ? 'premium-message-success' : 'premium-message-info')}">
                 <i class="fas ${isAtMaxCredits ? 'fa-exclamation-triangle' : (canReceiveToday ? 'fa-gift' : 'fa-info-circle')} me-2"></i>
                 <span>
@@ -1548,7 +1638,6 @@ function updatePremiumStatusUI(data) {
                 </span>
             </div>
             
-            <!-- BOTÃO DE AÇÃO -->
             ${canReceiveToday ? `
                 <div class="d-grid gap-2 mt-3">
                     <button class="btn btn-premium-receive" onclick="window.receiveDailyCredit()">
@@ -1580,7 +1669,6 @@ function updatePremiumStatusUI(data) {
                 </div>
             ` : ''}
             
-            <!-- FOOTER -->
             <div class="premium-footer">
                 <div class="row text-center small">
                     <div class="col-6">
@@ -1596,7 +1684,6 @@ function updatePremiumStatusUI(data) {
         </div>
     `;
     
-    // Notificações
     if (isAtMaxCredits) {
         showNotification(
             `⚠️ Você atingiu o limite de ${maxCredits} créditos! Use um crédito para continuar recebendo 1 por dia.`,
@@ -1612,9 +1699,6 @@ function updatePremiumStatusUI(data) {
     }
 }
 
-/**
- * 🔥 RECEBE CRÉDITO DIÁRIO (COM SEGURANÇA E EVENTO)
- */
 async function receiveDailyCredit() {
     try {
         const response = await fetchWithAuth(`${API_URL}/payments/daily-credit`, {
@@ -1628,7 +1712,6 @@ async function receiveDailyCredit() {
             if (safeData.success) {
                 showNotification(`✅ ${safeData.message || 'Crédito recebido com sucesso!'}`, 'success');
                 
-                // 🔥 DISPARAR EVENTO PARA APP.JS
                 window.dispatchEvent(new CustomEvent('dailyCreditReceived', {
                     detail: {
                         success: true,
@@ -1697,7 +1780,6 @@ function isDashboardPage() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Inicializar na página de planos
     if (isPlansPage()) {
         setTimeout(() => {
             loadPlans();
@@ -1709,7 +1791,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 200);
     }
     
-    // Inicializar STATUS PREMIUM no dashboard
     if (isDashboardPage()) {
         setTimeout(() => {
             loadPremiumStatus();
@@ -1718,14 +1799,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
     }
     
-    // Atualizar créditos periodicamente
     const creditsElement = document.getElementById('creditsDisplay');
     if (creditsElement) {
         updateCreditsDisplay();
         setInterval(updateCreditsDisplay, 30000);
     }
     
-    // Limpar polling ao fechar modal PIX
     const pixModal = document.getElementById('pixModal');
     if (pixModal) {
         pixModal.addEventListener('hidden.bs.modal', function() {
@@ -1740,7 +1819,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Verificar parâmetro de sucesso no pagamento
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success') {
         showNotification('✅ Pagamento aprovado! Créditos adicionados à sua conta.', 'success');
@@ -1756,14 +1834,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.updateCreditsDisplay) {
                 window.updateCreditsDisplay();
             }
+            // 🔥 Atualiza vagas quando volta do pagamento
+            if (window.updatePromotionStatus) {
+                window.updatePromotionStatus();
+            }
         }, 1000);
     }
     
-    // 🔥 Disparar evento de payment carregado
     window.dispatchEvent(new CustomEvent('paymentReady', {
         detail: {
             loaded: true,
-            version: '2.1'
+            version: '2.2'
         }
     }));
 });
@@ -1795,13 +1876,16 @@ window.receiveDailyCredit = receiveDailyCredit;
 window.startPremiumStatusPolling = startPremiumStatusPolling;
 window.stopPremiumStatusPolling = stopPremiumStatusPolling;
 
+// 🔥🔥🔥 ATUALIZAÇÃO DE VAGAS EM TEMPO REAL
+window.updatePromotionStatus = updatePromotionStatus;
+
 // Segurança
 window.sanitizeHTML = sanitizeHTML;
 window.sanitizeCPF = sanitizeCPF;
 window.validateCPF = validateCPF;
 window.sanitizeResponse = sanitizeResponse;
 
-console.log('✅ payment.js carregado - v2.1');
+console.log('✅ payment.js carregado - v2.2 (COM ATUALIZAÇÃO DE VAGAS EM TEMPO REAL)');
 console.log('🔒 Proteção antifraude: CPF obrigatório e validado');
 console.log(`📊 Limite máximo de créditos: ${MAX_CREDITS_BALANCE}`);
 console.log(`💰 Preço Fundador: R$ ${PROMOTIONAL_PRICE} (vitalício)`);
@@ -1809,3 +1893,4 @@ console.log(`💰 Preço Cheio: R$ ${REGULAR_PRICE}`);
 console.log(`🎯 Total de vagas: ${TOTAL_PROMOTIONAL_SLOTS}`);
 console.log('🕐 Fuso horário: America/Sao_Paulo (UTC-3)');
 console.log('📡 Eventos: paymentReady, creditsUpdated, premiumStatusUpdated, dailyCreditReceived');
+console.log('🔥 Vagas atualizadas em tempo real após cada compra!');
