@@ -1,12 +1,14 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v3.6
+# main.py (na raiz) - VERSÃO PRODUÇÃO v3.7 (CORRIGIDA DEFINITIVA)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v3.6:
-- ✅ Registro de rotas com logs detalhados (mostra o erro exato)
-- ✅ safe_include_router com traceback completo
-- ✅ Fallback seguro para todos os módulos
+🔥 CORREÇÕES v3.7:
+- ✅ Importação ISOLADA de auth_routes.py (login) e auth.py (register)
+- ✅ Falha no register NÃO quebra o login
+- ✅ Logs detalhados com traceback completo
+- ✅ Verificação de rotas registradas no startup
 - ✅ Timezone corrigido (UTC-3)
+- ✅ Código mais robusto e organizado
 ================================================================================
 """
 
@@ -34,7 +36,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v3.6 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v3.7 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -49,7 +51,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.6.0"
+    VERSION = "3.7.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -614,77 +616,71 @@ except ImportError as e:
 print("   ✅ Módulos carregados com sucesso!")
 
 # ==============================================
-# 13. REGISTRO DE ROTAS (CORRIGIDO - COM LOGS DETALHADOS)
+# 13. REGISTRO DE ROTAS (CORRIGIDO - IMPORT ISOLADO)
 # ==============================================
 
 print("\n📦 Registrando rotas...")
 
 def safe_include_router(module_path: str, prefix: str = "", description: str = "") -> bool:
     """
-    🔥 CORRIGIDO: Tenta incluir um router com fallback seguro
-    🔥 MOSTRA O ERRO EXATO COM TRACEBACK
+    🔥 Tenta incluir um router com fallback seguro
     """
     try:
-        print(f"   🔄 Tentando carregar: {module_path} ({description})")
+        print(f"   🔄 Tentando carregar: {module_path}")
         import importlib
         module = importlib.import_module(module_path)
         router = getattr(module, 'router')
         app.include_router(router, prefix=prefix)
         print(f"   ✅ {description} carregado com sucesso! ({prefix})")
-        
-        # Listar rotas registradas
-        if hasattr(router, 'routes'):
-            for route in router.routes:
-                methods = ", ".join(route.methods) if hasattr(route, 'methods') else "ALL"
-                print(f"      📍 {methods} {route.path}")
-        
         return True
     except ImportError as e:
         print(f"   ❌ {description} - ERRO DE IMPORTAÇÃO: {e}")
-        print(f"   📋 Traceback:")
-        traceback.print_exc()
         return False
     except AttributeError as e:
         print(f"   ❌ {description} - router não encontrado: {e}")
-        print(f"   📋 Traceback:")
-        traceback.print_exc()
         return False
     except Exception as e:
         print(f"   ❌ {description} - ERRO: {e}")
-        print(f"   📋 Traceback:")
-        traceback.print_exc()
         return False
 
 # ==============================================
-# 🔥 AUTH ROUTES (CRÍTICO - DEVE FUNCIONAR)
+# 🔥 AUTH ROUTES (ISOLADAS - CRÍTICO)
 # ==============================================
 
 print("\n🔐 Registrando rotas de autenticação...")
 
-# Tenta importar auth_routes diretamente para ver o erro
+# 🔥 1. LOGIN/LOGOUT/REFRESH (OBRIGATÓRIO - NÃO PODE FALHAR)
 try:
     from backend.api.auth_routes import router as auth_router
-    from backend.api.auth import router as registration_router
-    
     app.include_router(auth_router, prefix="/api/auth")
-    app.include_router(registration_router, prefix="/api/auth")
-    
-    print("   ✅ Rotas AUTH registradas com sucesso!")
-    print("      POST   /api/auth/login     ← 🔥 Login")
-    print("      POST   /api/auth/register")
+    print("   ✅ Rotas de Autenticação (auth_routes) registradas com sucesso!")
+    print("      POST   /api/auth/login     ← 🔥 LOGIN")
     print("      POST   /api/auth/refresh")
     print("      POST   /api/auth/logout")
     print("      GET    /api/auth/check-token")
     print("      GET    /api/auth/me")
-    
 except ImportError as e:
     print(f"   ❌ ERRO CRÍTICO ao importar auth_routes: {e}")
-    print("   📋 Traceback completo:")
+    print("   💡 Verifique se o arquivo backend/api/auth_routes.py existe")
+    import traceback
     traceback.print_exc()
-    print("   ⚠️ O servidor continuará, mas o LOGIN NÃO FUNCIONARÁ!")
+    # 🔥 Não usa sys.exit() - o container continua rodando
 except Exception as e:
     print(f"   ❌ ERRO ao registrar auth_routes: {e}")
+    import traceback
     traceback.print_exc()
+
+# 🔥 2. REGISTRO (SEPARADO - NÃO QUEBRA O LOGIN)
+try:
+    from backend.api.auth import router as registration_router
+    app.include_router(registration_router, prefix="/api/auth")
+    print("   ✅ Rotas de Cadastro (auth) registradas com sucesso!")
+    print("      POST   /api/auth/register  ← 🔥 REGISTRO")
+except ImportError as e:
+    print(f"   ⚠️ Módulo de cadastro (auth.py) não disponível: {e}")
+    print("   💡 O login continua funcionando, apenas o registro não estará disponível.")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar auth.py: {e}")
 
 # ==============================================
 # 🔥 OUTRAS ROTAS (COM FALLBACK)
@@ -732,6 +728,24 @@ except ImportError as e:
 except Exception as e:
     print(f"   ⚠️ Erro ao registrar PoW: {e}")
 
+# ==============================================
+# 🔥 VERIFICAÇÃO FINAL
+# ==============================================
+
+print("\n📋 Verificando rotas registradas...")
+auth_routes_found = []
+for route in app.routes:
+    if hasattr(route, 'path') and '/auth' in route.path:
+        auth_routes_found.append(route.path)
+
+if auth_routes_found:
+    print(f"   ✅ Rotas /auth encontradas: {len(auth_routes_found)}")
+    for r in auth_routes_found[:10]:
+        print(f"      📍 {r}")
+else:
+    print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
+    print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
+
 print("   ✅ Registro de rotas concluído!")
 
 # ==============================================
@@ -758,6 +772,7 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "auth_enabled": AUTH_ENABLED,
         "auth_status": auth_status,
+        "auth_routes_registered": len([r for r in app.routes if hasattr(r, 'path') and '/auth' in r.path]) > 0,
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "frontend_available": frontend_status["available"],
         "ml_pipeline": ml_status,
@@ -842,17 +857,16 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro no Redis: {e}")
     
-    # 16.5 Verificar se as rotas de auth estão registradas
+    # 16.5 Verificar rotas de auth
     print("\n🔐 Verificando rotas registradas...")
-    routes = []
+    auth_routes = []
     for route in app.routes:
-        if hasattr(route, 'path'):
-            routes.append(route.path)
+        if hasattr(route, 'path') and '/auth' in route.path:
+            auth_routes.append(route.path)
     
-    auth_routes = [r for r in routes if '/auth' in r]
     if auth_routes:
         print(f"   ✅ Rotas /auth encontradas: {len(auth_routes)}")
-        for r in auth_routes[:10]:
+        for r in auth_routes:
             print(f"      📍 {r}")
     else:
         print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
@@ -931,6 +945,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def global_exception_handler(request: Request, exc: Exception):
     """Handler para exceções não tratadas"""
     print(f"❌ Exceção não tratada: {exc}")
+    import traceback
+    traceback.print_exc()
     return JSONResponse(
         status_code=500,
         content={"error": "Erro interno do servidor", "detail": str(exc) if settings.DEBUG else "Tente novamente mais tarde"}
