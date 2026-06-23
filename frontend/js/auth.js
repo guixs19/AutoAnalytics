@@ -1,4 +1,4 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA (SINCRONIZADA COM BACKEND)
+// frontend/js/auth.js - VERSÃO ATUALIZADA (SINCRONIZADA COM BACKEND)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
@@ -11,6 +11,8 @@
  *   - fetchWithAuth() atualiza token após refresh
  *   - Constantes sincronizadas com backend
  *   - getCreditsDisplay() usa MAX_CREDITS_BALANCE
+ *   - Suporte a cookies para fallback de token
+ *   - Melhor tratamento de erros 404/500
  */
 
 // ==============================================
@@ -39,6 +41,8 @@ class Auth {
         this._tokenCheckInterval = null;
         this.pendingRequests = [];
         this._lastTokenCheck = 0;
+        this._loginAttempts = 0;
+        this._maxLoginAttempts = 5;
         
         this.init();
     }
@@ -132,11 +136,14 @@ class Auth {
                     plan: data.plan,
                     credits: data.credits || 0,
                     is_admin: data.is_admin || false,
-                    credits_display: data.credits_display || String(data.credits || 0)
+                    credits_display: data.credits_display || String(data.credits || 0),
+                    promotional_price_locked: data.promotional_price_locked || false,
+                    promotional_price: data.promotional_price || null
                 };
                 
                 this.currentUser = this.userData;
                 this.isAuthenticated = true;
+                this._loginAttempts = 0;
                 
                 if (passwordInput) passwordInput.value = '';
                 
@@ -164,7 +171,13 @@ class Auth {
                     } else if (typeof data.detail === 'string') {
                         errorMsg = data.detail;
                     }
+                } else if (response.status === 404) {
+                    errorMsg = 'Serviço de autenticação indisponível. Tente novamente.';
+                } else if (response.status === 500) {
+                    errorMsg = 'Erro interno do servidor. Tente novamente.';
                 }
+                
+                this._loginAttempts++;
                 
                 if (window.toastr) {
                     toastr.error(errorMsg);
@@ -215,6 +228,22 @@ class Auth {
         if (!name || !email || !password || !workshopName) {
             if (window.toastr) {
                 toastr.error('Preencha todos os campos obrigatórios.');
+            }
+            return;
+        }
+        
+        // Validação de nome
+        if (name.length < 3) {
+            if (window.toastr) {
+                toastr.error('Nome deve ter pelo menos 3 caracteres.');
+            }
+            return;
+        }
+        
+        // Validação de workshop
+        if (workshopName.length < 2) {
+            if (window.toastr) {
+                toastr.error('Nome da oficina deve ter pelo menos 2 caracteres.');
             }
             return;
         }
@@ -287,6 +316,8 @@ class Auth {
                     } else if (typeof data.detail === 'string') {
                         errorMsg = data.detail;
                     }
+                } else if (response.status === 409) {
+                    errorMsg = 'Este email já está cadastrado. Faça login.';
                 }
                 
                 if (window.toastr) {
@@ -300,6 +331,7 @@ class Auth {
                     toastr.success('✅ Conta criada! Faça login para continuar.');
                 }
                 
+                // 🔥 Limpa o formulário
                 if (nameInput) nameInput.value = '';
                 if (emailInput) emailInput.value = '';
                 if (passwordInput) passwordInput.value = '';
@@ -475,6 +507,12 @@ class Auth {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
+            // 🔥 Se for 404, o backend pode estar reiniciando
+            if (response.status === 404) {
+                console.warn('⚠️ Endpoint /auth/check-token não encontrado');
+                return;
+            }
+            
             const data = await response.json();
             
             // 🔥 CORRIGIDO: Processa status 'refreshed'
@@ -545,6 +583,11 @@ class Auth {
                     old_access_token: accessToken || null
                 })
             });
+            
+            if (response.status === 404) {
+                console.warn('⚠️ Endpoint /auth/refresh não encontrado');
+                return false;
+            }
             
             if (response.ok) {
                 const data = await response.json();
@@ -682,6 +725,13 @@ class Auth {
                 }
             });
             
+            // 🔥 Se for 404, o backend pode estar reiniciando
+            if (response.status === 404) {
+                console.warn('⚠️ Endpoint /auth/check-token não encontrado');
+                // Mantém o usuário como autenticado (pode ser um erro temporário)
+                return this.isAuthenticated;
+            }
+            
             const data = await response.json();
             
             // 🔥 CORRIGIDO: Processa status 'valid' e 'refreshed'
@@ -810,6 +860,14 @@ class Auth {
         return this.userData?.plan === 'premium_mensal' || this.userData?.plan === 'PREMIUM_MENSAL';
     }
     
+    isPromotionalPriceLocked() {
+        return this.userData?.promotional_price_locked || false;
+    }
+    
+    getPromotionalPrice() {
+        return this.userData?.promotional_price || null;
+    }
+    
     getCurrentUser() {
         return this.userData || {};
     }
@@ -923,8 +981,9 @@ class Auth {
 
 window.appAuth = new Auth();
 
-console.log('✅ Auth carregado (v2.0 - sincronizado com backend)');
+console.log('✅ Auth carregado (v2.1 - sincronizado com backend)');
 console.log('   ✅ Use window.appAuth para acessar');
 console.log('   ✅ CAPTCHA REMOVIDO');
 console.log(`   ✅ MAX_CREDITS_BALANCE: ${MAX_CREDITS_BALANCE}`);
 console.log(`   ✅ TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES}`);
+console.log(`   ✅ Suporte a promotional_price_locked`);

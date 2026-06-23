@@ -1,4 +1,4 @@
-# backend/api/auth.py - VERSÃO CORRIGIDA (SINCRONIZADA COM SECURITY.PY)
+# backend/api/auth.py - VERSÃO ATUALIZADA (SINCRONIZADA COM SECURITY.PY)
 """
 Módulo de REGISTRO de usuários - SEM CAPTCHA
 Responsável apenas por cadastro de novos usuários
@@ -7,6 +7,7 @@ Responsável apenas por cadastro de novos usuários
 - ✅ Fallback quando Redis offline
 - ✅ Tratamento de erro melhorado
 - ✅ Validação de telefone mais rigorosa
+- ✅ Importação de _now_utc para timezone correto
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -15,6 +16,7 @@ from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional
 import logging
 import os
+import re
 
 from backend.database import get_db
 from backend import crud
@@ -39,6 +41,18 @@ class RegisterRequest(BaseModel):
     workshop_name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     session_type: str = "register"
+    
+    @validator('name')
+    def validate_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Nome é obrigatório')
+        return v.strip()
+    
+    @validator('workshop_name')
+    def validate_workshop(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Nome da oficina é obrigatório')
+        return v.strip()
     
     @validator('phone')
     def validate_phone(cls, v):
@@ -113,7 +127,9 @@ async def register(
             "user_id": new_user.id,
             "user_email": new_user.email,
             "user_name": new_user.name,
+            "workshop_name": new_user.workshop_name,
             "credits": new_user.credits,
+            "credits_display": str(new_user.credits),
             "redirect_to": "/login"
         }
         
@@ -124,3 +140,26 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao criar usuário: {str(e)}"
         )
+
+
+# ==============================================
+# VERIFICAÇÃO DE EMAIL (OPCIONAL)
+# ==============================================
+
+@router.get("/check-email/{email}")
+async def check_email_availability(
+    email: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica se um email já está cadastrado
+    GET /api/auth/check-email/{email}
+    """
+    existing_user = crud.get_user_by_email(db, email)
+    return {
+        "available": existing_user is None,
+        "exists": existing_user is not None
+    }
+
+
+print("✅ auth.py carregado (registro de usuários)")

@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA (SINCRONIZADA COM SECURITY.PY)
+# backend/api/auth_routes.py - VERSÃO ATUALIZADA (SINCRONIZADA COM SECURITY.PY)
 """
 Módulo de LOGIN e AUTENTICAÇÃO - SEM CAPTCHA
 Responsável por login, logout, refresh token e verificação de sessão
@@ -7,6 +7,7 @@ Responsável por login, logout, refresh token e verificação de sessão
 - ✅ verify_token_async → verify_token (nome correto)
 - ✅ Tratamento de erros melhorado
 - ✅ Fallback para Redis offline
+- ✅ _now_utc() para timezone correto (offset-aware)
 """
 
 from datetime import datetime, timedelta
@@ -27,7 +28,8 @@ from backend.security import (
     set_auth_cookies,
     clear_auth_cookies,
     get_current_user,
-    get_current_active_user
+    get_current_active_user,
+    _now_utc  # 🔥 IMPORTADO PARA TIMEZONE CORRETO
 )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,7 @@ async def login(
             detail="Conta desativada. Contate o suporte."
         )
     
+    # 🔥 Atualiza último login
     crud.update_last_login(db, user.id)
     
     user_data = {
@@ -225,7 +228,7 @@ async def refresh_token_endpoint(
 
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN (CORRIGIDA)
+# VERIFICAÇÃO DE TOKEN (CORRIGIDA - TIMEZONE)
 # ==============================================
 
 @router.get("/check-token")
@@ -264,7 +267,8 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                 
                 if user and user.is_active:
                     exp = payload.get("exp", 0)
-                    now = datetime.utcnow().timestamp()
+                    # 🔥🔥🔥 CORRIGIDO: usa _now_utc() em vez de datetime.utcnow()
+                    now = _now_utc().timestamp()
                     expires_in = max(0, int(exp - now))
                     
                     return {
@@ -402,7 +406,9 @@ async def get_me(current_user = Depends(get_current_active_user)):
             "credits": current_user.credits,
             "credits_display": "∞" if current_user.is_admin else str(current_user.credits),
             "is_admin": current_user.is_admin,
-            "is_active": current_user.is_active
+            "is_active": current_user.is_active,
+            "promotional_price_locked": current_user.promotional_price_locked if hasattr(current_user, 'promotional_price_locked') else False,
+            "promotional_price": current_user.promotional_price if hasattr(current_user, 'promotional_price') else None
         }
     }
 
@@ -416,3 +422,5 @@ from backend.security import (
     get_current_active_user,
     get_current_admin_user
 )
+
+print("✅ auth_routes.py carregado (login, logout, refresh, check-token)")
