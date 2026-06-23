@@ -1,4 +1,4 @@
-# backend/security.py - VERSÃO CORRIGIDA (get_current_user com Request obrigatório)
+# backend/security.py - VERSÃO CORRIGIDA (SEM LINHA SOLTA NO ESCOPO GLOBAL)
 """
 MÓDULO DE SEGURANÇA - VERSÃO CORRIGIDA
 - Remove duplicação de caches
@@ -9,6 +9,7 @@ MÓDULO DE SEGURANÇA - VERSÃO CORRIGIDA
 - 🔥 CORRIGIDO: can't compare offset-naive and offset-aware datetimes
 - 🔥 CORRIGIDO: Importação de Session no get_current_user
 - 🔥 CORRIGIDO: Request obrigatório (sem Optional) no get_current_user
+- 🔥 CORRIGIDO: Removida linha solta 'db: Session = Depends(get_db)' do escopo global
 """
 
 from datetime import datetime, timedelta, timezone
@@ -664,10 +665,23 @@ rate_limiter = RateLimiter()
 # 5. DEPENDÊNCIAS FASTAPI (CORRIGIDAS)
 # ==============================================
 
+# 🔥 FUNÇÃO get_db - DEFINIDA ANTES DE get_current_user
+def get_db():
+    """
+    Dependency para obter sessão do banco de dados.
+    """
+    from backend.database import SessionLocal
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 async def get_current_user(
     request: Request,  # 🔥 CORRIGIDO: Request obrigatório (sem Optional)
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)  # 🔥 CORRIGIDO: Usa get_db do database
+    db: Session = Depends(get_db)  # 🔥 CORRIGIDO: Usa get_db definida acima
 ):
     """
     🔥 OBTÉM O USUÁRIO ATUAL A PARTIR DO TOKEN JWT
@@ -851,27 +865,7 @@ def clear_auth_cookies(response: Response):
 
 
 # ==============================================
-# 8. FUNÇÃO get_db (CASO NÃO EXISTA NO database.py)
-# ==============================================
-
-# Nota: Se get_db já existir no backend/database.py, esta função não é necessária.
-# Mas mantemos aqui como fallback para compatibilidade.
-
-def get_db():
-    """
-    Dependency para obter sessão do banco de dados.
-    Se get_db já existir no database.py, esta função não é usada.
-    """
-    from backend.database import SessionLocal
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# ==============================================
-# 9. EXPORTAÇÕES
+# 8. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
@@ -906,4 +900,5 @@ print("   ✅ TIMEZONE: offset-aware (corrige comparação de datetimes)")
 print("   ✅ _now_utc() substitui datetime.utcnow()")
 print("   ✅ Session importado corretamente")
 print("   ✅ get_current_user com Request obrigatório (sem Optional)")
+print("   ✅ get_db definida corretamente (sem linha solta no escopo global)")
 print("=" * 60)
