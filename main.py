@@ -1,16 +1,12 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v3.5
+# main.py (na raiz) - VERSÃO PRODUÇÃO v3.6
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v3.5:
-- Removido :Session da função init_promotion (evita erro de importação)
-- Importações com fallback seguro (NÃO usa sys.exit(1) em imports críticos)
-- Estrutura organizada em seções claras
-- Logs detalhados para debugging
-- Inicialização robusta do ML Pipeline
-- Fallback para todos os módulos opcionais
-- Melhor tratamento de erros
-- Código mais limpo e organizado
+🔥 CORREÇÕES v3.6:
+- ✅ Registro de rotas com logs detalhados (mostra o erro exato)
+- ✅ safe_include_router com traceback completo
+- ✅ Fallback seguro para todos os módulos
+- ✅ Timezone corrigido (UTC-3)
 ================================================================================
 """
 
@@ -20,6 +16,7 @@ import time
 import asyncio
 import secrets
 import string
+import traceback
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable
@@ -37,7 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v3.5 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v3.6 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -52,7 +49,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.5.0"
+    VERSION = "3.6.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -272,7 +269,6 @@ async def log_requests(request: Request, call_next):
     path = request.url.path
     method = request.method
     
-    # Log apenas de requisições não-estáticas
     if not path.startswith('/static') and path not in ['/favicon.ico', '/health']:
         print(f"🌐 [{start_time.strftime('%H:%M:%S')}] {method} {path}")
     
@@ -282,12 +278,10 @@ async def log_requests(request: Request, call_next):
         print(f"   ❌ Erro na requisição: {e}")
         raise
     
-    # Log de erros
     if response.status_code >= 400 and not path.startswith('/static'):
         elapsed = (datetime.now() - start_time).total_seconds() * 1000
         print(f"   ⚠️ {response.status_code} | {elapsed:.2f}ms")
     
-    # Headers de segurança
     for header, value in settings.SECURITY_HEADERS.items():
         response.headers[header] = value
     
@@ -601,23 +595,17 @@ except ImportError as e:
         def __init__(self):
             self.model_source = "placeholder"
             self.is_initialized = False
-        
         async def initialize(self):
             self.is_initialized = True
             return True
-        
         async def predict(self, df, filename=None):
             return {"success": False, "error": "ML não disponível", "predictions": [0.5] * len(df)}
-        
         def get_status(self):
             return {"initialized": False, "model_source": "placeholder", "cache_size": 0}
-        
         def get_encoding_stats(self):
             return {"encodings": {}, "total_success": 0, "total_failed": 0}
-        
         def clear_cache(self):
             pass
-    
     pipeline = MockPipeline()
     
     async def process_file_content(content, filename):
@@ -626,48 +614,123 @@ except ImportError as e:
 print("   ✅ Módulos carregados com sucesso!")
 
 # ==============================================
-# 13. REGISTRO DE ROTAS (COM FALLBACK SEGURO)
+# 13. REGISTRO DE ROTAS (CORRIGIDO - COM LOGS DETALHADOS)
 # ==============================================
 
 print("\n📦 Registrando rotas...")
 
 def safe_include_router(module_path: str, prefix: str = "", description: str = "") -> bool:
     """
-    Tenta incluir um router com fallback seguro
-    🔥 NÃO MATA O CONTAINER SE O MODULO NÃO EXISTIR
+    🔥 CORRIGIDO: Tenta incluir um router com fallback seguro
+    🔥 MOSTRA O ERRO EXATO COM TRACEBACK
     """
     try:
+        print(f"   🔄 Tentando carregar: {module_path} ({description})")
         import importlib
         module = importlib.import_module(module_path)
         router = getattr(module, 'router')
         app.include_router(router, prefix=prefix)
-        print(f"   ✅ {description} ({prefix})")
+        print(f"   ✅ {description} carregado com sucesso! ({prefix})")
+        
+        # Listar rotas registradas
+        if hasattr(router, 'routes'):
+            for route in router.routes:
+                methods = ", ".join(route.methods) if hasattr(route, 'methods') else "ALL"
+                print(f"      📍 {methods} {route.path}")
+        
         return True
     except ImportError as e:
-        print(f"   ⚠️ {description} não disponível: {e}")
+        print(f"   ❌ {description} - ERRO DE IMPORTAÇÃO: {e}")
+        print(f"   📋 Traceback:")
+        traceback.print_exc()
         return False
     except AttributeError as e:
-        print(f"   ⚠️ {description}: router não encontrado - {e}")
+        print(f"   ❌ {description} - router não encontrado: {e}")
+        print(f"   📋 Traceback:")
+        traceback.print_exc()
         return False
     except Exception as e:
-        print(f"   ⚠️ Erro ao registrar {description}: {e}")
+        print(f"   ❌ {description} - ERRO: {e}")
+        print(f"   📋 Traceback:")
+        traceback.print_exc()
         return False
 
-# 13.1 Auth
-safe_include_router("backend.api.auth_routes", "/api/auth", "Auth Routes")
-safe_include_router("backend.api.auth", "/api/auth", "Register Routes")
+# ==============================================
+# 🔥 AUTH ROUTES (CRÍTICO - DEVE FUNCIONAR)
+# ==============================================
 
-# 13.2 Payment
-safe_include_router("backend.api.payment_routes", "/api", "Payment Routes")
+print("\n🔐 Registrando rotas de autenticação...")
 
-# 13.3 Upload
-safe_include_router("backend.api.upload_routes", "/api", "Upload Routes")
+# Tenta importar auth_routes diretamente para ver o erro
+try:
+    from backend.api.auth_routes import router as auth_router
+    from backend.api.auth import router as registration_router
+    
+    app.include_router(auth_router, prefix="/api/auth")
+    app.include_router(registration_router, prefix="/api/auth")
+    
+    print("   ✅ Rotas AUTH registradas com sucesso!")
+    print("      POST   /api/auth/login     ← 🔥 Login")
+    print("      POST   /api/auth/register")
+    print("      POST   /api/auth/refresh")
+    print("      POST   /api/auth/logout")
+    print("      GET    /api/auth/check-token")
+    print("      GET    /api/auth/me")
+    
+except ImportError as e:
+    print(f"   ❌ ERRO CRÍTICO ao importar auth_routes: {e}")
+    print("   📋 Traceback completo:")
+    traceback.print_exc()
+    print("   ⚠️ O servidor continuará, mas o LOGIN NÃO FUNCIONARÁ!")
+except Exception as e:
+    print(f"   ❌ ERRO ao registrar auth_routes: {e}")
+    traceback.print_exc()
 
-# 13.4 Gemini
-safe_include_router("backend.api.routes", "/api", "Gemini Routes")
+# ==============================================
+# 🔥 OUTRAS ROTAS (COM FALLBACK)
+# ==============================================
 
-# 13.5 PoW
-safe_include_router("backend.api.pow_routes", "/api", "PoW Routes")
+print("\n📦 Registrando outras rotas...")
+
+# Payment
+try:
+    from backend.api.payment_routes import router as payment_router
+    app.include_router(payment_router, prefix="/api")
+    print("   ✅ Payment Routes (/api/payments/*)")
+except ImportError as e:
+    print(f"   ⚠️ Payment Routes não disponível: {e}")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar Payment: {e}")
+
+# Upload
+try:
+    from backend.api.upload_routes import router as upload_router
+    app.include_router(upload_router, prefix="/api")
+    print("   ✅ Upload Routes (/api/upload-auto, /api/status)")
+except ImportError as e:
+    print(f"   ⚠️ Upload Routes não disponível: {e}")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar Upload: {e}")
+
+# Gemini
+try:
+    from backend.api.routes import router as gemini_router
+    app.include_router(gemini_router, prefix="/api")
+    print("   ✅ Gemini Routes (/api/upload, /api/health)")
+except ImportError as e:
+    print(f"   ⚠️ Gemini Routes não disponível: {e}")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar Gemini: {e}")
+
+# PoW
+try:
+    from backend.api.pow_routes import router as pow_router
+    app.include_router(pow_router, prefix="/api")
+    print("   ✅ PoW Routes (/api/pow/*)")
+except ImportError as e:
+    print(f"   ⚠️ PoW Routes não disponível: {e}")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar PoW: {e}")
 
 print("   ✅ Registro de rotas concluído!")
 
@@ -685,12 +748,16 @@ async def health_check():
         except Exception:
             ml_status = {"error": "Erro ao obter status do ML"}
     
+    # Verificar se auth está funcionando
+    auth_status = "✅" if AUTH_ENABLED else "❌"
+    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "auth_enabled": AUTH_ENABLED,
+        "auth_status": auth_status,
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "frontend_available": frontend_status["available"],
         "ml_pipeline": ml_status,
@@ -775,9 +842,26 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro no Redis: {e}")
     
-    # 16.5 Status Final
+    # 16.5 Verificar se as rotas de auth estão registradas
+    print("\n🔐 Verificando rotas registradas...")
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            routes.append(route.path)
+    
+    auth_routes = [r for r in routes if '/auth' in r]
+    if auth_routes:
+        print(f"   ✅ Rotas /auth encontradas: {len(auth_routes)}")
+        for r in auth_routes[:10]:
+            print(f"      📍 {r}")
+    else:
+        print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
+        print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
+    
+    # 16.6 Status Final
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     ml_status = "✅" if (hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
+    auth_ok = "✅" if auth_routes else "❌"
     
     print(f"""
     ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -785,7 +869,7 @@ async def startup_event():
     ╠═══════════════════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<48}  ║
     ║  🤖 Gemini: {gemini_status} | 🤖 ML: {ml_status}                        ║
-    ║  🔐 Auth: {"✅" if AUTH_ENABLED else "❌"} | 🌐 Frontend: {"✅" if frontend_status["available"] else "❌"}          ║
+    ║  🔐 Auth: {auth_ok} | 🌐 Frontend: {"✅" if frontend_status["available"] else "❌"}          ║
     ║  📁 Upload: {settings.MAX_FILE_SIZE // 1024}KB | {settings.MAX_FILES_PER_BATCH} arquivos        ║
     ║  💰 Créditos: {settings.INITIAL_FREE_CREDITS} grátis | máx {settings.MAX_CREDITS_BALANCE}          ║
     ║  🎯 Preço Fundador: R$ {settings.PROMOTIONAL_PRICE} ({settings.TOTAL_PROMOTIONAL_SLOTS} vagas)        ║
