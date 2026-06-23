@@ -1,4 +1,4 @@
-# backend/security.py - VERSÃO CORRIGIDA E MELHORADA
+# backend/security.py - VERSÃO CORRIGIDA (get_current_user com Request obrigatório)
 """
 MÓDULO DE SEGURANÇA - VERSÃO CORRIGIDA
 - Remove duplicação de caches
@@ -8,7 +8,7 @@ MÓDULO DE SEGURANÇA - VERSÃO CORRIGIDA
 - 🔥 CORRIGIDO: Timezone (offset-aware) para JWT
 - 🔥 CORRIGIDO: can't compare offset-naive and offset-aware datetimes
 - 🔥 CORRIGIDO: Importação de Session no get_current_user
-- 🔥 CORRIGIDO: Parâmetros opcionais no get_current_user
+- 🔥 CORRIGIDO: Request obrigatório (sem Optional) no get_current_user
 """
 
 from datetime import datetime, timedelta, timezone
@@ -665,9 +665,9 @@ rate_limiter = RateLimiter()
 # ==============================================
 
 async def get_current_user(
+    request: Request,  # 🔥 CORRIGIDO: Request obrigatório (sem Optional)
     token: str = Depends(oauth2_scheme),
-    request: Optional[Request] = None,  # 🔥 CORRIGIDO: Optional e valor padrão None
-    db: Optional[Session] = None        # 🔥 CORRIGIDO: Optional e valor padrão None
+    db: Session = Depends(get_db)  # 🔥 CORRIGIDO: Usa get_db do database
 ):
     """
     🔥 OBTÉM O USUÁRIO ATUAL A PARTIR DO TOKEN JWT
@@ -676,7 +676,6 @@ async def get_current_user(
     - Verifica se usuário está ativo
     - Fecha sessão do banco automaticamente
     """
-    from backend.database import SessionLocal
     from backend import crud
     
     credentials_exception = HTTPException(
@@ -689,11 +688,10 @@ async def get_current_user(
     extracted_token = token
     
     if not extracted_token:
-        # Tenta do cookie (se request estiver disponível)
-        if request:
-            cookie_token = request.cookies.get("access_token")
-            if cookie_token and cookie_token.startswith("Bearer "):
-                extracted_token = cookie_token.replace("Bearer ", "")
+        # Tenta do cookie
+        cookie_token = request.cookies.get("access_token")
+        if cookie_token and cookie_token.startswith("Bearer "):
+            extracted_token = cookie_token.replace("Bearer ", "")
     
     if not extracted_token:
         logger.warning("🔴 Token não fornecido")
@@ -716,20 +714,14 @@ async def get_current_user(
         logger.warning("🔴 Token sem email")
         raise credentials_exception
     
-    # 4. 🔥 Gerencia sessão do banco
-    db_close_needed = False
-    if db is None:
-        db = SessionLocal()
-        db_close_needed = True
-    
+    # 4. 🔥 Busca usuário
     try:
-        # 5. 🔥 Busca usuário
         user = crud.get_user_by_email(db, email=email)
         if not user:
             logger.warning(f"🔴 Usuário {email} não encontrado")
             raise credentials_exception
         
-        # 6. 🔥 Verifica se usuário está ativo
+        # 5. 🔥 Verifica se usuário está ativo
         if not user.is_active:
             logger.warning(f"🔴 Usuário {email} está inativo")
             raise credentials_exception
@@ -742,9 +734,6 @@ async def get_current_user(
     except Exception as e:
         logger.error(f"❌ Erro ao buscar usuário {email}: {e}")
         raise credentials_exception
-    finally:
-        if db_close_needed and db:
-            db.close()
 
 
 async def get_current_active_user(current_user = Depends(get_current_user)):
@@ -862,7 +851,27 @@ def clear_auth_cookies(response: Response):
 
 
 # ==============================================
-# 8. EXPORTAÇÕES
+# 8. FUNÇÃO get_db (CASO NÃO EXISTA NO database.py)
+# ==============================================
+
+# Nota: Se get_db já existir no backend/database.py, esta função não é necessária.
+# Mas mantemos aqui como fallback para compatibilidade.
+
+def get_db():
+    """
+    Dependency para obter sessão do banco de dados.
+    Se get_db já existir no database.py, esta função não é usada.
+    """
+    from backend.database import SessionLocal
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ==============================================
+# 9. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
@@ -870,6 +879,7 @@ __all__ = [
     'jwt_manager',
     'rate_limiter',
     'oauth2_scheme',
+    'get_db',
     'get_current_user',
     'get_current_active_user',
     'get_current_admin_user',
@@ -895,5 +905,5 @@ print("   ✅ Limpeza automática de caches")
 print("   ✅ TIMEZONE: offset-aware (corrige comparação de datetimes)")
 print("   ✅ _now_utc() substitui datetime.utcnow()")
 print("   ✅ Session importado corretamente")
-print("   ✅ get_current_user com parâmetros opcionais")
+print("   ✅ get_current_user com Request obrigatório (sem Optional)")
 print("=" * 60)

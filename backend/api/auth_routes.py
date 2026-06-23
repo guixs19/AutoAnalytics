@@ -1,4 +1,4 @@
-# backend/api/auth_routes.py - VERSÃO COMPLETA E CORRIGIDA
+# backend/api/auth_routes.py - VERSÃO COMPLETA CORRIGIDA
 """
 Módulo de LOGIN e AUTENTICAÇÃO - SEM CAPTCHA
 Responsável por login, logout, refresh token e verificação de sessão
@@ -11,7 +11,8 @@ Responsável por login, logout, refresh token e verificação de sessão
 - ✅ _now_utc() para timezone correto (offset-aware)
 - ✅ Importações otimizadas
 - ✅ Logs mais detalhados
-- 🔥 CORRIGIDO: erro de sintaxe na linha 190 (aspas)
+- ✅ CORRIGIDO: erro de sintaxe na linha 190 (aspas)
+- ✅ ADICIONADO: response_model=None nas rotas problemáticas
 ================================================================================
 """
 
@@ -65,10 +66,10 @@ class LogoutRequest(BaseModel):
 
 
 # ==============================================
-# ROTA DE LOGIN - SEM CAPTCHA
+# ROTA DE LOGIN - SEM CAPTCHA (COM response_model=None)
 # ==============================================
 
-@router.post("/login", status_code=status.HTTP_200_OK)
+@router.post("/login", status_code=status.HTTP_200_OK, response_model=None)
 async def login(
     login_data: LoginRequest,
     request: Request,
@@ -188,10 +189,10 @@ async def login(
 
 
 # ==============================================
-# ROTA DE REFRESH (CORRIGIDA)
+# ROTA DE REFRESH (CORRIGIDA) (COM response_model=None)
 # ==============================================
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=None)
 async def refresh_token_endpoint(
     data: RefreshTokenRequest,
     request: Request,
@@ -263,10 +264,10 @@ async def refresh_token_endpoint(
 
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN (CORRIGIDA - TIMEZONE)
+# VERIFICAÇÃO DE TOKEN (COM response_model=None)
 # ==============================================
 
-@router.get("/check-token")
+@router.get("/check-token", response_model=None)
 async def check_token(request: Request, db: Session = Depends(get_db)):
     """
     🔍 Verifica status do token JWT
@@ -281,7 +282,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
     if not access_token:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            # 🔥🔥🔥 CORRIGIDO: aspas corretas!
             access_token = auth_header.replace("Bearer ", "")
     
     refresh_token = request.cookies.get("refresh_token")
@@ -303,7 +303,6 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                 
                 if user and user.is_active:
                     exp = payload.get("exp", 0)
-                    # 🔥🔥🔥 CORRIGIDO: usa _now_utc() em vez de datetime.utcnow()
                     now = _now_utc().timestamp()
                     expires_in = max(0, int(exp - now))
                     
@@ -375,10 +374,10 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
 
 
 # ==============================================
-# LOGOUT (CORRIGIDO)
+# LOGOUT (COM response_model=None)
 # ==============================================
 
-@router.post("/logout")
+@router.post("/logout", response_model=None)
 async def logout(request: Request, db: Session = Depends(get_db)):
     """
     🔓 Logout - invalida tokens
@@ -397,7 +396,6 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     access_token = None
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        # 🔥 CORRIGIDO: aspas corretas!
         access_token = auth_header.replace("Bearer ", "")
     
     # 3. Tentar logout
@@ -423,14 +421,17 @@ async def logout(request: Request, db: Session = Depends(get_db)):
 
 
 # ==============================================
-# PERFIL DO USUÁRIO
+# PERFIL DO USUÁRIO (COM response_model=None) 🔥 CRÍTICO!
 # ==============================================
 
-@router.get("/me")
+@router.get("/me", response_model=None)  # 🔥 ADICIONADO response_model=None
 async def get_me(current_user = Depends(get_current_active_user)):
     """
     👤 Retorna dados do usuário atual
     GET /api/auth/me
+    
+    🔥 response_model=None: Evita que o FastAPI tente validar
+    o retorno com o modelo User do banco de dados.
     """
     return {
         "success": True,
