@@ -1,12 +1,11 @@
-# backend/api/routes.py - VERSÃO OTIMIZADA COM SERVICE FACTORY
+# backend/api/routes.py - VERSÃO CORRIGIDA E SINCRONIZADA
 """
-ROUTES.PY - Versão limpa usando Service Factory
-✅ Sem imports dinâmicos no meio do código
-✅ Injeção de dependências via FastAPI
-✅ Foco apenas nas rotas
+ROUTES.PY - Rotas base da API (Gemini, Health, Admin)
+✅ CORRIGIDO: response_model=None nas rotas problemáticas
+✅ SINCRONIZADO: Com upload_routes.py e preprocessing.py
+✅ REMOVIDO: Endpoint /upload duplicado (usar upload_routes.py)
+✅ MANTIDO: /analyze (Gemini), /health, /test, /admin/diagnostics
 """
-
-# backend/api/routes.py - VERSÃO CORRIGIDA (IMPORT DO SECURITY)
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
 from fastapi.responses import JSONResponse
@@ -28,7 +27,7 @@ import logging
 # Banco de dados e modelos
 from backend.database import get_db
 from backend import crud, schemas
-from backend.security import get_current_user  # <--- CORRIGIDO
+from backend.security import get_current_user
 from backend.models import User, UserPlan
 from backend.crud import get_credits_display, check_credits, deduct_credits
 
@@ -46,8 +45,8 @@ from backend.services.service_factory import (
     is_gemini_available
 )
 
-# Configurar logging
-logger = logging.getLogger(__name__)
+# 🔥 IMPORTANTE: Importar o pipeline ML para sincronização
+from backend.preprocessing import pipeline, process_file_content
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -254,10 +253,10 @@ def calculate_prediction_stats(predictions: List) -> Dict:
 
 
 # ==============================================
-# ENDPOINTS PÚBLICOS
+# ENDPOINTS PÚBLICOS (COM response_model=None)
 # ==============================================
 
-@router.get("/test")
+@router.get("/test", response_model=None)
 async def test_endpoint():
     """Endpoint de teste público com diagnóstico completo"""
     return {
@@ -268,13 +267,17 @@ async def test_endpoint():
         "critical_services_ok": CRITICAL_SERVICES_OK,
         "missing_critical": service_factory.get_missing_critical_services(),
         "gemini_available": is_gemini_available(),
+        "ml_pipeline_available": pipeline.is_initialized,
         "version": "3.2.0"
     }
 
 
-@router.get("/health")
+@router.get("/health", response_model=None)
 async def health_check():
     """Health check com diagnóstico detalhado"""
+    # Verificar pipeline ML
+    ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    
     return {
         "status": "healthy" if CRITICAL_SERVICES_OK else "degraded",
         "timestamp": datetime.now().isoformat(),
@@ -289,7 +292,8 @@ async def health_check():
             "automl": "online" if SERVICES_STATUS.get("automl") else "offline",
             "boosting_ensemble": "online" if SERVICES_STATUS.get("boosting") else "offline",
             "daily_credits": "online" if SERVICES_STATUS.get("daily_credits") else "offline",
-            "jwt_auth": "enabled"
+            "jwt_auth": "enabled",
+            "ml_pipeline": ml_status
         },
         "critical_services_ok": CRITICAL_SERVICES_OK,
         "recommendations": [
@@ -301,311 +305,187 @@ async def health_check():
 
 
 # ==============================================
-# ENDPOINT DE UPLOAD (USANDO DEPENDÊNCIAS INJETADAS)
+# 🔥 ENDPOINT /analyze - GEMINI (COM response_model=None)
 # ==============================================
 
-@router.post("/upload")
-async def upload_file(
+@router.post("/analyze", response_model=None)
+async def analyze_data(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
     analysis_type: str = Query("clientes", description="Tipo de análise: clientes, vendas, orcamentos"),
-    ai_model: str = Query("gemini", description="Modelo de IA a ser usado"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    preprocessor: Any = Depends(get_available_preprocessor),
-    gemini_service: Any = Depends(get_available_gemini),
-    predictor: Any = Depends(get_available_predictor),
-    FileManager: Any = Depends(get_file_manager_dependency)
+    gemini_service: Any = Depends(get_available_gemini)
 ):
     """
-    Upload de arquivo para análise com Google Gemini
-    
-    - **file**: Arquivo CSV ou Excel para análise
-    - **analysis_type**: Tipo de análise (clientes, vendas, orcamentos)
-    - **ai_model**: Modelo de IA (padrão: gemini)
+    🔥 Análise de dados com Google Gemini
+    - Gera insights e recomendações em linguagem natural
+    - Usa os dados do usuário para análise contextualizada
+    - Consome 1 crédito por análise
     """
     try:
-        logger.info(f"📥 Upload: {file.filename} | Usuário: {current_user.email} | Admin: {current_user.is_admin}")
+        logger.info(f"🤖 Análise Gemini solicitada por: {current_user.email}")
         
-        # ==============================================
-        # VALIDAÇÃO 1: CRÉDITOS
-        # ==============================================
-        credit_check = check_user_credits_before_upload(current_user, db)
-        
-        if not credit_check["can_proceed"]:
+        # Verificar créditos
+        if not current_user.is_admin and current_user.credits <= 0:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "insufficient_credits",
-                    "message": credit_check["message"],
-                    "suggestion": credit_check.get("suggestion", "Adquira créditos na página de planos"),
+                    "message": "Créditos insuficientes para análise",
                     "credits": current_user.credits,
-                    "credits_display": get_credits_display(current_user),
-                    "required": 1,
-                    "redirect": "/planos"
+                    "required": 1
                 }
             )
         
-        # ==============================================
-        # VALIDAÇÃO 2: ARQUIVO
-        # ==============================================
-        if not file.filename:
-            raise HTTPException(status_code=400, detail={"error": "invalid_filename", "message": "Nome do arquivo inválido"})
+        # Buscar análises recentes do usuário para contexto
+        user_analyses = crud.get_user_analyses(db, current_user.id, limit=5)
         
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in settings.ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "unsupported_format",
-                    "message": f"Formato {ext} não suportado. Use: {', '.join(settings.ALLOWED_EXTENSIONS)}"
-                }
-            )
-        
-        # ==============================================
-        # VALIDAÇÃO 3: TAMANHO
-        # ==============================================
-        content = await file.read()
-        
-        if len(content) > settings.MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "file_too_large",
-                    "message": f"Arquivo muito grande. Máximo: {settings.MAX_FILE_SIZE / 1024 / 1024:.0f}MB",
-                    "max_size_mb": settings.MAX_FILE_SIZE / 1024 / 1024
-                }
-            )
-        
-        # ==============================================
-        # SALVAR ARQUIVO
-        # ==============================================
-        temp_path = await FileManager.save_upload(content, file.filename)
-        
-        # ==============================================
-        # CRIAR REGISTRO NO BANCO
-        # ==============================================
-        process_id = str(uuid.uuid4())
-        
-        analysis_data = schemas.AnalysisCreate(
-            filename=file.filename,
-            analysis_type=analysis_type
-        )
-        
-        db_analysis = crud.create_analysis(
-            db=db,
-            analysis=analysis_data,
-            user_id=current_user.id
-        )
-        
-        processing_cache[process_id] = {
-            "process_id": process_id,
-            "analysis_id": db_analysis.id,
-            "user_id": current_user.id,
+        # Preparar dados para análise
+        analysis_data = {
             "user_email": current_user.email,
-            "filename": file.filename,
+            "workshop_name": current_user.workshop_name or "Oficina",
             "analysis_type": analysis_type,
-            "status": "uploaded",
-            "progress": 0,
-            "started_at": datetime.now().isoformat(),
-            "is_admin": current_user.is_admin,
-            "is_premium": current_user.plan == UserPlan.PREMIUM_MENSAL and hasattr(current_user, 'is_premium') and current_user.is_premium()
+            "total_analyses": len(user_analyses),
+            "recent_analyses": [
+                {
+                    "filename": a.filename,
+                    "type": a.analysis_type,
+                    "date": a.created_at.isoformat() if a.created_at else None
+                }
+                for a in user_analyses[:3]
+            ],
+            "timestamp": datetime.now().isoformat()
         }
         
-        # ==============================================
-        # TASK EM BACKGROUND
-        # ==============================================
-        async def process_file_background():
-            await _process_upload(
-                process_id=process_id,
-                temp_path=temp_path,
-                file=file,
-                analysis_type=analysis_type,
-                current_user=current_user,
-                db=db,
-                preprocessor=preprocessor,
-                gemini_service=gemini_service,
-                predictor=predictor,
-                FileManager=FileManager
-            )
+        # Se tiver análises, adiciona dados mais detalhados
+        if user_analyses:
+            latest = user_analyses[0]
+            if latest.result:
+                analysis_data["latest_analysis"] = {
+                    "filename": latest.filename,
+                    "result": latest.result
+                }
         
-        background_tasks.add_task(process_file_background)
-        
-        logger.info(f"✅ Upload iniciado: {process_id[:8]} | Arquivo: {file.filename}")
-        
-        return {
-            "success": True,
-            "message": "Arquivo recebido para processamento com Google Gemini",
-            "data": {
-                "process_id": process_id,
-                "analysis_id": db_analysis.id,
-                "status": "processing",
-                "ai_provider": "gemini",
-                "services_available": SERVICES_STATUS,
-                "estimated_time": "30-60 segundos"
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Erro no upload: {e}")
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "upload_failed",
-                "message": f"Erro interno ao processar upload: {str(e)}"
-            }
-        )
-
-
-async def _process_upload(
-    process_id: str,
-    temp_path: str,
-    file: UploadFile,
-    analysis_type: str,
-    current_user: User,
-    db: Session,
-    preprocessor,
-    gemini_service,
-    predictor,
-    FileManager
-):
-    """Processamento em background - separado para clareza"""
-    credits_update_result = None
-    
-    try:
-        update_status(process_id, "processing", 10, "Iniciando processamento...")
-        
-        # ==============================================
-        # PRÉ-PROCESSAMENTO
-        # ==============================================
-        update_status(process_id, "processing", 30, "Pré-processando dados...")
-        result = await preprocessor.process_file(temp_path)
-        
-        if result.get("status") != "success":
-            raise Exception(result.get("message", "Erro no pré-processamento"))
-        
-        # ==============================================
-        # PREVISÕES ML (opcional)
-        # ==============================================
-        predictions = []
-        prediction_stats = {}
-        ml_insights = {}
-        
-        if predictor and result.get("dataframe_numeric") is not None:
-            df_numeric = result["dataframe_numeric"]
-            if not df_numeric.empty:
-                update_status(process_id, "processing", 50, "Gerando previsões com ML...")
-                predictions = await predictor.predict_for_office(df_numeric)
-                prediction_stats = calculate_prediction_stats(predictions)
-                
-                if hasattr(predictor, 'get_ml_insights_for_gemini'):
-                    ml_insights = predictor.get_ml_insights_for_gemini(df_numeric, predictions)
-        
-        # ==============================================
-        # ANÁLISE COM GEMINI
-        # ==============================================
-        update_status(process_id, "processing", 70, "Analisando dados com Google Gemini...")
+        # 🔥 Chamar Gemini
+        logger.info(f"📤 Enviando dados para Gemini: {analysis_type}")
         
         ai_response = await gemini_service.analyze_office_data(
             analysis_type,
-            {
-                "data_summary": result.get("metadata", {}),
-                "prediction_stats": prediction_stats,
-                "ml_insights": ml_insights,
-                "filename": file.filename,
-                "workshop": current_user.workshop_name,
-                "total_records": len(result.get("dataframe", [])),
-                "timestamp": datetime.now().isoformat()
-            }
+            analysis_data
         )
         
         if not ai_response.get('success', False):
             logger.warning(f"⚠️ Gemini retornou erro: {ai_response.get('message', 'Unknown error')}")
         
-        # ==============================================
-        # ATUALIZAR CRÉDITOS
-        # ==============================================
-        update_status(process_id, "processing", 90, "Atualizando créditos...")
+        # Consumir crédito
+        if not current_user.is_admin:
+            credits_consumed = deduct_credits(db, current_user, 1, f"Análise Gemini: {analysis_type}")
+            if not credits_consumed:
+                logger.warning(f"⚠️ Falha ao consumir crédito para {current_user.email}")
         
-        credits_update_result = update_user_credits_after_upload(
-            db, current_user, file.filename, current_user.is_admin
-        )
+        db.refresh(current_user)
         
-        # ==============================================
-        # SALVAR RESULTADO
-        # ==============================================
-        processing_cache[process_id].update({
-            "status": "completed",
-            "progress": 100,
-            "completed_at": datetime.now().isoformat(),
-            "ai_provider": "gemini",
-            "gemini_success": ai_response.get('success', False),
+        return {
+            "success": True,
+            "analysis_type": analysis_type,
             "ai_response": ai_response,
-            "prediction_stats": prediction_stats,
-            "ml_insights": ml_insights,
-            "credits": credits_update_result
-        })
+            "insights": ai_response.get('insights', []),
+            "recommendations": ai_response.get('recommendations', []),
+            "full_analysis": ai_response.get('full_analysis', ''),
+            "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
+            "is_admin": current_user.is_admin,
+            "timestamp": datetime.now().isoformat()
+        }
         
-        # Atualiza banco de dados
-        crud.update_analysis(
-            db=db,
-            analysis_id=processing_cache[process_id]["analysis_id"],
-            updates={
-                "status": "completed",
-                "result": {
-                    "ai_response": ai_response,
-                    "prediction_stats": prediction_stats,
-                    "ml_insights": ml_insights
-                },
-                "completed_at": datetime.now()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro na análise Gemini: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "analysis_failed",
+                "message": f"Erro ao processar análise: {str(e)}"
             }
         )
+
+
+# ==============================================
+# ENDPOINT /analyze-with-data - ANÁLISE COM DADOS ENVIADOS
+# ==============================================
+
+@router.post("/analyze-with-data", response_model=None)
+async def analyze_with_data(
+    data: Dict[str, Any],
+    analysis_type: str = Query("clientes"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    gemini_service: Any = Depends(get_available_gemini)
+):
+    """
+    🔥 Análise com dados enviados diretamente no body
+    - Útil para análise de dados já processados
+    - Usa Gemini para insights em linguagem natural
+    """
+    try:
+        logger.info(f"🤖 Análise Gemini com dados recebidos: {current_user.email}")
         
-        logger.info(f"✅ Processamento concluído: {process_id[:8]} | Usuário: {current_user.email}")
-        
-    except Exception as e:
-        logger.error(f"❌ Erro no processamento {process_id[:8]}: {e}")
-        traceback.print_exc()
-        
-        update_status(process_id, "error", 0, f"Erro: {str(e)}")
-        
-        processing_cache[process_id].update({
-            "status": "error",
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "completed_at": datetime.now().isoformat()
-        })
-        
-        # Atualiza banco com erro
-        if "analysis_id" in processing_cache.get(process_id, {}):
-            crud.update_analysis(
-                db=db,
-                analysis_id=processing_cache[process_id]["analysis_id"],
-                updates={
-                    "status": "error",
-                    "error_message": str(e),
-                    "completed_at": datetime.now()
+        if not current_user.is_admin and current_user.credits <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "message": "Créditos insuficientes",
+                    "credits": current_user.credits
                 }
             )
         
-    finally:
-        # Limpeza do arquivo temporário
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-                logger.debug(f"🗑️ Arquivo temporário removido: {temp_path}")
-            except Exception as e:
-                logger.warning(f"⚠️ Erro ao remover arquivo temporário: {e}")
+        # Preparar dados para Gemini
+        analysis_data = {
+            "user_email": current_user.email,
+            "workshop_name": current_user.workshop_name or "Oficina",
+            "analysis_type": analysis_type,
+            "data_summary": data.get("summary", {}),
+            "predictions": data.get("predictions", []),
+            "insights": data.get("insights", {}),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Chamar Gemini
+        ai_response = await gemini_service.analyze_office_data(analysis_type, analysis_data)
+        
+        # Consumir crédito
+        if not current_user.is_admin:
+            deduct_credits(db, current_user, 1, f"Análise Gemini com dados: {analysis_type}")
+            db.refresh(current_user)
+        
+        return {
+            "success": True,
+            "analysis_type": analysis_type,
+            "ai_response": ai_response,
+            "insights": ai_response.get('insights', []),
+            "recommendations": ai_response.get('recommendations', []),
+            "full_analysis": ai_response.get('full_analysis', ''),
+            "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro na análise: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "analysis_failed", "message": str(e)}
+        )
 
 
 # ==============================================
-# ENDPOINTS DE STATUS
+# ENDPOINTS DE STATUS (MANTIDOS)
 # ==============================================
 
-@router.get("/status/{process_id}")
+@router.get("/status/{process_id}", response_model=None)
 async def get_status(
     process_id: str,
     current_user: User = Depends(get_current_user)
@@ -632,7 +512,7 @@ async def get_status(
     }
 
 
-@router.get("/results/{analysis_id}")
+@router.get("/results/{analysis_id}", response_model=None)
 async def get_results(
     analysis_id: int,
     current_user: User = Depends(get_current_user),
@@ -667,11 +547,7 @@ async def get_results(
     }
 
 
-# ==============================================
-# ENDPOINTS DE RELATÓRIOS
-# ==============================================
-
-@router.get("/user/analyses")
+@router.get("/user/analyses", response_model=None)
 async def get_user_analyses(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -703,10 +579,10 @@ async def get_user_analyses(
 
 
 # ==============================================
-# ADMIN DIAGNOSTICS
+# ADMIN DIAGNOSTICS (COM response_model=None)
 # ==============================================
 
-@router.get("/admin/diagnostics")
+@router.get("/admin/diagnostics", response_model=None)
 async def get_diagnostics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -721,6 +597,10 @@ async def get_diagnostics(
     # Contar análises por status
     analyses_stats = crud.get_analyses_stats(db)
     
+    # Status do ML Pipeline
+    ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    encoding_stats = pipeline.get_encoding_stats() if hasattr(pipeline, 'get_encoding_stats') else {}
+    
     return {
         "success": True,
         "data": {
@@ -729,6 +609,8 @@ async def get_diagnostics(
             "critical_services_ok": CRITICAL_SERVICES_OK,
             "missing_critical": service_factory.get_missing_critical_services(),
             "gemini_available": is_gemini_available(),
+            "ml_pipeline": ml_status,
+            "encoding_stats": encoding_stats,
             "environment": {
                 "python_version": os.sys.version,
                 "debug_mode": settings.DEBUG if hasattr(settings, 'DEBUG') else False
@@ -742,4 +624,100 @@ async def get_diagnostics(
     }
 
 
+# ==============================================
+# ENDPOINT ML PIPELINE STATUS
+# ==============================================
+
+@router.get("/ml/pipeline-status", response_model=None)
+async def get_ml_pipeline_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna status do ML Pipeline"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
+        )
+    
+    status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    encoding_stats = pipeline.get_encoding_stats() if hasattr(pipeline, 'get_encoding_stats') else {}
+    
+    return {
+        "success": True,
+        "pipeline": status,
+        "encoding": encoding_stats,
+        "models_available": {
+            "default": bool(pipeline.models.get('default')) if hasattr(pipeline, 'models') else False,
+            "ensemble": bool(pipeline.models.get('ensemble')) if hasattr(pipeline, 'models') else False
+        }
+    }
+
+
+# ==============================================
+# ENDPOINT ML PREDICT (DIRETO)
+# ==============================================
+
+@router.post("/ml/predict", response_model=None)
+async def ml_predict(
+    data: Dict[str, Any],
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🔥 Predição direta com ML Pipeline
+    - Envia dados e recebe predições
+    - Útil para integração com frontend
+    """
+    try:
+        if not current_user.is_admin and current_user.credits <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "insufficient_credits", "message": "Créditos insuficientes"}
+            )
+        
+        # Converter dados para DataFrame
+        df = pd.DataFrame(data.get("data", []))
+        
+        if df.empty:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "empty_data", "message": "Nenhum dado fornecido para predição"}
+            )
+        
+        # Fazer predição
+        result = await pipeline.predict(df)
+        
+        return {
+            "success": result.success,
+            "predictions": result.predictions,
+            "probabilities": result.probabilities,
+            "metrics": result.metrics,
+            "insights": result.insights,
+            "recommendations": result.recommendations,
+            "model_used": result.model_used,
+            "processed_rows": result.processed_rows,
+            "encoding_used": result.encoding_used
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro na predição ML: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "prediction_failed", "message": str(e)}
+        )
+
+
+# ==============================================
+# 🔥 IMPORTANTE: NÃO INCLUIR /upload AQUI
+# ==============================================
+# O endpoint /upload está em upload_routes.py
+# Usar upload_routes.py para upload de arquivos com ML Pipeline
+
+
 print("✅ routes.py carregado com Service Factory e dependências injetadas")
+print("   🔥 /analyze → Gemini IA (response_model=None)")
+print("   🔥 /analyze-with-data → Gemini com dados enviados")
+print("   🔥 /ml/predict → ML Pipeline direto")
+print("   🔥 /admin/diagnostics → Diagnóstico admin")
+print("   ⚠️  /upload removido - usar upload_routes.py")

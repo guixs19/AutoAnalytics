@@ -1,4 +1,4 @@
-# backend/api/payment_routes.py - VERSÃO CORRIGIDA COM PREÇO FUNDADOR VITALÍCIO
+# backend/api/payment_routes.py - VERSÃO COMPLETA CORRIGIDA
 """
 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
 - 100 primeiros compradores pagam R$ 97,00 (vitalício)
@@ -146,7 +146,6 @@ def sanitize_response(data: Any) -> Any:
 def validate_payment_id(payment_id: int) -> bool:
     return isinstance(payment_id, int) and payment_id > 0
 
-
 # ==============================================
 # SERVIÇOS E FUNÇÕES AUXILIARES
 # ==============================================
@@ -202,7 +201,7 @@ def get_user_price(user: User, db: Session) -> tuple:
     
     Regras:
     1. Se usuário já tem preço vitalício (promotional_price_locked=True) -> usa esse preço
-    2. Se ainda tem vagas promocionais -> R$ 97,00 (fundaodor)
+    2. Se ainda tem vagas promocionais -> R$ 97,00 (fundador)
     3. Se acabaram as vagas -> R$ 149,90 (preço cheio)
     """
     
@@ -842,15 +841,18 @@ async def get_subscription_status(
 
 
 # ==============================================
-# 🔥 WEBHOOK - CORRIGIDO PARA TRAVAR PREÇO VITALÍCIO
+# 🔥 WEBHOOK - CORRIGIDO COM response_model=None
 # ==============================================
 
-@router.post("/webhook")
+@router.post("/webhook", response_model=None)  # ✅ ADICIONADO response_model=None
 async def mercadopago_webhook(
     request: Request,
     background_tasks: BackgroundTasks
 ):
-    """Webhook para receber notificações REAIS do Mercado Pago"""
+    """
+    Webhook para receber notificações REAIS do Mercado Pago
+    - response_model=None evita que o FastAPI tente inferir o tipo de retorno
+    """
     try:
         body = await request.body()
         if not body:
@@ -859,23 +861,38 @@ async def mercadopago_webhook(
         
         try:
             data = json.loads(body)
-            logger.info(f"🔔 Webhook JSON recebido")
+            logger.info(f"🔔 Webhook JSON recebido: {json.dumps(data, indent=2)[:500]}")
         except json.JSONDecodeError:
+            # Pode ser webhook do Mercado Pago em formato x-www-form-urlencoded
             text_body = body.decode('utf-8')
+            logger.info(f"🔔 Webhook recebido em formato texto: {text_body[:200]}")
             match = re.search(r'id=(\d+)', text_body)
             if match:
                 payment_id = match.group(1)
+                logger.info(f"📦 Payment ID extraído: {payment_id}")
                 background_tasks.add_task(process_payment_webhook, payment_id)
+            else:
+                logger.warning(f"⚠️ Não foi possível extrair payment_id do webhook")
             return {"status": "received"}
         
+        # Extrair payment_id do JSON
         payment_id = data.get("data", {}).get("id") or data.get("id")
         if payment_id:
+            logger.info(f"📦 Payment ID extraído: {payment_id}")
             background_tasks.add_task(process_payment_webhook, str(payment_id))
+        else:
+            # Tentar encontrar em outros lugares
+            for key in ["payment_id", "preference_id", "resource"]:
+                if key in data:
+                    payment_id = data[key]
+                    logger.info(f"📦 Payment ID encontrado em '{key}': {payment_id}")
+                    background_tasks.add_task(process_payment_webhook, str(payment_id))
+                    break
         
         return {"status": "received"}
         
     except Exception as e:
-        logger.error(f"❌ Erro no webhook: {e}")
+        logger.error(f"❌ Erro no webhook: {e}", exc_info=True)
         return {"status": "error"}
 
 
@@ -885,17 +902,32 @@ async def process_payment_webhook(payment_id: str):
     - TRAVA O PREÇO VITALÍCIO quando o pagamento é aprovado
     - Usa lock pessimista para vagas promocionais
     - É idempotente (não processa duas vezes)
+    - Adiciona validação de integridade dos dados
     """
+    # Aguardar um pouco para garantir que o pagamento foi criado no banco
     await asyncio.sleep(2)
     
     db = SessionLocal()
     
     try:
+        # Validar payment_id
+        if not payment_id or not str(payment_id).strip():
+            logger.error(f"❌ Payment ID inválido: {payment_id}")
+            return
+        
         # Buscar pagamento
         payment = db.query(Payment).filter(Payment.mp_id == str(payment_id)).first()
         
         if not payment:
             logger.warning(f"⚠️ Pagamento {payment_id} não encontrado no banco")
+            # Tentar buscar por ID numérico
+            if str(payment_id).isdigit():
+                payment = db.query(Payment).filter(Payment.id == int(payment_id)).first()
+                if payment:
+                    logger.info(f"✅ Pagamento encontrado pelo ID numérico: {payment.id}")
+        
+        if not payment:
+            logger.error(f"❌ Pagamento {payment_id} não encontrado após tentativas")
             return
         
         # 🔥 IDEMPOTÊNCIA: Se já foi aprovado, não processar novamente
@@ -908,21 +940,26 @@ async def process_payment_webhook(payment_id: str):
             return
         
         # Consultar status no Mercado Pago
+        logger.info(f"🔍 Consultando status do pagamento {payment_id} no Mercado Pago...")
         payment_info = mp_service.get_payment_status_real(payment_id)
         
         if not payment_info.get("success"):
-            logger.error(f"❌ Não foi possível consultar pagamento {payment_id}")
+            logger.error(f"❌ Não foi possível consultar pagamento {payment_id}: {payment_info.get('error')}")
             return
         
         status = payment_info.get("status")
+        logger.info(f"📊 Status do pagamento {payment_id}: {status}")
         
         if status == "approved":
             # 🔥 ATUALIZAR STATUS DO PAGAMENTO
             crud.update_payment_status(db, payment.id, PaymentStatus.APPROVED, payment_info)
+            logger.info(f"✅ Status do pagamento {payment_id} atualizado para APPROVED")
             
             user = crud.get_user_by_id(db, payment.user_id)
             
             if user:
+                logger.info(f"👤 Processando usuário: {user.email} (ID: {user.id})")
+                
                 # Verificar se usuário já é premium
                 if user.is_premium():
                     logger.info(f"⚠️ Usuário {user.email} já era premium. Pulando ativação duplicada.")
@@ -934,11 +971,15 @@ async def process_payment_webhook(payment_id: str):
                         # Adicionar crédito inicial
                         crud.add_credits(db, user.id, 1, "Crédito inicial do plano premium")
                         logger.info(f"✅ Premium ativado para {user.email}")
+                    else:
+                        logger.error(f"❌ Falha ao ativar premium para {user.email}")
                 
                 # 🔥🔥🔥 TRAVAR PREÇO VITALÍCIO - CRÍTICO!
                 # Verificar se o pagamento foi promocional
                 was_promotional = payment.payment_metadata.get("was_promotional", False)
                 price_type = payment.payment_metadata.get("price_type", "regular")
+                
+                logger.info(f"💰 Verificando preço promocional: was_promotional={was_promotional}, price_type={price_type}")
                 
                 if was_promotional and not user.promotional_price_locked:
                     # 🔥 USAR LOCK PESSIMISTA PARA USAR VAGA
@@ -958,32 +999,55 @@ async def process_payment_webhook(payment_id: str):
                             logger.info(f"   💰 Valor travado: R$ {user.promotional_price}")
                             logger.info(f"   📅 Data: {user.purchased_at_promotion}")
                             logger.info(f"   🎯 Vaga utilizada: {promo.used_slots}/{TOTAL_PROMOTIONAL_SLOTS}")
+                            
+                            # 🔥 Log adicional para auditoria
+                            audit_log = {
+                                "event": "preco_vitalicio_travado",
+                                "user_id": user.id,
+                                "user_email": user.email,
+                                "payment_id": payment.id,
+                                "amount": float(user.promotional_price),
+                                "timestamp": _now_brasil().isoformat(),
+                                "slot_used": promo.used_slots,
+                                "total_slots": TOTAL_PROMOTIONAL_SLOTS
+                            }
+                            logger.info(f"📋 AUDIT: {json.dumps(audit_log)}")
                         else:
                             # Não conseguiu usar vaga (race condition)
                             logger.warning(f"⚠️ Não foi possível usar vaga promocional para {user.email}")
                     else:
                         logger.warning(f"⚠️ Promoção esgotada ao tentar travar preço para {user.email}")
+                else:
+                    logger.info(f"ℹ️ Usuário {user.email} não é elegível para preço vitalício: was_promotional={was_promotional}, locked={user.promotional_price_locked}")
                 
                 db.commit()
                 
+                # Enviar alerta de aprovação
                 alert_payment_approved(user.email, payment.amount)
+                logger.info(f"✅ Alerta de aprovação enviado para {user.email}")
+                
             else:
-                logger.error(f"❌ Usuário não encontrado para pagamento {payment_id}")
+                logger.error(f"❌ Usuário não encontrado para pagamento {payment_id} (user_id: {payment.user_id})")
         
         elif status == "rejected":
             crud.update_payment_status(db, payment.id, PaymentStatus.REJECTED, payment_info)
-            logger.warning(f"⚠️ Pagamento {payment_id} REJEITADO")
+            logger.warning(f"⚠️ Pagamento {payment_id} REJEITADO: {payment_info.get('status_detail')}")
             alert_payment_failed(payment.user_id, payment.amount)
+            logger.info(f"✅ Alerta de falha enviado para usuário {payment.user_id}")
         
         elif status == "cancelled":
             crud.update_payment_status(db, payment.id, PaymentStatus.CANCELLED, payment_info)
             logger.info(f"ℹ️ Pagamento {payment_id} CANCELADO")
         
+        else:
+            logger.info(f"ℹ️ Status do pagamento {payment_id}: {status} (não processado)")
+        
     except Exception as e:
-        logger.error(f"❌ Erro ao processar webhook: {e}")
+        logger.error(f"❌ Erro ao processar webhook: {e}", exc_info=True)
         db.rollback()
     finally:
         db.close()
+        logger.info(f"✅ Processamento do webhook {payment_id} finalizado")
 
 
 print("✅ payment_routes.py carregado - SISTEMA DE PREÇO FUNDADOR VITALÍCIO")
