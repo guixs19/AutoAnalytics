@@ -1,13 +1,17 @@
-# backend/security.py - VERSÃO CORRIGIDA
+# backend/security.py - VERSÃO CORRIGIDA E MELHORADA
 """
 MÓDULO DE SEGURANÇA - VERSÃO CORRIGIDA
 - Remove duplicação de caches
 - Corrige mistura síncrono/assíncrono
 - Adiciona limpeza de pending_blacklist
 - Fallback para banco de dados
+- 🔥 CORRIGIDO: Timezone (offset-aware) para JWT
+- 🔥 CORRIGIDO: can't compare offset-naive and offset-aware datetimes
+- 🔥 CORRIGIDO: Importação de Session no get_current_user
+- 🔥 CORRIGIDO: Parâmetros opcionais no get_current_user
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Union, Tuple
 import secrets
 import hashlib
@@ -33,16 +37,42 @@ from fastapi.responses import JSONResponse, Response
 # Redis
 import redis.asyncio as redis
 
+# SQLAlchemy
+from sqlalchemy.orm import Session  # 🔥 CORRIGIDO: Importado corretamente
+
 # Configurações
 from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# ==============================================
+# 🔥 TIMEZONE - CORREÇÃO CRÍTICA
+# ==============================================
+
+UTC = timezone.utc
+
+def _now_utc() -> datetime:
+    """
+    Retorna datetime atual com timezone UTC (offset-aware)
+    🔥 CORRIGIDO: Substitui datetime.utcnow() que era offset-naive
+    """
+    return datetime.now(UTC)
+
+def _utc_timestamp() -> float:
+    """Retorna timestamp atual em UTC (com timezone)"""
+    return _now_utc().timestamp()
+
+
+# ==============================================
+# OAUTH2 SCHEME
+# ==============================================
+
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="api/auth/login", 
-    auto_error=False,
+    tokenUrl="api/auth/login",
+    auto_error=False,  # 🔥 NÃO levanta erro automaticamente
     scheme_name="JWT"
 )
+
 
 # ==============================================
 # 1. ARGON2 - HASH DE SENHA
@@ -95,7 +125,7 @@ class Argon2Hasher:
 
 
 # ==============================================
-# 2. JWT MANAGER CORRIGIDO
+# 2. JWT MANAGER CORRIGIDO (COM TIMEZONE)
 # ==============================================
 
 class JWTManager:
@@ -106,6 +136,7 @@ class JWTManager:
     - Corrige mistura síncrono/assíncrono
     - Adiciona limpeza automática
     - Fallback para banco de dados
+    - 🔥 TIMEZONE: Todos os datetimes agora são offset-aware
     """
     
     def __init__(self):
@@ -140,7 +171,7 @@ class JWTManager:
         self._last_cache_cleanup = time.time()
         self._last_pending_cleanup = time.time()
         
-        logger.info("✅ JWT Manager inicializado (versão corrigida)")
+        logger.info("✅ JWT Manager inicializado (versão corrigida com timezone)")
     
     async def init_redis(self):
         if self._redis_initialized:
@@ -163,8 +194,16 @@ class JWTManager:
     def _generate_jti(self) -> str:
         return secrets.token_urlsafe(16)
     
+    # ==============================================
+    # 🔥 CRIAÇÃO DE TOKENS (COM TIMEZONE CORRETO)
+    # ==============================================
+    
     def _create_token_payload(self, data: Dict[str, Any], token_type: str, expires_delta: timedelta) -> Dict[str, Any]:
-        now = datetime.utcnow()
+        """
+        🔥 CORRIGIDO: Usa _now_utc() em vez de datetime.utcnow()
+        Isso garante que o token tenha timezone (offset-aware)
+        """
+        now = _now_utc()  # 🔥 CORRIGIDO: offset-aware
         payload = {
             "sub": data.get("sub") or data.get("email"),
             "email": data.get("email"),
@@ -215,6 +254,10 @@ class JWTManager:
         }
     
     def decode_token(self, token: str, verify_exp: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        🔥 CORRIGIDO: Decodifica token com suporte a timezone
+        O PyJWT já lida com timezone internamente
+        """
         try:
             options = {"verify_exp": verify_exp}
             return jwt.decode(
@@ -235,7 +278,7 @@ class JWTManager:
             return None
     
     # ==============================================
-    # 🔥 VERIFICAÇÃO DE TOKEN (CORRIGIDA - 100% ASSÍNCRONA)
+    # 🔥 VERIFICAÇÃO DE TOKEN (COM TIMEZONE)
     # ==============================================
     
     async def verify_token(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
@@ -290,45 +333,43 @@ class JWTManager:
             try:
                 exists = await self.redis_client.exists(f"blacklist:{jti}")
                 if exists:
-                    ttl = await self.redis_client.ttl(f"blacklist:{jti}")
+                    ttl = await self.redis_client.ttl(f"blacklist:{jti}")  # Corrigido: await
                     if ttl <= 0:
                         # Token expirou, remover
                         await self.redis_client.delete(f"blacklist:{jti}")
-                        self._blacklist_cache[jti] = time.time()  # Cache como não blacklistado
+                        self._blacklist_cache[jti] = time.time()
                         return False
                     
-                    # Cache como blacklistado
                     self._blacklist_cache[jti] = time.time()
                     return True
                 
-                # Não está blacklistado
                 self._blacklist_cache[jti] = time.time()
                 return False
                 
             except Exception as e:
                 self._stats["redis_failures"] += 1
                 logger.error(f"Erro ao verificar blacklist Redis: {e}")
-                # 🔥 FALLBACK: Verifica no banco (se disponível)
                 return await self._check_blacklist_db(jti)
         
         # Redis indisponível
         self._stats["offline_skips"] += 1
-        logger.warning(f"⚠️ Redis indisponível - usando fallback DB para verificação")
+        logger.warning(f"⚠️ Redis indisponível - usando fallback DB")
         return await self._check_blacklist_db(jti)
     
     async def _check_blacklist_db(self, jti: str) -> bool:
         """
         🔥 FALLBACK: Verifica blacklist no banco de dados
+        🔥 CORRIGIDO: Usa _now_utc() para comparação
         """
         try:
             from backend.database import SessionLocal
-            from backend.models import BlacklistedToken  # Assumindo que existe
+            from backend.models import BlacklistedToken
             
             db = SessionLocal()
             try:
                 exists = db.query(BlacklistedToken).filter(
                     BlacklistedToken.jti == jti,
-                    BlacklistedToken.expires_at > datetime.utcnow()
+                    BlacklistedToken.expires_at > _now_utc()
                 ).first()
                 return exists is not None
             finally:
@@ -341,7 +382,7 @@ class JWTManager:
             return False
     
     # ==============================================
-    # 🔥 BLACKLIST (CORRIGIDA)
+    # 🔥 BLACKLIST (COM TIMEZONE)
     # ==============================================
     
     async def blacklist_token(self, jti: str, expire_in: int):
@@ -351,7 +392,7 @@ class JWTManager:
         if not jti or expire_in <= 0:
             return
         
-        # 1. Adiciona à pending blacklist (com expiração)
+        # 1. Adiciona à pending blacklist
         self._pending_blacklist[jti] = time.time()
         
         # 2. Adiciona ao Redis
@@ -376,8 +417,8 @@ class JWTManager:
                 try:
                     blacklisted = BlacklistedToken(
                         jti=jti,
-                        expires_at=datetime.utcnow() + timedelta(seconds=expire_in),
-                        created_at=datetime.utcnow()
+                        expires_at=_now_utc() + timedelta(seconds=expire_in),
+                        created_at=_now_utc()
                     )
                     db.add(blacklisted)
                     db.commit()
@@ -392,9 +433,7 @@ class JWTManager:
         await self._cleanup_pending_blacklist()
     
     async def _cleanup_pending_blacklist(self):
-        """
-        🔥 LIMPA PENDING BLACKLIST (TOKENS EXPIRADOS)
-        """
+        """Limpa pending blacklist (tokens expirados)"""
         now = time.time()
         if now - self._last_pending_cleanup < self._pending_cleanup_interval:
             return
@@ -410,9 +449,7 @@ class JWTManager:
         self._last_pending_cleanup = now
     
     async def _cleanup_caches(self):
-        """
-        🔥 LIMPA CACHE DE BLACKLIST
-        """
+        """Limpa cache de blacklist"""
         now = time.time()
         if now - self._last_cache_cleanup < self._cache_cleanup_interval:
             return
@@ -427,10 +464,13 @@ class JWTManager:
         self._last_cache_cleanup = now
     
     # ==============================================
-    # 🔥 REFRESH E LOGOUT (CORRIGIDOS)
+    # 🔥 REFRESH E LOGOUT (COM TIMEZONE)
     # ==============================================
     
     async def refresh_access_token(self, refresh_token: str, db, old_access_token: str = None) -> Optional[Dict[str, str]]:
+        """
+        🔥 REFRESH TOKEN COM TIMEZONE CORRETO
+        """
         from backend import crud
         
         # Verifica refresh token
@@ -453,21 +493,24 @@ class JWTManager:
             logger.warning(f"Refresh token não corresponde ao banco para {email}")
             return None
         
-        # 🔥 Blacklist do refresh token antigo (OBRIGATÓRIO)
+        # 🔥 Blacklist do refresh token antigo
         old_jti = old_payload.get("jti")
         if old_jti:
             exp = old_payload.get("exp", 0)
-            remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
+            now = _now_utc()
+            remaining = max(int(exp - now.timestamp()), 3600)
             await self.blacklist_token(old_jti, remaining)
             logger.info(f"🔴 Refresh token antigo {old_jti[:8]}... blacklistado")
         
-        # 🔥 Blacklist do access token antigo (OBRIGATÓRIO)
+        # 🔥 Blacklist do access token antigo
         if old_access_token:
             old_access_payload = self.decode_token(old_access_token)
             if old_access_payload:
                 old_access_jti = old_access_payload.get("jti")
                 if old_access_jti:
-                    remaining = max(int(old_access_payload.get("exp", 0) - datetime.utcnow().timestamp()), 300)
+                    exp = old_access_payload.get("exp", 0)
+                    now = _now_utc()
+                    remaining = max(int(exp - now.timestamp()), 300)
                     await self.blacklist_token(old_access_jti, remaining)
                     logger.info(f"🔴 Access token antigo {old_access_jti[:8]}... blacklistado")
         
@@ -502,9 +545,12 @@ class JWTManager:
         }
     
     async def logout(self, refresh_token: str, db, access_token: str = None) -> bool:
+        """
+        🔥 LOGOUT COM TIMEZONE CORRETO
+        """
         from backend import crud
         
-        # 🔥 Blacklist do refresh token (OBRIGATÓRIO)
+        # 🔥 Blacklist do refresh token
         refresh_payload = await self.verify_token(refresh_token, "refresh")
         if refresh_payload:
             email = refresh_payload.get("sub") or refresh_payload.get("email")
@@ -516,18 +562,20 @@ class JWTManager:
             jti = refresh_payload.get("jti")
             if jti:
                 exp = refresh_payload.get("exp", 0)
-                remaining = max(int(exp - datetime.utcnow().timestamp()), 3600)
+                now = _now_utc()
+                remaining = max(int(exp - now.timestamp()), 3600)
                 await self.blacklist_token(jti, remaining)
                 logger.info(f"🔴 Refresh token {jti[:8]}... blacklistado no logout")
         
-        # 🔥 Blacklist do access token (OBRIGATÓRIO)
+        # 🔥 Blacklist do access token
         if access_token:
             access_payload = self.decode_token(access_token)
             if access_payload:
                 access_jti = access_payload.get("jti")
                 if access_jti:
                     exp = access_payload.get("exp", 0)
-                    remaining = max(int(exp - datetime.utcnow().timestamp()), 300)
+                    now = _now_utc()
+                    remaining = max(int(exp - now.timestamp()), 300)
                     await self.blacklist_token(access_jti, remaining)
                     logger.info(f"🔴 Access token {access_jti[:8]}... blacklistado no logout")
         
@@ -597,11 +645,9 @@ class RateLimiter:
                     return False
             except Exception as e:
                 logger.error(f"Erro no Redis: {e}")
-                # 🔥 FALLBACK: Permite em caso de erro Redis
-                return True
+                return True  # FALLBACK: permite
         
-        # 🔥 FALLBACK: Permite se Redis estiver indisponível
-        logger.warning(f"⚠️ Redis indisponível - permitindo requisição (rate limit disabled)")
+        logger.warning(f"⚠️ Redis indisponível - rate limit disabled")
         return True
 
 
@@ -618,8 +664,18 @@ rate_limiter = RateLimiter()
 # 5. DEPENDÊNCIAS FASTAPI (CORRIGIDAS)
 # ==============================================
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db = None):
-    from sqlalchemy.orm import Session
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    request: Optional[Request] = None,  # 🔥 CORRIGIDO: Optional e valor padrão None
+    db: Optional[Session] = None        # 🔥 CORRIGIDO: Optional e valor padrão None
+):
+    """
+    🔥 OBTÉM O USUÁRIO ATUAL A PARTIR DO TOKEN JWT
+    - Suporte a token no header (Authorization: Bearer)
+    - Suporte a token no cookie (access_token)
+    - Verifica se usuário está ativo
+    - Fecha sessão do banco automaticamente
+    """
     from backend.database import SessionLocal
     from backend import crud
     
@@ -629,35 +685,65 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = None):
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    if not token:
-        logger.warning("Token não fornecido")
+    # 1. 🔥 Tenta extrair token de várias fontes
+    extracted_token = token
+    
+    if not extracted_token:
+        # Tenta do cookie (se request estiver disponível)
+        if request:
+            cookie_token = request.cookies.get("access_token")
+            if cookie_token and cookie_token.startswith("Bearer "):
+                extracted_token = cookie_token.replace("Bearer ", "")
+    
+    if not extracted_token:
+        logger.warning("🔴 Token não fornecido")
         raise credentials_exception
     
-    # 🔥 Usa verify_token (100% assíncrono)
-    payload = await jwt_manager.verify_token(token)
+    # 2. 🔥 Verifica o token (com blacklist)
+    try:
+        payload = await jwt_manager.verify_token(extracted_token)
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar token: {e}")
+        raise credentials_exception
+    
     if not payload:
-        logger.warning("Token inválido, expirado ou revogado")
+        logger.warning("🔴 Token inválido, expirado ou revogado")
         raise credentials_exception
     
+    # 3. 🔥 Extrai email do payload
     email = payload.get("sub") or payload.get("email")
     if not email:
-        logger.warning("Token sem email")
+        logger.warning("🔴 Token sem email")
         raise credentials_exception
     
+    # 4. 🔥 Gerencia sessão do banco
+    db_close_needed = False
     if db is None:
         db = SessionLocal()
-        should_close = True
-    else:
-        should_close = False
+        db_close_needed = True
     
     try:
+        # 5. 🔥 Busca usuário
         user = crud.get_user_by_email(db, email=email)
         if not user:
-            logger.warning(f"Usuário {email} não encontrado")
+            logger.warning(f"🔴 Usuário {email} não encontrado")
             raise credentials_exception
+        
+        # 6. 🔥 Verifica se usuário está ativo
+        if not user.is_active:
+            logger.warning(f"🔴 Usuário {email} está inativo")
+            raise credentials_exception
+        
+        logger.debug(f"✅ Usuário autenticado: {user.email}")
         return user
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar usuário {email}: {e}")
+        raise credentials_exception
     finally:
-        if should_close:
+        if db_close_needed and db:
             db.close()
 
 
@@ -715,7 +801,10 @@ def verify_token_hash(token: str, hashed: str) -> bool:
 
 
 def create_password_reset_token(email: str) -> str:
-    expire = datetime.utcnow() + timedelta(hours=24)
+    """
+    🔥 CORRIGIDO: Usa _now_utc() em vez de datetime.utcnow()
+    """
+    expire = _now_utc() + timedelta(hours=24)
     payload = {
         "sub": email,
         "type": "password_reset",
@@ -795,12 +884,16 @@ __all__ = [
     'clear_auth_cookies'
 ]
 
-print("=" * 50)
-print("🔥 SECURITY.PY - VERSÃO CORRIGIDA")
+print("=" * 60)
+print("🔥 SECURITY.PY - VERSÃO CORRIGIDA E MELHORADA")
 print("   ✅ JWT com blacklist (100% assíncrono)")
 print("   ✅ Rate Limit com Redis")
 print("   ✅ Argon2 para hash de senhas")
 print("   ✅ Cache único e otimizado")
 print("   ✅ Fallback para banco de dados")
 print("   ✅ Limpeza automática de caches")
-print("=" * 50)
+print("   ✅ TIMEZONE: offset-aware (corrige comparação de datetimes)")
+print("   ✅ _now_utc() substitui datetime.utcnow()")
+print("   ✅ Session importado corretamente")
+print("   ✅ get_current_user com parâmetros opcionais")
+print("=" * 60)
