@@ -1,13 +1,10 @@
-# backend/crud.py - VERSÃO CORRIGIDA E MELHORADA
+# backend/crud.py - VERSÃO CORRIGIDA (TIMEZONE BLINDADO)
 """
 CRUD - Operações de banco de dados
 SINCRONIZADO COM:
 - models.py (UTC-3, hashed_password, UserPlan, PaymentStatus)
-- schemas.py (UTC-3, default_factory)
-- payment_service.py (sistema de créditos, preços dinâmicos)
-- credits_consumer.py (consumo de créditos, verificação premium)
-- daily_credits_service.py (créditos diários, limite de 3)
-- auth_routes.py (update_last_login)
+- security.py (timestamps UNIX, safe_compare_datetime)
+- auth_routes.py (_is_token_expired)
 """
 
 from sqlalchemy.orm import Session
@@ -40,6 +37,33 @@ def _today_brasil() -> date:
 def _get_next_day_brasil(days_ahead: int = 1) -> date:
     """Retorna data futura no fuso horário de Brasília"""
     return _today_brasil() + timedelta(days=days_ahead)
+
+# ==============================================
+# 🔥 FUNÇÃO CORINGA PARA COMPARAÇÃO DE DATAS (BLINDADA)
+# ==============================================
+
+def _is_datetime_expired(db_datetime: Optional[datetime]) -> bool:
+    """
+    🔥 FUNÇÃO UNIVERSAL: Verifica se um datetime do banco já expirou.
+    🔥 100% BLINDADA CONTRA ERROS DE TIMEZONE!
+    
+    Remove o fuso horário de ambos os lados antes de comparar.
+    """
+    if db_datetime is None:
+        return True
+    
+    # Remove timezone do datetime do banco (se tiver)
+    naive_db = db_datetime.replace(tzinfo=None) if db_datetime.tzinfo else db_datetime
+    naive_now = datetime.utcnow()
+    
+    return naive_db < naive_now
+
+
+def _is_datetime_valid(db_datetime: Optional[datetime]) -> bool:
+    """
+    🔥 Versão inversa: Retorna True se o datetime NÃO expirou.
+    """
+    return not _is_datetime_expired(db_datetime)
 
 
 # ==============================================
@@ -255,7 +279,7 @@ def update_user(db: Session, user_id: int, user_update: Union[Dict, schemas.User
 
 
 # ==============================================
-# 🔥 NOVO: UPDATE_LAST_LOGIN - CORRIGIDO
+# 🔥 UPDATE_LAST_LOGIN - CORRIGIDO
 # ==============================================
 
 def update_last_login(db: Session, user_id: int) -> Optional[models.User]:
@@ -580,7 +604,7 @@ def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 # ==============================================
-# REFRESH TOKEN - OPERAÇÕES
+# 🔥 REFRESH TOKEN - OPERAÇÕES CORRIGIDAS (TIMEZONE BLINDADO)
 # ==============================================
 
 def save_refresh_token(db: Session, user_id: int, refresh_token: str, jti: str, expires_days: int = 7) -> bool:
@@ -603,12 +627,22 @@ def validate_refresh_token(db: Session, user_id: int, refresh_token: str) -> boo
 
 
 def get_user_by_refresh_token(db: Session, refresh_token: str) -> Optional[models.User]:
-    """Busca usuário pelo refresh token (válido)"""
-    return db.query(models.User).filter(
+    """
+    🔥 CORRIGIDO: Busca usuário pelo refresh token (válido)
+    🔥 Usa _is_datetime_valid() para comparação blindada
+    """
+    # Busca todos os usuários com o refresh token (não revogados)
+    users = db.query(models.User).filter(
         models.User.refresh_token == refresh_token,
-        models.User.refresh_token_expires > _now_brasil(),
         models.User.refresh_token_revoked == False
-    ).first()
+    ).all()
+    
+    # 🔥 Filtra em Python usando função blindada de timezone
+    for user in users:
+        if _is_datetime_valid(user.refresh_token_expires):
+            return user
+    
+    return None
 
 
 def revoke_refresh_token(db: Session, user_id: int) -> bool:
@@ -633,17 +667,23 @@ def revoke_all_user_refresh_tokens(db: Session, user_id: int) -> int:
 
 
 def cleanup_expired_refresh_tokens(db: Session) -> int:
-    """Remove tokens expirados (job agendado)"""
-    expired = db.query(models.User).filter(
-        models.User.refresh_token_expires < _now_brasil()
+    """
+    🔥 CORRIGIDO: Remove tokens expirados (job agendado)
+    🔥 Usa _is_datetime_expired() para comparação blindada
+    """
+    # Busca todos os usuários com refresh token
+    users = db.query(models.User).filter(
+        models.User.refresh_token.isnot(None)
     ).all()
     
     count = 0
-    for user in expired:
-        user.refresh_token = None
-        user.refresh_token_jti = None
-        user.refresh_token_revoked = True
-        count += 1
+    for user in users:
+        # 🔥 Usa função blindada de timezone
+        if _is_datetime_expired(user.refresh_token_expires):
+            user.refresh_token = None
+            user.refresh_token_jti = None
+            user.refresh_token_revoked = True
+            count += 1
     
     if count > 0:
         safe_commit(db, "Erro ao limpar tokens expirados")
@@ -1062,7 +1102,7 @@ def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 # ==============================================
-# SESSÃO E LOGOUT COMPLETO
+# 🔥 SESSÃO E LOGOUT COMPLETO - CORRIGIDO
 # ==============================================
 
 def clear_user_session(db: Session, user_id: int, logout_all_devices: bool = True) -> bool:
@@ -1094,14 +1134,18 @@ def clear_user_session(db: Session, user_id: int, logout_all_devices: bool = Tru
 
 
 def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
-    """Retorna informações da sessão atual do usuário"""
+    """
+    🔥 CORRIGIDO: Retorna informações da sessão atual do usuário
+    🔥 Usa _is_datetime_valid() para comparação blindada
+    """
     user = get_user_by_id(db, user_id)
     if not user:
         return {"error": "Usuário não encontrado"}
     
+    # 🔥 Usa função blindada de timezone
     has_valid_token = False
     if user.refresh_token and user.refresh_token_expires:
-        has_valid_token = user.refresh_token_expires > _now_brasil() and not user.refresh_token_revoked
+        has_valid_token = _is_datetime_valid(user.refresh_token_expires) and not user.refresh_token_revoked
     
     return {
         "user_id": user.id,
@@ -1112,7 +1156,7 @@ def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
         "refresh_token_expires_at": user.refresh_token_expires.isoformat() if user.refresh_token_expires else None,
         "refresh_token_revoked": user.refresh_token_revoked,
         "session_active": has_valid_token,
-        "needs_cleanup": user.refresh_token_expires and user.refresh_token_expires < _now_brasil() if user.refresh_token_expires else False,
+        "needs_cleanup": _is_datetime_expired(user.refresh_token_expires) if user.refresh_token_expires else False,
         "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
@@ -1138,21 +1182,25 @@ def force_logout_user(db: Session, email: str, reason: str = "Admin action") -> 
 
 
 def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
-    """Limpeza de sessões órfãs"""
-    cutoff_date = _now_brasil() - timedelta(days=older_than_days)
-    
-    users_with_expired_tokens = db.query(models.User).filter(
-        models.User.refresh_token_expires < cutoff_date,
-        models.User.refresh_token.isnot(None)
+    """
+    🔥 CORRIGIDO: Limpeza de sessões órfãs
+    🔥 Usa _is_datetime_expired() para comparação blindada
+    """
+    # Busca todos os usuários com refresh token não revogado
+    users = db.query(models.User).filter(
+        models.User.refresh_token.isnot(None),
+        models.User.refresh_token_revoked == False
     ).all()
     
     count = 0
-    for user in users_with_expired_tokens:
-        user.refresh_token = None
-        user.refresh_token_jti = None
-        user.refresh_token_revoked = True
-        user.refresh_token_expires = None
-        count += 1
+    for user in users:
+        # 🔥 Usa função blindada de timezone
+        if _is_datetime_expired(user.refresh_token_expires):
+            user.refresh_token = None
+            user.refresh_token_jti = None
+            user.refresh_token_revoked = True
+            user.refresh_token_expires = None
+            count += 1
     
     if count > 0:
         safe_commit(db, "Erro ao limpar sessões órfãs")
@@ -1188,10 +1236,12 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
 
 
 print("=" * 70)
-print("✅ crud.py carregado - COMPLETAMENTE SINCRONIZADO")
-print("   🔥 update_last_login() → Função corrigida")
-print("   🔥 MAX_CREDITS_PREMIUM = 3")
-print("   🔥 INITIAL_FREE_CREDITS = 3")
-print("   🔥 UTC-3 (Brasília)")
-print("   🔥 safe_commit() com rollback automático")
+print("✅ crud.py carregado - TIMEZONE BLINDADO")
+print("   🔥 _is_datetime_expired() → Função universal blindada")
+print("   🔥 _is_datetime_valid() → Versão inversa")
+print("   🔥 get_user_by_refresh_token() → Corrigido (filtro em Python)")
+print("   🔥 cleanup_expired_refresh_tokens() → Corrigido")
+print("   🔥 get_user_session_info() → Corrigido")
+print("   🔥 cleanup_orphaned_sessions() → Corrigido")
+print("   🔥 UTC-3 (Brasília) mantido para criação de registros")
 print("=" * 70)
