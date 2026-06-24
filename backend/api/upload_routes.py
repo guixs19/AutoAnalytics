@@ -31,7 +31,7 @@ from backend.security import rate_limiter
 from backend.api.pow_routes import validate_pow_request, pow_service
 
 # 🔥🔥🔥 ML Pipeline
-from backend.ml.preprocessing import process_file_content, pipeline
+from backend.preprocessing import process_file_content, pipeline
 
 logger = logging.getLogger(__name__)
 
