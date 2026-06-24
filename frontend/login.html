@@ -28,14 +28,11 @@
                     window.location.replace('/dashboard');
                 } else {
                     console.log('❌ Token inválido - removendo e permanecendo na página');
-                    // 🔥 CORREÇÃO: Remove o token e NÃO recarrega a página
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('refresh_token');
-                    // Remove também cookies se houver
                     document.cookie.split(";").forEach(function(c) { 
                         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
                     });
-                    // 🔥 NÃO faz location.reload() - apenas limpa e mantém na página
                     console.log('✅ Token removido. Página de login pronta para uso.');
                 }
             })
@@ -43,7 +40,6 @@
                 console.log('⚠️ Erro ao verificar token - removendo e permanecendo na página');
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('refresh_token');
-                // 🔥 NÃO faz location.reload()
             });
         })();
     </script>
@@ -637,9 +633,7 @@
         <!-- 🔥 TAB LOGIN -->
         <!-- ========================================== -->
         <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel" aria-labelledby="tab-login-btn">
-            <form id="loginForm" 
-                  onsubmit="if(window.appAuth) { window.appAuth.handleLogin(event); } else { event.preventDefault(); alert('❌ Módulo de autenticação não carregado. Recarregue a página.'); }" 
-                  novalidate>
+            <form id="loginForm" novalidate>
                 <!-- Email -->
                 <div class="form-group">
                     <label for="loginEmail"><i class="fas fa-envelope"></i> E-mail</label>
@@ -669,7 +663,7 @@
                     </label>
                 </div>
 
-                <!-- 🔥 INDICADOR DE RATE LIMIT - LOGIN -->
+                <!-- 🔥 CORREÇÃO: ID do indicador de Rate Limit - LOGIN -->
                 <div class="rate-limit-indicator" id="rateLimitIndicatorLogin">
                     <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
                     <span id="rateLimitMessageLogin">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerLogin">60</span>s</span>
@@ -685,9 +679,7 @@
         <!-- 🔥 TAB REGISTER -->
         <!-- ========================================== -->
         <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel" aria-labelledby="tab-register-btn">
-            <form id="registerForm" 
-                  onsubmit="if(window.appAuth) { window.appAuth.handleRegister(event); } else { event.preventDefault(); alert('❌ Módulo de autenticação não carregado. Recarregue a página.'); }" 
-                  novalidate>
+            <form id="registerForm" novalidate>
                 <!-- Nome (obrigatório) -->
                 <div class="form-group">
                     <label for="registerName"><i class="fas fa-user"></i> Nome Completo</label>
@@ -769,7 +761,7 @@
                     </label>
                 </div>
 
-                <!-- 🔥 INDICADOR DE RATE LIMIT - REGISTER -->
+                <!-- 🔥 CORREÇÃO: ID do indicador de Rate Limit - REGISTER -->
                 <div class="rate-limit-indicator" id="rateLimitIndicatorRegister">
                     <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
                     <span id="rateLimitMessageRegister">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerRegister">60</span>s</span>
@@ -989,48 +981,210 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 🔥 🔥 SCRIPTS DA APLICAÇÃO - ORDEM CRÍTICA 🔥 🔥 🔥 -->
+    <!-- 🔥 🔥 🔥 SCRIPTS DA APLICAÇÃO - COM DEFER 🔥 🔥 🔥 -->
     <!-- ============================================== -->
     
     <!-- 
-        ⚠️ ORDEM DE CARREGAMENTO OBRIGATÓRIA:
-        1. auth.js (define window.appAuth)
-        2. app.js (orquestrador - v3.3 com Rate Limiter)
+        ⚠️ ORDEM DE CARREGAMENTO OBRIGATÓRIA COM DEFER:
+        1. auth.js (define window.appAuth) - COM DEFER
+        2. app.js (orquestrador - v3.3 com Rate Limiter) - COM DEFER
     -->
     
-    <!-- 7. AUTH.JS - Módulo de autenticação -->
-    <script src="/static/js/auth.js"></script>
+    <!-- 7. AUTH.JS - Módulo de autenticação COM DEFER -->
+    <script src="/static/js/auth.js" defer></script>
     
-    <!-- 8. APP.JS - Orquestrador com Rate Limiter (v3.3) -->
-    <script src="/static/js/app.js"></script>
+    <!-- 8. APP.JS - Orquestrador com Rate Limiter (v3.3) COM DEFER -->
+    <script src="/static/js/app.js" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 VALIDAÇÃO ADICIONAL: Verifica se auth.js carregou -->
+    <!-- 🔥 CORREÇÃO PRINCIPAL: LISTENER COM FALLBACK INTELIGENTE -->
     <!-- ============================================== -->
     <script>
+        /**
+         * 🔥 CORREÇÃO 1: Listener do formulário com fallback inteligente
+         * Aguarda dinamicamente o módulo de autenticação estar disponível
+         */
         document.addEventListener('DOMContentLoaded', function() {
-            // Verifica se o appAuth foi carregado
-            if (typeof window.appAuth === 'undefined') {
-                console.error('❌ appAuth não está disponível! Verifique se auth.js foi carregado.');
-                const authMessage = document.getElementById('authMessage');
-                if (authMessage) {
-                    authMessage.textContent = '⚠️ Erro ao carregar módulo de autenticação. Recarregue a página.';
-                    authMessage.className = 'auth-message show error';
-                }
-            } else {
-                console.log('✅ appAuth carregado com sucesso!');
-                console.log('✅ Métodos disponíveis:', Object.keys(window.appAuth));
+            console.log('🔧 Configurando listener do formulário de login...');
+            
+            const loginForm = document.getElementById('loginForm');
+            
+            if (!loginForm) {
+                console.warn('⚠️ Formulário de login não encontrado!');
+                return;
             }
+
+            // 🔥 Remove qualquer listener existente para evitar duplicação
+            loginForm.removeEventListener('submit', handleLoginSubmit);
+            
+            // 🔥 Adiciona o listener com o handler nomeado
+            loginForm.addEventListener('submit', handleLoginSubmit);
+            
+            console.log('✅ Listener do formulário de login configurado com sucesso!');
         });
+
+        /**
+         * 🔥 Handler do submit com fallback inteligente
+         * Tenta encontrar o módulo de autenticação em diferentes locais
+         */
+        async function handleLoginSubmit(e) {
+            e.preventDefault(); // 🛑 CRÍTICO: Impede o envio via GET na URL
+            
+            console.log('📤 Submit do formulário interceptado!');
+            
+            // 🔥 Resolução do conflito: Fallback dinâmico para encontrar o módulo de autenticação
+            const authModule = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+
+            if (!authModule) {
+                console.warn('⏳ Módulo de autenticação ainda não disponível. Aguardando...');
+                
+                // Tenta novamente após 500ms
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Verifica novamente
+                const authModuleRetry = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+                
+                if (!authModuleRetry) {
+                    console.error('❌ Módulo de autenticação não encontrado após tentativa!');
+                    
+                    if (window.toastr) {
+                        toastr.error('O sistema de segurança não está disponível. Recarregue a página e tente novamente.', 'Erro');
+                    }
+                    
+                    // Restaura o botão
+                    const loginBtn = document.getElementById('loginBtn');
+                    if (loginBtn) {
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                    }
+                    return;
+                }
+                
+                // Usa o módulo encontrado na segunda tentativa
+                try {
+                    await authModuleRetry.handleLogin(e);
+                } catch (error) {
+                    console.error('❌ Erro ao processar o login:', error);
+                    if (window.toastr) {
+                        toastr.error('Erro ao processar o login. Tente novamente.', 'Erro');
+                    }
+                }
+                return;
+            }
+
+            try {
+                // Envia a execução diretamente para o método unificado do auth.js
+                console.log('✅ Módulo de autenticação encontrado. Processando login...');
+                await authModule.handleLogin(e);
+            } catch (error) {
+                console.error('❌ Erro ao processar o login no formulário:', error);
+                
+                if (window.toastr) {
+                    toastr.error('Erro ao processar o login. Tente novamente.', 'Erro');
+                }
+                
+                // Restaura o botão em caso de erro
+                const loginBtn = document.getElementById('loginBtn');
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                }
+            }
+        }
+
+        /**
+         * 🔥 CORREÇÃO 2: Listener do formulário de registro com fallback inteligente
+         */
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Configurando listener do formulário de registro...');
+            
+            const registerForm = document.getElementById('registerForm');
+            
+            if (!registerForm) {
+                console.warn('⚠️ Formulário de registro não encontrado!');
+                return;
+            }
+
+            // 🔥 Remove qualquer listener existente para evitar duplicação
+            registerForm.removeEventListener('submit', handleRegisterSubmit);
+            
+            // 🔥 Adiciona o listener com o handler nomeado
+            registerForm.addEventListener('submit', handleRegisterSubmit);
+            
+            console.log('✅ Listener do formulário de registro configurado com sucesso!');
+        });
+
+        /**
+         * 🔥 Handler do submit do registro com fallback inteligente
+         */
+        async function handleRegisterSubmit(e) {
+            e.preventDefault(); // 🛑 CRÍTICO: Impede o envio via GET na URL
+            
+            console.log('📤 Submit do registro interceptado!');
+            
+            // 🔥 Resolução do conflito: Fallback dinâmico para encontrar o módulo de autenticação
+            const authModule = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+
+            if (!authModule) {
+                console.warn('⏳ Módulo de autenticação ainda não disponível para registro. Aguardando...');
+                
+                // Tenta novamente após 500ms
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                const authModuleRetry = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+                
+                if (!authModuleRetry) {
+                    console.error('❌ Módulo de autenticação não encontrado para registro!');
+                    
+                    if (window.toastr) {
+                        toastr.error('O sistema de segurança não está disponível. Recarregue a página e tente novamente.', 'Erro');
+                    }
+                    
+                    const registerBtn = document.getElementById('registerBtn');
+                    if (registerBtn) {
+                        registerBtn.disabled = false;
+                        registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Minha Conta';
+                    }
+                    return;
+                }
+                
+                try {
+                    await authModuleRetry.handleRegister(e);
+                } catch (error) {
+                    console.error('❌ Erro ao processar o registro:', error);
+                    if (window.toastr) {
+                        toastr.error('Erro ao processar o registro. Tente novamente.', 'Erro');
+                    }
+                }
+                return;
+            }
+
+            try {
+                console.log('✅ Módulo de autenticação encontrado. Processando registro...');
+                await authModule.handleRegister(e);
+            } catch (error) {
+                console.error('❌ Erro ao processar o registro no formulário:', error);
+                
+                if (window.toastr) {
+                    toastr.error('Erro ao processar o registro. Tente novamente.', 'Erro');
+                }
+                
+                const registerBtn = document.getElementById('registerBtn');
+                if (registerBtn) {
+                    registerBtn.disabled = false;
+                    registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Minha Conta';
+                }
+            }
+        }
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CORREÇÃO 2: RATE LIMITER DINÂMICO PARA LOGIN E REGISTER -->
+    <!-- 🔥 RATE LIMITER DINÂMICO COM IDs CORRETOS -->
     <!-- ============================================== -->
     <script>
         /**
          * 🔥 Configura o Rate Limiter na página de login
-         * Agora suporta tanto Login quanto Register
+         * Agora com os IDs corretos: rateLimitIndicatorLogin e rateLimitIndicatorRegister
          */
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🔧 Inicializando Rate Limiter na página de login...');
@@ -1050,14 +1204,12 @@
                     // Escuta eventos de rate limit
                     window.addEventListener('rateLimitBlocked', function(event) {
                         console.log('📢 Rate Limit bloqueado na página de login', event.detail);
-                        // 🔥 Atualiza ambos os UIs
                         updateRateLimitUI('login', event.detail);
                         updateRateLimitUI('register', event.detail);
                     });
                     
                     window.addEventListener('rateLimitUnblocked', function() {
                         console.log('📢 Rate Limit desbloqueado na página de login');
-                        // 🔥 Esconde ambos os UIs
                         hideRateLimitUI('login');
                         hideRateLimitUI('register');
                     });
@@ -1080,14 +1232,13 @@
         
         /**
          * 🔥 Atualiza UI do Rate Limiter para um formulário específico
-         * @param {string} type - 'login' ou 'register'
-         * @param {object} detail - Detalhes do evento (opcional)
+         * 🔥 CORREÇÃO: Usa os IDs exatos do HTML
          */
         function updateRateLimitUI(type, detail) {
-            const prefix = type === 'login' ? '' : 'Register';
-            const indicatorId = `rateLimitIndicator${prefix}`;
-            const timerId = `rateLimitTimer${prefix}`;
-            const messageId = `rateLimitMessage${prefix}`;
+            // 🔥 IDs exatos conforme definidos no HTML
+            const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
+            const timerId = type === 'login' ? 'rateLimitTimerLogin' : 'rateLimitTimerRegister';
+            const messageId = type === 'login' ? 'rateLimitMessageLogin' : 'rateLimitMessageRegister';
             const btnId = type === 'login' ? 'loginBtn' : 'registerBtn';
             
             const indicator = document.getElementById(indicatorId);
@@ -1103,7 +1254,6 @@
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
                 timer.textContent = remaining;
                 
-                // Atualiza a cada segundo
                 const intervalKey = `_rateLimitTimerInterval_${type}`;
                 if (window[intervalKey]) {
                     clearInterval(window[intervalKey]);
@@ -1127,22 +1277,21 @@
                 message.textContent = detail.message;
             }
             
-            // Desabilita o botão correspondente
             if (button) {
                 button.disabled = true;
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                const originalText = type === 'login' ? 'Entrar no Sistema' : 'Criar Minha Conta';
-                button.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${remaining}s`;
+                const icon = type === 'login' ? 'fa-hourglass-half' : 'fa-hourglass-half';
+                button.innerHTML = `<i class="fas ${icon} me-2"></i> Aguarde ${remaining}s`;
             }
         }
         
         /**
          * 🔥 Esconde UI do Rate Limiter para um formulário específico
-         * @param {string} type - 'login' ou 'register'
+         * 🔥 CORREÇÃO: Usa os IDs exatos do HTML
          */
         function hideRateLimitUI(type) {
-            const prefix = type === 'login' ? '' : 'Register';
-            const indicatorId = `rateLimitIndicator${prefix}`;
+            // 🔥 IDs exatos conforme definidos no HTML
+            const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
             const btnId = type === 'login' ? 'loginBtn' : 'registerBtn';
             
             const indicator = document.getElementById(indicatorId);
@@ -1159,7 +1308,6 @@
                 button.innerHTML = `<i class="fas ${icon} me-2"></i> ${originalText}`;
             }
             
-            // Limpa o intervalo específico
             const intervalKey = `_rateLimitTimerInterval_${type}`;
             if (window[intervalKey]) {
                 clearInterval(window[intervalKey]);
