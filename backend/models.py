@@ -309,5 +309,13 @@ class PromotionControl(Base):
         self.is_active = True
         self.updated_at = _now_brasil()  # 🔥 SINCRONIZADO
 
+class BlacklistedToken(Base):
+    """Guarda os tokens invalidados/revogados no banco de dados como fallback do Redis"""
+    __tablename__ = 'blacklisted_tokens'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(512), unique=True, index=True, nullable=False)
+    blacklisted_at = Column(DateTime, default=_now_brasil, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
 
 print("✅ models.py carregado - Datetimes sincronizados com UTC-3 (Brasília)")

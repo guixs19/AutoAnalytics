@@ -10,7 +10,7 @@ MÓDULO DE SEGURANÇA - VERSÃO FINAL
 - ✅ Cache com TTL automático (5 minutos)
 - ✅ Rate limiting com janela deslizante
 - ✅ Funções globais para blacklist (consistente entre workers)
-- ✅ _get_remaining_seconds() para evitar erro de timezone
+- ✅ _get_remaining_seconds() corrigida - sem erro de timezone
 - ✅ pending_blacklist NÃO é mais exposta diretamente
 - ✅ Memory cache limitado a 1000 entradas (apenas cache)
 - ✅ Fallback seguro: permite em caso de erro
@@ -78,14 +78,55 @@ def _get_exp_timestamp(payload: Dict[str, Any]) -> int:
         return int(exp.timestamp())
     return int(exp)
 
+# ==============================================
+# 🔥 CORREÇÃO CRÍTICA: _get_remaining_seconds
+# ==============================================
+
 def _get_remaining_seconds(payload: Dict[str, Any]) -> int:
     """
     🔥 CORRIGIDO: Calcula segundos restantes até expiração do token.
-    NUNCA compara datetime com datetime - usa timestamps UNIX.
+    
+    Esta função agora é 100% robusta contra erros de fuso horário.
+    Estratégia: converte TUDO para timestamps UNIX (inteiros) antes de comparar.
+    
+    🔥 NUNCA compara datetime com datetime - usa timestamps UNIX.
+    🔥 NUNCA usa datetime.utcnow() - usa time.time() para timestamp puro.
     """
+    # Obtém timestamp de expiração do payload
     exp_ts = _get_exp_timestamp(payload)
-    now_ts = _now_utc().timestamp()
-    return max(0, int(exp_ts - now_ts))
+    
+    # Obtém timestamp atual como inteiro (time.time() retorna float)
+    now_ts = int(time.time())
+    
+    # Calcula diferença em segundos
+    remaining = exp_ts - now_ts
+    
+    # Retorna no mínimo 0 (nunca negativo)
+    return max(0, remaining)
+
+
+def _get_remaining_seconds_from_datetime(exp_datetime: datetime) -> int:
+    """
+    🔥 CORREÇÃO CRÍTICA: Versão alternativa para quando você tem um datetime.
+    
+    Esta função é usada quando você está lidando com objetos datetime
+    do banco de dados ou de outras fontes que não são JWT payloads.
+    
+    🔥 CORREÇÃO: Remove o fuso horário (tzinfo) para evitar erro de comparação.
+    🔥 NUNCA compara datetime offset-aware com offset-naive.
+    """
+    # Remove o fuso horário (tzinfo) se ele existir
+    # Isso evita o erro: "can't compare offset-naive and offset-aware datetimes"
+    naive_exp = exp_datetime.replace(tzinfo=None) if exp_datetime.tzinfo else exp_datetime
+    
+    # Usa datetime.utcnow() que é offset-naive
+    naive_now = datetime.utcnow()
+    
+    # Calcula diferença
+    remaining = (naive_exp - naive_now).total_seconds()
+    
+    # Retorna no mínimo 0
+    return max(0, int(remaining))
 
 
 # ==============================================
@@ -405,6 +446,7 @@ async def is_token_blacklisted(jti: str) -> bool:
         
         db = SessionLocal()
         try:
+            # 🔥 CORREÇÃO: Usa _now_utc() para comparação com datetime do banco
             exists = db.query(BlacklistedToken).filter(
                 BlacklistedToken.jti == jti,
                 BlacklistedToken.expires_at > _now_utc()
@@ -1036,6 +1078,7 @@ __all__ = [
     # Funções de timezone
     '_now_utc',
     '_get_remaining_seconds',
+    '_get_remaining_seconds_from_datetime',
     '_get_exp_timestamp',
     
     # Funções de utilidade
@@ -1061,7 +1104,8 @@ print("=" * 70)
 print("   ✅ SEM asyncio.run() no escopo global")
 print("   ✅ Redis com health check automático")
 print("   ✅ Timezone: timestamps UNIX no JWT")
-print("   ✅ _get_remaining_seconds() - sem erro de timezone")
+print("   ✅ _get_remaining_seconds() - CORRIGIDA (time.time())")
+print("   ✅ _get_remaining_seconds_from_datetime() - CORRIGIDA (replace tzinfo)")
 print("   ✅ Blacklist centralizada: Redis → DB → Memória Cache")
 print("   ✅ Memory cache limitado (1000 entradas, 5min TTL)")
 print("   ✅ Fallback seguro: permite em caso de erro")
