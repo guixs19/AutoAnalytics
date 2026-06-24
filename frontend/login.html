@@ -654,8 +654,6 @@
                     <a href="#" class="forgot-password" tabindex="3"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Esqueceu a senha?</a>
                 </div>
 
-                <!-- 🔥 CAPTCHA REMOVIDO -->
-
                 <div class="form-check">
                     <input type="checkbox" class="form-check-input" id="rememberMe" tabindex="4">
                     <label class="form-check-label" for="rememberMe">
@@ -752,8 +750,6 @@
                         Opcional - usado apenas para contato
                     </small>
                 </div>
-
-                <!-- 🔥 CAPTCHA REMOVIDO -->
 
                 <!-- Termos -->
                 <div class="form-check">
@@ -998,7 +994,156 @@
     <!-- 8. APP.JS - Orquestrador com Rate Limiter (v3.3) -->
     <script src="/static/js/app.js"></script>
 
-    <!-- 9. 🔥 INICIALIZAÇÃO DO RATE LIMITER NA PÁGINA -->
+    <!-- ============================================== -->
+    <!-- 🔥 CORREÇÃO PRINCIPAL: FORMULÁRIO DE LOGIN COM PREVENÇÃO DE RECARREGAMENTO -->
+    <!-- ============================================== -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 🔥 CAPTURA O FORMULÁRIO DE LOGIN E EVITA O RECARREGAMENTO DA PÁGINA
+            const loginForm = document.getElementById('loginForm');
+            const authMessage = document.getElementById('authMessage');
+            
+            if (loginForm) {
+                loginForm.addEventListener('submit', async function(e) {
+                    e.preventDefault(); // 🛑 CRÍTICO: Impede o envio via URL (?email=...&password=...)
+
+                    // Usando os IDs corretos do formulário
+                    const emailInput = document.getElementById('loginEmail');
+                    const passwordInput = document.getElementById('loginPassword');
+                    const loginBtn = document.getElementById('loginBtn');
+                    const rememberMe = document.getElementById('rememberMe');
+
+                    // Validação básica
+                    if (!emailInput || !passwordInput) {
+                        console.error('❌ Campos de login não encontrados');
+                        showMessage(authMessage, '⚠️ Erro interno. Tente recarregar a página.', 'error');
+                        return;
+                    }
+
+                    const email = emailInput.value.trim();
+                    const password = passwordInput.value;
+
+                    // Validação simples antes de enviar
+                    if (!email || !password) {
+                        showMessage(authMessage, '⚠️ Por favor, preencha todos os campos.', 'error');
+                        return;
+                    }
+
+                    // Validação de formato de email
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(email)) {
+                        showMessage(authMessage, '⚠️ Por favor, insira um e-mail válido.', 'error');
+                        emailInput.focus();
+                        return;
+                    }
+
+                    // Feedback visual de carregamento
+                    loginBtn.disabled = true;
+                    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> A entrar...';
+
+                    // Limpa mensagem anterior
+                    authMessage.classList.remove('show');
+
+                    try {
+                        console.log('📤 Tentando login para:', email);
+                        
+                        // 🔥 Verifica se o appAuth está disponível
+                        if (!window.appAuth || typeof window.appAuth.login !== 'function') {
+                            throw new Error('Módulo de autenticação não carregado.');
+                        }
+                        
+                        // Chamada assíncrona para o método central do auth.js
+                        const response = await window.appAuth.login(email, password);
+                        
+                        console.log('📥 Resposta do login:', response);
+                        
+                        if (response && response.success) {
+                            // Sucesso! Redireciona para o painel principal de forma limpa
+                            showMessage(authMessage, '✅ Login realizado com sucesso! Redirecionando...', 'success');
+                            
+                            // Se "Manter conectado" estiver marcado, o token já foi salvo com duração estendida
+                            if (rememberMe && rememberMe.checked) {
+                                console.log('🔒 Sessão estendida ativada (30 dias)');
+                            }
+                            
+                            setTimeout(() => {
+                                window.location.replace('/dashboard');
+                            }, 800);
+                        } else {
+                            // Exibe mensagem se o retorno explicitamente não for sucesso
+                            const msg = response?.message || "E-mail ou senha incorretos.";
+                            showMessage(authMessage, `❌ ${msg}`, 'error');
+                            
+                            // Restaura o botão
+                            loginBtn.disabled = false;
+                            loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                            
+                            // Limpa o campo de senha por segurança
+                            passwordInput.value = '';
+                            passwordInput.focus();
+                        }
+                    } catch (err) {
+                        console.error("❌ Erro na execução do Login:", err);
+                        
+                        // Trata o bloqueio do Rate Limiter se o status for 429
+                        if (err.status === 429) {
+                            // O próprio auth.js já dispara o evento global gerenciado na sua página
+                            showMessage(authMessage, '⏳ Muitas tentativas. Aguarde alguns segundos.', 'error');
+                            
+                            // O Rate Limiter UI já será atualizado pelos listeners
+                            loginBtn.disabled = false;
+                            loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                            return;
+                        }
+
+                        // Outros erros
+                        let errorMsg = err.message || "Erro ao conectar com o servidor. Tente novamente.";
+                        
+                        // Mensagens específicas para erros comuns
+                        if (err.message && err.message.includes('NetworkError')) {
+                            errorMsg = '❌ Sem conexão com o servidor. Verifique sua internet.';
+                        } else if (err.message && err.message.includes('timeout')) {
+                            errorMsg = '⏱️ Tempo limite excedido. Tente novamente.';
+                        }
+                        
+                        showMessage(authMessage, errorMsg, 'error');
+                        
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                    }
+                });
+                
+                console.log('✅ Formulário de login configurado com sucesso!');
+            } else {
+                console.warn('⚠️ Formulário de login não encontrado na página.');
+            }
+        });
+
+        /**
+         * 🔥 Função auxiliar para mostrar mensagens
+         */
+        function showMessage(element, message, type = 'info') {
+            if (!element) {
+                console.warn('⚠️ Elemento de mensagem não encontrado:', message);
+                return;
+            }
+            
+            element.textContent = message;
+            element.className = 'auth-message show ' + type;
+            
+            // Auto-esconde após 5 segundos (exceto para sucesso)
+            if (type !== 'success') {
+                clearTimeout(element._hideTimeout);
+                element._hideTimeout = setTimeout(() => {
+                    element.classList.remove('show');
+                }, 6000);
+            }
+        }
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 INICIALIZAÇÃO DO RATE LIMITER NA PÁGINA -->
+    <!-- ============================================== -->
     <script>
         /**
          * 🔥 Configura o Rate Limiter na página de login
