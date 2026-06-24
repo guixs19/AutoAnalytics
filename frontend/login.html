@@ -280,6 +280,12 @@
             color: #a0aec0;
         }
 
+        .form-control:disabled {
+            background: #edf2f7;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
         .password-wrapper {
             position: relative;
         }
@@ -418,12 +424,12 @@
             transition: left 0.5s ease;
         }
 
-        .btn-submit:hover {
+        .btn-submit:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.35);
         }
 
-        .btn-submit:hover::before {
+        .btn-submit:hover:not(:disabled)::before {
             left: 100%;
         }
 
@@ -437,7 +443,7 @@
             background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
         }
 
-        .btn-submit-success:hover {
+        .btn-submit-success:hover:not(:disabled) {
             box-shadow: 0 8px 25px rgba(72, 187, 120, 0.35);
         }
 
@@ -507,6 +513,36 @@
         .login-footer .copyright {
             font-size: 0.7rem;
             color: #cbd5e0;
+        }
+
+        /* 🔥 INDICADOR DE RATE LIMIT */
+        .rate-limit-indicator {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #feb2b2;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rate-limit-indicator.show {
+            display: flex;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .rate-limit-indicator .icon {
+            font-size: 1.2rem;
+        }
+
+        .rate-limit-indicator .timer {
+            font-weight: 700;
+            font-family: monospace;
+            font-size: 1.1rem;
+            color: #c53030;
         }
 
         /* 🔥 BOTÃO DE EMERGÊNCIA - LIMPA TUDO */
@@ -627,6 +663,12 @@
                     </label>
                 </div>
 
+                <!-- 🔥 INDICADOR DE RATE LIMIT -->
+                <div class="rate-limit-indicator" id="rateLimitIndicator">
+                    <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
+                    <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
+                </div>
+
                 <button type="submit" class="btn-submit" id="loginBtn" tabindex="5">
                     <i class="fas fa-sign-in-alt me-2" aria-hidden="true"></i> Entrar no Sistema
                 </button>
@@ -721,6 +763,12 @@
                     </label>
                 </div>
 
+                <!-- 🔥 INDICADOR DE RATE LIMIT (REGISTER) -->
+                <div class="rate-limit-indicator" id="rateLimitIndicatorRegister">
+                    <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
+                    <span id="rateLimitMessageRegister">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerRegister">60</span>s</span>
+                </div>
+
                 <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
                     <i class="fas fa-user-plus me-2" aria-hidden="true"></i> Criar Minha Conta
                 </button>
@@ -758,7 +806,7 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
+    <!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICO) -->
     <!-- ============================================== -->
     
     <!-- 1. CONFIGURAÇÃO DO TOASTR -->
@@ -850,7 +898,221 @@
         });
     </script>
 
-    <!-- 5. 🔥 AUTH.JS - CARREGADO POR ÚLTIMO -->
+    <!-- 5. 🔥 FORÇA DA SENHA (REGISTER) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const passwordInput = document.getElementById('registerPassword');
+            const strengthContainer = document.getElementById('passwordStrengthContainer');
+            const bars = [
+                document.getElementById('strengthBar1'),
+                document.getElementById('strengthBar2'),
+                document.getElementById('strengthBar3'),
+                document.getElementById('strengthBar4')
+            ];
+            const strengthText = document.getElementById('strengthText');
+            
+            if (passwordInput) {
+                passwordInput.addEventListener('input', function() {
+                    const password = this.value;
+                    
+                    if (password.length === 0) {
+                        strengthContainer.style.display = 'none';
+                        return;
+                    }
+                    
+                    strengthContainer.style.display = 'flex';
+                    
+                    // Avalia força
+                    let score = 0;
+                    if (password.length >= 6) score++;
+                    if (password.length >= 10) score++;
+                    if (/[A-Z]/.test(password)) score++;
+                    if (/[0-9]/.test(password)) score++;
+                    if (/[^A-Za-z0-9]/.test(password)) score++;
+                    
+                    // Normaliza entre 0 e 4
+                    score = Math.min(4, Math.max(0, Math.floor(score / 1.5)));
+                    
+                    // Atualiza barras
+                    const levels = ['Fraca', 'Fraca', 'Média', 'Forte', 'Muito Forte'];
+                    const classes = ['weak', 'weak', 'medium', 'strong', 'very-strong'];
+                    
+                    bars.forEach((bar, index) => {
+                        if (index < score) {
+                            bar.classList.add('active');
+                        } else {
+                            bar.classList.remove('active');
+                        }
+                    });
+                    
+                    strengthText.textContent = levels[score] || 'Fraca';
+                    strengthText.className = 'strength-text ' + (classes[score] || 'weak');
+                });
+            }
+        });
+    </script>
+
+    <!-- 6. 🔥 CONFIRMAÇÃO DE SENHA (REGISTER) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const passwordInput = document.getElementById('registerPassword');
+            const confirmInput = document.getElementById('registerConfirmPassword');
+            const hint = document.getElementById('passwordMatchHint');
+            
+            if (passwordInput && confirmInput) {
+                function checkMatch() {
+                    const pwd = passwordInput.value;
+                    const confirm = confirmInput.value;
+                    
+                    if (confirm.length === 0) {
+                        hint.innerHTML = '';
+                        return;
+                    }
+                    
+                    if (pwd === confirm) {
+                        hint.innerHTML = '<i class="fas fa-check-circle me-1" style="color: #48bb78;"></i> <span class="text-success">Senhas coincidem!</span>';
+                    } else {
+                        hint.innerHTML = '<i class="fas fa-times-circle me-1" style="color: #f56565;"></i> <span class="text-danger">As senhas não coincidem!</span>';
+                    }
+                }
+                
+                passwordInput.addEventListener('input', checkMatch);
+                confirmInput.addEventListener('input', checkMatch);
+            }
+        });
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 🔥 🔥 SCRIPTS DA APLICAÇÃO - ORDEM CRÍTICA 🔥 🔥 🔥 -->
+    <!-- ============================================== -->
+    
+    <!-- 
+        ⚠️ ORDEM DE CARREGAMENTO OBRIGATÓRIA:
+        1. auth.js (define window.appAuth)
+        2. app.js (orquestrador - v3.3 com Rate Limiter)
+    -->
+    
+    <!-- 7. AUTH.JS - Módulo de autenticação -->
     <script src="/static/js/auth.js"></script>
+    
+    <!-- 8. APP.JS - Orquestrador com Rate Limiter (v3.3) -->
+    <script src="/static/js/app.js"></script>
+
+    <!-- 9. 🔥 INICIALIZAÇÃO DO RATE LIMITER NA PÁGINA -->
+    <script>
+        /**
+         * 🔥 Configura o Rate Limiter na página de login
+         * Aguarda o App carregar e então ativa o monitoramento
+         */
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Inicializando Rate Limiter na página de login...');
+            
+            // Aguarda o App ficar pronto
+            const checkApp = setInterval(function() {
+                if (window.App && window.App.isRateLimitBlocked !== undefined) {
+                    clearInterval(checkApp);
+                    console.log('✅ App encontrado - ativando Rate Limiter');
+                    
+                    // Verifica se já está bloqueado
+                    if (window.App.isRateLimitBlocked()) {
+                        updateRateLimitUI();
+                    }
+                    
+                    // Escuta eventos de rate limit
+                    window.addEventListener('rateLimitBlocked', function(event) {
+                        console.log('📢 Rate Limit bloqueado na página de login', event.detail);
+                        updateRateLimitUI(event.detail);
+                    });
+                    
+                    window.addEventListener('rateLimitUnblocked', function() {
+                        console.log('📢 Rate Limit desbloqueado na página de login');
+                        hideRateLimitUI();
+                    });
+                    
+                    // Atualiza UI periodicamente
+                    setInterval(function() {
+                        if (window.App.isRateLimitBlocked()) {
+                            updateRateLimitUI();
+                        }
+                    }, 1000);
+                }
+            }, 500);
+            
+            // Timeout de segurança
+            setTimeout(function() {
+                clearInterval(checkApp);
+            }, 10000);
+        });
+        
+        /**
+         * 🔥 Atualiza UI do Rate Limiter
+         */
+        function updateRateLimitUI(detail) {
+            const indicator = document.getElementById('rateLimitIndicator');
+            const timer = document.getElementById('rateLimitTimer');
+            const message = document.getElementById('rateLimitMessage');
+            const loginBtn = document.getElementById('loginBtn');
+            
+            if (indicator) {
+                indicator.classList.add('show');
+            }
+            
+            if (timer) {
+                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
+                timer.textContent = remaining;
+                
+                // Atualiza a cada segundo
+                if (window._rateLimitTimerInterval) {
+                    clearInterval(window._rateLimitTimerInterval);
+                }
+                window._rateLimitTimerInterval = setInterval(function() {
+                    if (window.App && window.App.isRateLimitBlocked()) {
+                        const rem = window.App.getRateLimitTimeRemaining();
+                        if (timer) timer.textContent = rem;
+                        if (rem <= 0) {
+                            clearInterval(window._rateLimitTimerInterval);
+                            hideRateLimitUI();
+                        }
+                    } else {
+                        clearInterval(window._rateLimitTimerInterval);
+                        hideRateLimitUI();
+                    }
+                }, 1000);
+            }
+            
+            if (message && detail?.message) {
+                message.textContent = detail.message;
+            }
+            
+            // Desabilita botão de login
+            if (loginBtn) {
+                loginBtn.disabled = true;
+                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
+                loginBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${remaining}s`;
+            }
+        }
+        
+        /**
+         * 🔥 Esconde UI do Rate Limiter
+         */
+        function hideRateLimitUI() {
+            const indicator = document.getElementById('rateLimitIndicator');
+            const loginBtn = document.getElementById('loginBtn');
+            
+            if (indicator) {
+                indicator.classList.remove('show');
+            }
+            
+            if (loginBtn) {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+            }
+            
+            if (window._rateLimitTimerInterval) {
+                clearInterval(window._rateLimitTimerInterval);
+                window._rateLimitTimerInterval = null;
+            }
+        }
+    </script>
 </body>
 </html>

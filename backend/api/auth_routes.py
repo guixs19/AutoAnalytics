@@ -1,19 +1,11 @@
-# backend/api/auth_routes.py - VERSÃO COMPLETA CORRIGIDA
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA
 """
 Módulo de LOGIN e AUTENTICAÇÃO - SEM CAPTCHA
 Responsável por login, logout, refresh token e verificação de sessão
-================================================================================
 🔥 CORREÇÕES:
-- ✅ Sincronizado com security.py corrigido (timezone)
-- ✅ verify_token_async → verify_token (nome correto)
-- ✅ Tratamento de erros melhorado
-- ✅ Fallback para Redis offline
-- ✅ _now_utc() para timezone correto (offset-aware)
-- ✅ Importações otimizadas
-- ✅ Logs mais detalhados
-- ✅ CORRIGIDO: erro de sintaxe na linha 190 (aspas)
-- ✅ ADICIONADO: response_model=None nas rotas problemáticas
-================================================================================
+- ✅ Usa blacklist_token() centralizada (consistente entre workers)
+- ✅ Usa _get_remaining_seconds() para evitar erro de timezone
+- ✅ NÃO usa pending_blacklist diretamente
 """
 
 from datetime import datetime, timedelta
@@ -35,16 +27,16 @@ from backend.security import (
     clear_auth_cookies,
     get_current_user,
     get_current_active_user,
-    _now_utc  # 🔥 IMPORTADO PARA TIMEZONE CORRETO
+    _now_utc,
+    _get_remaining_seconds,  # 🔥 NOVA IMPORTAÇÃO
+    blacklist_token,  # 🔥 NOVA IMPORTAÇÃO
+    is_token_blacklisted  # 🔥 NOVA IMPORTAÇÃO
 )
 
 logger = logging.getLogger(__name__)
 
-# ==============================================
-# ROUTER
-# ==============================================
-
 router = APIRouter(tags=["authentication"])
+
 
 # ==============================================
 # MODELOS PYDANTIC - SEM CAPTCHA
@@ -66,7 +58,7 @@ class LogoutRequest(BaseModel):
 
 
 # ==============================================
-# ROTA DE LOGIN - SEM CAPTCHA (COM response_model=None)
+# ROTA DE LOGIN
 # ==============================================
 
 @router.post("/login", status_code=status.HTTP_200_OK, response_model=None)
@@ -76,18 +68,12 @@ async def login(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """
-    🔐 Login de usuário - SEM CAPTCHA
-    POST /api/auth/login
-    
-    Retorna access_token e refresh_token em cookies e no body.
-    """
+    """🔐 Login de usuário - SEM CAPTCHA"""
     
     client_ip = request.client.host if request.client else "unknown"
-    
     logger.info(f"🔐 [LOGIN] Tentativa: {login_data.email} | IP: {client_ip}")
     
-    # 1. Rate limiting
+    # Rate limiting
     try:
         is_ip_allowed = await rate_limiter.check_rate_limit(f"login_ip:{client_ip}", 10, 900)
         is_email_allowed = await rate_limiter.check_rate_limit(f"login_email:{login_data.email}", 5, 900)
@@ -102,7 +88,7 @@ async def login(
             detail="Muitas tentativas. Aguarde 15 minutos."
         )
     
-    # 2. Autenticar
+    # Autenticar
     try:
         user = crud.authenticate_user(db, login_data.email, login_data.password)
     except Exception as e:
@@ -126,13 +112,13 @@ async def login(
             detail="Conta desativada. Contate o suporte."
         )
     
-    # 3. Atualizar último login
+    # Atualizar último login
     try:
         crud.update_last_login(db, user.id)
     except Exception as e:
         logger.warning(f"⚠️ Erro ao atualizar último login: {e}")
     
-    # 4. Criar payload do usuário
+    # Criar payload
     user_data = {
         "sub": user.email,
         "email": user.email,
@@ -146,15 +132,15 @@ async def login(
         "promotional_price": getattr(user, 'promotional_price', None)
     }
     
-    # 5. Gerar tokens
+    # Gerar tokens
     tokens = jwt_manager.create_token_pair(user_data)
     
-    # 6. Salvar refresh token no banco
+    # Salvar refresh token no banco
     if hasattr(user, 'set_refresh_token'):
         user.set_refresh_token(tokens["refresh_token"], tokens["refresh_jti"], 7)
         db.commit()
     
-    # 7. Montar resposta
+    # Montar resposta
     response_data = {
         "success": True,
         "access_token": tokens["access_token"],
@@ -174,7 +160,6 @@ async def login(
         "message": "Login realizado com sucesso"
     }
     
-    # 8. Definir cookies
     api_response = JSONResponse(content=response_data)
     api_response = set_auth_cookies(
         api_response,
@@ -184,12 +169,11 @@ async def login(
     )
     
     logger.info(f"✅ [LOGIN] Sucesso: {user.email}")
-    
     return api_response
 
 
 # ==============================================
-# ROTA DE REFRESH (CORRIGIDA) (COM response_model=None)
+# ROTA DE REFRESH - CORRIGIDA
 # ==============================================
 
 @router.post("/refresh", response_model=None)
@@ -199,14 +183,10 @@ async def refresh_token_endpoint(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """
-    🔄 Renova o access token usando o refresh token.
-    POST /api/auth/refresh
-    """
+    """🔄 Renova o access token usando o refresh token."""
     try:
         logger.info("🔄 [REFRESH] Tentando renovar tokens...")
         
-        # 🔥 CORRIGIDO: refresh_access_token já está assíncrono
         new_tokens = await jwt_manager.refresh_access_token(
             refresh_token=data.refresh_token,
             db=db,
@@ -220,7 +200,6 @@ async def refresh_token_endpoint(
                 detail="Refresh token inválido ou expirado"
             )
         
-        # 🔥 CORRIGIDO: decode_token é síncrono (não precisa de await)
         payload = jwt_manager.decode_token(new_tokens["access_token"])
         email = payload.get("sub") or payload.get("email")
         user = crud.get_user_by_email(db, email)
@@ -264,17 +243,14 @@ async def refresh_token_endpoint(
 
 
 # ==============================================
-# VERIFICAÇÃO DE TOKEN (COM response_model=None)
+# VERIFICAÇÃO DE TOKEN
 # ==============================================
 
 @router.get("/check-token", response_model=None)
 async def check_token(request: Request, db: Session = Depends(get_db)):
-    """
-    🔍 Verifica status do token JWT
-    GET /api/auth/check-token
-    """
+    """🔍 Verifica status do token JWT"""
     
-    # 1. Extrair token
+    # Extrair token
     access_token = request.cookies.get("access_token")
     if access_token and access_token.startswith("Bearer "):
         access_token = access_token.replace("Bearer ", "")
@@ -292,7 +268,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
             content={"status": "no_token", "message": "Nenhum token encontrado"}
         )
     
-    # 2. Verificar access token
+    # Verificar access token
     if access_token:
         try:
             payload = await jwt_manager.verify_token(access_token, "access")
@@ -302,9 +278,8 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
                 user = crud.get_user_by_email(db, email)
                 
                 if user and user.is_active:
-                    exp = payload.get("exp", 0)
-                    now = _now_utc().timestamp()
-                    expires_in = max(0, int(exp - now))
+                    # 🔥 CORRIGIDO: Usa _get_remaining_seconds
+                    expires_in = _get_remaining_seconds(payload)
                     
                     return {
                         "status": "valid",
@@ -318,7 +293,7 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             logger.warning(f"⚠️ Erro ao verificar access token: {e}")
     
-    # 3. Se access token expirou, tenta refresh com o refresh token
+    # Tenta refresh
     if refresh_token:
         logger.info("🔄 [TOKEN] Access token expirado, tentando refresh...")
         
@@ -360,31 +335,24 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"❌ [TOKEN] Erro no refresh: {e}")
     
-    # 4. Se tudo falhou, retorna 401
+    # Se tudo falhou
     response = JSONResponse(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        content={
-            "status": "invalid", 
-            "message": "Sessão expirada. Faça login novamente."
-        }
+        content={"status": "invalid", "message": "Sessão expirada. Faça login novamente."}
     )
     response = clear_auth_cookies(response)
-    
     return response
 
 
 # ==============================================
-# LOGOUT (COM response_model=None)
+# LOGOUT - CORRIGIDO (USA blacklist_token)
 # ==============================================
 
 @router.post("/logout", response_model=None)
 async def logout(request: Request, db: Session = Depends(get_db)):
-    """
-    🔓 Logout - invalida tokens
-    POST /api/auth/logout
-    """
+    """🔓 Logout - invalida tokens"""
     
-    # 1. Extrair refresh token
+    # Extrair refresh token
     refresh_token = None
     try:
         body = await request.json()
@@ -392,13 +360,13 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     except:
         pass
     
-    # 2. Extrair access token
+    # Extrair access token
     access_token = None
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         access_token = auth_header.replace("Bearer ", "")
     
-    # 3. Tentar logout
+    # Tentar logout
     try:
         if refresh_token:
             await jwt_manager.logout(refresh_token, db, access_token)
@@ -408,31 +376,21 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"❌ Erro no logout: {e}")
     
-    # 4. Limpar cookies
+    # Limpar cookies
     response = JSONResponse(
-        content={
-            "success": True, 
-            "message": "Logout realizado"
-        }
+        content={"success": True, "message": "Logout realizado"}
     )
     response = clear_auth_cookies(response)
-    
     return response
 
 
 # ==============================================
-# PERFIL DO USUÁRIO (COM response_model=None) 🔥 CRÍTICO!
+# PERFIL DO USUÁRIO
 # ==============================================
 
-@router.get("/me", response_model=None)  # 🔥 ADICIONADO response_model=None
+@router.get("/me", response_model=None)
 async def get_me(current_user = Depends(get_current_active_user)):
-    """
-    👤 Retorna dados do usuário atual
-    GET /api/auth/me
-    
-    🔥 response_model=None: Evita que o FastAPI tente validar
-    o retorno com o modelo User do banco de dados.
-    """
+    """👤 Retorna dados do usuário atual"""
     return {
         "success": True,
         "data": {
@@ -452,14 +410,4 @@ async def get_me(current_user = Depends(get_current_active_user)):
     }
 
 
-# ==============================================
-# EXPORTAÇÕES
-# ==============================================
-
 print("✅ auth_routes.py carregado com sucesso!")
-print("   📍 Rotas disponíveis:")
-print("      POST   /api/auth/login")
-print("      POST   /api/auth/refresh")
-print("      POST   /api/auth/logout")
-print("      GET    /api/auth/check-token")
-print("      GET    /api/auth/me")

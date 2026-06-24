@@ -1,9 +1,10 @@
-# backend/api/upload_routes.py - VERSÃO ATUALIZADA COM ML PIPELINE
+# backend/api/upload_routes.py - VERSÃO COMPLETA COM RATE LIMITER + PoW
 """
 Rotas para upload e processamento de arquivos
 🔥 INTEGRADO COM ML PIPELINE (preprocessing.py)
 🔥 SUPORTE A MÚLTIPLOS ARQUIVOS (até 3 por vez)
 🔥 VERIFICAÇÃO DE CRÉDITOS E PoW
+🔥 RATE LIMITER (Proteção contra abuso)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
@@ -23,16 +24,14 @@ from backend import crud, models
 from backend.security import get_current_active_user
 from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
 
-# 🔥🔥🔥 NOVO: Importa o pipeline de ML
-from backend.preprocessing import process_file_content, pipeline
+# 🔥🔥🔥 RATE LIMITER
+from backend.security import rate_limiter
 
-# 🔥 PoW (se existir)
-try:
-    from backend.api.pow_routes import validate_pow_request
-except ImportError:
-    # Fallback se PoW não estiver disponível
-    async def validate_pow_request(*args, **kwargs):
-        return True
+# 🔥🔥🔥 PoW
+from backend.api.pow_routes import validate_pow_request, pow_service
+
+# 🔥🔥🔥 ML Pipeline
+from backend.ml.preprocessing import process_file_content, pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +45,39 @@ MAX_FILE_SIZE = 200 * 1024  # 200KB
 MAX_FILES_PER_BATCH = 3
 ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls']
 
+# 🔥 CONSTANTES DO RATE LIMITER
+RATE_LIMIT_UPLOAD_PER_IP = 10      # 10 uploads por IP
+RATE_LIMIT_UPLOAD_PER_USER = 5     # 5 uploads por usuário
+RATE_LIMIT_WINDOW_SECONDS = 60     # Em 60 segundos
+
 
 # ==============================================
-# 🔥 PROCESSAMENTO ML COM PIPELINE (NOVO)
+# 🔥 FUNÇÃO: VALIDAÇÃO DE CRÉDITOS
+# ==============================================
+
+def validate_credits(user, total_files: int) -> Dict[str, Any]:
+    """Valida se o usuário tem créditos suficientes"""
+    if user.is_admin:
+        return {"valid": True, "credits_needed": 0, "credits_available": "∞", "message": "Admin - créditos ilimitados"}
+    
+    if user.credits < total_files:
+        return {
+            "valid": False,
+            "credits_needed": total_files,
+            "credits_available": user.credits,
+            "message": f"Créditos insuficientes. Você tem {user.credits}, precisa de {total_files}."
+        }
+    
+    return {
+        "valid": True,
+        "credits_needed": total_files,
+        "credits_available": user.credits,
+        "message": f"Créditos suficientes: {user.credits}"
+    }
+
+
+# ==============================================
+# 🔥 PROCESSAMENTO ML COM PIPELINE (CORRIGIDO)
 # ==============================================
 
 async def process_single_file_with_pipeline(
@@ -60,7 +89,7 @@ async def process_single_file_with_pipeline(
 ) -> Dict[str, Any]:
     """
     🔥 Processa um único arquivo com o ML Pipeline
-    Usa o novo preprocessing.py
+    Usa o preprocessing.py
     """
     try:
         # 1. Processar com o pipeline
@@ -125,7 +154,6 @@ async def process_single_file_with_pipeline(
 async def process_multiple_files_with_ml(files_to_process: List[tuple], user_id: int, db: Session):
     """
     🔥 Processa múltiplos arquivos com o ML Pipeline
-    Usa o novo preprocessing.py
     """
     logger.info(f"🤖 Iniciando pipeline ML para {len(files_to_process)} arquivo(s)")
     
@@ -154,27 +182,43 @@ async def process_multiple_files_with_ml(files_to_process: List[tuple], user_id:
 
 
 # ==============================================
-# 🔥 UPLOAD COM PIPELINE ML (NOVO)
+# 🔥 UPLOAD COM RATE LIMITER + PoW (COMPLETO)
 # ==============================================
 
 @router.post("/upload-auto")
 async def upload_auto(
     request: Request,
+    # 🔥 1️⃣ VALIDAÇÃO PoW (via Dependency)
+    pow_valid: bool = Depends(validate_pow_request),
+    # 🔥 2️⃣ ARQUIVOS
     files: List[UploadFile] = File(...),
     analysis_type: str = Form("auto"),
     ai_model: str = Form("auto"),
+    # 🔥 3️⃣ USUÁRIO
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    Upload de múltiplos arquivos com ML Pipeline
-    🔥 VERIFICAÇÃO DE CRÉDITOS ANTES DO UPLOAD
-    🔥 CONSUMO DE CRÉDITOS APÓS ANÁLISE BEM-SUCEDIDA
-    🔥 ML PIPELINE COM ENCODING AUTOMÁTICO
+    🔥 UPLOAD COM DUPLA PROTEÇÃO: PoW + Rate Limiter
+    
+    FLUXO:
+    1. ✅ PoW validado (bloqueia bots)
+    2. ✅ Rate Limiter (bloqueia abuso)
+    3. ✅ Verifica créditos
+    4. ✅ Processa com ML Pipeline
+    5. ✅ Retorna resultados
     """
     client_ip = request.client.host if request.client else "unknown"
+    start_time = time.time()
     
-    # 1. Valida quantidade
+    logger.info(f"📤 [UPLOAD] Requisição de {current_user.email} | IP: {client_ip}")
+    logger.info(f"   📁 Arquivos: {len(files)}")
+    logger.info(f"   🔐 PoW validado: {pow_valid}")
+    
+    # ==============================================
+    # 🔥 1. VALIDA QUANTIDADE DE ARQUIVOS
+    # ==============================================
+    
     total_arquivos = len(files)
     
     if total_arquivos == 0:
@@ -186,16 +230,81 @@ async def upload_auto(
             detail=f"Limite ultrapassado. Máximo {MAX_FILES_PER_BATCH} arquivos por vez."
         )
     
-    logger.info(f"📦 Recebendo lote de {total_arquivos} arquivo(s) de {current_user.email}")
+    logger.info(f"📦 Lote de {total_arquivos} arquivo(s) recebido")
     
-    # 2. Verifica créditos ANTES do upload
-    if not current_user.is_admin:
-        if not can_perform_analysis(current_user, total_arquivos):
-            credits_msg = f"Créditos insuficientes. Você tem {current_user.credits or 0} crédito(s)."
-            logger.warning(f"❌ {credits_msg}")
-            raise HTTPException(status_code=400, detail=credits_msg)
+    # ==============================================
+    # 🔥 2. RATE LIMITER (Proteção contra abuso)
+    # ==============================================
     
-    # 3. Processa cada arquivo
+    # Rate limit por IP
+    ip_rate_key = f"upload_ip:{client_ip}"
+    is_ip_allowed = await rate_limiter.check_rate_limit(
+        ip_rate_key,
+        max_requests=RATE_LIMIT_UPLOAD_PER_IP,
+        window=RATE_LIMIT_WINDOW_SECONDS
+    )
+    
+    if not is_ip_allowed:
+        logger.warning(f"❌ Rate limit excedido para IP: {client_ip}")
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": f"Muitos uploads. Aguarde {RATE_LIMIT_WINDOW_SECONDS} segundos.",
+                "retry_after": RATE_LIMIT_WINDOW_SECONDS,
+                "type": "ip",
+                "limit": RATE_LIMIT_UPLOAD_PER_IP
+            }
+        )
+    
+    # Rate limit por usuário
+    user_rate_key = f"upload_user:{current_user.id}"
+    is_user_allowed = await rate_limiter.check_rate_limit(
+        user_rate_key,
+        max_requests=RATE_LIMIT_UPLOAD_PER_USER,
+        window=RATE_LIMIT_WINDOW_SECONDS
+    )
+    
+    if not is_user_allowed:
+        logger.warning(f"❌ Rate limit excedido para usuário: {current_user.email}")
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": f"Muitos uploads. Aguarde {RATE_LIMIT_WINDOW_SECONDS} segundos.",
+                "retry_after": RATE_LIMIT_WINDOW_SECONDS,
+                "type": "user",
+                "limit": RATE_LIMIT_UPLOAD_PER_USER
+            }
+        )
+    
+    logger.info(f"✅ Rate limits OK para {current_user.email}")
+    
+    # ==============================================
+    # 🔥 3. VERIFICA CRÉDITOS
+    # ==============================================
+    
+    credit_check = validate_credits(current_user, total_arquivos)
+    
+    if not credit_check["valid"]:
+        logger.warning(f"❌ Créditos insuficientes: {current_user.email} (tem {credit_check['credits_available']}, precisa {credit_check['credits_needed']})")
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "message": credit_check["message"],
+                "credits_available": credit_check["credits_available"],
+                "credits_needed": credit_check["credits_needed"],
+                "action": "buy_credits"
+            }
+        )
+    
+    logger.info(f"✅ Créditos OK: {credit_check['message']}")
+    
+    # ==============================================
+    # 🔥 4. PROCESSAMENTO DOS ARQUIVOS
+    # ==============================================
+    
     arquivos_processados = []
     arquivos_com_erro = []
     files_to_process = []
@@ -247,7 +356,15 @@ async def upload_auto(
                 "batch_total": total_arquivos,
                 "message": "Arquivo recebido, iniciando ML Pipeline...",
                 "credits_consumed": False,
-                "encoding_used": None  # Será preenchido pelo pipeline
+                "encoding_used": None,
+                # 🔥 NOVOS CAMPOS
+                "rate_limit": {
+                    "ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
+                    "user_limit": RATE_LIMIT_UPLOAD_PER_USER,
+                    "window_seconds": RATE_LIMIT_WINDOW_SECONDS
+                },
+                "pow_validated": True,
+                "pow_difficulty": request.headers.get("X-PoW-Complexity", 4)
             }
             
             files_to_process.append((analysis_id, content, file.filename))
@@ -267,7 +384,10 @@ async def upload_auto(
                 "error": str(e)
             })
     
-    # 4. Iniciar ML Pipeline em background
+    # ==============================================
+    # 🔥 5. INICIAR ML PIPELINE EM BACKGROUND
+    # ==============================================
+    
     if files_to_process:
         logger.info(f"🤖 Iniciando ML Pipeline para {len(files_to_process)} arquivo(s)")
         asyncio.create_task(process_multiple_files_with_ml(
@@ -276,11 +396,16 @@ async def upload_auto(
             db
         ))
     
-    # 5. Resposta
+    # ==============================================
+    # 🔥 6. RESPOSTA
+    # ==============================================
+    
+    processing_time_ms = (time.time() - start_time) * 1000
     credits_display = get_credits_display(current_user)
     
-    # 🔥 Adicionar informações do pipeline
+    # Estatísticas do pipeline
     pipeline_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    encoding_stats = pipeline.get_encoding_stats() if hasattr(pipeline, 'get_encoding_stats') else {}
     
     return {
         "success": len(arquivos_com_erro) == 0,
@@ -291,6 +416,7 @@ async def upload_auto(
         "credits_before": current_user.credits if not current_user.is_admin else "∞",
         "credits_display": credits_display,
         "is_admin": current_user.is_admin,
+        "processing_time_ms": processing_time_ms,
         "batch_info": {
             "max_files_allowed": MAX_FILES_PER_BATCH,
             "uploaded": total_arquivos,
@@ -303,12 +429,26 @@ async def upload_auto(
                 "encoding_detection": "auto",
                 "model_source": pipeline_status.get('model_source', 'unknown')
             }
-        }
+        },
+        # 🔥 INFORMAÇÕES DE SEGURANÇA
+        "security": {
+            "pow_validated": True,
+            "pow_difficulty": request.headers.get("X-PoW-Complexity", 4),
+            "rate_limit": {
+                "ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
+                "user_limit": RATE_LIMIT_UPLOAD_PER_USER,
+                "window_seconds": RATE_LIMIT_WINDOW_SECONDS
+            },
+            "client_ip": client_ip
+        },
+        # 🔥 ESTATÍSTICAS DE ENCODING
+        "encoding_stats": encoding_stats,
+        "timestamp": datetime.now().isoformat()
     }
 
 
 # ==============================================
-# STATUS DO PROCESSAMENTO (MANTIDO)
+# 🔥 ROTA: STATUS DO PROCESSAMENTO
 # ==============================================
 
 @router.get("/status/{process_id}")
@@ -333,6 +473,10 @@ async def get_status(
     return status_data
 
 
+# ==============================================
+# 🔥 ROTA: HISTÓRICO DE ANÁLISES
+# ==============================================
+
 @router.get("/analyses/history")
 async def get_analyses_history(
     current_user = Depends(get_current_active_user),
@@ -353,7 +497,10 @@ async def get_analyses_history(
                 "completed_at": data.get("completed_at"),
                 "credits_consumed": data.get("credits_consumed", False),
                 "encoding_used": data.get("encoding_used"),
-                "has_insights": bool(data.get("insights"))
+                "has_insights": bool(data.get("insights")),
+                # 🔥 NOVO
+                "pow_validated": data.get("pow_validated", False),
+                "rate_limit_info": data.get("rate_limit", {})
             })
     
     user_analyses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -368,6 +515,10 @@ async def get_analyses_history(
         }
     }
 
+
+# ==============================================
+# 🔥 ROTA: RESULTADO COMPLETO
+# ==============================================
 
 @router.get("/analysis/result/{process_id}")
 async def get_analysis_result(
@@ -403,19 +554,23 @@ async def get_analysis_result(
         "completed_at": status_data.get("completed_at"),
         "credit_consumed": status_data.get("credits_consumed", False),
         "encoding_used": status_data.get("encoding_used"),
-        "model_used": status_data.get("analysis_info", {}).get("model_used")
+        "model_used": status_data.get("analysis_info", {}).get("model_used"),
+        # 🔥 NOVO
+        "rate_limit_info": status_data.get("rate_limit", {}),
+        "pow_validated": status_data.get("pow_validated", False),
+        "processing_time_ms": status_data.get("processing_time_ms")
     }
 
 
 # ==============================================
-# ESTATÍSTICAS DO PIPELINE
+# 🔥 ROTA: STATUS DO PIPELINE
 # ==============================================
 
 @router.get("/pipeline-status")
 async def get_pipeline_status(
     current_user = Depends(get_current_active_user)
 ):
-    """Retorna status do ML Pipeline"""
+    """Retorna status do ML Pipeline (apenas admin)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado. Requer permissão de administrador.")
     
@@ -429,11 +584,68 @@ async def get_pipeline_status(
         "models_available": {
             "default": bool(pipeline.models.get('default')) if hasattr(pipeline, 'models') else False,
             "ensemble": bool(pipeline.models.get('ensemble')) if hasattr(pipeline, 'models') else False
+        },
+        "rate_limiter": {
+            "upload_ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
+            "upload_user_limit": RATE_LIMIT_UPLOAD_PER_USER,
+            "window_seconds": RATE_LIMIT_WINDOW_SECONDS
         }
     }
 
 
-print("✅ upload_routes.py atualizado com ML Pipeline")
-print("   🔥 process_file_content() → Novo pipeline")
-print("   🔥 Suporte a encoding automático")
-print("   🔥 Insights e recomendações")
+# ==============================================
+# 🔥 ROTA: ESTATÍSTICAS DE SEGURANÇA
+# ==============================================
+
+@router.get("/security-stats")
+async def get_security_stats(
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna estatísticas de segurança (apenas admin)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado. Requer permissão de administrador.")
+    
+    # Contar análises por status
+    total_analyses = len(processing_status)
+    completed = len([p for p in processing_status.values() if p.get('status') == 'completed'])
+    processing = len([p for p in processing_status.values() if p.get('status') == 'processing'])
+    error = len([p for p in processing_status.values() if p.get('status') == 'error'])
+    
+    # Contar por encoding
+    encoding_counts = {}
+    for p in processing_status.values():
+        enc = p.get('encoding_used')
+        if enc:
+            encoding_counts[enc] = encoding_counts.get(enc, 0) + 1
+    
+    return {
+        "success": True,
+        "total_analyses": total_analyses,
+        "by_status": {
+            "completed": completed,
+            "processing": processing,
+            "error": error
+        },
+        "encoding_distribution": encoding_counts,
+        "rate_limiter": {
+            "ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
+            "user_limit": RATE_LIMIT_UPLOAD_PER_USER,
+            "window_seconds": RATE_LIMIT_WINDOW_SECONDS
+        },
+        "pow": {
+            "enabled": True,
+            "difficulty": 4,
+            "algorithm": "SHA-256"
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+print("=" * 60)
+print("🔥 upload_routes.py - VERSÃO COMPLETA COM SEGURANÇA")
+print(f"   🚦 Rate Limiter: {RATE_LIMIT_UPLOAD_PER_IP}/IP + {RATE_LIMIT_UPLOAD_PER_USER}/usuário em {RATE_LIMIT_WINDOW_SECONDS}s")
+print("   🔐 PoW: SHA-256 com dificuldade 4 (bloqueia bots)")
+print("   🧠 ML Pipeline: Encoding automático + RandomForest/Ensemble/AutoML")
+print("   📁 Limites: 3 arquivos, 200KB cada")
+print("=" * 60)

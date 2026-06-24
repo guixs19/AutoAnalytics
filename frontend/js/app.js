@@ -1,4 +1,4 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V3.2 (COM PoW INTEGRADO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V3.3 (COM RATE LIMITER E PoW)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
@@ -14,26 +14,28 @@
  * 9. 🔥 Sincronização com sistema de créditos (MAX_CREDITS_BALANCE = 3)
  * 10. 🔥 Sincronização com sistema de preço fundador vitalício
  * 11. 🔥 Sincronização com sistema PoW (Proof of Work)
+ * 12. 🔥 Sincronização com Rate Limiter (HTTP 429)
  * 
- * 🔥 CORREÇÕES v3.2:
- * - Integração com pow-client.js
- * - Evento powReady
- * - Funções para gestão de PoW
- * - Auto-refill quando autenticado
- * - Limpeza de PoW no logout
+ * 🔥 CORREÇÕES v3.3:
+ * - Evento rateLimitBlocked com tratamento de UI
+ * - Estado rateLimitBlocked no State global
+ * - Funções para verificar status do rate limit
+ * - Atualização automática de botões quando bloqueado
+ * - Sincronização com auth.js v3.0
+ * - Melhor integração com PoW
  * 
- * FLUXO DE CARREGAMENTO:
- *   1. auth.js → define window.appAuth
- *   2. pow-client.js → define window.powClient (em segundo plano)
+ * 🔥 ORDEM DE CARREGAMENTO (CRÍTICO):
+ *   1. pow-client.js → define window.powClient
+ *   2. auth.js → define window.appAuth (v3.0)
  *   3. app.js → orquestra tudo (ESTE ARQUIVO)
  *   4. dashboard.js → funcionalidades do dashboard
- *   5. payment.js → pagamentos e planos (SINCRONIZADO)
+ *   5. payment.js → pagamentos e planos
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v3.2...');
+    console.log('🚀 Inicializando App (Orquestrador) v3.3...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS (SINCRONIZADAS)
@@ -58,8 +60,14 @@
         DAYS_PREMIUM: 30,
         TOKEN_EXPIRY_MINUTES: 15,
         
+        // 🔥 RATE LIMITER CONFIG (sincronizado com backend)
+        RATE_LIMIT_LOGIN_MAX: 5,
+        RATE_LIMIT_LOGIN_WINDOW: 900,
+        RATE_LIMIT_REGISTER_MAX: 5,
+        RATE_LIMIT_REGISTER_WINDOW: 3600,
+        
         // 🔥 PoW CONFIG
-        POW_AUTO_REFILL_INTERVAL: 30000, // 30 segundos
+        POW_AUTO_REFILL_INTERVAL: 30000,
         POW_STOCK_SIZE: 2
     };
 
@@ -97,7 +105,14 @@
         // 🔥 Status do PoW
         powReady: false,
         powSolutionsReady: 0,
-        powAutoRefillActive: false
+        powAutoRefillActive: false,
+        
+        // 🔥 🔥 NOVO: Status do Rate Limiter
+        rateLimitBlocked: false,
+        rateLimitBlockedUntil: 0,
+        rateLimitRemainingAttempts: CONFIG.RATE_LIMIT_LOGIN_MAX,
+        rateLimitLastError: null,
+        rateLimitBlockedFor: 'login' // 'login' | 'register' | 'all'
     };
 
     // ==============================================
@@ -207,7 +222,6 @@
             });
         },
 
-        // 🔥 CORRIGIDO: Esperar payment.js carregar (mais robusto)
         waitForPayment: (maxAttempts = 30) => {
             return new Promise((resolve) => {
                 let attempts = 0;
@@ -236,7 +250,6 @@
             });
         },
 
-        // 🔥 NOVO: Esperar pow-client.js carregar
         waitForPow: (maxAttempts = 30) => {
             return new Promise((resolve) => {
                 let attempts = 0;
@@ -264,7 +277,6 @@
             });
         },
 
-        // 🔥 Formatar créditos para exibição
         formatCreditsDisplay: (credits, isPremium = false, maxCredits = CONFIG.MAX_CREDITS_BALANCE) => {
             const safeCredits = Utils.sanitizeNumber(credits, 0);
             if (State.isAdmin) return '∞';
@@ -279,9 +291,33 @@
             return isNaN(num) ? defaultValue : num;
         },
 
-        // 🔥 Verificar se o usuário tem preço vitalício
         hasVitalicioPrice: () => {
             return State.hasPromotionalPrice && State.promotionalPrice !== null;
+        },
+
+        // 🔥 🔥 NOVO: Verificar se rate limit está bloqueado
+        isRateLimitBlocked: () => {
+            if (State.rateLimitBlocked && Date.now() < State.rateLimitBlockedUntil) {
+                return true;
+            }
+            if (State.rateLimitBlocked && Date.now() >= State.rateLimitBlockedUntil) {
+                // Reset automático
+                State.rateLimitBlocked = false;
+                State.rateLimitBlockedUntil = 0;
+                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
+                State.rateLimitBlockedFor = 'login';
+                return false;
+            }
+            return false;
+        },
+
+        getRateLimitTimeRemaining: () => {
+            if (!State.rateLimitBlocked) return 0;
+            return Math.max(0, Math.ceil((State.rateLimitBlockedUntil - Date.now()) / 1000));
+        },
+
+        getRateLimitRemainingAttempts: () => {
+            return State.rateLimitRemainingAttempts;
         }
     };
 
@@ -392,11 +428,106 @@
                     UI.updateAdminBadge();
                     UI.updatePremiumBadge();
                     UI.updateVitalicioBadge();
-                    UI.updatePowStatus(); // 🔥 NOVO
+                    UI.updatePowStatus();
+                    UI.updateRateLimitStatus(); // 🔥 NOVO
                 } catch (e) {
                     console.warn('Erro ao atualizar navbar:', e);
                 }
             }
+        },
+
+        // 🔥 🔥 NOVO: Atualiza status do Rate Limit na UI
+        updateRateLimitStatus: () => {
+            const isBlocked = Utils.isRateLimitBlocked();
+            const timeRemaining = Utils.getRateLimitTimeRemaining();
+            const remainingAttempts = Utils.getRateLimitRemainingAttempts();
+            
+            // Atualiza badges/indicadores
+            const rateLimitBadge = document.getElementById('rateLimitStatus');
+            if (rateLimitBadge) {
+                if (isBlocked) {
+                    const minutes = Math.floor(timeRemaining / 60);
+                    const seconds = timeRemaining % 60;
+                    rateLimitBadge.textContent = `⛔ ${minutes}m${seconds}s`;
+                    rateLimitBadge.style.display = 'inline-block';
+                    rateLimitBadge.className = 'badge bg-danger';
+                } else {
+                    rateLimitBadge.style.display = 'none';
+                }
+            }
+
+            // Atualiza botões de login/register
+            const loginBtn = document.getElementById('loginBtn');
+            if (loginBtn) {
+                if (isBlocked) {
+                    const minutes = Math.floor(timeRemaining / 60);
+                    const seconds = timeRemaining % 60;
+                    let timeMsg = '';
+                    if (minutes > 0) {
+                        timeMsg = `${minutes}m`;
+                        if (seconds > 0) timeMsg += ` ${seconds}s`;
+                    } else {
+                        timeMsg = `${seconds}s`;
+                    }
+                    loginBtn.disabled = true;
+                    loginBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${timeMsg}`;
+                    
+                    // Timer para reabilitar
+                    if (State.rateLimitBlockedUntil > 0) {
+                        clearTimeout(window._rateLimitLoginTimer);
+                        window._rateLimitLoginTimer = setTimeout(() => {
+                            loginBtn.disabled = false;
+                            loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar';
+                            State.rateLimitBlocked = false;
+                            State.rateLimitBlockedUntil = 0;
+                            UI.updateRateLimitStatus();
+                        }, timeRemaining * 1000);
+                    }
+                } else if (!loginBtn.disabled) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar';
+                }
+            }
+
+            const registerBtn = document.getElementById('registerBtn');
+            if (registerBtn) {
+                if (isBlocked && State.rateLimitBlockedFor === 'register') {
+                    const minutes = Math.floor(timeRemaining / 60);
+                    const seconds = timeRemaining % 60;
+                    let timeMsg = '';
+                    if (minutes > 0) {
+                        timeMsg = `${minutes}m`;
+                        if (seconds > 0) timeMsg += ` ${seconds}s`;
+                    } else {
+                        timeMsg = `${seconds}s`;
+                    }
+                    registerBtn.disabled = true;
+                    registerBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${timeMsg}`;
+                    
+                    clearTimeout(window._rateLimitRegisterTimer);
+                    window._rateLimitRegisterTimer = setTimeout(() => {
+                        registerBtn.disabled = false;
+                        registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Conta';
+                        State.rateLimitBlocked = false;
+                        State.rateLimitBlockedUntil = 0;
+                        UI.updateRateLimitStatus();
+                    }, timeRemaining * 1000);
+                } else if (!registerBtn.disabled) {
+                    registerBtn.disabled = false;
+                    registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Conta';
+                }
+            }
+
+            // Atualiza tooltips
+            document.querySelectorAll('[data-rate-limit-tooltip]').forEach(el => {
+                if (isBlocked) {
+                    const minutes = Math.floor(timeRemaining / 60);
+                    const seconds = timeRemaining % 60;
+                    el.title = `Bloqueado por ${minutes}m${seconds}s. ${remainingAttempts} tentativas restantes.`;
+                } else {
+                    el.title = `${remainingAttempts} tentativas disponíveis`;
+                }
+            });
         },
 
         // 🔥 NOVO: Atualiza status do PoW na UI
@@ -407,14 +538,16 @@
                     State.powSolutionsReady = stats.solutionsReady || 0;
                     State.powAutoRefillActive = stats.autoRefill || false;
                     
-                    // Atualizar badge ou indicador se existir
                     const powBadge = document.getElementById('powStatus');
                     if (powBadge) {
                         if (stats.solutionsReady > 0) {
                             powBadge.textContent = `⚡ ${stats.solutionsReady}`;
                             powBadge.style.display = 'inline-block';
+                            powBadge.className = 'badge bg-success';
                         } else {
-                            powBadge.style.display = 'none';
+                            powBadge.textContent = '⚡ 0';
+                            powBadge.style.display = 'inline-block';
+                            powBadge.className = 'badge bg-warning';
                         }
                     }
                 }
@@ -423,7 +556,6 @@
             }
         },
 
-        // 🔥 CORRIGIDO: Atualiza créditos usando estado do app
         updateCredits: () => {
             try {
                 let credits = State.credits;
@@ -683,7 +815,7 @@
                 }, 1000);
             });
 
-            // 🔥 CORRIGIDO: Evento authLogout
+            // 🔥 Evento authLogout
             window.addEventListener('authLogout', () => {
                 console.log('📢 Evento authLogout recebido');
                 State.isAuthenticated = false;
@@ -693,11 +825,52 @@
                 State.isAdmin = false;
                 State.hasPromotionalPrice = false;
                 State.promotionalPrice = null;
+                
+                // 🔥 Reseta rate limit no logout
+                State.rateLimitBlocked = false;
+                State.rateLimitBlockedUntil = 0;
+                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
+                State.rateLimitBlockedFor = 'login';
+                
                 UI.updateNavbar();
+                UI.updateRateLimitStatus();
                 
                 // 🔥 Limpar PoW no logout
                 Pow.reset();
                 Pow.stopAutoRefill();
+            });
+
+            // 🔥 🔥 NOVO: Evento rateLimitBlocked (do auth.js)
+            window.addEventListener('rateLimitBlocked', (event) => {
+                console.log('📢 Evento rateLimitBlocked recebido', event.detail);
+                
+                if (event.detail) {
+                    State.rateLimitBlocked = true;
+                    State.rateLimitBlockedUntil = Date.now() + (event.detail.retryAfter * 1000);
+                    State.rateLimitRemainingAttempts = event.detail.remaining || 0;
+                    State.rateLimitBlockedFor = event.detail.for || 'login';
+                    State.rateLimitLastError = event.detail;
+                    
+                    // 🔥 Atualiza UI imediatamente
+                    UI.updateRateLimitStatus();
+                    UI.updateNavbar();
+                    
+                    // 🔥 Mostra notificação se disponível
+                    if (event.detail.message) {
+                        Utils.showNotification(event.detail.message, 'warning');
+                    }
+                }
+            });
+
+            // 🔥 🔥 NOVO: Evento rateLimitUnblocked
+            window.addEventListener('rateLimitUnblocked', () => {
+                console.log('📢 Evento rateLimitUnblocked recebido');
+                State.rateLimitBlocked = false;
+                State.rateLimitBlockedUntil = 0;
+                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
+                UI.updateRateLimitStatus();
+                UI.updateNavbar();
+                Utils.showNotification('✅ Bloqueio removido. Você pode tentar novamente.', 'success');
             });
 
             // 🔥 Eventos de créditos
@@ -755,6 +928,20 @@
             // 🔥 Handlers de erros globais
             window.addEventListener('unhandledrejection', (event) => {
                 console.error('❌ Erro não tratado (Promise):', event.reason);
+                
+                // 🔥 Verifica se é erro de rate limit
+                if (event.reason && event.reason.status === 429) {
+                    const detail = event.reason.detail || {};
+                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
+                        detail: {
+                            retryAfter: detail.retry_after || 60,
+                            remaining: detail.remaining_attempts || 0,
+                            message: detail.message || 'Muitas requisições. Aguarde um momento.'
+                        }
+                    }));
+                    return;
+                }
+                
                 if (event.reason && event.reason.message) {
                     Utils.showNotification(`Erro: ${event.reason.message}`, 'error');
                 } else {
@@ -781,7 +968,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE CRÉDITOS (AMPLIADO)
+    // 🔥 GERENCIADOR DE CRÉDITOS
     // ==============================================
 
     const Credits = {
@@ -916,7 +1103,6 @@
             console.log(`⏰ Verificação de token: ${CONFIG.TOKEN_CHECK_INTERVAL/1000}s`);
         },
 
-        // 🔥 CORRIGIDO: Processa resposta 'refreshed'
         checkRenewal: async () => {
             if (!window.appAuth) return;
             
@@ -927,6 +1113,20 @@
                 const response = await fetch('/api/auth/check-token', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                
+                // 🔥 🔥 Trata 429 (Rate Limit)
+                if (response.status === 429) {
+                    const data = await response.json().catch(() => ({}));
+                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
+                        detail: {
+                            retryAfter: data.retry_after || 60,
+                            remaining: data.remaining_attempts || 0,
+                            message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
+                            for: 'token-check'
+                        }
+                    }));
+                    return;
+                }
                 
                 if (response.status === 401) {
                     console.log('🔄 Token expirado, tentando refresh...');
@@ -995,24 +1195,17 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW (NOVO)
+    // 🔥 GERENCIADOR DE PoW
     // ==============================================
 
     const Pow = {
-        /**
-         * Verifica se o PoW está disponível
-         */
         isAvailable: () => {
             return window.powClient !== undefined && window.powClient !== null;
         },
 
-        /**
-         * Inicia o PoW e auto-refill
-         */
         startAutoRefill: () => {
             if (!Pow.isAvailable()) {
                 console.log('⏳ PoW não disponível, aguardando...');
-                // Tenta novamente após 2 segundos
                 setTimeout(() => Pow.startAutoRefill(), 2000);
                 return;
             }
@@ -1023,14 +1216,12 @@
                     State.powAutoRefillActive = true;
                     console.log(`⚡ PoW auto-refill iniciado (${CONFIG.POW_AUTO_REFILL_INTERVAL/1000}s)`);
                     
-                    // Pré-calcular imediatamente
                     setTimeout(() => {
                         if (typeof window.powClient.preSolve === 'function') {
                             window.powClient.preSolve();
                         }
                     }, 100);
                     
-                    // Disparar evento
                     window.dispatchEvent(new CustomEvent('powReady', {
                         detail: {
                             solutionsReady: State.powSolutionsReady,
@@ -1043,9 +1234,6 @@
             }
         },
 
-        /**
-         * Para o auto-refill do PoW
-         */
         stopAutoRefill: () => {
             if (!Pow.isAvailable()) return;
             
@@ -1060,9 +1248,6 @@
             }
         },
 
-        /**
-         * Reseta o estado do PoW
-         */
         reset: () => {
             if (!Pow.isAvailable()) return;
             
@@ -1077,9 +1262,6 @@
             }
         },
 
-        /**
-         * Prepara PoW para upload (drag & drop)
-         */
         prepareForUpload: async () => {
             if (!Pow.isAvailable()) {
                 console.log('⏳ PoW não disponível para preparar upload');
@@ -1090,7 +1272,6 @@
                 if (typeof window.powClient.prepareForUpload === 'function') {
                     const result = await window.powClient.prepareForUpload();
                     
-                    // Atualiza status
                     if (typeof window.powClient.getStats === 'function') {
                         const stats = window.powClient.getStats();
                         State.powSolutionsReady = stats.solutionsReady || 0;
@@ -1105,9 +1286,6 @@
             return false;
         },
 
-        /**
-         * Obtém estatísticas do PoW
-         */
         getStats: () => {
             if (!Pow.isAvailable()) {
                 return { available: false, solutionsReady: 0 };
@@ -1132,9 +1310,6 @@
             return { available: false, solutionsReady: 0 };
         },
 
-        /**
-         * Upload com PoW
-         */
         uploadWithPow: async (file, endpoint = '/api/upload-auto') => {
             if (!Pow.isAvailable()) {
                 throw new Error('PoW não disponível');
@@ -1153,7 +1328,7 @@
     };
 
     // ==============================================
-    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS (CORRIGIDA)
+    // 🔥 SINCRONIZAÇÃO COM MÓDULOS EXTERNOS
     // ==============================================
 
     const Sync = {
@@ -1179,7 +1354,6 @@
                     Auth.startTokenCheck();
                     Auth.startSessionTimer();
                     
-                    // 🔥 Iniciar PoW após sincronização
                     setTimeout(() => {
                         Pow.startAutoRefill();
                     }, 1000);
@@ -1194,7 +1368,6 @@
             }
         },
 
-        // 🔥 CORRIGIDO: Sincronização com payment mais robusta
         syncPayment: async () => {
             if (!window.appAuth) return;
             
@@ -1234,6 +1407,20 @@
                     }
                 });
                 
+                // 🔥 Trata 429
+                if (response.status === 429) {
+                    const data = await response.json().catch(() => ({}));
+                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
+                        detail: {
+                            retryAfter: data.retry_after || 60,
+                            remaining: data.remaining_attempts || 0,
+                            message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
+                            for: 'promotion'
+                        }
+                    }));
+                    return;
+                }
+                
                 if (response.ok) {
                     const data = await response.json();
                     State.hasPromotionalPrice = data.user_locked_price !== null;
@@ -1251,7 +1438,6 @@
             }
         },
 
-        // 🔥 NOVO: Sincronização com PoW
         syncPow: async () => {
             try {
                 const powLoaded = await Utils.waitForPow(20);
@@ -1259,7 +1445,6 @@
                 if (powLoaded) {
                     console.log('✅ PoW sincronizado com sucesso!');
                     
-                    // Verifica se já está autenticado para iniciar
                     if (Utils.isAuthenticated()) {
                         Pow.startAutoRefill();
                     }
@@ -1272,6 +1457,20 @@
             } catch (e) {
                 console.warn('Erro ao sincronizar PoW:', e);
                 return false;
+            }
+        },
+
+        // 🔥 🔥 NOVO: Sincronizar Rate Limit com auth.js
+        syncRateLimit: () => {
+            if (window.appAuth && typeof window.appAuth.getRateLimitStatus === 'function') {
+                const status = window.appAuth.getRateLimitStatus();
+                if (status) {
+                    State.rateLimitBlocked = status.blocked || false;
+                    State.rateLimitBlockedUntil = status.blockedUntil || 0;
+                    State.rateLimitRemainingAttempts = status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX;
+                    State.rateLimitBlockedFor = status.for || 'login';
+                    UI.updateRateLimitStatus();
+                }
             }
         }
     };
@@ -1292,7 +1491,7 @@
         credits: Credits,
         auth: Auth,
         sync: Sync,
-        pow: Pow, // 🔥 NOVO: Módulo PoW
+        pow: Pow,
         
         // Funções para sistema de créditos
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
@@ -1306,7 +1505,7 @@
         loadPremiumStatus: Credits.loadPremiumStatus,
         isTokenValid: () => State.tokenValid,
         
-        // 🔥 NOVO: Funções para PoW
+        // 🔥 Funções para PoW
         isPowAvailable: Pow.isAvailable,
         getPowStats: Pow.getStats,
         preparePowForUpload: Pow.prepareForUpload,
@@ -1315,10 +1514,23 @@
         stopPowAutoRefill: Pow.stopAutoRefill,
         resetPow: Pow.reset,
         
+        // 🔥 🔥 NOVO: Funções para Rate Limiter
+        isRateLimitBlocked: Utils.isRateLimitBlocked,
+        getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
+        getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
+        getRateLimitStatus: () => ({
+            blocked: State.rateLimitBlocked,
+            blockedUntil: State.rateLimitBlockedUntil,
+            remainingAttempts: State.rateLimitRemainingAttempts,
+            for: State.rateLimitBlockedFor,
+            timeRemaining: Utils.getRateLimitTimeRemaining()
+        }),
+        
         // Funções utilitárias
         showNotification: Utils.showNotification,
         updateCredits: UI.updateCredits,
         updateNavbar: UI.updateNavbar,
+        updateRateLimitStatus: UI.updateRateLimitStatus,
         navigate: Router.navigate,
         showLoading: UI.showLoading,
         hideLoading: UI.hideLoading,
@@ -1338,11 +1550,11 @@
     };
 
     // ==============================================
-    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO (AMPLIADA)
+    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v3.2...');
+        console.log('🚀 Inicializando App (Orquestrador) v3.3...');
 
         // 1. Proteger rotas
         if (!Router.protect()) {
@@ -1358,30 +1570,32 @@
 
         // 3. Sincronizar com auth.js
         const isAuth = await Sync.syncAuth();
+        
+        // 4. Sincronizar Rate Limit
+        Sync.syncRateLimit();
 
-        // 4. Se estiver autenticado, sincroniza com payment, promoção e PoW
+        // 5. Se estiver autenticado, sincroniza com payment, promoção e PoW
         if (isAuth) {
-            // Sincronizar PoW em paralelo
             Sync.syncPow().catch(e => console.warn('Erro sync Pow:', e));
-            
             await Sync.syncPayment();
             await Sync.syncPromotion();
         }
 
-        // 5. Configurar UI global
+        // 6. Configurar UI global
         UI.setupModals();
         UI.updateNavbar();
+        UI.updateRateLimitStatus();
 
-        // 6. Configurar eventos globais
+        // 7. Configurar eventos globais
         Events.setup();
 
-        // 7. Configurar navegação
+        // 8. Configurar navegação
         Router.setupNavigation();
 
-        // 8. Marcar como inicializado
+        // 9. Marcar como inicializado
         State.initialized = true;
 
-        console.log('✅ App (Orquestrador) v3.2 inicializado com sucesso!');
+        console.log('✅ App (Orquestrador) v3.3 inicializado com sucesso!');
         console.log(`📌 Autenticado: ${isAuth}`);
         console.log(`📌 Página: ${Utils.getCurrentPath()}`);
         console.log(`📌 Admin: ${State.isAdmin}`);
@@ -1391,8 +1605,9 @@
         console.log(`📌 Crédito Diário: ${State.canReceiveDailyCredit ? 'Disponível' : 'Já recebido'}`);
         console.log(`📌 Token Válido: ${State.tokenValid}`);
         console.log(`📌 PoW: ${State.powReady ? '✅ Disponível' : '⏳ Aguardando'}`);
+        console.log(`📌 Rate Limit: ${State.rateLimitBlocked ? `🔴 Bloqueado (${Utils.getRateLimitTimeRemaining()}s)` : '🟢 Disponível'}`);
 
-        // 🔥 Dispara evento de app pronto
+        // Dispara evento de app pronto
         window.dispatchEvent(new CustomEvent('appReady', { 
             detail: { 
                 isAuthenticated: isAuth,
@@ -1404,7 +1619,9 @@
                 hasVitalicio: State.hasPromotionalPrice,
                 promotionalPrice: State.promotionalPrice,
                 tokenValid: State.tokenValid,
-                powReady: State.powReady
+                powReady: State.powReady,
+                rateLimitBlocked: State.rateLimitBlocked,
+                rateLimitTimeRemaining: Utils.getRateLimitTimeRemaining()
             } 
         }));
     }
@@ -1415,8 +1632,6 @@
 
     // Instância principal
     window.App = AppInstance;
-    
-    // Aliases para compatibilidade
     window.app = AppInstance;
     window.autoAnalytics = AppInstance;
 
@@ -1426,6 +1641,7 @@
     window.isAuthenticated = Utils.isAuthenticated;
     window.updateCreditsDisplay = UI.updateCredits;
     window.updateNavbar = UI.updateNavbar;
+    window.updateRateLimitStatus = UI.updateRateLimitStatus;
     window.navigateTo = Router.navigate;
     window.showLoading = UI.showLoading;
     window.hideLoading = UI.hideLoading;
@@ -1433,7 +1649,7 @@
     window.goBack = Utils.goBack;
     window.getQueryParam = Utils.getQueryParam;
 
-    // 🔥 NOVAS EXPORTAÇÕES (sincronizadas com auth.js, payment.js e pow-client.js)
+    // Funções de créditos
     window.getMaxCredits = () => CONFIG.MAX_CREDITS_BALANCE;
     window.getCreditsBalance = () => State.credits;
     window.isPremium = () => State.isPremium;
@@ -1445,7 +1661,19 @@
     window.loadPremiumStatus = Credits.loadPremiumStatus;
     window.isTokenValid = () => State.tokenValid;
 
-    // 🔥 NOVAS EXPORTAÇÕES PoW
+    // 🔥 Funções de Rate Limiter
+    window.isRateLimitBlocked = Utils.isRateLimitBlocked;
+    window.getRateLimitTimeRemaining = Utils.getRateLimitTimeRemaining;
+    window.getRateLimitRemainingAttempts = Utils.getRateLimitRemainingAttempts;
+    window.getRateLimitStatus = () => ({
+        blocked: State.rateLimitBlocked,
+        blockedUntil: State.rateLimitBlockedUntil,
+        remainingAttempts: State.rateLimitRemainingAttempts,
+        for: State.rateLimitBlockedFor,
+        timeRemaining: Utils.getRateLimitTimeRemaining()
+    });
+
+    // 🔥 Funções PoW
     window.isPowAvailable = Pow.isAvailable;
     window.getPowStats = Pow.getStats;
     window.preparePowForUpload = Pow.prepareForUpload;
@@ -1470,24 +1698,27 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v3.2 carregado!');
+    console.log('✅ app.js (Orquestrador) v3.3 carregado!');
     console.log('   📌 Aliases criados:');
     console.log('   - window.App (instância principal)');
-    console.log('   - window.app (alias para compatibilidade)');
-    console.log('   - window.autoAnalytics (alias para compatibilidade)');
+    console.log('   - window.app (alias)');
+    console.log('   - window.autoAnalytics (alias)');
     console.log('   📌 Funções globais disponíveis:');
     console.log('   - App.showNotification()');
     console.log('   - App.updateCredits()');
     console.log('   - App.navigate()');
     console.log('   - App.isAuthenticated()');
     console.log('   - App.isTokenValid()');
-    console.log('   🔥 NOVAS FUNÇÕES (PoW):');
+    console.log('   🔥 RATE LIMITER:');
+    console.log('   - App.isRateLimitBlocked()');
+    console.log('   - App.getRateLimitTimeRemaining()');
+    console.log('   - App.getRateLimitRemainingAttempts()');
+    console.log('   - App.getRateLimitStatus()');
+    console.log('   - App.updateRateLimitStatus()');
+    console.log('   🔥 PoW:');
     console.log('   - App.isPowAvailable()');
     console.log('   - App.getPowStats()');
     console.log('   - App.preparePowForUpload()');
     console.log('   - App.uploadWithPow()');
-    console.log('   - App.startPowAutoRefill()');
-    console.log('   - App.stopPowAutoRefill()');
-    console.log('   - App.resetPow()');
 
 })();
