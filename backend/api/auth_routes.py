@@ -6,6 +6,7 @@ Responsável por login, logout, refresh token e verificação de sessão
 - ✅ Usa blacklist_token() centralizada (consistente entre workers)
 - ✅ Usa _get_remaining_seconds() para evitar erro de timezone
 - ✅ NÃO usa pending_blacklist diretamente
+- ✅ 🔥 CORREÇÃO: Comparação de datas com replace(tzinfo=None) para evitar erro de timezone
 """
 
 from datetime import datetime, timedelta
@@ -28,14 +29,33 @@ from backend.security import (
     get_current_user,
     get_current_active_user,
     _now_utc,
-    _get_remaining_seconds,  # 🔥 NOVA IMPORTAÇÃO
-    blacklist_token,  # 🔥 NOVA IMPORTAÇÃO
-    is_token_blacklisted  # 🔥 NOVA IMPORTAÇÃO
+    _get_remaining_seconds,
+    blacklist_token,
+    is_token_blacklisted
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authentication"])
+
+
+# ==============================================
+# 🔥 FUNÇÃO AUXILIAR PARA COMPARAÇÃO DE DATAS
+# ==============================================
+
+def _is_token_expired(expires_at: Optional[datetime]) -> bool:
+    """
+    🔥 CORREÇÃO CRÍTICA: Verifica se um token expirou.
+    Remove o fuso horário (tzinfo) de ambas as datas para comparação segura.
+    """
+    if expires_at is None:
+        return True
+    
+    # Remove o fuso horário se existir (evita erro de comparação)
+    naive_expiry = expires_at.replace(tzinfo=None) if expires_at.tzinfo else expires_at
+    naive_now = datetime.utcnow()
+    
+    return naive_expiry < naive_now
 
 
 # ==============================================
@@ -173,7 +193,7 @@ async def login(
 
 
 # ==============================================
-# ROTA DE REFRESH - CORRIGIDA
+# ROTA DE REFRESH - CORRIGIDA COM FUNÇÃO AUXILIAR
 # ==============================================
 
 @router.post("/refresh", response_model=None)
@@ -187,6 +207,58 @@ async def refresh_token_endpoint(
     try:
         logger.info("🔄 [REFRESH] Tentando renovar tokens...")
         
+        # 🔥 CORREÇÃO: Verifica refresh token no banco ANTES de tentar renovar
+        # Extrai informações do refresh token
+        refresh_payload = jwt_manager.decode_token(data.refresh_token)
+        if not refresh_payload:
+            logger.warning("❌ [REFRESH] Refresh token inválido")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token inválido"
+            )
+        
+        email = refresh_payload.get("sub") or refresh_payload.get("email")
+        if not email:
+            logger.warning("❌ [REFRESH] Refresh token sem email")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token inválido"
+            )
+        
+        # Busca usuário
+        user = crud.get_user_by_email(db, email)
+        if not user:
+            logger.warning(f"❌ [REFRESH] Usuário {email} não encontrado")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuário não encontrado"
+            )
+        
+        # 🔥 CORREÇÃO: Verifica se o refresh token no banco está expirado
+        # Usa a função auxiliar _is_token_expired para comparação segura
+        if user.refresh_token_expires and _is_token_expired(user.refresh_token_expires):
+            logger.warning(f"❌ [REFRESH] Refresh token expirado para {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expirado. Faça login novamente."
+            )
+        
+        # Verifica se o token corresponde ao salvo no banco
+        if user.refresh_token != data.refresh_token:
+            logger.warning(f"❌ [REFRESH] Refresh token não corresponde ao banco para {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token inválido"
+            )
+        
+        if user.refresh_token_revoked:
+            logger.warning(f"❌ [REFRESH] Refresh token revogado para {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token revogado"
+            )
+        
+        # 🔥 Se passou em todas as verificações, prossegue com a renovação
         new_tokens = await jwt_manager.refresh_access_token(
             refresh_token=data.refresh_token,
             db=db,
@@ -194,15 +266,16 @@ async def refresh_token_endpoint(
         )
         
         if not new_tokens:
-            logger.warning("❌ [REFRESH] Refresh token inválido ou expirado")
+            logger.warning("❌ [REFRESH] Falha ao renovar tokens")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token inválido ou expirado"
+                detail="Falha ao renovar tokens"
             )
         
+        # Decodifica o novo access token para obter dados do usuário
         payload = jwt_manager.decode_token(new_tokens["access_token"])
         email = payload.get("sub") or payload.get("email")
-        user = crud.get_user_by_email(db, email)
+        user = crud.get_user_by_email(db, email) if email else None
         
         response_data = {
             "access_token": new_tokens["access_token"],
@@ -298,6 +371,24 @@ async def check_token(request: Request, db: Session = Depends(get_db)):
         logger.info("🔄 [TOKEN] Access token expirado, tentando refresh...")
         
         try:
+            # 🔥 CORREÇÃO: Verifica se o refresh token no banco está expirado
+            refresh_payload = jwt_manager.decode_token(refresh_token)
+            if refresh_payload:
+                email = refresh_payload.get("sub") or refresh_payload.get("email")
+                user = crud.get_user_by_email(db, email)
+                
+                if user and user.refresh_token_expires:
+                    # Usa a função auxiliar para comparação segura
+                    if _is_token_expired(user.refresh_token_expires):
+                        logger.warning(f"⚠️ Refresh token expirado para {email}")
+                        # Não tenta renovar, apenas retorna expirado
+                        response = JSONResponse(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            content={"status": "expired", "message": "Sessão expirada. Faça login novamente."}
+                        )
+                        response = clear_auth_cookies(response)
+                        return response
+            
             new_tokens = await jwt_manager.refresh_access_token(
                 refresh_token, 
                 db, 
@@ -411,3 +502,5 @@ async def get_me(current_user = Depends(get_current_active_user)):
 
 
 print("✅ auth_routes.py carregado com sucesso!")
+print("   ✅ Função _is_token_expired() adicionada para comparação segura de datas")
+print("   ✅ Rota /refresh com validação de expiração corrigida")
