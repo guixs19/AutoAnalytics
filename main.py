@@ -582,7 +582,7 @@ except ImportError as e:
 # 12.6 ML Pipeline (COM FALLBACK)
 print("   🤖 Carregando ML Pipeline...")
 try:
-    from backend.ml.preprocessing import pipeline, process_file_content
+    from backend.preprocessing import pipeline, process_file_content
     print("   ✅ ML Pipeline carregado")
     if hasattr(pipeline, 'model_source'):
         print(f"      📊 Modelo: {pipeline.model_source}")
