@@ -1,14 +1,15 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v3.7 (CORRIGIDA DEFINITIVA)
+ # main.py (na raiz) - VERSÃO PRODUÇÃO v3.8 (ROTAS HTML CORRIGIDAS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v3.7:
-- ✅ Importação ISOLADA de auth_routes.py (login) e auth.py (register)
-- ✅ Falha no register NÃO quebra o login
-- ✅ Logs detalhados com traceback completo
-- ✅ Verificação de rotas registradas no startup
-- ✅ Timezone corrigido (UTC-3)
-- ✅ Código mais robusto e organizado
+🔥 CORREÇÕES v3.8:
+- ✅ Rotas HTML corrigidas para servir os arquivos corretamente
+- ✅ /login → login.html
+- ✅ /planos → planos.html
+- ✅ /dashboard → index.html
+- ✅ / → index.html (com verificação de token)
+- ✅ Fallback para rotas não encontradas
+- ✅ Caminhos padronizados para servir arquivos estáticos
 ================================================================================
 """
 
@@ -36,7 +37,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v3.7 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v3.8 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -51,7 +52,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.7.0"
+    VERSION = "3.8.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -160,7 +161,8 @@ def check_frontend() -> Dict[str, bool]:
         "login": False,
         "dashboard": False,
         "planos": False,
-        "checkout": False
+        "checkout": False,
+        "js": False
     }
     
     if not FRONTEND_DIR.exists():
@@ -187,6 +189,7 @@ def check_frontend() -> Dict[str, bool]:
     # Verificar JS
     js_dir = FRONTEND_DIR / "js"
     if js_dir.exists():
+        result["js"] = True
         js_files = ["auth.js", "app.js", "dashboard.js", "payment.js", "pow-client.js"]
         for js_file in js_files:
             if (js_dir / js_file).exists():
@@ -319,7 +322,36 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# 10. VERIFICAÇÃO DE TOKEN
+# 10. 🔥 ROTAS HTML - CORRIGIDAS
+# ==============================================
+
+print("\n🌐 Configurando rotas HTML...")
+
+def serve_html_page(filename: str, fallback: Optional[str] = None) -> HTMLResponse:
+    """
+    Serve um arquivo HTML do diretório frontend
+    """
+    file_path = FRONTEND_DIR / filename
+    if file_path.exists():
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content, status_code=200)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler {filename}: {e}")
+    
+    if fallback:
+        fallback_path = FRONTEND_DIR / fallback
+        if fallback_path.exists():
+            try:
+                content = fallback_path.read_text(encoding="utf-8")
+                return HTMLResponse(content=content, status_code=200)
+            except Exception as e:
+                print(f"   ❌ Erro ao ler fallback: {e}")
+    
+    return HTMLResponse(content=f"<h1>Página não encontrada</h1><p>{filename} não disponível</p>", status_code=404)
+
+# ==============================================
+# 🔥 VERIFICAÇÃO DE TOKEN (FUNÇÃO AUXILIAR)
 # ==============================================
 
 async def verify_token_from_request(request: Request) -> Optional[Dict]:
@@ -346,343 +378,161 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
         return None
 
 # ==============================================
-# 11. ROTAS HTML
+# 🔥 ROTAS HTML PRINCIPAIS
 # ==============================================
 
-if frontend_status["available"]:
-    print("\n🌐 Configurando rotas HTML...")
+# 1. Página de Login
+@app.get("/login", include_in_schema=False)
+async def get_login_page(request: Request):
+    """Serve a página de login"""
+    # Verifica se já está autenticado
+    payload = await verify_token_from_request(request)
+    if payload and frontend_status["dashboard"]:
+        return RedirectResponse(url="/dashboard", status_code=302)
     
-    @app.get("/", include_in_schema=False)
-    async def home(request: Request):
-        payload = await verify_token_from_request(request)
-        if payload and frontend_status["dashboard"]:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
-        
-        if frontend_status["login"]:
-            return RedirectResponse(url="/login", status_code=302)
-        
-        return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+    # Verifica se o arquivo existe
+    login_path = FRONTEND_DIR / "login.html"
+    if login_path.exists():
+        try:
+            content = login_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler login.html: {e}")
     
-    @app.get("/login", include_in_schema=False)
-    async def login_page(request: Request):
-        payload = await verify_token_from_request(request)
-        if payload and frontend_status["dashboard"]:
-            return RedirectResponse(url="/dashboard", status_code=302)
-        
-        if frontend_status["login"]:
-            return FileResponse(str(FRONTEND_DIR / "login.html"))
-        return JSONResponse({"error": "login.html não encontrado"}, status_code=404)
+    return JSONResponse(status_code=404, content={"error": "login.html não encontrado"})
+
+
+# 2. Página de Planos
+@app.get("/planos", include_in_schema=False)
+async def get_planos_page(request: Request):
+    """Serve a página de planos"""
+    # Verifica autenticação
+    payload = await verify_token_from_request(request)
+    if not payload:
+        return RedirectResponse(url="/login", status_code=302)
     
-    @app.get("/dashboard", response_class=HTMLResponse)
-    async def route_dashboard(request: Request):
-        payload = await verify_token_from_request(request)
-        if not payload:
-            print(f"🔴 [DASHBOARD] Sem token válido")
-            return RedirectResponse(url="/login", status_code=303)
-        
-        if not frontend_status["dashboard"]:
-            return HTMLResponse("<h1>Dashboard não disponível</h1>", status_code=404)
-        
-        file_path = FRONTEND_DIR / "index.html"
-        if not file_path.exists():
-            return HTMLResponse("<h1>Erro: index.html não encontrado</h1>", status_code=404)
-        
-        return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+    # Tenta servir planos.html
+    planos_path = FRONTEND_DIR / "planos.html"
+    if planos_path.exists():
+        try:
+            content = planos_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler planos.html: {e}")
     
-    @app.get("/planos", response_class=HTMLResponse)
-    async def route_planos(request: Request):
-        payload = await verify_token_from_request(request)
-        if not payload:
-            return RedirectResponse(url="/login", status_code=303)
-        
-        if not frontend_status["planos"]:
-            return HTMLResponse("<h1>Página de planos não disponível</h1>", status_code=404)
-        
-        file_path = FRONTEND_DIR / "planos.html"
-        if not file_path.exists():
-            return HTMLResponse("<h1>Erro: planos.html não encontrado</h1>", status_code=404)
-        
-        return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+    # Fallback: index.html
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        try:
+            content = index_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler index.html: {e}")
     
-    @app.get("/checkout", response_class=HTMLResponse)
-    async def route_checkout(request: Request):
-        payload = await verify_token_from_request(request)
-        if not payload:
-            return RedirectResponse(url="/login", status_code=303)
-        
-        if not frontend_status["checkout"]:
-            return HTMLResponse("<h1>Página de checkout não disponível</h1>", status_code=404)
-        
-        file_path = FRONTEND_DIR / "checkout.html"
-        if not file_path.exists():
-            return HTMLResponse("<h1>Erro: checkout.html não encontrado</h1>", status_code=404)
-        
-        return HTMLResponse(content=file_path.read_text(encoding="utf-8"))
+    return JSONResponse(status_code=404, content={"error": "Página de planos não encontrada"})
+
+
+# 3. Página de Checkout
+@app.get("/checkout", include_in_schema=False)
+async def get_checkout_page(request: Request):
+    """Serve a página de checkout"""
+    # Verifica autenticação
+    payload = await verify_token_from_request(request)
+    if not payload:
+        return RedirectResponse(url="/login", status_code=302)
     
-    # Redirecionamentos (301 - Moved Permanently)
-    @app.get("/planos.html", include_in_schema=False)
-    async def redirect_planos_html():
-        return RedirectResponse(url="/planos", status_code=301)
+    checkout_path = FRONTEND_DIR / "checkout.html"
+    if checkout_path.exists():
+        try:
+            content = checkout_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler checkout.html: {e}")
     
-    @app.get("/dashboard.html", include_in_schema=False)
-    async def redirect_dashboard_html():
-        return RedirectResponse(url="/dashboard", status_code=301)
+    return JSONResponse(status_code=404, content={"error": "checkout.html não encontrado"})
+
+
+# 4. Dashboard (Raiz - /dashboard)
+@app.get("/dashboard", include_in_schema=False)
+async def get_dashboard_page(request: Request):
+    """Serve a página do dashboard (index.html)"""
+    # Verifica autenticação
+    payload = await verify_token_from_request(request)
+    if not payload:
+        return RedirectResponse(url="/login", status_code=302)
     
-    @app.get("/login.html", include_in_schema=False)
-    async def redirect_login_html():
-        return RedirectResponse(url="/login", status_code=301)
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        try:
+            content = index_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler index.html: {e}")
     
-    @app.get("/checkout.html", include_in_schema=False)
-    async def redirect_checkout_html():
-        return RedirectResponse(url="/checkout", status_code=301)
+    return JSONResponse(status_code=404, content={"error": "index.html não encontrado"})
+
+
+# 5. Raiz (/)
+@app.get("/", include_in_schema=False)
+async def get_root_page(request: Request):
+    """Serve a página inicial"""
+    # Verifica se está autenticado
+    payload = await verify_token_from_request(request)
     
-    print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
+    if payload and frontend_status["dashboard"]:
+        # Se autenticado, vai para o dashboard
+        index_path = FRONTEND_DIR / "index.html"
+        if index_path.exists():
+            try:
+                content = index_path.read_text(encoding="utf-8")
+                return HTMLResponse(content=content)
+            except Exception as e:
+                print(f"   ❌ Erro ao ler index.html: {e}")
+    
+    # Se não autenticado, vai para o login
+    login_path = FRONTEND_DIR / "login.html"
+    if login_path.exists():
+        try:
+            content = login_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
+        except Exception as e:
+            print(f"   ❌ Erro ao ler login.html: {e}")
+    
+    return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+
 
 # ==============================================
-# 12. IMPORTAÇÃO DE MÓDULOS (COM FALLBACK SEGURO)
+# 🔥 REDIRECIONAMENTOS (301 - Moved Permanently)
 # ==============================================
 
-print("\n📦 Carregando módulos do backend...")
+@app.get("/index.html", include_in_schema=False)
+async def redirect_index_html():
+    return RedirectResponse(url="/", status_code=301)
 
-# 12.1 Database (CRÍTICO - MATA O CONTAINER SE FALHAR)
-try:
-    from backend.database import engine, Base, create_tables, SessionLocal, get_db
-    create_tables()
-    print("   ✅ Database: tabelas verificadas")
-except ImportError as e:
-    print(f"   ❌ Database não disponível: {e}")
-    print("   💡 Verifique se o SQLAlchemy está instalado")
-    sys.exit(1)
-except Exception as e:
-    print(f"   ❌ Erro ao inicializar Database: {e}")
-    sys.exit(1)
+@app.get("/planos.html", include_in_schema=False)
+async def redirect_planos_html():
+    return RedirectResponse(url="/planos", status_code=301)
 
-# 12.2 Security (COM FALLBACK - NÃO MATA O CONTAINER)
-print("   🔐 Carregando Security...")
+@app.get("/login.html", include_in_schema=False)
+async def redirect_login_html():
+    return RedirectResponse(url="/login", status_code=301)
 
-# 🔥 Variáveis globais com fallback
-hasher = None
-jwt_manager = None
-rate_limiter = None
-get_current_user = None
-get_current_active_user = None
-get_current_admin_user = None
-set_auth_cookies = None
-clear_auth_cookies = None
-AUTH_ENABLED = False
+@app.get("/checkout.html", include_in_schema=False)
+async def redirect_checkout_html():
+    return RedirectResponse(url="/checkout", status_code=301)
 
-try:
-    from backend.security import (
-        hasher as _hasher,
-        jwt_manager as _jwt_manager,
-        rate_limiter as _rate_limiter,
-        get_current_user as _get_current_user,
-        get_current_active_user as _get_current_active_user,
-        get_current_admin_user as _get_current_admin_user,
-        set_auth_cookies as _set_auth_cookies,
-        clear_auth_cookies as _clear_auth_cookies
-    )
-    hasher = _hasher
-    jwt_manager = _jwt_manager
-    rate_limiter = _rate_limiter
-    get_current_user = _get_current_user
-    get_current_active_user = _get_current_active_user
-    get_current_admin_user = _get_current_admin_user
-    set_auth_cookies = _set_auth_cookies
-    clear_auth_cookies = _clear_auth_cookies
-    AUTH_ENABLED = True
-    print("   ✅ Security carregado (AUTH ENABLED)")
-except ImportError as e:
-    print(f"   ⚠️ Security não disponível: {e}")
-    print("   🔧 Usando fallback (autenticação desabilitada)")
-    
-    # ===== FALLBACK: FUNÇÕES MOCK =====
-    class MockJWTManager:
-        """Mock do JWTManager para fallback"""
-        async def verify_token(self, token, token_type="access"):
-            return None
-        def create_token_pair(self, data):
-            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
-        async def logout(self, refresh_token, db, access_token=None):
-            return True
-        async def refresh_access_token(self, refresh_token, db, old_access_token=None):
-            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
-        async def init_redis(self):
-            return True
-    
-    jwt_manager = MockJWTManager()
-    rate_limiter = None
-    
-    async def _fallback_get_current_user(token=None, db=None):
-        return None
-    
-    async def _fallback_get_current_active_user(current_user=None):
-        return None
-    
-    async def _fallback_get_current_admin_user(current_user=None):
-        return None
-    
-    def _fallback_set_auth_cookies(response, access_token, refresh_token=None, expires_in=3600):
-        return response
-    
-    def _fallback_clear_auth_cookies(response):
-        return response
-    
-    get_current_user = _fallback_get_current_user
-    get_current_active_user = _fallback_get_current_active_user
-    get_current_admin_user = _fallback_get_current_admin_user
-    set_auth_cookies = _fallback_set_auth_cookies
-    clear_auth_cookies = _fallback_clear_auth_cookies
+@app.get("/dashboard.html", include_in_schema=False)
+async def redirect_dashboard_html():
+    return RedirectResponse(url="/dashboard", status_code=301)
 
-# 12.3 Models (COM FALLBACK)
-try:
-    from backend.models import User, Analysis, PromotionControl, Payment, DailyCreditLog
-    print("   ✅ Models carregados")
-except ImportError as e:
-    print(f"   ⚠️ Models não disponível: {e}")
-    # Classes mock para fallback
-    class User: pass
-    class Analysis: pass
-    class PromotionControl: pass
-    class Payment: pass
-    class DailyCreditLog: pass
 
-# 12.4 CRUD (COM FALLBACK)
-try:
-    from backend import crud
-    print(f"   ✅ CRUD carregado (MAX_CREDITS: {crud.MAX_CREDITS_PREMIUM})")
-except ImportError as e:
-    print(f"   ⚠️ CRUD não disponível: {e}")
-    crud = None
-
-# 12.5 Services (COM FALLBACK)
-try:
-    from backend.services.daily_credits_service import DailyCreditsService
-    print("   ✅ DailyCreditsService carregado")
-except ImportError as e:
-    print(f"   ⚠️ DailyCreditsService não disponível: {e}")
-    class DailyCreditsService:
-        def get_user_credit_status(self, db, user_id):
-            return {"current_credits": 3, "streak_days": 0, "received_today": False}
-        def check_and_add_daily_credit(self, db, user_id):
-            return {"success": False, "credits_added": 0, "message": "Serviço indisponível"}
-    DailyCreditsService = DailyCreditsService
-
-try:
-    from backend.services.credits_consumer import (
-        can_perform_analysis, consume_analysis_credit, get_credits_display
-    )
-    print("   ✅ CreditsConsumer carregado")
-except ImportError as e:
-    print(f"   ⚠️ CreditsConsumer não disponível: {e}")
-    def can_perform_analysis(user, required=1): return True
-    def consume_analysis_credit(user, db, required=1): return True
-    def get_credits_display(user): return "0"
-
-# 12.6 ML Pipeline (COM FALLBACK)
-print("   🤖 Carregando ML Pipeline...")
-try:
-    from backend.preprocessing import pipeline, process_file_content
-    print("   ✅ ML Pipeline carregado")
-    if hasattr(pipeline, 'model_source'):
-        print(f"      📊 Modelo: {pipeline.model_source}")
-    print(f"      🔤 Encoding: automático (chardet)")
-    print(f"      💾 Cache: TTL 60s")
-except ImportError as e:
-    print(f"   ⚠️ ML Pipeline não disponível: {e}")
-    
-    # ===== FALLBACK: MOCK PIPELINE =====
-    class MockPipeline:
-        """Mock do ML Pipeline para fallback"""
-        def __init__(self):
-            self.model_source = "placeholder"
-            self.is_initialized = False
-        async def initialize(self):
-            self.is_initialized = True
-            return True
-        async def predict(self, df, filename=None):
-            return {"success": False, "error": "ML não disponível", "predictions": [0.5] * len(df)}
-        def get_status(self):
-            return {"initialized": False, "model_source": "placeholder", "cache_size": 0}
-        def get_encoding_stats(self):
-            return {"encodings": {}, "total_success": 0, "total_failed": 0}
-        def clear_cache(self):
-            pass
-    pipeline = MockPipeline()
-    
-    async def process_file_content(content, filename):
-        return {"success": False, "error": "ML não disponível"}
-
-print("   ✅ Módulos carregados com sucesso!")
+print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
-# 13. REGISTRO DE ROTAS (CORRIGIDO - IMPORT ISOLADO)
+# 11. IMPORTAÇÃO DE MÓDULOS (COM FALLBACK SEGURO)
 # ==============================================
 
-print("\n📦 Registrando rotas...")
-
-def safe_include_router(module_path: str, prefix: str = "", description: str = "") -> bool:
-    """
-    🔥 Tenta incluir um router com fallback seguro
-    """
-    try:
-        print(f"   🔄 Tentando carregar: {module_path}")
-        import importlib
-        module = importlib.import_module(module_path)
-        router = getattr(module, 'router')
-        app.include_router(router, prefix=prefix)
-        print(f"   ✅ {description} carregado com sucesso! ({prefix})")
-        return True
-    except ImportError as e:
-        print(f"   ❌ {description} - ERRO DE IMPORTAÇÃO: {e}")
-        return False
-    except AttributeError as e:
-        print(f"   ❌ {description} - router não encontrado: {e}")
-        return False
-    except Exception as e:
-        print(f"   ❌ {description} - ERRO: {e}")
-        return False
-
-# ==============================================
-# 🔥 AUTH ROUTES (ISOLADAS - CRÍTICO)
-# ==============================================
-
-print("\n🔐 Registrando rotas de autenticação...")
-
-# 🔥 1. LOGIN/LOGOUT/REFRESH (OBRIGATÓRIO - NÃO PODE FALHAR)
-try:
-    from backend.api.auth_routes import router as auth_router
-    app.include_router(auth_router, prefix="/api/auth")
-    print("   ✅ Rotas de Autenticação (auth_routes) registradas com sucesso!")
-    print("      POST   /api/auth/login     ← 🔥 LOGIN")
-    print("      POST   /api/auth/refresh")
-    print("      POST   /api/auth/logout")
-    print("      GET    /api/auth/check-token")
-    print("      GET    /api/auth/me")
-except ImportError as e:
-    print(f"   ❌ ERRO CRÍTICO ao importar auth_routes: {e}")
-    print("   💡 Verifique se o arquivo backend/api/auth_routes.py existe")
-    import traceback
-    traceback.print_exc()
-    # 🔥 Não usa sys.exit() - o container continua rodando
-except Exception as e:
-    print(f"   ❌ ERRO ao registrar auth_routes: {e}")
-    import traceback
-    traceback.print_exc()
-
-# 🔥 2. REGISTRO (SEPARADO - NÃO QUEBRA O LOGIN)
-try:
-    from backend.api.auth import router as registration_router
-    app.include_router(registration_router, prefix="/api/auth")
-    print("   ✅ Rotas de Cadastro (auth) registradas com sucesso!")
-    print("      POST   /api/auth/register  ← 🔥 REGISTRO")
-except ImportError as e:
-    print(f"   ⚠️ Módulo de cadastro (auth.py) não disponível: {e}")
-    print("   💡 O login continua funcionando, apenas o registro não estará disponível.")
-except Exception as e:
-    print(f"   ⚠️ Erro ao registrar auth.py: {e}")
-
-# ==============================================
+# ================================================
 # 🔥 OUTRAS ROTAS (COM FALLBACK)
 # ==============================================
 

@@ -14,7 +14,8 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     
     <!-- ============================================== -->
-    <!-- 🔥 VERIFICAÇÃO DE SESSÃO OTIMIZADA (SEM LOOP) -->
+    <!-- 🔥 VERIFICAÇÃO DE SESSÃO OTIMIZADA -->
+    <!-- 🔥 CORRIGIDO: Redireciona para /dashboard -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -43,8 +44,8 @@
             .then(res => {
                 if (res.ok) {
                     console.log('✅ Token válido - redirecionando para o dashboard');
-                    // 🔥 CORREÇÃO: Redireciona para a RAIZ (/)
-                    window.location.replace('/');
+                    // 🔥 CORRIGIDO: Redireciona para /dashboard (rota protegida do app.js)
+                    window.location.replace('/dashboard');
                 } else if (res.status === 429) {
                     console.log('⚠️ Rate limit atingido. Permanecendo na página.');
                     // Não remove o token, apenas aguarda
@@ -1292,6 +1293,7 @@
 
     <!-- ============================================== -->
     <!-- 🔥 SCRIPTS - ORDEM DE CARREGAMENTO OTIMIZADA -->
+    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
     <!-- ============================================== -->
     
     <!-- 1. CONFIGURAÇÃO TOASTR -->
@@ -1563,17 +1565,22 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS DA APLICAÇÃO - COM DEFER -->
+    <!-- 🔥 SCRIPTS DA APLICAÇÃO - ORDEM CORRETA        -->
+    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
     <!-- ============================================== -->
     
-    <!-- 8. AUTH.JS - Módulo de autenticação -->
+    <!-- 1️⃣ POW - PRIMEIRO (Proteção anti-bot) -->
+    <script src="/static/js/pow-client.js" defer></script>
+    
+    <!-- 2️⃣ AUTH - SEGUNDO (Motor de autenticação) -->
     <script src="/static/js/auth.js" defer></script>
     
-    <!-- 9. APP.JS - Orquestrador com Rate Limiter -->
+    <!-- 3️⃣ APP - TERCEIRO (Orquestrador - depende do auth.js) -->
     <script src="/static/js/app.js" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 HANDLER DO FORMULÁRIO COM FALLBACK INTELIGENTE -->
+    <!-- 🔥 CORRIGIDO: Redireciona para /dashboard -->
     <!-- ============================================== -->
     <script>
         /**
@@ -1861,7 +1868,7 @@
     <script>
         console.log('✅ Login page v4.0 carregada com sucesso!');
         console.log('   🔥 Melhorias aplicadas:');
-        console.log('   ✅ Redirecionamento para / (raiz)');
+        console.log('   ✅ Redirecionamento para /dashboard (rota protegida do app.js)');
         console.log('   ✅ Rate limit com UI dinâmica');
         console.log('   ✅ Validação em tempo real dos campos');
         console.log('   ✅ Força da senha com feedback visual');
@@ -1870,6 +1877,7 @@
         console.log('   ✅ Performance otimizada (preconnect)');
         console.log('   ✅ UI responsiva e acessível');
         console.log('   ✅ Fallback inteligente para auth');
+        console.log('   ✅ Ordem correta: pow-client.js → auth.js → app.js');
     </script>
 
 </body>
