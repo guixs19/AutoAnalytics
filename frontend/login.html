@@ -14,8 +14,8 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     
     <!-- ============================================== -->
-    <!-- 🔥 VERIFICAÇÃO DE SESSÃO OTIMIZADA -->
-    <!-- 🔥 CORRIGIDO: Redireciona para /dashboard -->
+    <!-- 🔥 VERIFICAÇÃO DE SESSÃO - CORRIGIDA V4.2     -->
+    <!-- 🔥 REDIRECIONA PARA / (RAIZ) → NÃO LOOP      -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -44,8 +44,9 @@
             .then(res => {
                 if (res.ok) {
                     console.log('✅ Token válido - redirecionando para o dashboard');
-                    // 🔥 CORRIGIDO: Redireciona para /dashboard (rota protegida do app.js)
-                    window.location.replace('/dashboard');
+                    // 🔥🔥🔥 CORREÇÃO FINAL: Redireciona para / (RAIZ) 
+                    // O index.html cuida do redirecionamento para /dashboard
+                    window.location.replace('/');
                 } else if (res.status === 429) {
                     console.log('⚠️ Rate limit atingido. Permanecendo na página.');
                     // Não remove o token, apenas aguarda
@@ -1580,7 +1581,6 @@
 
     <!-- ============================================== -->
     <!-- 🔥 HANDLER DO FORMULÁRIO COM FALLBACK INTELIGENTE -->
-    <!-- 🔥 CORRIGIDO: Redireciona para /dashboard -->
     <!-- ============================================== -->
     <script>
         /**
@@ -1596,7 +1596,6 @@
                 return;
             }
 
-            // Remove listener existente
             loginForm.removeEventListener('submit', handleLoginSubmit);
             loginForm.addEventListener('submit', handleLoginSubmit);
             
@@ -1608,7 +1607,6 @@
             
             console.log('📤 [LOGIN] Submit interceptado!');
             
-            // 🔥 Encontra o módulo de autenticação
             const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
             
             if (!authModule) {
@@ -1679,7 +1677,6 @@
             
             console.log('📤 [REGISTER] Submit interceptado!');
             
-            // Valida termos
             const termsCheckbox = document.getElementById('terms');
             const termsFeedback = document.getElementById('termsFeedback');
             
@@ -1755,13 +1752,11 @@
                     clearInterval(checkApp);
                     console.log('✅ [RATE LIMIT] App encontrado!');
                     
-                    // Atualiza UI se bloqueado
                     if (window.App.isRateLimitBlocked()) {
                         updateRateLimitUI('login');
                         updateRateLimitUI('register');
                     }
                     
-                    // Escuta eventos
                     window.addEventListener('rateLimitBlocked', function(event) {
                         console.log('📢 [RATE LIMIT] Bloqueado:', event.detail);
                         updateRateLimitUI('login', event.detail);
@@ -1774,7 +1769,6 @@
                         hideRateLimitUI('register');
                     });
                     
-                    // Timer de atualização
                     setInterval(function() {
                         if (window.App && window.App.isRateLimitBlocked()) {
                             updateRateLimitUI('login');
@@ -1805,7 +1799,6 @@
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
                 timer.textContent = remaining;
                 
-                // Timer interval
                 const intervalKey = '_rateLimitTimer_' + type;
                 if (window[intervalKey]) clearInterval(window[intervalKey]);
                 
@@ -1866,9 +1859,10 @@
     <!-- 🔥 LOG DE INICIALIZAÇÃO -->
     <!-- ============================================== -->
     <script>
-        console.log('✅ Login page v4.0 carregada com sucesso!');
-        console.log('   🔥 Melhorias aplicadas:');
-        console.log('   ✅ Redirecionamento para /dashboard (rota protegida do app.js)');
+        console.log('✅ Login page v4.2 carregada com sucesso!');
+        console.log('   🔥 CORREÇÃO FINAL:');
+        console.log('   ✅ Redirecionamento para / (RAIZ) - FIM DO LOOP!');
+        console.log('   ✅ O index.html cuida do redirecionamento para /dashboard');
         console.log('   ✅ Rate limit com UI dinâmica');
         console.log('   ✅ Validação em tempo real dos campos');
         console.log('   ✅ Força da senha com feedback visual');
