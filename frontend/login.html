@@ -5,9 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>AutoAnalytics - Login</title>
     
-    <!-- 🔥 CORREÇÃO 1: Script do Head sem loop de recarregamento -->
+    <!-- ============================================== -->
+    <!-- 🔥 PRELOAD E OTIMIZAÇÕES DE PERFORMANCE -->
+    <!-- ============================================== -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    
+    <!-- ============================================== -->
+    <!-- 🔥 VERIFICAÇÃO DE SESSÃO OTIMIZADA (SEM LOOP) -->
+    <!-- ============================================== -->
     <script>
         (function() {
+            'use strict';
+            
+            console.log('🔐 [INIT] Verificando sessão existente...');
+            
             const token = localStorage.getItem('access_token');
             
             // Se NÃO tiver token, fica na página de login
@@ -20,19 +34,32 @@
             
             // 🔥 Verifica se o token é válido ANTES de redirecionar
             fetch('/api/auth/check-token', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include'
             })
             .then(res => {
                 if (res.ok) {
-                    console.log('✅ Token válido - redirecionando para dashboard');
-                    window.location.replace('/dashboard');
+                    console.log('✅ Token válido - redirecionando para o dashboard');
+                    // 🔥 CORREÇÃO: Redireciona para a RAIZ (/)
+                    window.location.replace('/');
+                } else if (res.status === 429) {
+                    console.log('⚠️ Rate limit atingido. Permanecendo na página.');
+                    // Não remove o token, apenas aguarda
                 } else {
                     console.log('❌ Token inválido - removendo e permanecendo na página');
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('refresh_token');
+                    localStorage.removeItem('user_email');
+                    localStorage.removeItem('user_name');
+                    
+                    // Limpa cookies também
                     document.cookie.split(";").forEach(function(c) { 
                         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
                     });
+                    
                     console.log('✅ Token removido. Página de login pronta para uso.');
                 }
             })
@@ -40,58 +67,87 @@
                 console.log('⚠️ Erro ao verificar token - removendo e permanecendo na página');
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user_email');
+                localStorage.removeItem('user_name');
             });
         })();
     </script>
     
     <!-- ============================================== -->
-    <!-- 🔥 CDN - COM CONFIGURAÇÕES CORRETAS -->
+    <!-- 🔥 CDN - COM CONFIGURAÇÕES CORRETAS E OTIMIZADAS -->
     <!-- ============================================== -->
     
-    <!-- Font Awesome -->
+    <!-- Font Awesome 6 (gratuito) -->
     <link rel="stylesheet" 
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
           crossorigin="anonymous"
           referrerpolicy="no-referrer">
     
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" 
+          rel="stylesheet">
     
-    <!-- jQuery -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"
+    <!-- jQuery (otimizado) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+            integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
             crossorigin="anonymous"
             referrerpolicy="no-referrer">
     </script>
     
-    <!-- Toastr -->
+    <!-- Toastr (notificações) -->
     <link rel="stylesheet" 
           href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
+          integrity="sha512-vKMx8UnXk60zUwyUnUPM3HbQo8QfmNx7+ltw8Pm5zLusl1XIfwcxo8DbWCqMgKaQy83WpG5Ig6ua6rH+y2KDkQ=="
           crossorigin="anonymous"
           referrerpolicy="no-referrer">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"
+            integrity="sha512-VEd+nq25CkR676O+pLBnDW09R7VQX9Mdiij052gVCp5yVH3jGtH70Ho/UUv4mJDsEdTvqRCFZg0NKGiojGnUCw=="
             crossorigin="anonymous"
             referrerpolicy="no-referrer">
     </script>
     
-    <!-- 🔥 CORREÇÃO 3: Bootstrap com versões consistentes -->
+    <!-- Bootstrap 5.3.2 (otimizado) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" 
           rel="stylesheet"
+          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
           crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-            crossorigin="anonymous">
+            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+            crossorigin="anonymous" defer>
     </script>
     
+    <!-- ============================================== -->
+    <!-- 🔥 ESTILOS COMPLETOS E OTIMIZADOS -->
+    <!-- ============================================== -->
     <style>
-        /* ===== TODOS OS ESTILOS ===== */
+        /* ==============================================
+                   RESET E CONFIGURAÇÕES GLOBAIS
+                   ============================================== */
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        :root {
+            --primary-start: #667eea;
+            --primary-end: #764ba2;
+            --primary-gradient: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
+            --text-dark: #1a1a2e;
+            --text-muted: #718096;
+            --text-light: #a0aec0;
+            --border-light: #e2e8f0;
+            --bg-light: #f7fafc;
+            --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.2);
+            --radius-card: 24px;
+            --radius-input: 12px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--primary-gradient);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -101,37 +157,214 @@
             overflow-x: hidden;
         }
 
+        /* ==============================================
+                   BOLHAS DECORATIVAS
+                   ============================================== */
         .bubble {
-            position: absolute;
-            background: rgba(255,255,255,0.08);
+            position: fixed;
             border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
             pointer-events: none;
-            animation: float 8s infinite ease-in-out;
+            animation: floatBubble 10s infinite ease-in-out;
+            will-change: transform;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0) translateX(0); }
-            25% { transform: translateY(-20px) translateX(10px); }
-            50% { transform: translateY(-40px) translateX(-10px); }
-            75% { transform: translateY(-20px) translateX(5px); }
+        .bubble:nth-child(1) {
+            width: 120px;
+            height: 120px;
+            bottom: -40px;
+            left: -40px;
+            animation-duration: 14s;
         }
 
-        .login-card {
-            background: #ffffff;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        .bubble:nth-child(2) {
+            width: 80px;
+            height: 80px;
+            top: 10%;
+            right: -20px;
+            animation-duration: 12s;
+            animation-delay: 2s;
+        }
+
+        .bubble:nth-child(3) {
+            width: 160px;
+            height: 160px;
+            bottom: 5%;
+            right: 5%;
+            animation-duration: 18s;
+            animation-delay: 1s;
+        }
+
+        .bubble:nth-child(4) {
+            width: 60px;
+            height: 60px;
+            top: 20%;
+            left: 10%;
+            animation-duration: 8s;
+            animation-delay: 3s;
+        }
+
+        @keyframes floatBubble {
+            0%, 100% { 
+                transform: translate(0, 0) scale(1); 
+            }
+            25% { 
+                transform: translate(20px, -30px) scale(1.05); 
+            }
+            50% { 
+                transform: translate(-10px, -50px) scale(0.95); 
+            }
+            75% { 
+                transform: translate(15px, -20px) scale(1.02); 
+            }
+        }
+
+        /* ==============================================
+                   CARD PRINCIPAL
+                   ============================================== */
+        .login-container {
             width: 100%;
-            max-width: 420px;
-            padding: 32px 28px;
+            max-width: 440px;
             position: relative;
             z-index: 1;
-            animation: slideUp 0.6s ease-out;
+            animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) both;
         }
 
         @keyframes slideUp {
             from {
                 opacity: 0;
-                transform: translateY(40px);
+                transform: translateY(40px) scale(0.96);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--radius-card);
+            padding: 36px 32px 28px;
+            box-shadow: var(--shadow-card), 
+                        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: var(--transition);
+        }
+
+        .login-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 24px 72px rgba(0, 0, 0, 0.25);
+        }
+
+        /* ==============================================
+                   HEADER
+                   ============================================== */
+        .login-header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .login-logo {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            background: var(--primary-gradient);
+            border-radius: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.35);
+            transition: var(--transition);
+        }
+
+        .login-logo:hover {
+            transform: scale(1.05) rotate(-2deg);
+            box-shadow: 0 12px 40px rgba(102, 126, 234, 0.45);
+        }
+
+        .login-logo i {
+            font-size: 32px;
+            color: white;
+        }
+
+        .login-header h1 {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--text-dark);
+            letter-spacing: -0.5px;
+        }
+
+        .login-header h1 span {
+            color: #f5a623;
+        }
+
+        .login-header .subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .login-header .subtitle i {
+            color: var(--primary-start);
+        }
+
+        /* ==============================================
+                   TABS
+                   ============================================== */
+        .auth-tabs {
+            display: flex;
+            background: var(--bg-light);
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 24px;
+            gap: 4px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 10px 8px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            font-family: inherit;
+        }
+
+        .auth-tab:hover:not(.active) {
+            color: var(--text-dark);
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .auth-tab.active {
+            background: white;
+            color: var(--primary-start);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        .auth-tab i {
+            margin-right: 8px;
+        }
+
+        .auth-tab-content {
+            display: none;
+            animation: fadeContent 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .auth-tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeContent {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
             }
             to {
                 opacity: 1;
@@ -139,161 +372,108 @@
             }
         }
 
-        .login-header {
-            text-align: center;
-            margin-bottom: 28px;
-        }
-
-        .login-header .logo-icon {
-            font-size: 3rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: inline-block;
-        }
-
-        .login-header h1 {
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #1a1a2e;
-            margin-top: 8px;
-        }
-
-        .login-header h1 span {
-            color: #f5a623;
-        }
-
-        .login-header p {
-            font-size: 0.85rem;
-            color: #718096;
-            margin-top: 4px;
-        }
-
-        .auth-tabs {
-            display: flex;
-            border-bottom: 2px solid #edf2f7;
-            margin-bottom: 24px;
-            gap: 0;
-        }
-
-        .auth-tab {
-            flex: 1;
-            text-align: center;
-            padding: 12px 8px;
-            cursor: pointer;
-            color: #718096;
-            font-weight: 600;
-            font-size: 0.95rem;
-            transition: all 0.3s;
-            border: none;
-            background: transparent;
-            position: relative;
-        }
-
-        .auth-tab:hover {
-            color: #4c51bf;
-        }
-
-        .auth-tab.active {
-            color: #4c51bf;
-        }
-
-        .auth-tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 3px 3px 0 0;
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from { transform: scaleX(0); }
-            to { transform: scaleX(1); }
-        }
-
-        .auth-tab-content {
-            display: none;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        .auth-tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
+        /* ==============================================
+                   FORMULÁRIO
+                   ============================================== */
         .form-group {
-            margin-bottom: 18px;
-            position: relative;
+            margin-bottom: 16px;
         }
 
-        .form-group label {
+        .form-label {
             display: block;
-            font-size: 14px;
-            color: #4a5568;
+            font-size: 13px;
             font-weight: 600;
+            color: var(--text-dark);
             margin-bottom: 6px;
         }
 
-        .form-group label i {
-            color: #667eea;
+        .form-label i {
+            color: var(--primary-start);
             width: 18px;
             margin-right: 4px;
         }
 
         .input-wrapper {
             position: relative;
-            display: flex;
-            align-items: center;
         }
 
         .input-icon {
             position: absolute;
             left: 14px;
-            color: #a0aec0;
-            font-size: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-light);
+            font-size: 15px;
+            pointer-events: none;
+            transition: var(--transition);
         }
 
         .form-control {
             width: 100%;
             padding: 12px 12px 12px 44px;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
+            border: 2px solid var(--border-light);
+            border-radius: var(--radius-input);
             font-size: 15px;
-            transition: all 0.3s;
-            background: #f7fafc;
+            font-family: inherit;
+            background: var(--bg-light);
+            color: var(--text-dark);
+            transition: var(--transition);
+            height: 50px;
         }
 
         .form-control:focus {
             outline: none;
-            border-color: #667eea;
-            background: #ffffff;
+            border-color: var(--primary-start);
+            background: white;
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
         }
 
+        .form-control:focus ~ .input-icon {
+            color: var(--primary-start);
+        }
+
         .form-control::placeholder {
-            color: #a0aec0;
+            color: var(--text-light);
+            font-size: 14px;
         }
 
         .form-control:disabled {
-            background: #edf2f7;
+            opacity: 0.6;
             cursor: not-allowed;
-            opacity: 0.7;
         }
 
-        .password-wrapper {
-            position: relative;
+        .form-control.is-invalid {
+            border-color: #fc8181;
+            background: #fff5f5;
         }
 
+        .form-control.is-invalid:focus {
+            box-shadow: 0 0 0 4px rgba(252, 129, 129, 0.15);
+        }
+
+        .form-control.is-valid {
+            border-color: #68d391;
+            background: #f0fff4;
+        }
+
+        .form-control.is-valid:focus {
+            box-shadow: 0 0 0 4px rgba(104, 211, 145, 0.15);
+        }
+
+        .invalid-feedback {
+            display: none;
+            font-size: 12px;
+            color: #fc8181;
+            margin-top: 4px;
+        }
+
+        .invalid-feedback.show {
+            display: block;
+        }
+
+        /* Password toggle */
         .password-wrapper .form-control {
-            padding-right: 44px;
+            padding-right: 48px;
         }
 
         .password-toggle {
@@ -301,118 +481,94 @@
             right: 12px;
             top: 50%;
             transform: translateY(-50%);
-            background: transparent;
+            background: none;
             border: none;
-            color: #a0aec0;
+            color: var(--text-light);
             cursor: pointer;
             padding: 8px;
             border-radius: 50%;
-            transition: all 0.2s;
-            z-index: 10;
+            transition: var(--transition);
+            font-size: 16px;
+            z-index: 2;
         }
 
         .password-toggle:hover {
-            color: #667eea;
+            color: var(--primary-start);
             background: rgba(102, 126, 234, 0.08);
         }
 
+        /* Forgot password */
         .forgot-password {
-            display: block;
-            text-align: right;
+            display: inline-block;
             font-size: 13px;
-            color: #667eea;
+            color: var(--primary-start);
             text-decoration: none;
-            margin-top: 4px;
             font-weight: 500;
-            transition: all 0.2s;
+            margin-top: 4px;
+            transition: var(--transition);
         }
 
         .forgot-password:hover {
-            color: #764ba2;
+            color: var(--primary-end);
             text-decoration: underline;
         }
 
-        .password-strength {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            margin-top: 6px;
-        }
-
-        .strength-bar {
-            flex: 1;
-            height: 4px;
-            background: #e9ecef;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-
-        .strength-bar.active {
-            background: linear-gradient(90deg, #f56565, #ed8936, #48bb78, #38a169);
-        }
-
-        .strength-text {
-            font-size: 0.7rem;
-            font-weight: 600;
-            min-width: 65px;
-        }
-
-        .strength-text.weak { color: #f56565; }
-        .strength-text.medium { color: #ed8936; }
-        .strength-text.strong { color: #48bb78; }
-        .strength-text.very-strong { color: #38a169; }
-
-        .password-match-hint {
-            font-size: 0.8rem;
-            margin-top: 4px;
-        }
-
-        .password-match-hint .text-success { color: #48bb78; }
-        .password-match-hint .text-danger { color: #f56565; }
-
+        /* Checkbox */
         .form-check {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             margin-top: 4px;
+            margin-bottom: 16px;
         }
 
         .form-check-input {
             width: 18px;
             height: 18px;
-            accent-color: #667eea;
+            accent-color: var(--primary-start);
             cursor: pointer;
+            flex-shrink: 0;
+            margin: 0;
         }
 
         .form-check-label {
-            font-size: 0.85rem;
-            color: #4a5568;
+            font-size: 13px;
+            color: var(--text-muted);
             cursor: pointer;
         }
 
         .form-check-label a {
-            color: #667eea;
+            color: var(--primary-start);
             text-decoration: none;
+            font-weight: 500;
         }
 
         .form-check-label a:hover {
             text-decoration: underline;
         }
 
+        /* ==============================================
+                   BOTÕES
+                   ============================================== */
         .btn-submit {
             width: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
             padding: 14px;
-            border-radius: 10px;
+            border: none;
+            border-radius: var(--radius-input);
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 700;
+            font-family: inherit;
+            color: white;
+            background: var(--primary-gradient);
             cursor: pointer;
-            margin-top: 20px;
-            transition: all 0.3s;
+            transition: var(--transition);
             position: relative;
             overflow: hidden;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
         .btn-submit::before {
@@ -423,22 +579,48 @@
             width: 100%;
             height: 100%;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-            transition: left 0.5s ease;
+            transition: left 0.6s ease;
         }
 
         .btn-submit:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.35);
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.4);
         }
 
         .btn-submit:hover:not(:disabled)::before {
             left: 100%;
         }
 
+        .btn-submit:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
         .btn-submit:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
+            transform: none !important;
+        }
+
+        .btn-submit .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        .btn-submit.loading .spinner {
+            display: inline-block;
+        }
+
+        .btn-submit.loading .btn-text {
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
         .btn-submit-success {
@@ -446,26 +628,70 @@
         }
 
         .btn-submit-success:hover:not(:disabled) {
-            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.35);
+            box-shadow: 0 8px 32px rgba(72, 187, 120, 0.4);
         }
 
-        .btn-submit .spinner-border {
-            width: 1.2rem;
-            height: 1.2rem;
-            margin-right: 0.5rem;
-        }
-
-        .auth-message {
-            margin-top: 12px;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 0.9rem;
+        /* ==============================================
+                   FORÇA DA SENHA
+                   ============================================== */
+        .password-strength {
             display: none;
+            gap: 6px;
+            align-items: center;
+            margin-top: 6px;
+        }
+
+        .password-strength.show {
+            display: flex;
+        }
+
+        .strength-bar {
+            flex: 1;
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+
+        .strength-bar.active {
+            background: var(--primary-gradient);
+        }
+
+        .strength-text {
+            font-size: 11px;
+            font-weight: 600;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .strength-text.weak { color: #fc8181; }
+        .strength-text.medium { color: #f6ad55; }
+        .strength-text.strong { color: #68d391; }
+        .strength-text.very-strong { color: #38a169; }
+
+        .password-match-hint {
+            font-size: 12px;
+            margin-top: 4px;
+            min-height: 20px;
+        }
+
+        .password-match-hint .text-success { color: #48bb78; }
+        .password-match-hint .text-danger { color: #fc8181; }
+
+        /* ==============================================
+                   MENSAGENS E ALERTAS
+                   ============================================== */
+        .auth-message {
+            display: none;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-top: 12px;
+            animation: fadeContent 0.3s ease;
         }
 
         .auth-message.show {
             display: block;
-            animation: fadeIn 0.3s ease-out;
         }
 
         .auth-message.error {
@@ -486,11 +712,47 @@
             border: 1px solid #90cdf4;
         }
 
+        /* ==============================================
+                   RATE LIMIT INDICATOR
+                   ============================================== */
+        .rate-limit-indicator {
+            display: none;
+            margin-top: 12px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #feb2b2;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .rate-limit-indicator.show {
+            display: flex;
+            animation: fadeContent 0.3s ease;
+        }
+
+        .rate-limit-indicator .icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .rate-limit-indicator .timer {
+            font-weight: 700;
+            font-family: 'Inter', monospace;
+            font-size: 16px;
+            color: #c53030;
+        }
+
+        /* ==============================================
+                   FOOTER
+                   ============================================== */
         .login-footer {
             text-align: center;
-            margin-top: 20px;
-            padding-top: 16px;
-            border-top: 1px solid #edf2f7;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-light);
         }
 
         .login-footer .links {
@@ -502,78 +764,73 @@
         }
 
         .login-footer .links a {
-            font-size: 0.75rem;
-            color: #a0aec0;
+            font-size: 12px;
+            color: var(--text-light);
             text-decoration: none;
-            transition: color 0.2s;
+            transition: var(--transition);
         }
 
         .login-footer .links a:hover {
-            color: #667eea;
+            color: var(--primary-start);
         }
 
         .login-footer .copyright {
-            font-size: 0.7rem;
+            font-size: 11px;
             color: #cbd5e0;
         }
 
-        /* 🔥 INDICADOR DE RATE LIMIT */
-        .rate-limit-indicator {
-            display: none;
-            margin-top: 10px;
-            padding: 10px 12px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            background: #fff5f5;
-            color: #c53030;
-            border: 1px solid #feb2b2;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .rate-limit-indicator.show {
-            display: flex;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        .rate-limit-indicator .icon {
-            font-size: 1.2rem;
-        }
-
-        .rate-limit-indicator .timer {
-            font-weight: 700;
-            font-family: monospace;
-            font-size: 1.1rem;
-            color: #c53030;
-        }
-
-        /* 🔥 BOTÃO DE EMERGÊNCIA - LIMPA TUDO */
-        .emergency-clear {
+        .login-footer .emergency-clear {
             background: none;
             border: none;
-            color: #dc3545;
-            font-size: 0.7rem;
+            color: #fc8181;
+            font-size: 12px;
             cursor: pointer;
             text-decoration: underline;
-            transition: color 0.2s;
+            transition: var(--transition);
+            font-family: inherit;
+            margin-top: 8px;
         }
 
-        .emergency-clear:hover {
-            color: #b91c1c;
+        .login-footer .emergency-clear:hover {
+            color: #c53030;
         }
 
+        /* ==============================================
+                   RESPONSIVIDADE
+                   ============================================== */
         @media (max-width: 480px) {
             .login-card {
-                padding: 24px 16px;
+                padding: 24px 16px 20px;
+                border-radius: 20px;
             }
 
             .login-header h1 {
-                font-size: 1.3rem;
+                font-size: 24px;
+            }
+
+            .login-logo {
+                width: 60px;
+                height: 60px;
+            }
+
+            .login-logo i {
+                font-size: 26px;
             }
 
             .auth-tab {
-                font-size: 0.85rem;
-                padding: 10px 6px;
+                font-size: 13px;
+                padding: 8px 6px;
+            }
+
+            .form-control {
+                font-size: 14px;
+                height: 46px;
+                padding: 10px 10px 10px 40px;
+            }
+
+            .btn-submit {
+                font-size: 15px;
+                height: 48px;
             }
 
             .login-footer .links {
@@ -581,233 +838,463 @@
             }
 
             .login-footer .links a {
-                font-size: 0.65rem;
+                font-size: 11px;
             }
         }
 
         @media (max-width: 360px) {
             .login-card {
-                padding: 16px 12px;
+                padding: 16px 12px 16px;
+            }
+
+            .login-header h1 {
+                font-size: 20px;
+            }
+
+            .auth-tab {
+                font-size: 12px;
+                padding: 6px 4px;
             }
 
             .form-control {
                 font-size: 13px;
-                padding: 10px 10px 10px 36px;
+                height: 42px;
+                padding: 8px 8px 8px 36px;
             }
 
             .btn-submit {
                 font-size: 14px;
-                padding: 12px;
+                height: 44px;
+            }
+        }
+
+        /* ==============================================
+                   DARK MODE (opcional - ativado pelo sistema)
+                   ============================================== */
+        @media (prefers-color-scheme: dark) {
+            .login-card {
+                background: rgba(26, 26, 46, 0.95);
+            }
+
+            .login-header h1 {
+                color: #f7fafc;
+            }
+
+            .form-label {
+                color: #e2e8f0;
+            }
+
+            .form-control {
+                background: rgba(255,255,255,0.06);
+                color: #f7fafc;
+                border-color: rgba(255,255,255,0.12);
+            }
+
+            .form-control:focus {
+                background: rgba(255,255,255,0.1);
+            }
+
+            .form-control::placeholder {
+                color: rgba(255,255,255,0.3);
+            }
+
+            .auth-tabs {
+                background: rgba(255,255,255,0.06);
+            }
+
+            .auth-tab {
+                color: rgba(255,255,255,0.5);
+            }
+
+            .auth-tab.active {
+                background: rgba(255,255,255,0.1);
+                color: #667eea;
+            }
+
+            .login-footer {
+                border-top-color: rgba(255,255,255,0.08);
+            }
+
+            .login-footer .links a {
+                color: rgba(255,255,255,0.3);
+            }
+
+            .login-footer .copyright {
+                color: rgba(255,255,255,0.2);
+            }
+
+            .form-check-label {
+                color: rgba(255,255,255,0.6);
+            }
+
+            .password-toggle {
+                color: rgba(255,255,255,0.4);
+            }
+
+            .password-toggle:hover {
+                color: #667eea;
+                background: rgba(102, 126, 234, 0.15);
+            }
+
+            .login-header .subtitle {
+                color: rgba(255,255,255,0.5);
+            }
+
+            .input-icon {
+                color: rgba(255,255,255,0.3);
             }
         }
     </style>
 </head>
 <body>
 
-    <!-- Bolhas decorativas -->
-    <div class="bubble" style="width: 120px; height: 120px; bottom: -40px; left: -40px; animation-duration: 12s;"></div>
-    <div class="bubble" style="width: 80px; height: 80px; top: 10%; right: -20px; animation-duration: 10s; animation-delay: 2s;"></div>
-    <div class="bubble" style="width: 160px; height: 160px; bottom: 5%; right: 5%; animation-duration: 15s; animation-delay: 1s;"></div>
+    <!-- ============================================== -->
+    <!-- BOLHAS DECORATIVAS -->
+    <!-- ============================================== -->
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
 
-    <div class="login-card">
-        <!-- HEADER -->
-        <div class="login-header">
-            <div class="logo-icon">
-                <i class="fas fa-chart-line"></i>
+    <!-- ============================================== -->
+    <!-- CARD DE LOGIN -->
+    <!-- ============================================== -->
+    <div class="login-container">
+        <div class="login-card">
+
+            <!-- HEADER -->
+            <div class="login-header">
+                <div class="login-logo">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <h1>Auto<span>Analytics</span></h1>
+                <div class="subtitle">
+                    <i class="fas fa-robot me-1"></i>
+                    IA para Oficinas Mecânicas
+                </div>
             </div>
-            <h1>Auto<span>Analytics</span>Pro</h1>
-            <p><i class="fas fa-robot" style="color: #667eea;"></i> IA para Oficinas Mecânicas</p>
-        </div>
 
-        <!-- 🔥 AUTH TABS -->
-        <div class="auth-tabs" id="authTabs" role="tablist">
-            <button class="auth-tab active" data-target="#login-form-wrapper" data-tab="login" role="tab" aria-selected="true" id="tab-login-btn">
-                <i class="fas fa-sign-in-alt me-2"></i> Entrar
-            </button>
-            <button class="auth-tab" data-target="#register-form-wrapper" data-tab="register" role="tab" aria-selected="false" id="tab-register-btn">
-                <i class="fas fa-user-plus me-2"></i> Criar Conta
-            </button>
-        </div>
-
-        <!-- ========================================== -->
-        <!-- 🔥 TAB LOGIN -->
-        <!-- ========================================== -->
-        <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel" aria-labelledby="tab-login-btn">
-            <form id="loginForm" novalidate>
-                <!-- Email -->
-                <div class="form-group">
-                    <label for="loginEmail"><i class="fas fa-envelope"></i> E-mail</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-envelope"></i></span>
-                        <input type="email" id="loginEmail" name="email" class="form-control" placeholder="seu@email.com" required autocomplete="email" tabindex="1">
-                    </div>
-                </div>
-
-                <!-- Senha -->
-                <div class="form-group">
-                    <label for="loginPassword"><i class="fas fa-lock"></i> Senha</label>
-                    <div class="input-wrapper password-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
-                        <input type="password" id="loginPassword" name="password" class="form-control" placeholder="Sua senha" required autocomplete="current-password" tabindex="2">
-                        <button type="button" class="password-toggle" data-target="loginPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
-                            <i class="far fa-eye-slash" aria-hidden="true"></i>
-                        </button>
-                    </div>
-                    <a href="#" class="forgot-password" tabindex="3"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Esqueceu a senha?</a>
-                </div>
-
-                <div class="form-check">
-                    <input type="checkbox" class="form-check-input" id="rememberMe" tabindex="4">
-                    <label class="form-check-label" for="rememberMe">
-                        <i class="far fa-check-circle me-1" aria-hidden="true"></i> Manter conectado por 30 dias
-                    </label>
-                </div>
-
-                <!-- 🔥 CORREÇÃO: ID do indicador de Rate Limit - LOGIN -->
-                <div class="rate-limit-indicator" id="rateLimitIndicatorLogin">
-                    <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
-                    <span id="rateLimitMessageLogin">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerLogin">60</span>s</span>
-                </div>
-
-                <button type="submit" class="btn-submit" id="loginBtn" tabindex="5">
-                    <i class="fas fa-sign-in-alt me-2" aria-hidden="true"></i> Entrar no Sistema
+            <!-- TABS -->
+            <div class="auth-tabs" role="tablist">
+                <button class="auth-tab active" 
+                        data-target="#login-form-wrapper" 
+                        data-tab="login" 
+                        role="tab" 
+                        aria-selected="true" 
+                        id="tab-login-btn">
+                    <i class="fas fa-sign-in-alt"></i> Entrar
                 </button>
-            </form>
-        </div>
-
-        <!-- ========================================== -->
-        <!-- 🔥 TAB REGISTER -->
-        <!-- ========================================== -->
-        <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel" aria-labelledby="tab-register-btn">
-            <form id="registerForm" novalidate>
-                <!-- Nome (obrigatório) -->
-                <div class="form-group">
-                    <label for="registerName"><i class="fas fa-user"></i> Nome Completo</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-user"></i></span>
-                        <input type="text" id="registerName" name="name" class="form-control" placeholder="Ex: João Silva" required autocomplete="name">
-                    </div>
-                </div>
-
-                <!-- Email (obrigatório) -->
-                <div class="form-group">
-                    <label for="registerEmail"><i class="fas fa-envelope"></i> E-mail</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-envelope"></i></span>
-                        <input type="email" id="registerEmail" name="email" class="form-control" placeholder="seu@email.com" required autocomplete="email">
-                    </div>
-                </div>
-
-                <!-- Senha e Confirmação -->
-                <div class="row" style="display: flex; gap: 12px; flex-wrap: wrap;">
-                    <div class="form-group" style="flex: 1; min-width: 140px;">
-                        <label for="registerPassword"><i class="fas fa-lock"></i> Senha</label>
-                        <div class="input-wrapper password-wrapper">
-                            <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
-                            <input type="password" id="registerPassword" name="password" class="form-control" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password">
-                            <button type="button" class="password-toggle" data-target="registerPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
-                                <i class="far fa-eye-slash" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                        <div class="password-strength" id="passwordStrengthContainer" style="display: none;">
-                            <div class="strength-bar" id="strengthBar1"></div>
-                            <div class="strength-bar" id="strengthBar2"></div>
-                            <div class="strength-bar" id="strengthBar3"></div>
-                            <div class="strength-bar" id="strengthBar4"></div>
-                            <span class="strength-text" id="strengthText">Fraca</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group" style="flex: 1; min-width: 140px;">
-                        <label for="registerConfirmPassword"><i class="fas fa-lock"></i> Confirmar</label>
-                        <div class="input-wrapper password-wrapper">
-                            <span class="input-icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
-                            <input type="password" id="registerConfirmPassword" name="confirm_password" class="form-control" placeholder="Digite novamente" required autocomplete="new-password">
-                            <button type="button" class="password-toggle" data-target="registerConfirmPassword" aria-label="Mostrar/ocultar senha" tabindex="-1">
-                                <i class="far fa-eye-slash" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                        <div class="password-match-hint" id="passwordMatchHint"></div>
-                    </div>
-                </div>
-
-                <!-- Nome da Oficina (obrigatório) -->
-                <div class="form-group">
-                    <label for="registerWorkshop"><i class="fas fa-wrench"></i> Nome da Oficina</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-wrench"></i></span>
-                        <input type="text" id="registerWorkshop" name="workshop" class="form-control" placeholder="Ex: Oficina Central" required>
-                    </div>
-                </div>
-
-                <!-- 🔥 CAMPO PHONE - OPCIONAL -->
-                <div class="form-group">
-                    <label for="registerPhone"><i class="fas fa-phone"></i> Telefone <small style="color: #718096;">(opcional)</small></label>
-                    <div class="input-wrapper">
-                        <span class="input-icon" aria-hidden="true"><i class="fas fa-phone"></i></span>
-                        <input type="tel" id="registerPhone" name="phone" class="form-control" placeholder="(00) 00000-0000" autocomplete="tel">
-                    </div>
-                    <small style="color: #a0aec0; font-size: 0.7rem;">
-                        <i class="fas fa-info-circle me-1"></i>
-                        Opcional - usado apenas para contato
-                    </small>
-                </div>
-
-                <!-- Termos -->
-                <div class="form-check">
-                    <input type="checkbox" class="form-check-input" id="terms" required>
-                    <label class="form-check-label" for="terms">
-                        <i class="far fa-check-circle me-1" aria-hidden="true"></i> Aceito os <a href="#">Termos de Uso</a> e <a href="#">Política de Privacidade</a>
-                    </label>
-                </div>
-
-                <!-- 🔥 CORREÇÃO: ID do indicador de Rate Limit - REGISTER -->
-                <div class="rate-limit-indicator" id="rateLimitIndicatorRegister">
-                    <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
-                    <span id="rateLimitMessageRegister">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerRegister">60</span>s</span>
-                </div>
-
-                <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
-                    <i class="fas fa-user-plus me-2" aria-hidden="true"></i> Criar Minha Conta
+                <button class="auth-tab" 
+                        data-target="#register-form-wrapper" 
+                        data-tab="register" 
+                        role="tab" 
+                        aria-selected="false" 
+                        id="tab-register-btn">
+                    <i class="fas fa-user-plus"></i> Criar Conta
                 </button>
-
-                <div style="text-align: center; margin-top: 12px;">
-                    <small style="color: #718096;">
-                        <i class="fas fa-gift" style="color: #f5a623;" aria-hidden="true"></i>
-                        Ao criar sua conta, você ganha <strong style="color: #f5a623;">3 créditos grátis</strong>!
-                    </small>
-                </div>
-            </form>
-        </div>
-
-        <!-- MENSAGEM -->
-        <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
-
-        <!-- 🔥 BOTÃO DE EMERGÊNCIA - LIMPA TUDO -->
-        <div class="text-center mt-3">
-            <button class="emergency-clear" onclick="emergencyClear()">
-                <i class="fas fa-exclamation-triangle me-1"></i>
-                Problemas para entrar? Limpar dados da sessão
-            </button>
-        </div>
-
-        <!-- FOOTER -->
-        <div class="login-footer">
-            <div class="links">
-                <a href="#"><i class="fas fa-question-circle me-1" aria-hidden="true"></i> Suporte 24h</a>
-                <a href="#"><i class="fas fa-shield-alt me-1" aria-hidden="true"></i> Privacidade</a>
-                <a href="#"><i class="fas fa-file-alt me-1" aria-hidden="true"></i> Termos</a>
-                <a href="#"><i class="fas fa-envelope me-1" aria-hidden="true"></i> Contato</a>
             </div>
-            <div class="copyright">© 2026 AutoAnalyticsPro. Todos os direitos reservados.</div>
+
+            <!-- ========================================== -->
+            <!-- 🔥 TAB LOGIN -->
+            <!-- ========================================== -->
+            <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel">
+                <form id="loginForm" novalidate>
+                    
+                    <!-- Email -->
+                    <div class="form-group">
+                        <label for="loginEmail" class="form-label">
+                            <i class="fas fa-envelope"></i> E-mail
+                        </label>
+                        <div class="input-wrapper">
+                            <span class="input-icon"><i class="fas fa-envelope"></i></span>
+                            <input type="email" 
+                                   id="loginEmail" 
+                                   name="email" 
+                                   class="form-control" 
+                                   placeholder="seu@email.com" 
+                                   required 
+                                   autocomplete="email" 
+                                   tabindex="1"
+                                   autofocus>
+                            <div class="invalid-feedback" id="loginEmailFeedback">
+                                Por favor, insira um email válido.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Senha -->
+                    <div class="form-group">
+                        <label for="loginPassword" class="form-label">
+                            <i class="fas fa-lock"></i> Senha
+                        </label>
+                        <div class="input-wrapper password-wrapper">
+                            <span class="input-icon"><i class="fas fa-lock"></i></span>
+                            <input type="password" 
+                                   id="loginPassword" 
+                                   name="password" 
+                                   class="form-control" 
+                                   placeholder="Sua senha" 
+                                   required 
+                                   autocomplete="current-password" 
+                                   tabindex="2">
+                            <button type="button" 
+                                    class="password-toggle" 
+                                    data-target="loginPassword" 
+                                    aria-label="Mostrar/ocultar senha" 
+                                    tabindex="-1">
+                                <i class="fas fa-eye-slash" aria-hidden="true"></i>
+                            </button>
+                            <div class="invalid-feedback" id="loginPasswordFeedback">
+                                A senha deve ter pelo menos 6 caracteres.
+                            </div>
+                        </div>
+                        <a href="#" class="forgot-password" tabindex="3">
+                            <i class="fas fa-question-circle me-1"></i> Esqueceu a senha?
+                        </a>
+                    </div>
+
+                    <!-- Remember me -->
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="rememberMe" tabindex="4">
+                        <label class="form-check-label" for="rememberMe">
+                            <i class="fas fa-check-circle me-1"></i> Manter conectado por 30 dias
+                        </label>
+                    </div>
+
+                    <!-- Rate Limit Indicator -->
+                    <div class="rate-limit-indicator" id="rateLimitIndicatorLogin">
+                        <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span id="rateLimitMessageLogin">
+                            Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerLogin">60</span>s
+                        </span>
+                    </div>
+
+                    <!-- Botão -->
+                    <button type="submit" class="btn-submit" id="loginBtn" tabindex="5">
+                        <span class="spinner"></span>
+                        <span class="btn-text">
+                            <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
+                        </span>
+                    </button>
+
+                </form>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- 🔥 TAB REGISTER -->
+            <!-- ========================================== -->
+            <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel">
+                <form id="registerForm" novalidate>
+                    
+                    <!-- Nome -->
+                    <div class="form-group">
+                        <label for="registerName" class="form-label">
+                            <i class="fas fa-user"></i> Nome Completo
+                        </label>
+                        <div class="input-wrapper">
+                            <span class="input-icon"><i class="fas fa-user"></i></span>
+                            <input type="text" 
+                                   id="registerName" 
+                                   name="name" 
+                                   class="form-control" 
+                                   placeholder="Ex: João Silva" 
+                                   required 
+                                   autocomplete="name"
+                                   minlength="3">
+                            <div class="invalid-feedback" id="registerNameFeedback">
+                                Nome deve ter pelo menos 3 caracteres.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="form-group">
+                        <label for="registerEmail" class="form-label">
+                            <i class="fas fa-envelope"></i> E-mail
+                        </label>
+                        <div class="input-wrapper">
+                            <span class="input-icon"><i class="fas fa-envelope"></i></span>
+                            <input type="email" 
+                                   id="registerEmail" 
+                                   name="email" 
+                                   class="form-control" 
+                                   placeholder="seu@email.com" 
+                                   required 
+                                   autocomplete="email">
+                            <div class="invalid-feedback" id="registerEmailFeedback">
+                                Por favor, insira um email válido.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Senha e Confirmação -->
+                    <div class="row g-2" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1; min-width: 140px;">
+                            <label for="registerPassword" class="form-label">
+                                <i class="fas fa-lock"></i> Senha
+                            </label>
+                            <div class="input-wrapper password-wrapper">
+                                <span class="input-icon"><i class="fas fa-lock"></i></span>
+                                <input type="password" 
+                                       id="registerPassword" 
+                                       name="password" 
+                                       class="form-control" 
+                                       placeholder="Mínimo 6 caracteres" 
+                                       minlength="6" 
+                                       required 
+                                       autocomplete="new-password">
+                                <button type="button" 
+                                        class="password-toggle" 
+                                        data-target="registerPassword" 
+                                        aria-label="Mostrar/ocultar senha" 
+                                        tabindex="-1">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
+                                <div class="invalid-feedback" id="registerPasswordFeedback">
+                                    A senha deve ter pelo menos 6 caracteres.
+                                </div>
+                            </div>
+                            <!-- Força da senha -->
+                            <div class="password-strength" id="passwordStrengthContainer">
+                                <div class="strength-bar" id="strengthBar1"></div>
+                                <div class="strength-bar" id="strengthBar2"></div>
+                                <div class="strength-bar" id="strengthBar3"></div>
+                                <div class="strength-bar" id="strengthBar4"></div>
+                                <span class="strength-text" id="strengthText">Fraca</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="flex: 1; min-width: 140px;">
+                            <label for="registerConfirmPassword" class="form-label">
+                                <i class="fas fa-lock"></i> Confirmar
+                            </label>
+                            <div class="input-wrapper password-wrapper">
+                                <span class="input-icon"><i class="fas fa-lock"></i></span>
+                                <input type="password" 
+                                       id="registerConfirmPassword" 
+                                       name="confirm_password" 
+                                       class="form-control" 
+                                       placeholder="Digite novamente" 
+                                       required 
+                                       autocomplete="new-password">
+                                <button type="button" 
+                                        class="password-toggle" 
+                                        data-target="registerConfirmPassword" 
+                                        aria-label="Mostrar/ocultar senha" 
+                                        tabindex="-1">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
+                            </div>
+                            <div class="password-match-hint" id="passwordMatchHint"></div>
+                        </div>
+                    </div>
+
+                    <!-- Nome da Oficina -->
+                    <div class="form-group">
+                        <label for="registerWorkshop" class="form-label">
+                            <i class="fas fa-wrench"></i> Nome da Oficina
+                        </label>
+                        <div class="input-wrapper">
+                            <span class="input-icon"><i class="fas fa-wrench"></i></span>
+                            <input type="text" 
+                                   id="registerWorkshop" 
+                                   name="workshop" 
+                                   class="form-control" 
+                                   placeholder="Ex: Oficina Central" 
+                                   required
+                                   minlength="2">
+                            <div class="invalid-feedback" id="registerWorkshopFeedback">
+                                Nome da oficina deve ter pelo menos 2 caracteres.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Telefone (opcional) -->
+                    <div class="form-group">
+                        <label for="registerPhone" class="form-label">
+                            <i class="fas fa-phone"></i> Telefone <small style="color: var(--text-light); font-weight: 400;">(opcional)</small>
+                        </label>
+                        <div class="input-wrapper">
+                            <span class="input-icon"><i class="fas fa-phone"></i></span>
+                            <input type="tel" 
+                                   id="registerPhone" 
+                                   name="phone" 
+                                   class="form-control" 
+                                   placeholder="(00) 00000-0000" 
+                                   autocomplete="tel">
+                        </div>
+                        <small style="color: var(--text-light); font-size: 11px;">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Opcional - usado apenas para contato
+                        </small>
+                    </div>
+
+                    <!-- Termos -->
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="terms" required>
+                        <label class="form-check-label" for="terms">
+                            <i class="fas fa-check-circle me-1"></i> 
+                            Aceito os <a href="#" target="_blank">Termos de Uso</a> e 
+                            <a href="#" target="_blank">Política de Privacidade</a>
+                        </label>
+                        <div class="invalid-feedback" id="termsFeedback" style="display: none;">
+                            Você precisa aceitar os termos para continuar.
+                        </div>
+                    </div>
+
+                    <!-- Rate Limit Indicator -->
+                    <div class="rate-limit-indicator" id="rateLimitIndicatorRegister">
+                        <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span id="rateLimitMessageRegister">
+                            Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerRegister">60</span>s
+                        </span>
+                    </div>
+
+                    <!-- Botão -->
+                    <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
+                        <span class="spinner"></span>
+                        <span class="btn-text">
+                            <i class="fas fa-user-plus"></i> Criar Minha Conta
+                        </span>
+                    </button>
+
+                    <!-- Créditos grátis -->
+                    <div style="text-align: center; margin-top: 12px;">
+                        <small style="color: var(--text-muted);">
+                            <i class="fas fa-gift" style="color: #f5a623;"></i>
+                            Ao criar sua conta, você ganha <strong style="color: #f5a623;">3 créditos grátis</strong>!
+                        </small>
+                    </div>
+
+                </form>
+            </div>
+
+            <!-- MENSAGEM -->
+            <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
+
+            <!-- FOOTER -->
+            <div class="login-footer">
+                <div class="links">
+                    <a href="#"><i class="fas fa-question-circle me-1"></i> Suporte</a>
+                    <a href="#"><i class="fas fa-shield-alt me-1"></i> Privacidade</a>
+                    <a href="#"><i class="fas fa-file-alt me-1"></i> Termos</a>
+                    <a href="#"><i class="fas fa-envelope me-1"></i> Contato</a>
+                </div>
+                <div class="copyright">© 2026 AutoAnalytics. Todos os direitos reservados.</div>
+                <button class="emergency-clear" onclick="emergencyClear()">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Problemas? Limpar dados da sessão
+                </button>
+            </div>
+
         </div>
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICO) -->
+    <!-- 🔥 SCRIPTS - ORDEM DE CARREGAMENTO OTIMIZADA -->
     <!-- ============================================== -->
     
-    <!-- 1. CONFIGURAÇÃO DO TOASTR -->
+    <!-- 1. CONFIGURAÇÃO TOASTR -->
     <script>
         toastr.options = {
             closeButton: true,
@@ -815,7 +1302,10 @@
             positionClass: "toast-top-right",
             timeOut: 5000,
             extendedTimeOut: 1000,
-            escapeHtml: true
+            escapeHtml: true,
+            preventDuplicates: true,
+            showMethod: 'fadeIn',
+            hideMethod: 'fadeOut'
         };
     </script>
 
@@ -828,8 +1318,10 @@
                 document.cookie.split(";").forEach(function(c) { 
                     document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
                 });
-                alert('✅ Dados de sessão limpos com sucesso! A página será recarregada.');
-                window.location.href = '/login';
+                toastr.success('Dados de sessão limpos com sucesso!');
+                setTimeout(function() {
+                    window.location.href = '/login';
+                }, 500);
             }
         }
     </script>
@@ -837,16 +1329,17 @@
     <!-- 3. GERENCIADOR DE TABS -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Inicializando gerenciador de tabs...');
+            console.log('🔧 [TABS] Inicializando...');
             
-            document.querySelectorAll('.auth-tab').forEach(tabBtn => {
+            document.querySelectorAll('.auth-tab').forEach(function(tabBtn) {
                 tabBtn.addEventListener('click', function(e) {
                     e.preventDefault();
                     
                     const tabName = this.getAttribute('data-tab');
-                    console.log(`📝 Alternando para tab: ${tabName}`);
+                    console.log(`📝 [TABS] Alternando para: ${tabName}`);
                     
-                    document.querySelectorAll('.auth-tab').forEach(b => {
+                    // Atualiza tabs
+                    document.querySelectorAll('.auth-tab').forEach(function(b) {
                         b.classList.remove('active');
                         b.setAttribute('aria-selected', 'false');
                     });
@@ -854,7 +1347,8 @@
                     this.classList.add('active');
                     this.setAttribute('aria-selected', 'true');
                     
-                    document.querySelectorAll('.auth-tab-content').forEach(c => {
+                    // Atualiza conteúdo
+                    document.querySelectorAll('.auth-tab-content').forEach(function(c) {
                         c.classList.remove('active');
                     });
                     
@@ -863,64 +1357,59 @@
                         const targetContent = document.querySelector(targetId);
                         if (targetContent) {
                             targetContent.classList.add('active');
-                            console.log(`✅ Conteúdo exibido: ${targetId}`);
                         }
                     }
                 });
             });
             
-            console.log('✅ Gerenciador de tabs inicializado com sucesso!');
+            console.log('✅ [TABS] Inicializado com sucesso!');
         });
     </script>
 
     <!-- 4. PASSWORD TOGGLE -->
     <script>
-        document.querySelectorAll('.password-toggle').forEach(function(button) {
-            button.addEventListener('click', function() {
-                var targetId = this.getAttribute('data-target');
-                var input = document.getElementById(targetId);
-                var icon = this.querySelector('i');
-                
-                if (input) {
-                    if (input.type === 'password') {
-                        input.type = 'text';
-                        icon.classList.remove('fa-eye-slash');
-                        icon.classList.add('fa-eye');
-                    } else {
-                        input.type = 'password';
-                        icon.classList.remove('fa-eye');
-                        icon.classList.add('fa-eye-slash');
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.password-toggle').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const targetId = this.getAttribute('data-target');
+                    const input = document.getElementById(targetId);
+                    const icon = this.querySelector('i');
+                    
+                    if (input) {
+                        const isPassword = input.type === 'password';
+                        input.type = isPassword ? 'text' : 'password';
+                        icon.className = isPassword ? 'fas fa-eye' : 'fas fa-eye-slash';
                     }
-                }
+                });
             });
         });
     </script>
 
-    <!-- 5. 🔥 FORÇA DA SENHA (REGISTER) -->
+    <!-- 5. FORÇA DA SENHA -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const passwordInput = document.getElementById('registerPassword');
-            const strengthContainer = document.getElementById('passwordStrengthContainer');
+            const container = document.getElementById('passwordStrengthContainer');
             const bars = [
                 document.getElementById('strengthBar1'),
                 document.getElementById('strengthBar2'),
                 document.getElementById('strengthBar3'),
                 document.getElementById('strengthBar4')
             ];
-            const strengthText = document.getElementById('strengthText');
+            const text = document.getElementById('strengthText');
             
             if (passwordInput) {
                 passwordInput.addEventListener('input', function() {
                     const password = this.value;
                     
                     if (password.length === 0) {
-                        strengthContainer.style.display = 'none';
+                        container.classList.remove('show');
                         return;
                     }
                     
-                    strengthContainer.style.display = 'flex';
+                    container.classList.add('show');
                     
-                    // Avalia força
+                    // Calcula força
                     let score = 0;
                     if (password.length >= 6) score++;
                     if (password.length >= 10) score++;
@@ -928,29 +1417,23 @@
                     if (/[0-9]/.test(password)) score++;
                     if (/[^A-Za-z0-9]/.test(password)) score++;
                     
-                    // Normaliza entre 0 e 4
                     score = Math.min(4, Math.max(0, Math.floor(score / 1.5)));
                     
-                    // Atualiza barras
                     const levels = ['Fraca', 'Fraca', 'Média', 'Forte', 'Muito Forte'];
                     const classes = ['weak', 'weak', 'medium', 'strong', 'very-strong'];
                     
-                    bars.forEach((bar, index) => {
-                        if (index < score) {
-                            bar.classList.add('active');
-                        } else {
-                            bar.classList.remove('active');
-                        }
+                    bars.forEach(function(bar, index) {
+                        bar.classList.toggle('active', index < score);
                     });
                     
-                    strengthText.textContent = levels[score] || 'Fraca';
-                    strengthText.className = 'strength-text ' + (classes[score] || 'weak');
+                    text.textContent = levels[score] || 'Fraca';
+                    text.className = 'strength-text ' + (classes[score] || 'weak');
                 });
             }
         });
     </script>
 
-    <!-- 6. 🔥 CONFIRMAÇÃO DE SENHA (REGISTER) -->
+    <!-- 6. CONFIRMAÇÃO DE SENHA -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const passwordInput = document.getElementById('registerPassword');
@@ -967,11 +1450,10 @@
                         return;
                     }
                     
-                    if (pwd === confirm) {
-                        hint.innerHTML = '<i class="fas fa-check-circle me-1" style="color: #48bb78;"></i> <span class="text-success">Senhas coincidem!</span>';
-                    } else {
-                        hint.innerHTML = '<i class="fas fa-times-circle me-1" style="color: #f56565;"></i> <span class="text-danger">As senhas não coincidem!</span>';
-                    }
+                    const isMatch = pwd === confirm;
+                    hint.innerHTML = isMatch 
+                        ? '<i class="fas fa-check-circle me-1" style="color: #48bb78;"></i> <span class="text-success">Senhas coincidem!</span>'
+                        : '<i class="fas fa-times-circle me-1" style="color: #fc8181;"></i> <span class="text-danger">As senhas não coincidem!</span>';
                 }
                 
                 passwordInput.addEventListener('input', checkMatch);
@@ -980,170 +1462,246 @@
         });
     </script>
 
+    <!-- 7. VALIDAÇÃO EM TEMPO REAL DOS CAMPOS -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Login: validação de email
+            const loginEmail = document.getElementById('loginEmail');
+            const loginEmailFeedback = document.getElementById('loginEmailFeedback');
+            
+            if (loginEmail) {
+                loginEmail.addEventListener('blur', function() {
+                    const isValid = this.value.includes('@') && this.value.length > 3;
+                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
+                    loginEmailFeedback.classList.toggle('show', !isValid && this.value.length > 0);
+                });
+                
+                loginEmail.addEventListener('input', function() {
+                    if (this.classList.contains('is-invalid') && this.value.includes('@')) {
+                        this.classList.remove('is-invalid');
+                        loginEmailFeedback.classList.remove('show');
+                    }
+                });
+            }
+            
+            // Login: validação de senha
+            const loginPassword = document.getElementById('loginPassword');
+            const loginPasswordFeedback = document.getElementById('loginPasswordFeedback');
+            
+            if (loginPassword) {
+                loginPassword.addEventListener('blur', function() {
+                    const isValid = this.value.length >= 6;
+                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
+                    loginPasswordFeedback.classList.toggle('show', !isValid && this.value.length > 0);
+                });
+                
+                loginPassword.addEventListener('input', function() {
+                    if (this.classList.contains('is-invalid') && this.value.length >= 6) {
+                        this.classList.remove('is-invalid');
+                        loginPasswordFeedback.classList.remove('show');
+                    }
+                });
+            }
+            
+            // Register: validação de nome
+            const registerName = document.getElementById('registerName');
+            const registerNameFeedback = document.getElementById('registerNameFeedback');
+            
+            if (registerName) {
+                registerName.addEventListener('blur', function() {
+                    const isValid = this.value.length >= 3;
+                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
+                    registerNameFeedback.classList.toggle('show', !isValid && this.value.length > 0);
+                });
+                
+                registerName.addEventListener('input', function() {
+                    if (this.classList.contains('is-invalid') && this.value.length >= 3) {
+                        this.classList.remove('is-invalid');
+                        registerNameFeedback.classList.remove('show');
+                    }
+                });
+            }
+            
+            // Register: validação de email
+            const registerEmail = document.getElementById('registerEmail');
+            const registerEmailFeedback = document.getElementById('registerEmailFeedback');
+            
+            if (registerEmail) {
+                registerEmail.addEventListener('blur', function() {
+                    const isValid = this.value.includes('@') && this.value.length > 3;
+                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
+                    registerEmailFeedback.classList.toggle('show', !isValid && this.value.length > 0);
+                });
+                
+                registerEmail.addEventListener('input', function() {
+                    if (this.classList.contains('is-invalid') && this.value.includes('@')) {
+                        this.classList.remove('is-invalid');
+                        registerEmailFeedback.classList.remove('show');
+                    }
+                });
+            }
+            
+            // Register: validação de oficina
+            const registerWorkshop = document.getElementById('registerWorkshop');
+            const registerWorkshopFeedback = document.getElementById('registerWorkshopFeedback');
+            
+            if (registerWorkshop) {
+                registerWorkshop.addEventListener('blur', function() {
+                    const isValid = this.value.length >= 2;
+                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
+                    registerWorkshopFeedback.classList.toggle('show', !isValid && this.value.length > 0);
+                });
+                
+                registerWorkshop.addEventListener('input', function() {
+                    if (this.classList.contains('is-invalid') && this.value.length >= 2) {
+                        this.classList.remove('is-invalid');
+                        registerWorkshopFeedback.classList.remove('show');
+                    }
+                });
+            }
+        });
+    </script>
+
     <!-- ============================================== -->
-    <!-- 🔥 🔥 🔥 SCRIPTS DA APLICAÇÃO - COM DEFER 🔥 🔥 🔥 -->
+    <!-- 🔥 SCRIPTS DA APLICAÇÃO - COM DEFER -->
     <!-- ============================================== -->
     
-    <!-- 
-        ⚠️ ORDEM DE CARREGAMENTO OBRIGATÓRIA COM DEFER:
-        1. auth.js (define window.appAuth) - COM DEFER
-        2. app.js (orquestrador - v3.3 com Rate Limiter) - COM DEFER
-    -->
-    
-    <!-- 7. AUTH.JS - Módulo de autenticação COM DEFER -->
+    <!-- 8. AUTH.JS - Módulo de autenticação -->
     <script src="/static/js/auth.js" defer></script>
     
-    <!-- 8. APP.JS - Orquestrador com Rate Limiter (v3.3) COM DEFER -->
+    <!-- 9. APP.JS - Orquestrador com Rate Limiter -->
     <script src="/static/js/app.js" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CORREÇÃO PRINCIPAL: LISTENER COM FALLBACK INTELIGENTE -->
+    <!-- 🔥 HANDLER DO FORMULÁRIO COM FALLBACK INTELIGENTE -->
     <!-- ============================================== -->
     <script>
         /**
-         * 🔥 CORREÇÃO 1: Listener do formulário com fallback inteligente
-         * Aguarda dinamicamente o módulo de autenticação estar disponível
+         * 🔥 Handler do submit do login com fallback inteligente
          */
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Configurando listener do formulário de login...');
+            console.log('🔧 [LOGIN] Configurando handler...');
             
             const loginForm = document.getElementById('loginForm');
             
             if (!loginForm) {
-                console.warn('⚠️ Formulário de login não encontrado!');
+                console.warn('⚠️ [LOGIN] Formulário não encontrado!');
                 return;
             }
 
-            // 🔥 Remove qualquer listener existente para evitar duplicação
+            // Remove listener existente
             loginForm.removeEventListener('submit', handleLoginSubmit);
-            
-            // 🔥 Adiciona o listener com o handler nomeado
             loginForm.addEventListener('submit', handleLoginSubmit);
             
-            console.log('✅ Listener do formulário de login configurado com sucesso!');
+            console.log('✅ [LOGIN] Handler configurado com sucesso!');
         });
 
-        /**
-         * 🔥 Handler do submit com fallback inteligente
-         * Tenta encontrar o módulo de autenticação em diferentes locais
-         */
         async function handleLoginSubmit(e) {
-            e.preventDefault(); // 🛑 CRÍTICO: Impede o envio via GET na URL
+            e.preventDefault();
             
-            console.log('📤 Submit do formulário interceptado!');
+            console.log('📤 [LOGIN] Submit interceptado!');
             
-            // 🔥 Resolução do conflito: Fallback dinâmico para encontrar o módulo de autenticação
-            const authModule = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
-
+            // 🔥 Encontra o módulo de autenticação
+            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
+            
             if (!authModule) {
-                console.warn('⏳ Módulo de autenticação ainda não disponível. Aguardando...');
+                console.warn('⏳ [LOGIN] Auth não disponível. Aguardando...');
                 
-                // Tenta novamente após 500ms
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                // Verifica novamente
-                const authModuleRetry = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
                 
                 if (!authModuleRetry) {
-                    console.error('❌ Módulo de autenticação não encontrado após tentativa!');
+                    console.error('❌ [LOGIN] Auth não encontrado!');
+                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
                     
-                    if (window.toastr) {
-                        toastr.error('O sistema de segurança não está disponível. Recarregue a página e tente novamente.', 'Erro');
-                    }
-                    
-                    // Restaura o botão
-                    const loginBtn = document.getElementById('loginBtn');
-                    if (loginBtn) {
-                        loginBtn.disabled = false;
-                        loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                    const btn = document.getElementById('loginBtn');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('loading');
+                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
                     }
                     return;
                 }
                 
-                // Usa o módulo encontrado na segunda tentativa
                 try {
                     await authModuleRetry.handleLogin(e);
                 } catch (error) {
-                    console.error('❌ Erro ao processar o login:', error);
-                    if (window.toastr) {
-                        toastr.error('Erro ao processar o login. Tente novamente.', 'Erro');
-                    }
+                    console.error('❌ [LOGIN] Erro:', error);
+                    toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
                 }
                 return;
             }
 
             try {
-                // Envia a execução diretamente para o método unificado do auth.js
-                console.log('✅ Módulo de autenticação encontrado. Processando login...');
                 await authModule.handleLogin(e);
             } catch (error) {
-                console.error('❌ Erro ao processar o login no formulário:', error);
+                console.error('❌ [LOGIN] Erro:', error);
+                toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
                 
-                if (window.toastr) {
-                    toastr.error('Erro ao processar o login. Tente novamente.', 'Erro');
-                }
-                
-                // Restaura o botão em caso de erro
-                const loginBtn = document.getElementById('loginBtn');
-                if (loginBtn) {
-                    loginBtn.disabled = false;
-                    loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar no Sistema';
+                const btn = document.getElementById('loginBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
                 }
             }
         }
 
         /**
-         * 🔥 CORREÇÃO 2: Listener do formulário de registro com fallback inteligente
+         * 🔥 Handler do submit do registro com fallback inteligente
          */
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Configurando listener do formulário de registro...');
+            console.log('🔧 [REGISTER] Configurando handler...');
             
             const registerForm = document.getElementById('registerForm');
             
             if (!registerForm) {
-                console.warn('⚠️ Formulário de registro não encontrado!');
+                console.warn('⚠️ [REGISTER] Formulário não encontrado!');
                 return;
             }
 
-            // 🔥 Remove qualquer listener existente para evitar duplicação
             registerForm.removeEventListener('submit', handleRegisterSubmit);
-            
-            // 🔥 Adiciona o listener com o handler nomeado
             registerForm.addEventListener('submit', handleRegisterSubmit);
             
-            console.log('✅ Listener do formulário de registro configurado com sucesso!');
+            console.log('✅ [REGISTER] Handler configurado com sucesso!');
         });
 
-        /**
-         * 🔥 Handler do submit do registro com fallback inteligente
-         */
         async function handleRegisterSubmit(e) {
-            e.preventDefault(); // 🛑 CRÍTICO: Impede o envio via GET na URL
+            e.preventDefault();
             
-            console.log('📤 Submit do registro interceptado!');
+            console.log('📤 [REGISTER] Submit interceptado!');
             
-            // 🔥 Resolução do conflito: Fallback dinâmico para encontrar o módulo de autenticação
-            const authModule = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
-
+            // Valida termos
+            const termsCheckbox = document.getElementById('terms');
+            const termsFeedback = document.getElementById('termsFeedback');
+            
+            if (termsCheckbox && !termsCheckbox.checked) {
+                termsFeedback.style.display = 'block';
+                toastr.warning('Você precisa aceitar os termos para continuar.', 'Atenção');
+                return;
+            } else if (termsFeedback) {
+                termsFeedback.style.display = 'none';
+            }
+            
+            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
+            
             if (!authModule) {
-                console.warn('⏳ Módulo de autenticação ainda não disponível para registro. Aguardando...');
+                console.warn('⏳ [REGISTER] Auth não disponível. Aguardando...');
                 
-                // Tenta novamente após 500ms
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                const authModuleRetry = window.appAuth || (window.App && window.App.auth) || (window.app && window.app.auth);
+                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
                 
                 if (!authModuleRetry) {
-                    console.error('❌ Módulo de autenticação não encontrado para registro!');
+                    console.error('❌ [REGISTER] Auth não encontrado!');
+                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
                     
-                    if (window.toastr) {
-                        toastr.error('O sistema de segurança não está disponível. Recarregue a página e tente novamente.', 'Erro');
-                    }
-                    
-                    const registerBtn = document.getElementById('registerBtn');
-                    if (registerBtn) {
-                        registerBtn.disabled = false;
-                        registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Minha Conta';
+                    const btn = document.getElementById('registerBtn');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('loading');
+                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
                     }
                     return;
                 }
@@ -1151,91 +1709,79 @@
                 try {
                     await authModuleRetry.handleRegister(e);
                 } catch (error) {
-                    console.error('❌ Erro ao processar o registro:', error);
-                    if (window.toastr) {
-                        toastr.error('Erro ao processar o registro. Tente novamente.', 'Erro');
-                    }
+                    console.error('❌ [REGISTER] Erro:', error);
+                    toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
                 }
                 return;
             }
 
             try {
-                console.log('✅ Módulo de autenticação encontrado. Processando registro...');
                 await authModule.handleRegister(e);
             } catch (error) {
-                console.error('❌ Erro ao processar o registro no formulário:', error);
+                console.error('❌ [REGISTER] Erro:', error);
+                toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
                 
-                if (window.toastr) {
-                    toastr.error('Erro ao processar o registro. Tente novamente.', 'Erro');
-                }
-                
-                const registerBtn = document.getElementById('registerBtn');
-                if (registerBtn) {
-                    registerBtn.disabled = false;
-                    registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Minha Conta';
+                const btn = document.getElementById('registerBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
                 }
             }
         }
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 RATE LIMITER DINÂMICO COM IDs CORRETOS -->
+    <!-- 🔥 RATE LIMITER DINÂMICO -->
     <!-- ============================================== -->
     <script>
-        /**
-         * 🔥 Configura o Rate Limiter na página de login
-         * Agora com os IDs corretos: rateLimitIndicatorLogin e rateLimitIndicatorRegister
-         */
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Inicializando Rate Limiter na página de login...');
+            console.log('🔧 [RATE LIMIT] Inicializando...');
             
-            // Aguarda o App ficar pronto
+            let appCheckCount = 0;
+            const maxChecks = 20;
+            
             const checkApp = setInterval(function() {
-                if (window.App && window.App.isRateLimitBlocked !== undefined) {
+                appCheckCount++;
+                
+                if (window.App && typeof window.App.isRateLimitBlocked === 'function') {
                     clearInterval(checkApp);
-                    console.log('✅ App encontrado - ativando Rate Limiter');
+                    console.log('✅ [RATE LIMIT] App encontrado!');
                     
-                    // Verifica se já está bloqueado
+                    // Atualiza UI se bloqueado
                     if (window.App.isRateLimitBlocked()) {
                         updateRateLimitUI('login');
                         updateRateLimitUI('register');
                     }
                     
-                    // Escuta eventos de rate limit
+                    // Escuta eventos
                     window.addEventListener('rateLimitBlocked', function(event) {
-                        console.log('📢 Rate Limit bloqueado na página de login', event.detail);
+                        console.log('📢 [RATE LIMIT] Bloqueado:', event.detail);
                         updateRateLimitUI('login', event.detail);
                         updateRateLimitUI('register', event.detail);
                     });
                     
                     window.addEventListener('rateLimitUnblocked', function() {
-                        console.log('📢 Rate Limit desbloqueado na página de login');
+                        console.log('📢 [RATE LIMIT] Desbloqueado');
                         hideRateLimitUI('login');
                         hideRateLimitUI('register');
                     });
                     
-                    // Atualiza UI periodicamente
+                    // Timer de atualização
                     setInterval(function() {
-                        if (window.App.isRateLimitBlocked()) {
+                        if (window.App && window.App.isRateLimitBlocked()) {
                             updateRateLimitUI('login');
                             updateRateLimitUI('register');
                         }
                     }, 1000);
+                } else if (appCheckCount >= maxChecks) {
+                    clearInterval(checkApp);
+                    console.warn('⚠️ [RATE LIMIT] Timeout - App não encontrado');
                 }
             }, 500);
-            
-            // Timeout de segurança
-            setTimeout(function() {
-                clearInterval(checkApp);
-            }, 10000);
         });
-        
-        /**
-         * 🔥 Atualiza UI do Rate Limiter para um formulário específico
-         * 🔥 CORREÇÃO: Usa os IDs exatos do HTML
-         */
+
         function updateRateLimitUI(type, detail) {
-            // 🔥 IDs exatos conforme definidos no HTML
             const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
             const timerId = type === 'login' ? 'rateLimitTimerLogin' : 'rateLimitTimerRegister';
             const messageId = type === 'login' ? 'rateLimitMessageLogin' : 'rateLimitMessageRegister';
@@ -1246,18 +1792,16 @@
             const message = document.getElementById(messageId);
             const button = document.getElementById(btnId);
             
-            if (indicator) {
-                indicator.classList.add('show');
-            }
+            if (indicator) indicator.classList.add('show');
             
             if (timer) {
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
                 timer.textContent = remaining;
                 
-                const intervalKey = `_rateLimitTimerInterval_${type}`;
-                if (window[intervalKey]) {
-                    clearInterval(window[intervalKey]);
-                }
+                // Timer interval
+                const intervalKey = '_rateLimitTimer_' + type;
+                if (window[intervalKey]) clearInterval(window[intervalKey]);
+                
                 window[intervalKey] = setInterval(function() {
                     if (window.App && window.App.isRateLimitBlocked()) {
                         const rem = window.App.getRateLimitTimeRemaining();
@@ -1280,40 +1824,53 @@
             if (button) {
                 button.disabled = true;
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                const icon = type === 'login' ? 'fa-hourglass-half' : 'fa-hourglass-half';
-                button.innerHTML = `<i class="fas ${icon} me-2"></i> Aguarde ${remaining}s`;
+                const icon = 'fa-hourglass-half';
+                button.innerHTML = `<span class="spinner"></span><span class="btn-text"><i class="fas ${icon}"></i> Aguarde ${remaining}s</span>`;
+                button.classList.add('loading');
             }
         }
-        
-        /**
-         * 🔥 Esconde UI do Rate Limiter para um formulário específico
-         * 🔥 CORREÇÃO: Usa os IDs exatos do HTML
-         */
+
         function hideRateLimitUI(type) {
-            // 🔥 IDs exatos conforme definidos no HTML
             const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
             const btnId = type === 'login' ? 'loginBtn' : 'registerBtn';
             
             const indicator = document.getElementById(indicatorId);
             const button = document.getElementById(btnId);
             
-            if (indicator) {
-                indicator.classList.remove('show');
-            }
+            if (indicator) indicator.classList.remove('show');
             
             if (button) {
                 button.disabled = false;
+                button.classList.remove('loading');
                 const originalText = type === 'login' ? 'Entrar no Sistema' : 'Criar Minha Conta';
                 const icon = type === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus';
-                button.innerHTML = `<i class="fas ${icon} me-2"></i> ${originalText}`;
+                button.querySelector('.btn-text').innerHTML = `<i class="fas ${icon}"></i> ${originalText}`;
             }
             
-            const intervalKey = `_rateLimitTimerInterval_${type}`;
+            const intervalKey = '_rateLimitTimer_' + type;
             if (window[intervalKey]) {
                 clearInterval(window[intervalKey]);
                 window[intervalKey] = null;
             }
         }
     </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 LOG DE INICIALIZAÇÃO -->
+    <!-- ============================================== -->
+    <script>
+        console.log('✅ Login page v4.0 carregada com sucesso!');
+        console.log('   🔥 Melhorias aplicadas:');
+        console.log('   ✅ Redirecionamento para / (raiz)');
+        console.log('   ✅ Rate limit com UI dinâmica');
+        console.log('   ✅ Validação em tempo real dos campos');
+        console.log('   ✅ Força da senha com feedback visual');
+        console.log('   ✅ Confirmação de senha com validação');
+        console.log('   ✅ Dark mode (automático)');
+        console.log('   ✅ Performance otimizada (preconnect)');
+        console.log('   ✅ UI responsiva e acessível');
+        console.log('   ✅ Fallback inteligente para auth');
+    </script>
+
 </body>
 </html>
