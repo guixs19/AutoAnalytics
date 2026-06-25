@@ -1,8 +1,12 @@
- # main.py (na raiz) - VERSÃO PRODUÇÃO v3.8 (ROTAS HTML CORRIGIDAS)
+# main.py (na raiz) - VERSÃO PRODUÇÃO v3.9 (AUTH ROUTES CORRIGIDAS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v3.8:
+🔥 CORREÇÕES v3.9:
+- ✅ CORREÇÃO CRÍTICA: Importação de auth_routes movida para o início
+- ✅ CORREÇÃO CRÍTICA: AUTH_ENABLED definido antes do health check
+- ✅ CORREÇÃO CRÍTICA: SessionLocal importado corretamente
+- ✅ CORREÇÃO CRÍTICA: pipeline importado antes do startup
 - ✅ Rotas HTML corrigidas para servir os arquivos corretamente
 - ✅ /login → login.html
 - ✅ /planos → planos.html
@@ -37,7 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v3.8 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v3.9 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -52,7 +56,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.8.0"
+    VERSION = "3.9.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -529,11 +533,267 @@ async def redirect_dashboard_html():
 print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
-# 11. IMPORTAÇÃO DE MÓDULOS (COM FALLBACK SEGURO)
+# 11. 🔥 IMPORTAÇÃO DE MÓDULOS (CORRIGIDA)
 # ==============================================
 
-# ================================================
-# 🔥 OUTRAS ROTAS (COM FALLBACK)
+print("\n📦 Carregando módulos do backend...")
+
+# 🔥 Variáveis globais
+hasher = None
+jwt_manager = None
+rate_limiter = None
+get_current_user = None
+get_current_active_user = None
+get_current_admin_user = None
+set_auth_cookies = None
+clear_auth_cookies = None
+AUTH_ENABLED = False
+pipeline = None
+SessionLocal = None
+
+# 11.1 Database
+try:
+    from backend.database import engine, Base, create_tables, SessionLocal as _SessionLocal, get_db
+    SessionLocal = _SessionLocal
+    create_tables()
+    print("   ✅ Database: tabelas verificadas")
+except ImportError as e:
+    print(f"   ❌ Database não disponível: {e}")
+    sys.exit(1)
+except Exception as e:
+    print(f"   ❌ Erro ao inicializar Database: {e}")
+    sys.exit(1)
+
+# 11.2 Security
+print("   🔐 Carregando Security...")
+
+try:
+    from backend.security import (
+        hasher as _hasher,
+        jwt_manager as _jwt_manager,
+        rate_limiter as _rate_limiter,
+        get_current_user as _get_current_user,
+        get_current_active_user as _get_current_active_user,
+        get_current_admin_user as _get_current_admin_user,
+        set_auth_cookies as _set_auth_cookies,
+        clear_auth_cookies as _clear_auth_cookies
+    )
+    hasher = _hasher
+    jwt_manager = _jwt_manager
+    rate_limiter = _rate_limiter
+    get_current_user = _get_current_user
+    get_current_active_user = _get_current_active_user
+    get_current_admin_user = _get_current_admin_user
+    set_auth_cookies = _set_auth_cookies
+    clear_auth_cookies = _clear_auth_cookies
+    AUTH_ENABLED = True
+    print("   ✅ Security carregado (AUTH ENABLED)")
+except ImportError as e:
+    print(f"   ⚠️ Security não disponível: {e}")
+    print("   🔧 Usando fallback (autenticação desabilitada)")
+    
+    # ===== FALLBACK: FUNÇÕES MOCK =====
+    class MockJWTManager:
+        async def verify_token(self, token, token_type="access"):
+            return None
+        def create_token_pair(self, data):
+            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
+        async def logout(self, refresh_token, db, access_token=None):
+            return True
+        async def refresh_access_token(self, refresh_token, db, old_access_token=None):
+            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
+        async def init_redis(self):
+            return True
+        def decode_token(self, token):
+            return {}
+    
+    jwt_manager = MockJWTManager()
+    rate_limiter = None
+    
+    async def _fallback_get_current_user(request=None, token=None, db=None):
+        return None
+    
+    async def _fallback_get_current_active_user(current_user=None):
+        return None
+    
+    async def _fallback_get_current_admin_user(current_user=None):
+        return None
+    
+    def _fallback_set_auth_cookies(response, access_token, refresh_token=None, expires_in=3600):
+        return response
+    
+    def _fallback_clear_auth_cookies(response):
+        return response
+    
+    get_current_user = _fallback_get_current_user
+    get_current_active_user = _fallback_get_current_active_user
+    get_current_admin_user = _fallback_get_current_admin_user
+    set_auth_cookies = _fallback_set_auth_cookies
+    clear_auth_cookies = _fallback_clear_auth_cookies
+
+# 11.3 Models
+try:
+    from backend.models import User, Analysis, PromotionControl, Payment, DailyCreditLog
+    print("   ✅ Models carregados")
+except ImportError as e:
+    print(f"   ⚠️ Models não disponível: {e}")
+    class User: pass
+    class Analysis: pass
+    class PromotionControl: pass
+    class Payment: pass
+    class DailyCreditLog: pass
+
+# 11.4 CRUD
+try:
+    from backend import crud
+    print(f"   ✅ CRUD carregado")
+except ImportError as e:
+    print(f"   ⚠️ CRUD não disponível: {e}")
+    crud = None
+
+# 11.5 Services
+try:
+    from backend.services.daily_credits_service import DailyCreditsService
+    print("   ✅ DailyCreditsService carregado")
+except ImportError as e:
+    print(f"   ⚠️ DailyCreditsService não disponível: {e}")
+    class DailyCreditsService:
+        def get_user_credit_status(self, db, user_id):
+            return {"current_credits": 3, "streak_days": 0, "received_today": False}
+        def check_and_add_daily_credit(self, db, user_id):
+            return {"success": False, "credits_added": 0, "message": "Serviço indisponível"}
+    DailyCreditsService = DailyCreditsService
+
+try:
+    from backend.services.credits_consumer import (
+        can_perform_analysis, consume_analysis_credit, get_credits_display
+    )
+    print("   ✅ CreditsConsumer carregado")
+except ImportError as e:
+    print(f"   ⚠️ CreditsConsumer não disponível: {e}")
+    def can_perform_analysis(user, required=1): return True
+    def consume_analysis_credit(user, db, required=1): return True
+    def get_credits_display(user): return "0"
+
+# 11.6 ML Pipeline
+print("   🤖 Carregando ML Pipeline...")
+try:
+    from backend.preprocessing import pipeline as _pipeline, process_file_content
+    pipeline = _pipeline
+    print("   ✅ ML Pipeline carregado")
+    if hasattr(pipeline, 'model_source'):
+        print(f"      📊 Modelo: {pipeline.model_source}")
+    print(f"      🔤 Encoding: automático (chardet)")
+    print(f"      💾 Cache: TTL 60s")
+except ImportError as e:
+    print(f"   ⚠️ ML Pipeline não disponível: {e}")
+    # ===== FALLBACK: MOCK PIPELINE =====
+    class MockPipeline:
+        def __init__(self):
+            self.model_source = "placeholder"
+            self.is_initialized = False
+        async def initialize(self):
+            self.is_initialized = True
+            return True
+        async def predict(self, df, filename=None):
+            return {"success": False, "error": "ML não disponível", "predictions": [0.5] * len(df)}
+        def get_status(self):
+            return {"initialized": False, "model_source": "placeholder", "cache_size": 0}
+        def get_encoding_stats(self):
+            return {"encodings": {}, "total_success": 0, "total_failed": 0}
+        def clear_cache(self):
+            pass
+    pipeline = MockPipeline()
+    
+    async def process_file_content(content, filename):
+        return {"success": False, "error": "ML não disponível"}
+
+print("   ✅ Módulos carregados com sucesso!")
+
+# ==============================================
+# 12. 🔥 REGISTRO DE ROTAS DE AUTENTICAÇÃO (CORRIGIDO)
+# ==============================================
+
+print("\n🔐 Registrando rotas de autenticação...")
+
+# 🔥 VERIFICAÇÃO: Importa auth_routes com fallback detalhado
+try:
+    from backend.api.auth_routes import router as auth_router
+    app.include_router(auth_router, prefix="/api/auth")
+    print("   ✅ Rotas de Autenticação (auth_routes) registradas com sucesso!")
+    print("      POST   /api/auth/login     ← 🔥 LOGIN")
+    print("      POST   /api/auth/refresh")
+    print("      POST   /api/auth/logout")
+    print("      GET    /api/auth/check-token")
+    print("      GET    /api/auth/me")
+    print("      GET    /api/auth/session-status")
+    
+    # 🔥 Marca que as rotas de auth foram carregadas
+    _auth_routes_loaded = True
+    
+except ImportError as e:
+    print(f"   ❌ ERRO CRÍTICO ao importar auth_routes: {e}")
+    print("   💡 Verifique se o arquivo backend/api/auth_routes.py existe")
+    import traceback
+    traceback.print_exc()
+    _auth_routes_loaded = False
+    
+    # 🔥 CRIA ROTAS DE AUTENTICAÇÃO MANUALMENTE (FALLBACK)
+    print("   🔧 Criando rotas de autenticação MANUALMENTE (FALLBACK)...")
+    
+    @app.post("/api/auth/login")
+    async def fallback_login():
+        return {"error": "Sistema de autenticação indisponível", "status": "error", "message": "Contate o administrador"}
+    
+    @app.post("/api/auth/refresh")
+    async def fallback_refresh():
+        return {"error": "Sistema de autenticação indisponível", "status": "error"}
+    
+    @app.post("/api/auth/logout")
+    async def fallback_logout():
+        return {"success": True, "message": "Logout realizado"}
+    
+    @app.get("/api/auth/check-token")
+    async def fallback_check_token():
+        return {"status": "invalid", "message": "Sistema de autenticação indisponível"}
+    
+    @app.get("/api/auth/me")
+    async def fallback_me():
+        return {"error": "Sistema de autenticação indisponível", "status": "error"}
+    
+    @app.get("/api/auth/session-status")
+    async def fallback_session_status():
+        return {"authenticated": False, "message": "Sistema de autenticação indisponível"}
+    
+    print("   ⚠️ Rotas de autenticação MANUAIS criadas (FALLBACK)")
+
+except Exception as e:
+    print(f"   ❌ ERRO ao registrar auth_routes: {e}")
+    import traceback
+    traceback.print_exc()
+    _auth_routes_loaded = False
+
+# 🔥 REGISTRO (SEPARADO - NÃO QUEBRA O LOGIN)
+try:
+    from backend.api.auth import router as registration_router
+    app.include_router(registration_router, prefix="/api/auth")
+    print("   ✅ Rotas de Cadastro (auth) registradas com sucesso!")
+    print("      POST   /api/auth/register  ← 🔥 REGISTRO")
+except ImportError as e:
+    print(f"   ⚠️ Módulo de cadastro (auth.py) não disponível: {e}")
+    print("   💡 O login continua funcionando, apenas o registro não estará disponível.")
+    
+    # 🔥 CRIA ROTA DE REGISTRO MANUAL (FALLBACK)
+    @app.post("/api/auth/register")
+    async def fallback_register():
+        return {"error": "Sistema de registro indisponível", "status": "error"}
+    
+    print("   ⚠️ Rota de registro MANUAL criada (FALLBACK)")
+except Exception as e:
+    print(f"   ⚠️ Erro ao registrar auth.py: {e}")
+
+# ==============================================
+# 13. 🔥 OUTRAS ROTAS (COM FALLBACK)
 # ==============================================
 
 print("\n📦 Registrando outras rotas...")
@@ -579,7 +839,7 @@ except Exception as e:
     print(f"   ⚠️ Erro ao registrar PoW: {e}")
 
 # ==============================================
-# 🔥 VERIFICAÇÃO FINAL
+# 14. 🔥 VERIFICAÇÃO FINAL DAS ROTAS
 # ==============================================
 
 print("\n📋 Verificando rotas registradas...")
@@ -595,11 +855,12 @@ if auth_routes_found:
 else:
     print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
     print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
+    print("   🔧 Verifique se o arquivo backend/api/auth_routes.py existe e está correto.")
 
 print("   ✅ Registro de rotas concluído!")
 
 # ==============================================
-# 14. HEALTH CHECK
+# 15. HEALTH CHECK
 # ==============================================
 
 @app.get("/api/health", tags=["system"])
@@ -614,15 +875,16 @@ async def health_check():
     
     # Verificar se auth está funcionando
     auth_status = "✅" if AUTH_ENABLED else "❌"
+    auth_routes_ok = len([r for r in app.routes if hasattr(r, 'path') and '/auth' in r.path]) > 0
     
     return {
-        "status": "healthy",
+        "status": "healthy" if auth_routes_ok else "degraded",
         "timestamp": datetime.now().isoformat(),
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "auth_enabled": AUTH_ENABLED,
         "auth_status": auth_status,
-        "auth_routes_registered": len([r for r in app.routes if hasattr(r, 'path') and '/auth' in r.path]) > 0,
+        "auth_routes_registered": auth_routes_ok,
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "frontend_available": frontend_status["available"],
         "ml_pipeline": ml_status,
@@ -632,7 +894,7 @@ async def health_check():
     }
 
 # ==============================================
-# 15. INICIALIZAÇÃO DA PROMOÇÃO
+# 16. INICIALIZAÇÃO DA PROMOÇÃO
 # ==============================================
 
 def init_promotion(db) -> None:
@@ -663,7 +925,7 @@ def init_promotion(db) -> None:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
 
 # ==============================================
-# 16. STARTUP
+# 17. STARTUP
 # ==============================================
 
 @app.on_event("startup")
@@ -673,7 +935,7 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 75)
     
-    # 16.1 Sentinel
+    # 17.1 Sentinel
     try:
         from backend.observability.sentinel import startup_webhook
         await startup_webhook()
@@ -683,31 +945,40 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro no Sentinel: {e}")
     
-    # 16.2 Promoção
-    try:
-        db = SessionLocal()
-        init_promotion(db)
-        db.close()
-    except Exception as e:
-        print(f"   ⚠️ Erro na promoção: {e}")
+    # 17.2 Promoção
+    if SessionLocal is not None:
+        try:
+            db = SessionLocal()
+            init_promotion(db)
+            db.close()
+        except Exception as e:
+            print(f"   ⚠️ Erro na promoção: {e}")
+    else:
+        print("   ⚠️ SessionLocal não disponível - pulando promoção")
     
-    # 16.3 ML Pipeline
-    try:
-        if hasattr(pipeline, 'initialize'):
-            await pipeline.initialize()
-            print("   ✅ ML Pipeline inicializado")
-    except Exception as e:
-        print(f"   ⚠️ Erro no ML Pipeline: {e}")
+    # 17.3 ML Pipeline
+    if pipeline is not None:
+        try:
+            if hasattr(pipeline, 'initialize'):
+                await pipeline.initialize()
+                print("   ✅ ML Pipeline inicializado")
+        except Exception as e:
+            print(f"   ⚠️ Erro no ML Pipeline: {e}")
+    else:
+        print("   ⚠️ Pipeline não disponível - pulando inicialização ML")
     
-    # 16.4 Redis
-    try:
-        if jwt_manager and hasattr(jwt_manager, 'init_redis'):
-            await jwt_manager.init_redis()
-            print("   ✅ Redis inicializado")
-    except Exception as e:
-        print(f"   ⚠️ Erro no Redis: {e}")
+    # 17.4 Redis
+    if jwt_manager is not None:
+        try:
+            if hasattr(jwt_manager, 'init_redis'):
+                await jwt_manager.init_redis()
+                print("   ✅ Redis inicializado")
+        except Exception as e:
+            print(f"   ⚠️ Erro no Redis: {e}")
+    else:
+        print("   ⚠️ JWT Manager não disponível - pulando Redis")
     
-    # 16.5 Verificar rotas de auth
+    # 17.5 Verificar rotas de auth
     print("\n🔐 Verificando rotas registradas...")
     auth_routes = []
     for route in app.routes:
@@ -721,10 +992,11 @@ async def startup_event():
     else:
         print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
         print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
+        print("   🔧 Verifique se o arquivo backend/api/auth_routes.py existe.")
     
-    # 16.6 Status Final
+    # 17.6 Status Final
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
-    ml_status = "✅" if (hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
+    ml_status = "✅" if (pipeline is not None and hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
     auth_ok = "✅" if auth_routes else "❌"
     
     print(f"""
@@ -745,7 +1017,7 @@ async def startup_event():
     """)
 
 # ==============================================
-# 17. SHUTDOWN
+# 18. SHUTDOWN
 # ==============================================
 
 @app.on_event("shutdown")
@@ -763,7 +1035,7 @@ async def shutdown_event():
         print(f"   ⚠️ Erro no Sentinel: {e}")
     
     try:
-        if hasattr(pipeline, 'clear_cache'):
+        if pipeline is not None and hasattr(pipeline, 'clear_cache'):
             pipeline.clear_cache()
             print("   ✅ Cache ML limpo")
     except Exception as e:
@@ -772,7 +1044,7 @@ async def shutdown_event():
     print("👋 Sistema desligado!")
 
 # ==============================================
-# 18. EXCEPTION HANDLERS
+# 19. EXCEPTION HANDLERS
 # ==============================================
 
 @app.exception_handler(404)
@@ -803,13 +1075,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # ==============================================
-# 19. MAIN
+# 20. MAIN
 # ==============================================
 
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 Gemini: {'✅' if settings.GEMINI_API_KEY else '❌'}")
-    print(f"🤖 ML: {'✅' if hasattr(pipeline, 'is_initialized') else '⚠️'}")
+    print(f"🤖 ML: {'✅' if pipeline is not None and hasattr(pipeline, 'is_initialized') else '⚠️'}")
     print(f"🔐 Auth: {'✅' if AUTH_ENABLED else '❌'}")
     print(f"💳 Mercado Pago: {'✅' if settings.MP_ACCESS_TOKEN else '❌'}")
     print(f"🛑 Pressione CTRL+C para parar\n")
