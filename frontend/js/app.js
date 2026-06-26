@@ -1,97 +1,119 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V4.0 (ARQUITETURA REFATORADA)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.1 (COM CORREÇÕES DE SINCRONIZAÇÃO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V4.0:
- * 1. 🔥 Sistema de Rotas com validação precisa (corrigido)
- * 2. 🔥 Separação clara de responsabilidades (SRP)
- * 3. 🔥 Gerenciamento de estado reativo
- * 4. 🔥 Sistema de eventos desacoplado
- * 5. 🔥 Lazy loading e inicialização otimizada
- * 6. 🔥 Rate Limiter e PoW integrados
- * 7. 🔥 Token management com refresh automático
- * 8. 🔥 Sistema de créditos com limite máximo (3)
- * 
- * 🔥 CORREÇÕES V4.0:
- * - Router.isProtected() com validação exata (.startsWith)
- * - Router.isPublic() com validação exata
- * - Prevenção de falsos positivos em rotas
- * - Melhor tratamento de rotas aninhadas
- * - Caching de verificações de rota
- * 
- * 🔥 ORDEM DE CARREGAMENTO:
- *   1. pow-client.js → window.powClient
- *   2. auth.js → window.appAuth (v3.0+)
- *   3. app.js → ORQUESTRADOR (ESTE ARQUIVO)
- *   4. dashboard.js → funcionalidades do dashboard
- *   5. payment.js → pagamentos e planos
+ * 🏗️ ARQUITETURA V5.1:
+ * 1. 🔥 Evento 'app:ready' espelhado para window
+ * 2. 🔥 Sincronização correta com index.html
+ * 3. 🔥 Tratamento de unauthorized com anti-loop
+ * 4. 🔥 Sincronização reativa de créditos via eventos
+ * 5. 🔥 Integração com ML/Gemini para atualização de créditos
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v4.0...');
+    console.log('🚀 Inicializando App (Orquestrador) v5.1...');
 
     // ==============================================
-    // 🔥 CONFIGURAÇÕES GLOBAIS (OTIMIZADAS)
+    // 🔥 CONFIGURAÇÕES GLOBAIS
     // ==============================================
 
     const CONFIG = Object.freeze({
-        // Limites e créditos
         MAX_FILES: 3,
         MAX_FILE_SIZE_KB: 200,
         MAX_CREDITS_BALANCE: 3,
         INITIAL_FREE_CREDITS: 3,
         
-        // Preços
         PROMOTIONAL_PRICE: 97.00,
         REGULAR_PRICE: 149.90,
         TOTAL_PROMOTIONAL_SLOTS: 100,
         DAYS_PREMIUM: 30,
         
-        // Tokens e sessão
         TOKEN_EXPIRY_MINUTES: 15,
-        SESSION_TIMEOUT: 15 * 60 * 1000, // 15 minutos
-        TOKEN_CHECK_INTERVAL: 60000, // 1 minuto
+        SESSION_TIMEOUT: 15 * 60 * 1000,
+        TOKEN_CHECK_INTERVAL: 60000,
         
-        // Rate Limiter (sincronizado com backend)
         RATE_LIMIT_LOGIN_MAX: 5,
         RATE_LIMIT_LOGIN_WINDOW: 900,
         RATE_LIMIT_REGISTER_MAX: 5,
         RATE_LIMIT_REGISTER_WINDOW: 3600,
         
-        // PoW
         POW_AUTO_REFILL_INTERVAL: 30000,
         POW_STOCK_SIZE: 2,
         
-        // API e carregamento
         API_BASE: '/api',
         CREDITS_UPDATE_INTERVAL: 30000,
         MAX_LOAD_ATTEMPTS: 10,
         LOAD_RETRY_DELAY: 500,
         
-        // Rotas (centralizadas)
         ROUTES: {
             PROTECTED: ['/', '/dashboard', '/planos', '/checkout'],
             PUBLIC: ['/login', '/register'],
             HOME: '/dashboard',
             LOGIN: '/login'
-        }
+        },
+        
+        RELOAD_COOLDOWN: 3000,
+        MAX_RELOADS: 3,
+        RELOAD_STORAGE_KEY: '_aa_reload_count',
+        AUTH_BLOCK_KEY: '_aa_auth_block'
     });
+
+    // ==============================================
+    // 🔥 GERENCIADOR DE RELOAD (ANTI-LOOP)
+    // ==============================================
+
+    const ReloadManager = {
+        _lastReload: 0,
+        _reloadCount: 0,
+        
+        canReload: function() {
+            const now = Date.now();
+            
+            if (now - this._lastReload < CONFIG.RELOAD_COOLDOWN) {
+                console.warn('⛔ Cooldown ativo, evitando reload');
+                return false;
+            }
+            
+            let storedCount = parseInt(sessionStorage.getItem(CONFIG.RELOAD_STORAGE_KEY) || '0');
+            if (storedCount >= CONFIG.MAX_RELOADS) {
+                console.error('❌ Número máximo de reloads atingido. Redirecionando para login.');
+                sessionStorage.removeItem(CONFIG.RELOAD_STORAGE_KEY);
+                window.location.replace('/login');
+                return false;
+            }
+            
+            storedCount++;
+            sessionStorage.setItem(CONFIG.RELOAD_STORAGE_KEY, String(storedCount));
+            this._reloadCount = storedCount;
+            this._lastReload = now;
+            
+            return true;
+        },
+        
+        reset: function() {
+            sessionStorage.removeItem(CONFIG.RELOAD_STORAGE_KEY);
+            this._reloadCount = 0;
+            this._lastReload = 0;
+        },
+        
+        getCount: function() {
+            return parseInt(sessionStorage.getItem(CONFIG.RELOAD_STORAGE_KEY) || '0');
+        }
+    };
 
     // ==============================================
     // 🔥 ESTADO GLOBAL (REATIVO)
     // ==============================================
 
     const State = {
-        // Dados do usuário
         user: null,
         credits: 0,
         isPremium: false,
         isAdmin: false,
         creditsDisplay: '0',
         
-        // Status
         initialized: false,
         isAppReady: false,
         tokenValid: false,
@@ -99,7 +121,6 @@
         lastActivity: Date.now(),
         loadAttempts: 0,
         
-        // Premium e vitalício
         premiumStatus: null,
         hasPromotionalPrice: false,
         promotionalPrice: null,
@@ -108,28 +129,29 @@
         canReceiveDailyCredit: false,
         receivedDailyCreditToday: false,
         
-        // PoW
         powReady: false,
         powSolutionsReady: 0,
         powAutoRefillActive: false,
         
-        // Rate Limiter
         rateLimitBlocked: false,
         rateLimitBlockedUntil: 0,
         rateLimitRemainingAttempts: CONFIG.RATE_LIMIT_LOGIN_MAX,
         rateLimitBlockedFor: 'login',
         
-        // Listeners (para limpeza)
+        activeAnalyses: [],
+        recentAnalyses: [],
+        totalAnalyses: 0,
+        analysesToday: 0,
+        
         _listeners: [],
         _intervals: []
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (PURAS FUNÇÕES)
+    // 🔥 UTILITÁRIOS
     // ==============================================
 
     const Utils = {
-        // Formatação
         formatDate: (date) => {
             const d = new Date(date);
             return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR');
@@ -155,7 +177,6 @@
             return safeCredits.toString();
         },
 
-        // Notificações
         showNotification: (message, type = 'info') => {
             if (window.appAuth?.showNotification) {
                 return window.appAuth.showNotification(message, type);
@@ -176,7 +197,6 @@
             return true;
         },
 
-        // Navegação
         getCurrentPath: () => window.location.pathname,
         getQueryParam: (param) => new URLSearchParams(window.location.search).get(param),
         redirectTo: (url) => {
@@ -186,9 +206,12 @@
         },
         goBack: () => window.history.back(),
         goForward: () => window.history.forward(),
-        reload: () => window.location.reload(),
+        reload: () => {
+            if (ReloadManager.canReload()) {
+                window.location.reload();
+            }
+        },
 
-        // Autenticação
         isAuthenticated: () => {
             try {
                 if (window.appAuth) {
@@ -202,7 +225,6 @@
             }
         },
 
-        // Rate Limiter
         isRateLimitBlocked: () => {
             if (State.rateLimitBlocked && Date.now() < State.rateLimitBlockedUntil) {
                 return true;
@@ -224,7 +246,6 @@
 
         getRateLimitRemainingAttempts: () => State.rateLimitRemainingAttempts,
 
-        // Waiters (para sincronização)
         waitFor: (condition, timeout = 10000, interval = 200) => {
             return new Promise((resolve, reject) => {
                 const startTime = Date.now();
@@ -269,11 +290,10 @@
     };
 
     // ==============================================
-    // 🔥 ROTEADOR (CORRIGIDO E OTIMIZADO)
+    // 🔥 ROTEADOR
     // ==============================================
 
     const Router = {
-        // Cache de verificações para performance
         _pathCache: new Map(),
         _lastPath: '',
 
@@ -287,7 +307,6 @@
         },
 
         _isRouteMatch: (path, route) => {
-            // Cache por rota
             const cacheKey = `${path}|${route}`;
             if (Router._pathCache.has(cacheKey)) {
                 return Router._pathCache.get(cacheKey);
@@ -295,12 +314,9 @@
 
             let result = false;
             
-            // Rota raiz: correspondência exata
             if (route === '/') {
                 result = path === '/' || path === '/index.html' || path === '';
-            } 
-            // Outras rotas: igualdade ou path começa com route/
-            else {
+            } else {
                 result = path === route || 
                         path.startsWith(route + '/') || 
                         path.startsWith(route + '?');
@@ -343,7 +359,6 @@
         },
 
         navigate: (url) => {
-            // Verifica se a URL é protegida
             const isProtected = CONFIG.ROUTES.PROTECTED.some(route => 
                 Router._isRouteMatch(url, route)
             );
@@ -358,7 +373,6 @@
         },
 
         setupNavigation: () => {
-            // Links com data-nav
             document.querySelectorAll('[data-nav]').forEach(el => {
                 el.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -367,7 +381,6 @@
                 });
             });
 
-            // Links normais
             document.querySelectorAll('a[href^="/"]').forEach(el => {
                 if (el.hasAttribute('data-nav') || 
                     el.getAttribute('target') === '_blank' || 
@@ -383,10 +396,92 @@
             });
         },
 
-        // Limpa cache (útil em navegação SPA)
         clearCache: () => {
             Router._pathCache.clear();
             Router._lastPath = '';
+        }
+    };
+
+    // ==============================================
+    // 🔥 BARREMENTO DE EVENTOS UNIFICADO
+    // ==============================================
+
+    const EventBus = {
+        _handlers: new Map(),
+        _onceHandlers: new Map(),
+        
+        on: function(event, handler, options = {}) {
+            if (!this._handlers.has(event)) {
+                this._handlers.set(event, []);
+            }
+            this._handlers.get(event).push({
+                handler,
+                once: options.once || false,
+                priority: options.priority || 0
+            });
+            
+            this._handlers.get(event).sort((a, b) => b.priority - a.priority);
+        },
+        
+        once: function(event, handler) {
+            this.on(event, handler, { once: true });
+        },
+        
+        off: function(event, handler) {
+            if (!this._handlers.has(event)) return;
+            
+            const handlers = this._handlers.get(event);
+            const index = handlers.findIndex(h => h.handler === handler);
+            if (index !== -1) {
+                handlers.splice(index, 1);
+            }
+            
+            if (handlers.length === 0) {
+                this._handlers.delete(event);
+            }
+        },
+        
+        emit: function(event, data = {}) {
+            console.log(`📢 [EventBus] ${event}`, data);
+            
+            // Dispara evento DOM para compatibilidade
+            try {
+                window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
+            } catch (e) {
+                // Ignora erro em ambiente seguro
+            }
+            
+            // Dispara handlers internos
+            if (!this._handlers.has(event)) return;
+            
+            const handlers = this._handlers.get(event);
+            const toRemove = [];
+            
+            for (let i = 0; i < handlers.length; i++) {
+                const { handler, once } = handlers[i];
+                try {
+                    handler(data);
+                } catch (e) {
+                    console.error(`❌ Erro no handler do evento ${event}:`, e);
+                }
+                if (once) {
+                    toRemove.push(i);
+                }
+            }
+            
+            if (toRemove.length > 0) {
+                const remaining = handlers.filter((_, index) => !toRemove.includes(index));
+                if (remaining.length === 0) {
+                    this._handlers.delete(event);
+                } else {
+                    this._handlers.set(event, remaining);
+                }
+            }
+        },
+        
+        clear: function() {
+            this._handlers.clear();
+            this._onceHandlers.clear();
         }
     };
 
@@ -395,7 +490,7 @@
     // ==============================================
 
     const UI = {
-        _elements: new Map(), // Cache de elementos DOM
+        _elements: new Map(),
 
         _getElement: (selector) => {
             if (!UI._elements.has(selector)) {
@@ -481,14 +576,21 @@
                     }
                 });
 
-                window.dispatchEvent(new CustomEvent('creditsUpdated', { 
-                    detail: { 
-                        credits, 
-                        display: formattedDisplay,
-                        maxCredits: CONFIG.MAX_CREDITS_BALANCE,
-                        isPremium
-                    } 
+                // 🔥 Evento reativo de créditos (com espelhamento para window)
+                const creditEventData = {
+                    credits,
+                    display: formattedDisplay,
+                    maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                    isPremium
+                };
+                
+                EventBus.emit('credits:updated', creditEventData);
+                
+                // 🔥 ESPELHAMENTO PARA WINDOW (index.html escuta)
+                window.dispatchEvent(new CustomEvent('credits:updated', { 
+                    detail: creditEventData 
                 }));
+
             } catch (e) {
                 console.warn('Erro ao atualizar créditos:', e);
             }
@@ -573,7 +675,6 @@
             const timeRemaining = Utils.getRateLimitTimeRemaining();
             const remainingAttempts = Utils.getRateLimitRemainingAttempts();
             
-            // Badge de status
             const rateLimitBadge = document.getElementById('rateLimitStatus');
             if (rateLimitBadge) {
                 if (isBlocked) {
@@ -587,7 +688,6 @@
                 }
             }
 
-            // Botão de login
             const loginBtn = document.getElementById('loginBtn');
             if (loginBtn) {
                 if (isBlocked) {
@@ -617,7 +717,6 @@
                 }
             }
 
-            // Botão de registro
             const registerBtn = document.getElementById('registerBtn');
             if (registerBtn) {
                 if (isBlocked && State.rateLimitBlockedFor === 'register') {
@@ -647,7 +746,6 @@
                 }
             }
 
-            // Tooltips
             document.querySelectorAll('[data-rate-limit-tooltip]').forEach(el => {
                 if (isBlocked) {
                     const minutes = Math.floor(timeRemaining / 60);
@@ -719,14 +817,13 @@
             });
         },
 
-        // Limpa cache de elementos (útil em mudanças de página)
         clearElementCache: () => {
             UI._elements.clear();
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE AUTENTICAÇÃO
+    // 🔥 GERENCIADOR DE AUTENTICAÇÃO (COM ESPELHAMENTO)
     // ==============================================
 
     const Auth = {
@@ -746,12 +843,13 @@
             Auth._sessionTimeout = setTimeout(() => {
                 console.log('⏰ Sessão expirada por inatividade');
                 Utils.showNotification('⏰ Sessão expirada por inatividade. Faça login novamente.', 'warning');
-                if (window.appAuth?.logout) {
-                    window.appAuth.logout();
-                } else {
-                    localStorage.clear();
-                    Utils.redirectTo(CONFIG.ROUTES.LOGIN);
-                }
+                
+                // 🔥 Evento de expiração com espelhamento
+                const eventData = { message: 'Sessão expirada por inatividade' };
+                EventBus.emit('auth:session_expired', eventData);
+                window.dispatchEvent(new CustomEvent('auth:session_expired', { detail: eventData }));
+                
+                Auth.handleUnauthorized();
             }, CONFIG.SESSION_TIMEOUT);
         },
 
@@ -791,31 +889,41 @@
                 
                 if (response.status === 429) {
                     const data = await response.json().catch(() => ({}));
-                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
-                        detail: {
-                            retryAfter: data.retry_after || 60,
-                            remaining: data.remaining_attempts || 0,
-                            message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
-                            for: 'token-check'
-                        }
-                    }));
+                    
+                    const eventData = {
+                        retryAfter: data.retry_after || 60,
+                        remaining: data.remaining_attempts || 0,
+                        message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
+                        for: 'token-check'
+                    };
+                    
+                    EventBus.emit('rate_limit:blocked', eventData);
+                    window.dispatchEvent(new CustomEvent('rate_limit:blocked', { detail: eventData }));
+                    
                     return;
                 }
                 
                 if (response.status === 401) {
                     console.log('🔄 Token expirado, tentando refresh...');
+                    
+                    const eventData = { message: 'Token expirado, tentando renovar...' };
+                    EventBus.emit('auth:token_expired', eventData);
+                    window.dispatchEvent(new CustomEvent('auth:token_expired', { detail: eventData }));
+                    
                     if (window.appAuth.refreshTokenSafely) {
                         const refreshed = await window.appAuth.refreshTokenSafely();
                         if (refreshed) {
                             console.log('✅ Token renovado com sucesso!');
+                            
+                            const refreshEvent = { message: 'Token renovado com sucesso' };
+                            EventBus.emit('auth:token_refreshed', refreshEvent);
+                            window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
+                            
                             Auth.resetSessionTimer();
                             State.tokenValid = true;
                         } else {
                             console.log('❌ Falha ao renovar token, fazendo logout...');
-                            Utils.showNotification('Sessão expirada. Faça login novamente.', 'warning');
-                            if (window.appAuth.logout) {
-                                window.appAuth.logout();
-                            }
+                            Auth.handleUnauthorized();
                         }
                     }
                 } else if (response.ok) {
@@ -824,6 +932,11 @@
                     if (data.status === 'refreshed' && data.access_token) {
                         console.log('🔄 Token renovado via check-token');
                         State.tokenValid = true;
+                        
+                        const refreshEvent = { message: 'Token renovado automaticamente' };
+                        EventBus.emit('auth:token_refreshed', refreshEvent);
+                        window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
+                        
                         if (data.credits !== undefined) {
                             State.credits = data.credits;
                             UI.updateCredits();
@@ -835,6 +948,43 @@
             } catch (error) {
                 console.warn('Erro ao verificar token:', error);
             }
+        },
+
+        // 🔥 TRATAMENTO DE UNAUTHORIZED COM ANTI-LOOP
+        handleUnauthorized: function() {
+            console.error('❌ [Orquestrador] Sessão inválida ou expirada.');
+            
+            // 🔥 Alimenta o anti-loop do index.html v5.0
+            sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
+            
+            // Limpa cache local
+            localStorage.clear();
+            
+            // Reseta estado
+            State.isAuthenticated = false;
+            State.user = null;
+            State.credits = 0;
+            State.isPremium = false;
+            State.isAdmin = false;
+            State.tokenValid = false;
+            
+            // 🔥 Dispara evento global para o index.html
+            const eventData = { 
+                message: 'Sessão inválida ou expirada',
+                redirect: true 
+            };
+            
+            EventBus.emit('auth:unauthorized', eventData);
+            window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: eventData }));
+            
+            // Atualiza UI antes de redirecionar
+            UI.updateNavbar();
+            UI.updateRateLimitStatus();
+            
+            // 🔥 Redireciona para login (sem reload infinito)
+            setTimeout(() => {
+                window.location.replace('/login');
+            }, 300);
         },
 
         stop: () => {
@@ -862,6 +1012,14 @@
                 try {
                     await window.appAuth.loadUserCredits();
                     UI.updateCredits();
+                    
+                    const eventData = {
+                        credits: State.credits,
+                        display: State.creditsDisplay
+                    };
+                    
+                    EventBus.emit('credits:loaded', eventData);
+                    window.dispatchEvent(new CustomEvent('credits:loaded', { detail: eventData }));
                 } catch (e) {
                     console.warn('Erro ao carregar créditos:', e);
                 }
@@ -881,16 +1039,21 @@
                         State.receivedDailyCreditToday = status.received_today || false;
                         State.credits = status.credits_balance || 0;
                         
-                        window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
-                            detail: {
-                                isPremium: State.isPremium,
-                                daysLeft: State.daysLeftPremium,
-                                hasPromotionalPrice: State.hasPromotionalPrice,
-                                promotionalPrice: State.promotionalPrice,
-                                canReceiveDailyCredit: State.canReceiveDailyCredit,
-                                receivedDailyCreditToday: State.receivedDailyCreditToday
-                            }
-                        }));
+                        const eventData = {
+                            isPremium: State.isPremium,
+                            daysLeft: State.daysLeftPremium,
+                            hasPromotionalPrice: State.hasPromotionalPrice,
+                            promotionalPrice: State.promotionalPrice,
+                            canReceiveDailyCredit: State.canReceiveDailyCredit,
+                            receivedDailyCreditToday: State.receivedDailyCreditToday
+                        };
+                        
+                        EventBus.emit('premium:status_updated', eventData);
+                        window.dispatchEvent(new CustomEvent('premium:status_updated', { detail: eventData }));
+                        
+                        UI.updatePremiumBadge();
+                        UI.updateVitalicioBadge();
+                        UI.updateCredits();
                         
                         return status;
                     }
@@ -909,6 +1072,15 @@
                         Utils.showNotification('✅ Crédito diário recebido com sucesso!', 'success');
                         await Credits.load();
                         await Credits.loadPremiumStatus();
+                        
+                        const eventData = {
+                            credits: State.credits,
+                            display: State.creditsDisplay
+                        };
+                        
+                        EventBus.emit('credits:daily_received', eventData);
+                        window.dispatchEvent(new CustomEvent('credits:daily_received', { detail: eventData }));
+                        
                         return result;
                     }
                 } catch (e) {
@@ -993,12 +1165,13 @@
                         }
                     }, 100);
                     
-                    window.dispatchEvent(new CustomEvent('powReady', {
-                        detail: {
-                            solutionsReady: State.powSolutionsReady,
-                            autoRefill: true
-                        }
-                    }));
+                    const eventData = {
+                        solutionsReady: State.powSolutionsReady,
+                        autoRefill: true
+                    };
+                    
+                    EventBus.emit('pow:ready', eventData);
+                    window.dispatchEvent(new CustomEvent('pow:ready', { detail: eventData }));
                 }
             } catch (e) {
                 console.warn('Erro ao iniciar PoW auto-refill:', e);
@@ -1108,213 +1281,146 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS (DESACOPLADO)
+    // 🔥 GERENCIADOR DE ANÁLISES (COM SINCRONIZAÇÃO)
     // ==============================================
 
-    const EventManager = {
-        _handlers: new Map(),
+    const Analysis = {
+        _activeAnalyses: [],
+        _recentAnalyses: [],
+        _totalAnalyses: 0,
+        _analysesToday: 0,
 
-        setup: () => {
-            // Password toggle
-            document.querySelectorAll('.password-toggle').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const targetId = btn.getAttribute('data-target');
-                    const field = document.getElementById(targetId);
-                    if (field) {
-                        const icon = btn.querySelector('i');
-                        if (field.type === 'password') {
-                            field.type = 'text';
-                            if (icon) {
-                                icon.classList.remove('fa-eye-slash');
-                                icon.classList.add('fa-eye');
-                            }
-                        } else {
-                            field.type = 'password';
-                            if (icon) {
-                                icon.classList.remove('fa-eye');
-                                icon.classList.add('fa-eye-slash');
-                            }
-                        }
-                    }
-                });
-            });
-
-            // Logout
-            document.querySelectorAll('#logoutBtn, .logout-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (window.appAuth?.logout) {
-                        window.appAuth.logout();
-                    } else {
-                        localStorage.clear();
-                        Utils.redirectTo(CONFIG.ROUTES.LOGIN);
-                    }
-                });
-            });
-
-            // Botão voltar
-            document.querySelectorAll('.btn-back').forEach(el => {
-                el.addEventListener('click', () => {
-                    window.history.back();
-                });
-            });
-
-            // Eventos do auth.js
-            window.addEventListener('authReady', (event) => {
-                console.log('📢 Evento authReady recebido');
-                if (event.detail) {
-                    State.isAuthenticated = event.detail.isAuthenticated || false;
-                    State.user = event.detail.user || null;
-                }
-                UI.updateNavbar();
-                setTimeout(() => Pow.startAutoRefill(), 1000);
-            });
-
-            window.addEventListener('authLogout', () => {
-                console.log('📢 Evento authLogout recebido');
-                State.isAuthenticated = false;
-                State.user = null;
-                State.credits = 0;
-                State.isPremium = false;
-                State.isAdmin = false;
-                State.hasPromotionalPrice = false;
-                State.promotionalPrice = null;
-                State.rateLimitBlocked = false;
-                State.rateLimitBlockedUntil = 0;
-                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
-                State.rateLimitBlockedFor = 'login';
-                
-                UI.updateNavbar();
-                UI.updateRateLimitStatus();
-                Pow.reset();
-                Pow.stopAutoRefill();
-            });
-
-            // Rate Limiter events
-            window.addEventListener('rateLimitBlocked', (event) => {
-                console.log('📢 Evento rateLimitBlocked recebido', event.detail);
-                
-                if (event.detail) {
-                    State.rateLimitBlocked = true;
-                    State.rateLimitBlockedUntil = Date.now() + (event.detail.retryAfter * 1000);
-                    State.rateLimitRemainingAttempts = event.detail.remaining || 0;
-                    State.rateLimitBlockedFor = event.detail.for || 'login';
-                    State.rateLimitLastError = event.detail;
-                    
-                    UI.updateRateLimitStatus();
-                    UI.updateNavbar();
-                    
-                    if (event.detail.message) {
-                        Utils.showNotification(event.detail.message, 'warning');
-                    }
-                }
-            });
-
-            window.addEventListener('rateLimitUnblocked', () => {
-                console.log('📢 Evento rateLimitUnblocked recebido');
-                State.rateLimitBlocked = false;
-                State.rateLimitBlockedUntil = 0;
-                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
-                UI.updateRateLimitStatus();
-                UI.updateNavbar();
-                Utils.showNotification('✅ Bloqueio removido. Você pode tentar novamente.', 'success');
-            });
-
-            // Créditos
-            window.addEventListener('creditsUpdated', (event) => {
-                if (event.detail) {
-                    State.credits = event.detail.credits || 0;
-                    State.creditsDisplay = event.detail.display || '0';
-                    State.isPremium = event.detail.isPremium || false;
-                }
-                UI.updateCredits();
-            });
-
-            // Premium
-            window.addEventListener('premiumStatusUpdated', (event) => {
-                if (event.detail) {
-                    State.isPremium = event.detail.isPremium || false;
-                    State.daysLeftPremium = event.detail.daysLeft || 0;
-                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
-                    State.promotionalPrice = event.detail.promotionalPrice || null;
-                    State.canReceiveDailyCredit = event.detail.canReceiveDailyCredit || false;
-                    State.receivedDailyCreditToday = event.detail.receivedDailyCreditToday || false;
-                }
-                UI.updatePremiumBadge();
-                UI.updateVitalicioBadge();
-                UI.updateCredits();
-            });
-
-            // Daily Credit
-            window.addEventListener('dailyCreditReceived', (event) => {
-                if (event.detail?.success) {
-                    Utils.showNotification('🎉 Crédito diário recebido!', 'success');
-                    UI.updateCredits();
-                }
-            });
-
-            // Promoção
-            window.addEventListener('promotionStatusUpdated', (event) => {
-                if (event.detail) {
-                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
-                    State.promotionalPrice = event.detail.promotionalPrice || null;
-                    UI.updateVitalicioBadge();
-                }
-            });
-
-            // PoW
-            window.addEventListener('powReady', (event) => {
-                console.log('📢 Evento powReady recebido');
-                State.powReady = true;
-                if (event.detail) {
-                    State.powSolutionsReady = event.detail.solutionsReady || 0;
-                    State.powAutoRefillActive = event.detail.autoRefill || false;
-                }
-                UI.updatePowStatus();
-            });
-
-            // Erros globais
-            window.addEventListener('unhandledrejection', (event) => {
-                console.error('❌ Erro não tratado (Promise):', event.reason);
-                
-                if (event.reason?.status === 429) {
-                    const detail = event.reason.detail || {};
-                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
-                        detail: {
-                            retryAfter: detail.retry_after || 60,
-                            remaining: detail.remaining_attempts || 0,
-                            message: detail.message || 'Muitas requisições. Aguarde um momento.'
-                        }
-                    }));
-                    return;
-                }
-                
-                if (event.reason?.message) {
-                    Utils.showNotification(`Erro: ${event.reason.message}`, 'error');
-                } else {
-                    Utils.showNotification('Erro inesperado. Tente novamente.', 'error');
-                }
-            });
-
-            window.addEventListener('error', (event) => {
-                console.error('❌ Erro global:', event.error || event.message);
-                if (event.target?.tagName === 'SCRIPT') return;
-                Utils.showNotification('Erro na aplicação. Recarregue a página se persistir.', 'error');
-            });
-
-            // Atividade do usuário
-            ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(event => {
-                document.addEventListener(event, () => {
-                    State.lastActivity = Date.now();
-                    Auth.resetSessionTimer();
-                });
-            });
+        startAnalysis: (data) => {
+            const analysis = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                status: 'processing',
+                progress: 0,
+                files: data.files || [],
+                ...data
+            };
+            
+            State.activeAnalyses.push(analysis);
+            Analysis._activeAnalyses.push(analysis);
+            
+            const eventData = {
+                analysis,
+                activeCount: State.activeAnalyses.length
+            };
+            
+            EventBus.emit('analysis:started', eventData);
+            window.dispatchEvent(new CustomEvent('analysis:started', { detail: eventData }));
+            
+            return analysis;
         },
 
-        // Limpa todos os handlers (para cleanup)
-        clear: () => {
-            // Na prática, isso seria mais complexo
-            // Mas para este caso, apenas removemos os listeners que podemos
+        updateProgress: (analysisId, progress, status = 'processing') => {
+            const analysis = State.activeAnalyses.find(a => a.id === analysisId);
+            if (analysis) {
+                analysis.progress = progress;
+                analysis.status = status;
+                analysis.lastUpdate = new Date().toISOString();
+                
+                const eventData = { analysis, progress, status };
+                EventBus.emit('analysis:progress', eventData);
+                window.dispatchEvent(new CustomEvent('analysis:progress', { detail: eventData }));
+            }
+        },
+
+        // 🔥 COMPLETE ANALYSIS COM SINCRONIZAÇÃO DE CRÉDITOS
+        completeAnalysis: function(analysisId, result) {
+            const index = State.activeAnalyses.findIndex(a => a.id === analysisId);
+            if (index !== -1) {
+                const analysis = State.activeAnalyses[index];
+                analysis.status = 'completed';
+                analysis.result = result;
+                analysis.completedAt = new Date().toISOString();
+                
+                State.activeAnalyses.splice(index, 1);
+                State.recentAnalyses.unshift(analysis);
+                State.totalAnalyses++;
+                
+                const today = new Date().toISOString().split('T')[0];
+                if (analysis.timestamp.startsWith(today)) {
+                    State.analysesToday++;
+                }
+                
+                if (State.recentAnalyses.length > 50) {
+                    State.recentAnalyses = State.recentAnalyses.slice(0, 50);
+                }
+
+                // 🔥 🔥 🔥 SINCRONIZA CRÉDITOS DO BACKEND (ML/GEMINI)
+                if (result && result.user_credits !== undefined) {
+                    console.log(`💰 Atualizando créditos do backend: ${result.user_credits}`);
+                    State.credits = result.user_credits;
+                    
+                    const display = result.credits_display || Utils.formatCreditsDisplay(State.credits, State.isPremium);
+                    State.creditsDisplay = display;
+                    
+                    // 🔥 Dispara evento para window (index.html escuta)
+                    const creditEventData = {
+                        credits: State.credits,
+                        display: State.creditsDisplay,
+                        maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                        isPremium: State.isPremium
+                    };
+                    
+                    EventBus.emit('credits:updated', creditEventData);
+                    window.dispatchEvent(new CustomEvent('credits:updated', { detail: creditEventData }));
+                    
+                    // Atualiza UI
+                    UI.updateCredits();
+                }
+                
+                // 🔥 Evento de análise concluída
+                const eventData = {
+                    analysis,
+                    result,
+                    total: State.totalAnalyses,
+                    today: State.analysesToday,
+                    creditsUpdated: result?.credits || 0
+                };
+                
+                EventBus.emit('analysis:success', eventData);
+                window.dispatchEvent(new CustomEvent('analysis:success', { detail: eventData }));
+                
+                UI.updateCredits();
+            }
+        },
+
+        failAnalysis: function(analysisId, error) {
+            const index = State.activeAnalyses.findIndex(a => a.id === analysisId);
+            if (index !== -1) {
+                const analysis = State.activeAnalyses[index];
+                analysis.status = 'failed';
+                analysis.error = error;
+                analysis.failedAt = new Date().toISOString();
+                
+                State.activeAnalyses.splice(index, 1);
+                
+                const eventData = {
+                    analysis,
+                    error,
+                    message: error.message || 'Erro na análise'
+                };
+                
+                EventBus.emit('analysis:error', eventData);
+                window.dispatchEvent(new CustomEvent('analysis:error', { detail: eventData }));
+            }
+        },
+
+        getActiveAnalyses: () => State.activeAnalyses,
+        getRecentAnalyses: () => State.recentAnalyses.slice(0, 10),
+        getTotalAnalyses: () => State.totalAnalyses,
+        getAnalysesToday: () => State.analysesToday,
+        
+        clearHistory: () => {
+            State.recentAnalyses = [];
+            State.totalAnalyses = 0;
+            State.analysesToday = 0;
+            
+            EventBus.emit('analysis:history_cleared', {});
+            window.dispatchEvent(new CustomEvent('analysis:history_cleared', {}));
         }
     };
 
@@ -1394,14 +1500,17 @@
                 
                 if (response.status === 429) {
                     const data = await response.json().catch(() => ({}));
-                    window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
-                        detail: {
-                            retryAfter: data.retry_after || 60,
-                            remaining: data.remaining_attempts || 0,
-                            message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
-                            for: 'promotion'
-                        }
-                    }));
+                    
+                    const eventData = {
+                        retryAfter: data.retry_after || 60,
+                        remaining: data.remaining_attempts || 0,
+                        message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
+                        for: 'promotion'
+                    };
+                    
+                    EventBus.emit('rate_limit:blocked', eventData);
+                    window.dispatchEvent(new CustomEvent('rate_limit:blocked', { detail: eventData }));
+                    
                     return;
                 }
                 
@@ -1410,12 +1519,13 @@
                     State.hasPromotionalPrice = data.user_locked_price !== null;
                     State.promotionalPrice = data.user_locked_price || null;
                     
-                    window.dispatchEvent(new CustomEvent('promotionStatusUpdated', {
-                        detail: {
-                            hasPromotionalPrice: State.hasPromotionalPrice,
-                            promotionalPrice: State.promotionalPrice
-                        }
-                    }));
+                    const eventData = {
+                        hasPromotionalPrice: State.hasPromotionalPrice,
+                        promotionalPrice: State.promotionalPrice
+                    };
+                    
+                    EventBus.emit('premium:promotion_updated', eventData);
+                    window.dispatchEvent(new CustomEvent('premium:promotion_updated', { detail: eventData }));
                 }
             } catch (e) {
                 console.warn('Erro ao sincronizar promoção:', e);
@@ -1459,89 +1569,241 @@
     };
 
     // ==============================================
-    // 🔥 CONSTRUÇÃO DA INSTÂNCIA PRINCIPAL
+    // 🔥 GERENCIADOR DE EVENTOS
     // ==============================================
 
-    const AppInstance = {
-        // Estado
-        state: State,
-        config: CONFIG,
-        
-        // Módulos
-        utils: Utils,
-        ui: UI,
-        router: Router,
-        auth: Auth,
-        credits: Credits,
-        sync: Sync,
-        pow: Pow,
-        events: EventManager,
-        
-        // Funções de créditos
-        getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
-        getCreditsBalance: () => State.credits,
-        isPremium: () => State.isPremium,
-        hasVitalicio: () => State.hasPromotionalPrice,
-        getPromotionalPrice: () => State.promotionalPrice,
-        canReceiveDailyCredit: () => State.canReceiveDailyCredit,
-        getDaysLeftPremium: () => State.daysLeftPremium,
-        receiveDailyCredit: Credits.receiveDailyCredit,
-        loadPremiumStatus: Credits.loadPremiumStatus,
-        isTokenValid: () => State.tokenValid,
-        
-        // Funções PoW
-        isPowAvailable: Pow.isAvailable,
-        getPowStats: Pow.getStats,
-        preparePowForUpload: Pow.prepareForUpload,
-        uploadWithPow: Pow.uploadWithPow,
-        startPowAutoRefill: Pow.startAutoRefill,
-        stopPowAutoRefill: Pow.stopAutoRefill,
-        resetPow: Pow.reset,
-        
-        // Funções Rate Limiter
-        isRateLimitBlocked: Utils.isRateLimitBlocked,
-        getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
-        getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
-        getRateLimitStatus: () => ({
-            blocked: State.rateLimitBlocked,
-            blockedUntil: State.rateLimitBlockedUntil,
-            remainingAttempts: State.rateLimitRemainingAttempts,
-            for: State.rateLimitBlockedFor,
-            timeRemaining: Utils.getRateLimitTimeRemaining()
-        }),
-        
-        // Utilitários gerais
-        showNotification: Utils.showNotification,
-        updateCredits: UI.updateCredits,
-        updateNavbar: UI.updateNavbar,
-        updateRateLimitStatus: UI.updateRateLimitStatus,
-        navigate: Router.navigate,
-        showLoading: UI.showLoading,
-        hideLoading: UI.hideLoading,
-        updateLoadingProgress: UI.updateLoadingProgress,
-        isAuthenticated: Utils.isAuthenticated,
-        goBack: Utils.goBack,
-        goForward: Utils.goForward,
-        reload: Utils.reload,
-        getQueryParam: Utils.getQueryParam,
-        waitForAuth: Utils.waitForAuth,
-        formatCreditsDisplay: Utils.formatCreditsDisplay,
-        waitForPayment: Utils.waitForPayment,
-        waitForPow: Utils.waitForPow,
-        
-        // Inicialização
-        init: initApp,
-        
-        // Cleanup
-        destroy: () => {
-            console.log('🧹 Destruindo App...');
-            Auth.stop();
-            Credits.stop();
-            Pow.stop();
-            UI.clearElementCache();
-            Router.clearCache();
-            State.initialized = false;
-            State.isAppReady = false;
+    const EventManager = {
+        setup: () => {
+            // Password toggle
+            document.querySelectorAll('.password-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetId = btn.getAttribute('data-target');
+                    const field = document.getElementById(targetId);
+                    if (field) {
+                        const icon = btn.querySelector('i');
+                        if (field.type === 'password') {
+                            field.type = 'text';
+                            if (icon) {
+                                icon.classList.remove('fa-eye-slash');
+                                icon.classList.add('fa-eye');
+                            }
+                        } else {
+                            field.type = 'password';
+                            if (icon) {
+                                icon.classList.remove('fa-eye');
+                                icon.classList.add('fa-eye-slash');
+                            }
+                        }
+                    }
+                });
+            });
+
+            // Logout
+            document.querySelectorAll('#logoutBtn, .logout-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.appAuth?.logout) {
+                        window.appAuth.logout();
+                    } else {
+                        Auth.handleUnauthorized();
+                    }
+                });
+            });
+
+            // Botão voltar
+            document.querySelectorAll('.btn-back').forEach(el => {
+                el.addEventListener('click', () => {
+                    window.history.back();
+                });
+            });
+
+            // Eventos do auth.js
+            window.addEventListener('authReady', (event) => {
+                console.log('📢 Evento authReady recebido');
+                if (event.detail) {
+                    State.isAuthenticated = event.detail.isAuthenticated || false;
+                    State.user = event.detail.user || null;
+                }
+                UI.updateNavbar();
+                setTimeout(() => Pow.startAutoRefill(), 1000);
+                
+                EventBus.emit('auth:ready', event.detail);
+            });
+
+            window.addEventListener('authLogout', () => {
+                console.log('📢 Evento authLogout recebido');
+                Auth.handleUnauthorized();
+            });
+
+            // Rate Limiter events
+            window.addEventListener('rateLimitBlocked', (event) => {
+                console.log('📢 Evento rateLimitBlocked recebido', event.detail);
+                
+                if (event.detail) {
+                    State.rateLimitBlocked = true;
+                    State.rateLimitBlockedUntil = Date.now() + (event.detail.retryAfter * 1000);
+                    State.rateLimitRemainingAttempts = event.detail.remaining || 0;
+                    State.rateLimitBlockedFor = event.detail.for || 'login';
+                    State.rateLimitLastError = event.detail;
+                    
+                    UI.updateRateLimitStatus();
+                    UI.updateNavbar();
+                    
+                    EventBus.emit('rate_limit:blocked', event.detail);
+                    
+                    if (event.detail.message) {
+                        Utils.showNotification(event.detail.message, 'warning');
+                    }
+                }
+            });
+
+            window.addEventListener('rateLimitUnblocked', () => {
+                console.log('📢 Evento rateLimitUnblocked recebido');
+                State.rateLimitBlocked = false;
+                State.rateLimitBlockedUntil = 0;
+                State.rateLimitRemainingAttempts = CONFIG.RATE_LIMIT_LOGIN_MAX;
+                UI.updateRateLimitStatus();
+                UI.updateNavbar();
+                Utils.showNotification('✅ Bloqueio removido. Você pode tentar novamente.', 'success');
+                
+                EventBus.emit('rate_limit:unblocked', {});
+            });
+
+            // Créditos
+            window.addEventListener('creditsUpdated', (event) => {
+                if (event.detail) {
+                    State.credits = event.detail.credits || 0;
+                    State.creditsDisplay = event.detail.display || '0';
+                    State.isPremium = event.detail.isPremium || false;
+                }
+                UI.updateCredits();
+                
+                EventBus.emit('credits:updated', event.detail);
+            });
+
+            // Premium
+            window.addEventListener('premiumStatusUpdated', (event) => {
+                if (event.detail) {
+                    State.isPremium = event.detail.isPremium || false;
+                    State.daysLeftPremium = event.detail.daysLeft || 0;
+                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
+                    State.promotionalPrice = event.detail.promotionalPrice || null;
+                    State.canReceiveDailyCredit = event.detail.canReceiveDailyCredit || false;
+                    State.receivedDailyCreditToday = event.detail.receivedDailyCreditToday || false;
+                }
+                UI.updatePremiumBadge();
+                UI.updateVitalicioBadge();
+                UI.updateCredits();
+                
+                EventBus.emit('premium:status_updated', event.detail);
+            });
+
+            // Daily Credit
+            window.addEventListener('dailyCreditReceived', (event) => {
+                if (event.detail?.success) {
+                    Utils.showNotification('🎉 Crédito diário recebido!', 'success');
+                    UI.updateCredits();
+                    
+                    EventBus.emit('credits:daily_received', event.detail);
+                }
+            });
+
+            // Promoção
+            window.addEventListener('promotionStatusUpdated', (event) => {
+                if (event.detail) {
+                    State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
+                    State.promotionalPrice = event.detail.promotionalPrice || null;
+                    UI.updateVitalicioBadge();
+                    
+                    EventBus.emit('premium:promotion_updated', event.detail);
+                }
+            });
+
+            // PoW
+            window.addEventListener('powReady', (event) => {
+                console.log('📢 Evento powReady recebido');
+                State.powReady = true;
+                if (event.detail) {
+                    State.powSolutionsReady = event.detail.solutionsReady || 0;
+                    State.powAutoRefillActive = event.detail.autoRefill || false;
+                }
+                UI.updatePowStatus();
+                
+                EventBus.emit('pow:ready', event.detail);
+            });
+
+            // Erros globais
+            window.addEventListener('unhandledrejection', (event) => {
+                console.error('❌ Erro não tratado (Promise):', event.reason);
+                
+                if (event.reason?.status === 429) {
+                    const detail = event.reason.detail || {};
+                    const eventData = {
+                        retryAfter: detail.retry_after || 60,
+                        remaining: detail.remaining_attempts || 0,
+                        message: detail.message || 'Muitas requisições. Aguarde um momento.'
+                    };
+                    EventBus.emit('rate_limit:blocked', eventData);
+                    window.dispatchEvent(new CustomEvent('rate_limit:blocked', { detail: eventData }));
+                    return;
+                }
+                
+                if (event.reason?.status === 401) {
+                    Auth.handleUnauthorized();
+                    return;
+                }
+                
+                const eventData = {
+                    error: event.reason?.message || 'Erro inesperado'
+                };
+                EventBus.emit('app:error', eventData);
+                window.dispatchEvent(new CustomEvent('app:error', { detail: eventData }));
+                
+                if (event.reason?.message) {
+                    Utils.showNotification(`Erro: ${event.reason.message}`, 'error');
+                } else {
+                    Utils.showNotification('Erro inesperado. Tente novamente.', 'error');
+                }
+            });
+
+            window.addEventListener('error', (event) => {
+                console.error('❌ Erro global:', event.error || event.message);
+                if (event.target?.tagName === 'SCRIPT') return;
+                
+                const eventData = {
+                    error: event.message || 'Erro global'
+                };
+                EventBus.emit('app:error', eventData);
+                window.dispatchEvent(new CustomEvent('app:error', { detail: eventData }));
+                
+                Utils.showNotification('Erro na aplicação. Recarregue a página se persistir.', 'error');
+            });
+
+            // Atividade do usuário
+            ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+                document.addEventListener(event, () => {
+                    State.lastActivity = Date.now();
+                    Auth.resetSessionTimer();
+                });
+            });
+
+            // Listener para eventos de análise do dashboard
+            EventBus.on('analysis:started', (data) => {
+                console.log('📊 Análise iniciada:', data);
+            });
+
+            EventBus.on('analysis:success', (data) => {
+                console.log('✅ Análise concluída com sucesso:', data);
+                UI.updateCredits();
+            });
+
+            EventBus.on('analysis:error', (data) => {
+                console.error('❌ Erro na análise:', data);
+            });
+        },
+
+        clear: () => {
+            // Limpeza de event listeners se necessário
         }
     };
 
@@ -1550,50 +1812,86 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v4.0...');
+        console.log('🚀 Inicializando App (Orquestrador) v5.1...');
 
         try {
-            // 1. Proteger rotas (CORRIGIDO)
+            // 1. Resetar contador de reloads
+            ReloadManager.reset();
+
+            // 2. Proteger rotas
             if (!Router.protect()) {
                 console.log('⏳ Redirecionado, interrompendo inicialização');
                 return;
             }
 
-            // 2. Aguardar auth.js carregar
+            // 3. Aguardar auth.js carregar
             const authLoaded = await Utils.waitForAuth(30);
             if (!authLoaded) {
                 console.warn('⚠️ Auth não carregou. Tentando continuar...');
             }
 
-            // 3. Sincronizar com auth.js
+            // 4. Sincronizar com auth.js
             const isAuth = await Sync.syncAuth();
             
-            // 4. Sincronizar Rate Limit
+            // 5. Sincronizar Rate Limit
             Sync.syncRateLimit();
 
-            // 5. Se estiver autenticado, sincroniza com payment, promoção e PoW
+            // 6. Se estiver autenticado, sincroniza com payment, promoção e PoW
             if (isAuth) {
                 Sync.syncPow().catch(e => console.warn('Erro sync Pow:', e));
                 await Sync.syncPayment();
                 await Sync.syncPromotion();
             }
 
-            // 6. Configurar UI global
+            // 7. Configurar UI global
             UI.setupModals();
             UI.updateNavbar();
             UI.updateRateLimitStatus();
 
-            // 7. Configurar eventos globais
+            // 8. Configurar eventos globais
             EventManager.setup();
 
-            // 8. Configurar navegação
+            // 9. Configurar navegação
             Router.setupNavigation();
 
-            // 9. Marcar como inicializado
+            // 10. Marcar como inicializado
             State.initialized = true;
             State.isAppReady = true;
 
-            console.log('✅ App (Orquestrador) v4.0 inicializado com sucesso!');
+            // ==============================================
+            // 🔥🔥🔥 ESPELHAMENTO DO EVENTO app:ready 🔥🔥🔥
+            // ==============================================
+            
+            // Dados do evento
+            const appReadyData = {
+                isAuthenticated: isAuth,
+                user: State.user,
+                credits: State.credits,
+                creditsDisplay: State.creditsDisplay || Utils.formatCreditsDisplay(State.credits, State.isPremium),
+                isAdmin: State.isAdmin,
+                isPremium: State.isPremium,
+                maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                hasVitalicio: State.hasPromotionalPrice,
+                promotionalPrice: State.promotionalPrice,
+                tokenValid: State.tokenValid,
+                powReady: State.powReady,
+                rateLimitBlocked: State.rateLimitBlocked,
+                rateLimitTimeRemaining: Utils.getRateLimitTimeRemaining(),
+                // 🔥 Dados adicionais para o dashboard
+                displayName: State.user?.name || 'Usuário',
+                workshopName: State.user?.workshop_name || 'Oficina'
+            };
+
+            // 🔥 Dispara via EventBus (interno)
+            EventBus.emit('app:ready', appReadyData);
+            
+            // 🔥🔥🔥 DISPARA PARA WINDOW (index.html V5.0 ESCUTA) 🔥🔥🔥
+            window.dispatchEvent(new CustomEvent('app:ready', { 
+                detail: appReadyData 
+            }));
+
+            console.log('✅ App (Orquestrador) v5.1 inicializado com sucesso!');
+            console.log('📢 Evento app:ready disparado para window');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${Utils.getCurrentPath()}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
@@ -1601,28 +1899,18 @@
             console.log(`📌 Créditos: ${State.creditsDisplay}`);
             console.log(`📌 Preço Vitalício: ${State.hasPromotionalPrice ? `R$ ${State.promotionalPrice}` : 'Não'}`);
             console.log(`📌 Rate Limit: ${State.rateLimitBlocked ? `🔴 Bloqueado (${Utils.getRateLimitTimeRemaining()}s)` : '🟢 Disponível'}`);
-
-            // Dispara evento de app pronto
-            window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { 
-                    isAuthenticated: isAuth,
-                    user: State.user,
-                    credits: State.credits,
-                    isAdmin: State.isAdmin,
-                    isPremium: State.isPremium,
-                    maxCredits: CONFIG.MAX_CREDITS_BALANCE,
-                    hasVitalicio: State.hasPromotionalPrice,
-                    promotionalPrice: State.promotionalPrice,
-                    tokenValid: State.tokenValid,
-                    powReady: State.powReady,
-                    rateLimitBlocked: State.rateLimitBlocked,
-                    rateLimitTimeRemaining: Utils.getRateLimitTimeRemaining()
-                } 
-            }));
+            console.log(`📌 EventBus: ${EventBus._handlers.size} handlers registrados`);
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
             Utils.showNotification('Erro ao inicializar aplicação. Recarregue a página.', 'error');
+            
+            const eventData = {
+                error: error.message || 'Erro na inicialização'
+            };
+            EventBus.emit('app:error', eventData);
+            window.dispatchEvent(new CustomEvent('app:error', { detail: eventData }));
+            
             State.initialized = false;
             State.isAppReady = false;
         }
@@ -1650,6 +1938,9 @@
     window.updateLoadingProgress = UI.updateLoadingProgress;
     window.goBack = Utils.goBack;
     window.getQueryParam = Utils.getQueryParam;
+
+    // Event Bus exposto
+    window.eventBus = EventBus;
 
     // Funções de créditos
     window.getMaxCredits = () => CONFIG.MAX_CREDITS_BALANCE;
@@ -1684,6 +1975,17 @@
     window.stopPowAutoRefill = Pow.stopAutoRefill;
     window.resetPow = Pow.reset;
 
+    // Funções de análise
+    window.startAnalysis = Analysis.startAnalysis;
+    window.updateAnalysisProgress = Analysis.updateProgress;
+    window.completeAnalysis = Analysis.completeAnalysis;
+    window.failAnalysis = Analysis.failAnalysis;
+    window.getActiveAnalyses = Analysis.getActiveAnalyses;
+    window.getRecentAnalyses = Analysis.getRecentAnalyses;
+    window.getTotalAnalyses = Analysis.getTotalAnalyses;
+    window.getAnalysesToday = Analysis.getAnalysesToday;
+    window.clearAnalysisHistory = Analysis.clearHistory;
+
     // ==============================================
     // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
     // ==============================================
@@ -1700,19 +2002,11 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v4.0 carregado!');
-    console.log('   🏗️ Arquitetura refatorada com:');
-    console.log('   - Sistema de Rotas corrigido (validação exata)');
-    console.log('   - Separação de responsabilidades (SRP)');
-    console.log('   - Gerenciamento de estado reativo');
-    console.log('   - Sistema de eventos desacoplado');
-    console.log('   - Cache de verificações de rota');
-    console.log('   📌 Módulos disponíveis:');
-    console.log('   - App.router (roteador corrigido)');
-    console.log('   - App.auth (autenticação)');
-    console.log('   - App.credits (créditos)');
-    console.log('   - App.pow (Proof of Work)');
-    console.log('   - App.utils (utilitários)');
-    console.log('   - App.events (gerenciador de eventos)');
+    console.log('✅ app.js (Orquestrador) v5.1 carregado!');
+    console.log('   🔥 Correções de sincronização:');
+    console.log('   - Evento app:ready espelhado para window');
+    console.log('   - auth:unauthorized com anti-loop (sessionStorage)');
+    console.log('   - Sincronização de créditos via ML/Gemini');
+    console.log('   - Eventos de análise com espelhamento');
 
 })();

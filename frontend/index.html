@@ -1,19 +1,39 @@
-<!-- frontend/index.html - VERSÃO CORRIGIDA V4.0 -->
+<!-- frontend/index.html - VERSÃO CORRIGIDA V5.0 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <!-- ============================================== -->
-    <!-- 🔥 BLOQUEIO IMEDIATO -->
+    <!-- 🔥 BLOQUEIO IMEDIATO COM ANTI-LOOP -->
     <!-- ============================================== -->
     <script>
         (function() {
+            // ==============================================
+            // 🔥 ANTI-LOOP - Evita recarregamentos infinitos
+            // ==============================================
+            const BLOCK_KEY = '_aa_auth_block';
+            const blockTime = parseInt(sessionStorage.getItem(BLOCK_KEY) || '0');
+            const now = Date.now();
+            
+            // Se houve falha nos últimos 3 segundos, NÃO TENTE NOVAMENTE
+            if (blockTime > 0 && (now - blockTime) < 3000) {
+                console.log('🚫 Bloqueio anti-loop ativo. Redirecionando para login...');
+                sessionStorage.removeItem(BLOCK_KEY);
+                window.location.replace('/login');
+                throw new Error('Redirecionando para login (anti-loop)');
+            }
+
             const token = localStorage.getItem('access_token');
-            const isLogged = token !== null && token !== '';
+            const isLogged = token !== null && token !== '' && token !== 'undefined' && token !== 'null';
+            
             if (!isLogged) {
                 console.log('🔒 Acesso não autorizado. Desviando para a tela de login...');
+                sessionStorage.setItem(BLOCK_KEY, String(now));
                 window.location.replace('/login');
                 throw new Error('Redirecionando para login');
             }
+
+            // Limpa bloqueio se autenticado
+            sessionStorage.removeItem(BLOCK_KEY);
             console.log('✅ Sessão ativa. Carregando dashboard...');
         })();
     </script>
@@ -1073,7 +1093,7 @@
     <script src="/static/js/payment.js?v=2.0" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO - CORRIGIDO -->
+    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO - V5.0 -->
     <!-- ============================================== -->
     <script>
         // ==============================================
@@ -1198,17 +1218,117 @@
         }
 
         // ==============================================
-        // 🔥 INICIALIZAÇÃO DO DASHBOARD - CORRIGIDA
+        // 🔥 FUNÇÕES DE INICIALIZAÇÃO - SEM POLLING
+        // ==============================================
+        function inicializarDashboard() {
+            console.log('🚀 [Fino] Inicializando Dashboard...');
+            
+            // Carrega status premium
+            try {
+                if (typeof window.loadPremiumStatus === 'function') {
+                    window.loadPremiumStatus();
+                } else if (window.App && typeof window.App.loadPremiumStatus === 'function') {
+                    window.App.loadPremiumStatus();
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar status premium:', e);
+            }
+
+            // Inicia polling do premium
+            try {
+                if (typeof window.startPremiumStatusPolling === 'function') {
+                    window.startPremiumStatusPolling(60000);
+                } else if (window.App && typeof window.App.startPremiumStatusPolling === 'function') {
+                    window.App.startPremiumStatusPolling(60000);
+                }
+            } catch (e) {
+                console.warn('Erro ao iniciar polling premium:', e);
+            }
+
+            // Atualiza status PoW
+            setTimeout(updatePowStatus, 1000);
+        }
+
+        // ==============================================
+        // 🔥 ESCUTA EVENTO CUSTOMIZADO 'app:ready'
+        // ==============================================
+        document.addEventListener('app:ready', function(event) {
+            console.log('📢 EVENTO app:ready recebido!', event.detail);
+            
+            if (event.detail && event.detail.isReady) {
+                inicializarDashboard();
+            }
+        });
+
+        // ==============================================
+        // 🔥 FALLBACK: Se o evento nunca for disparado
+        // ==============================================
+        let fallbackAttempts = 0;
+        const maxFallbackAttempts = 20;
+        
+        const fallbackTimer = setInterval(function() {
+            fallbackAttempts++;
+            
+            // Verifica se o app está disponível
+            const appReady = window.App !== undefined && window.App !== null && 
+                            typeof window.App.isReady === 'function' && 
+                            window.App.isReady();
+            
+            if (appReady) {
+                console.log('✅ Fallback: App detectado como pronto');
+                clearInterval(fallbackTimer);
+                inicializarDashboard();
+                return;
+            }
+            
+            // Verifica se já foi iniciado
+            if (window._dashboardInitialized) {
+                clearInterval(fallbackTimer);
+                return;
+            }
+            
+            if (fallbackAttempts >= maxFallbackAttempts) {
+                console.warn('⚠️ Fallback: Timeout - App não respondeu');
+                clearInterval(fallbackTimer);
+            }
+        }, 300);
+
+        // ==============================================
+        // 🔥 EVENTOS ADICIONAIS
+        // ==============================================
+        
+        // authReady para compatibilidade
+        window.addEventListener('authReady', function(event) {
+            console.log('📢 authReady recebido (compatibilidade)');
+            if (event.detail && event.detail.isAuthenticated) {
+                // Não faz nada, aguarda app:ready
+            }
+        });
+
+        // creditsUpdated
+        window.addEventListener('creditsUpdated', function(event) {
+            const creditsDisplay = document.getElementById('creditsDisplay');
+            if (creditsDisplay && event.detail && event.detail.display) {
+                creditsDisplay.textContent = event.detail.display;
+            }
+        });
+
+        // powReady
+        window.addEventListener('powReady', function() {
+            setTimeout(updatePowStatus, 500);
+        });
+
+        // Atualização periódica do POW
+        setInterval(updatePowStatus, 10000);
+
+        // ==============================================
+        // 🔥 GSAP e AOS
         // ==============================================
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Inicializando Dashboard...');
-            
-            // AOS
             if (typeof AOS !== 'undefined') {
                 AOS.init({ once: true, duration: 800, offset: 50 });
             }
             
-            // GSAP
             if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
                 gsap.registerPlugin(ScrollTrigger);
                 gsap.from('.upload-card', {
@@ -1224,173 +1344,10 @@
                     ease: 'power3.out'
                 });
             }
-
-            // Verificação de token
-            const token = localStorage.getItem('access_token');
-            if (!token || token === '' || token === 'undefined' || token === 'null') {
-                console.log('🔒 Fallback: Token não encontrado. Redirecionando...');
-                window.location.href = '/login';
-                return;
-            }
-
-            // ==============================================
-            // 🔥 CONFIGURAÇÃO DO RATE LIMITER
-            // ==============================================
-            
-            const checkApp = setInterval(function() {
-                // 🔥 CORREÇÃO: Verifica window.app (exportado pelo app.js)
-                if (window.app && window.app.isRateLimitBlocked !== undefined) {
-                    clearInterval(checkApp);
-                    console.log('✅ App encontrado - ativando Rate Limiter');
-                    
-                    if (window.app.isRateLimitBlocked()) {
-                        updateRateLimitUI();
-                    }
-                    
-                    window.addEventListener('rateLimitBlocked', function(event) {
-                        console.log('📢 Rate Limit bloqueado no dashboard', event.detail);
-                        updateRateLimitUI(event.detail);
-                    });
-                    
-                    window.addEventListener('rateLimitUnblocked', function() {
-                        console.log('📢 Rate Limit desbloqueado no dashboard');
-                        hideRateLimitUI();
-                    });
-                }
-            }, 500);
-            
-            setTimeout(function() {
-                clearInterval(checkApp);
-            }, 10000);
-
-            // ==============================================
-            // 🔥 EVENTO authReady
-            // ==============================================
-            
-            window.addEventListener('authReady', function(event) {
-                console.log('📢 authReady recebido no dashboard', event.detail);
-                
-                if (event.detail && event.detail.isAuthenticated) {
-                    if (typeof window.loadPremiumStatus === 'function') {
-                        window.loadPremiumStatus();
-                    }
-                    
-                    if (typeof window.startPremiumStatusPolling === 'function') {
-                        window.startPremiumStatusPolling(60000);
-                    }
-                    
-                    setTimeout(updatePowStatus, 2000);
-                }
-            });
-
-            // ==============================================
-            // 🔥 EVENTO creditsUpdated
-            // ==============================================
-            
-            window.addEventListener('creditsUpdated', function(event) {
-                const creditsDisplay = document.getElementById('creditsDisplay');
-                if (creditsDisplay && event.detail && event.detail.display) {
-                    creditsDisplay.textContent = event.detail.display;
-                }
-            });
-
-            // ==============================================
-            // 🔥 EVENTO powReady
-            // ==============================================
-            
-            window.addEventListener('powReady', function() {
-                setTimeout(updatePowStatus, 500);
-            });
-
-            // ==============================================
-            // 🔥 ATUALIZAÇÃO PERIÓDICA DO POW
-            // ==============================================
-            
-            setInterval(updatePowStatus, 10000);
-
-            // ==============================================
-            // 🔥 CARREGAR STATUS PREMIUM (FALLBACK)
-            // ==============================================
-            
-            function loadPremiumStatusIfAvailable() {
-                try {
-                    if (typeof window.loadPremiumStatus === 'function') {
-                        window.loadPremiumStatus();
-                        return true;
-                    }
-                    if (window.app && typeof window.app.loadPremiumStatus === 'function') {
-                        window.app.loadPremiumStatus();
-                        return true;
-                    }
-                    if (window.autoAnalytics && typeof window.autoAnalytics.loadPremiumStatus === 'function') {
-                        window.autoAnalytics.loadPremiumStatus();
-                        return true;
-                    }
-                    return false;
-                } catch (error) {
-                    return false;
-                }
-            }
-
-            function startPremiumPollingIfAvailable() {
-                try {
-                    if (typeof window.startPremiumStatusPolling === 'function') {
-                        window.startPremiumStatusPolling(60000);
-                        return true;
-                    }
-                    if (window.app && typeof window.app.startPremiumStatusPolling === 'function') {
-                        window.app.startPremiumStatusPolling(60000);
-                        return true;
-                    }
-                    if (window.autoAnalytics && typeof window.autoAnalytics.startPremiumStatusPolling === 'function') {
-                        window.autoAnalytics.startPremiumStatusPolling(60000);
-                        return true;
-                    }
-                    return false;
-                } catch (error) {
-                    return false;
-                }
-            }
-
-            // ==============================================
-            // 🔥 VERIFICAÇÃO DO APP CARREGADO
-            // ==============================================
-            function checkAppLoaded() {
-                const authLoaded = window.appAuth !== undefined && window.appAuth !== null;
-                // 🔥 CORREÇÃO: Verifica window.app (exportado pelo app.js)
-                const appLoaded = window.app !== undefined && window.app !== null;
-                return authLoaded && appLoaded;
-            }
-
-            function inicializarPainelSeguro() {
-                console.log('🚀 [Fino] Casamento entre App e Dashboard concluído com sucesso.');
-                if (typeof loadPremiumStatusIfAvailable === 'function') loadPremiumStatusIfAvailable();
-                if (typeof startPremiumPollingIfAvailable === 'function') startPremiumPollingIfAvailable();
-                if (typeof updatePowStatus === 'function') updatePowStatus();
-            }
-
-            if (checkAppLoaded()) {
-                inicializarPainelSeguro();
-            } else {
-                let attempts = 0;
-                const maxAttempts = 30;
-                const waitForApp = setInterval(() => {
-                    attempts++;
-                    if (checkAppLoaded()) {
-                        clearInterval(waitForApp);
-                        inicializarPainelSeguro();
-                        console.log('✅ App carregou após ' + attempts + ' tentativas');
-                    } else if (attempts >= maxAttempts) {
-                        clearInterval(waitForApp);
-                        console.error('❌ Timeout Crítico: O orquestrador central não respondeu.');
-                    }
-                }, 50);
-            }
-
-            console.log('✅ Dashboard carregado com sucesso!');
-            console.log('⚡ PoW Status ativo - Proteção anti-bot');
-            console.log('🔒 Rate Limiter integrado - Proteção contra abuso');
         });
+
+        console.log('✅ Dashboard V5.0 carregado!');
+        console.log('⚡ Aguardando evento app:ready para iniciar...');
     </script>
 </body>
 </html>
