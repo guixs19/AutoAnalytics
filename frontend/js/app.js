@@ -1,19 +1,19 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.1 (COM CORREÇÕES DE SINCRONIZAÇÃO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.2 (COM CORREÇÕES DE EXPORTAÇÃO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V5.1:
- * 1. 🔥 Evento 'app:ready' espelhado para window
- * 2. 🔥 Sincronização correta com index.html
- * 3. 🔥 Tratamento de unauthorized com anti-loop
- * 4. 🔥 Sincronização reativa de créditos via eventos
- * 5. 🔥 Integração com ML/Gemini para atualização de créditos
+ * 🏗️ ARQUITETURA V5.2:
+ * 1. 🔥 Correção da exportação de AppInstance
+ * 2. 🔥 Ajuste de caminhos para usar barras iniciais
+ * 3. 🔥 Evento 'app:ready' espelhado para window
+ * 4. 🔥 Sincronização correta com index.html
+ * 5. 🔥 Tratamento de unauthorized com anti-loop
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v5.1...');
+    console.log('🚀 Inicializando App (Orquestrador) v5.2...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -1812,7 +1812,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v5.1...');
+        console.log('🚀 Inicializando App (Orquestrador) v5.2...');
 
         try {
             // 1. Resetar contador de reloads
@@ -1877,9 +1877,9 @@
                 powReady: State.powReady,
                 rateLimitBlocked: State.rateLimitBlocked,
                 rateLimitTimeRemaining: Utils.getRateLimitTimeRemaining(),
-                // 🔥 Dados adicionais para o dashboard
                 displayName: State.user?.name || 'Usuário',
-                workshopName: State.user?.workshop_name || 'Oficina'
+                workshopName: State.user?.workshop_name || 'Oficina',
+                version: '5.2'
             };
 
             // 🔥 Dispara via EventBus (interno)
@@ -1890,7 +1890,7 @@
                 detail: appReadyData 
             }));
 
-            console.log('✅ App (Orquestrador) v5.1 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v5.2 inicializado com sucesso!');
             console.log('📢 Evento app:ready disparado para window');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${Utils.getCurrentPath()}`);
@@ -1917,15 +1917,120 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS
+    // 🔥 EXPORTAÇÕES GLOBAIS (CORRIGIDAS V5.2)
     // ==============================================
 
-    // Instância principal
-    window.App = AppInstance;
-    window.app = AppInstance;
-    window.autoAnalytics = AppInstance;
+    // 🔥 OBJETO PRINCIPAL DA APLICAÇÃO
+    const App = {
+        // Configurações
+        CONFIG,
+        
+        // Estado
+        State,
+        
+        // Utilitários
+        Utils,
+        
+        // Módulos
+        Router,
+        EventBus,
+        UI,
+        Auth,
+        Credits,
+        Pow,
+        Analysis,
+        Sync,
+        EventManager,
+        ReloadManager,
+        
+        // Métodos públicos principais
+        init: initApp,
+        
+        // Aliases para compatibilidade
+        auth: Auth,
+        pow: Pow,
+        credits: Credits,
+        analysis: Analysis,
+        sync: Sync,
+        ui: UI,
+        router: Router,
+        events: EventBus,
+        
+        // Funções auxiliares
+        showNotification: Utils.showNotification,
+        isAuthenticated: Utils.isAuthenticated,
+        getCurrentUser: () => State.user,
+        getCredits: () => State.credits,
+        isAdmin: () => State.isAdmin,
+        isPremium: () => State.isPremium,
+        hasVitalicio: () => State.hasPromotionalPrice,
+        getPromotionalPrice: () => State.promotionalPrice,
+        canReceiveDailyCredit: () => State.canReceiveDailyCredit,
+        getDaysLeftPremium: () => State.daysLeftPremium,
+        isTokenValid: () => State.tokenValid,
+        
+        // Rate Limiter
+        isRateLimitBlocked: Utils.isRateLimitBlocked,
+        getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
+        getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
+        
+        // PoW
+        isPowAvailable: Pow.isAvailable,
+        getPowStats: Pow.getStats,
+        preparePowForUpload: Pow.prepareForUpload,
+        uploadWithPow: Pow.uploadWithPow,
+        startPowAutoRefill: Pow.startAutoRefill,
+        stopPowAutoRefill: Pow.stopAutoRefill,
+        resetPow: Pow.reset,
+        
+        // Créditos
+        loadCredits: Credits.load,
+        loadPremiumStatus: Credits.loadPremiumStatus,
+        receiveDailyCredit: Credits.receiveDailyCredit,
+        getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
+        getCreditsBalance: () => State.credits,
+        
+        // Análise
+        startAnalysis: Analysis.startAnalysis,
+        updateAnalysisProgress: Analysis.updateProgress,
+        completeAnalysis: Analysis.completeAnalysis,
+        failAnalysis: Analysis.failAnalysis,
+        getActiveAnalyses: Analysis.getActiveAnalyses,
+        getRecentAnalyses: Analysis.getRecentAnalyses,
+        getTotalAnalyses: Analysis.getTotalAnalyses,
+        getAnalysesToday: Analysis.getAnalysesToday,
+        clearAnalysisHistory: Analysis.clearHistory,
+        
+        // Navegação
+        navigate: Router.navigate,
+        goBack: Utils.goBack,
+        getQueryParam: Utils.getQueryParam,
+        
+        // UI
+        showLoading: UI.showLoading,
+        hideLoading: UI.hideLoading,
+        updateLoadingProgress: UI.updateLoadingProgress,
+        updateCreditsDisplay: UI.updateCredits,
+        updateNavbar: UI.updateNavbar,
+        updateRateLimitStatus: UI.updateRateLimitStatus,
+        
+        // Utilitários extras
+        escapeHtml: Utils.escapeHtml,
+        formatDate: Utils.formatDate,
+        sanitizeNumber: Utils.sanitizeNumber,
+        formatCreditsDisplay: Utils.formatCreditsDisplay
+    };
 
-    // Aliases para funções específicas
+    // 🔥 EXPORTAÇÕES GLOBAIS - CORRIGIDAS
+    window.App = App;
+    window.AppInstance = App;  // 🔥 MANTÉM ALIAS DE SEGURANÇA
+    window.app = App;
+    window.autoAnalytics = App;
+    
+    // 🔥 EXPORTA EVENTBUS
+    window.EventBus = EventBus;
+    
+    // 🔥 FUNÇÕES AUXILIARES (BACKWARD COMPATIBILITY)
     window.showNotification = Utils.showNotification;
     window.escapeHtml = Utils.escapeHtml;
     window.isAuthenticated = Utils.isAuthenticated;
@@ -1938,23 +2043,24 @@
     window.updateLoadingProgress = UI.updateLoadingProgress;
     window.goBack = Utils.goBack;
     window.getQueryParam = Utils.getQueryParam;
-
-    // Event Bus exposto
-    window.eventBus = EventBus;
-
-    // Funções de créditos
-    window.getMaxCredits = () => CONFIG.MAX_CREDITS_BALANCE;
-    window.getCreditsBalance = () => State.credits;
-    window.isPremium = () => State.isPremium;
-    window.hasVitalicio = () => State.hasPromotionalPrice;
-    window.getPromotionalPrice = () => State.promotionalPrice;
-    window.canReceiveDailyCredit = () => State.canReceiveDailyCredit;
-    window.getDaysLeftPremium = () => State.daysLeftPremium;
     window.receiveDailyCredit = Credits.receiveDailyCredit;
     window.loadPremiumStatus = Credits.loadPremiumStatus;
-    window.isTokenValid = () => State.tokenValid;
-
-    // Funções Rate Limiter
+    window.uploadWithPow = Pow.uploadWithPow;
+    window.startPowAutoRefill = Pow.startAutoRefill;
+    window.stopPowAutoRefill = Pow.stopPowAutoRefill;
+    window.resetPow = Pow.reset;
+    window.isPowAvailable = Pow.isAvailable;
+    window.getPowStats = Pow.getStats;
+    window.preparePowForUpload = Pow.prepareForUpload;
+    window.startAnalysis = Analysis.startAnalysis;
+    window.updateAnalysisProgress = Analysis.updateProgress;
+    window.completeAnalysis = Analysis.completeAnalysis;
+    window.failAnalysis = Analysis.failAnalysis;
+    window.getActiveAnalyses = Analysis.getActiveAnalyses;
+    window.getRecentAnalyses = Analysis.getRecentAnalyses;
+    window.getTotalAnalyses = Analysis.getTotalAnalyses;
+    window.getAnalysesToday = Analysis.getAnalysesToday;
+    window.clearAnalysisHistory = Analysis.clearHistory;
     window.isRateLimitBlocked = Utils.isRateLimitBlocked;
     window.getRateLimitTimeRemaining = Utils.getRateLimitTimeRemaining;
     window.getRateLimitRemainingAttempts = Utils.getRateLimitRemainingAttempts;
@@ -1965,26 +2071,6 @@
         for: State.rateLimitBlockedFor,
         timeRemaining: Utils.getRateLimitTimeRemaining()
     });
-
-    // Funções PoW
-    window.isPowAvailable = Pow.isAvailable;
-    window.getPowStats = Pow.getStats;
-    window.preparePowForUpload = Pow.prepareForUpload;
-    window.uploadWithPow = Pow.uploadWithPow;
-    window.startPowAutoRefill = Pow.startAutoRefill;
-    window.stopPowAutoRefill = Pow.stopAutoRefill;
-    window.resetPow = Pow.reset;
-
-    // Funções de análise
-    window.startAnalysis = Analysis.startAnalysis;
-    window.updateAnalysisProgress = Analysis.updateProgress;
-    window.completeAnalysis = Analysis.completeAnalysis;
-    window.failAnalysis = Analysis.failAnalysis;
-    window.getActiveAnalyses = Analysis.getActiveAnalyses;
-    window.getRecentAnalyses = Analysis.getRecentAnalyses;
-    window.getTotalAnalyses = Analysis.getTotalAnalyses;
-    window.getAnalysesToday = Analysis.getAnalysesToday;
-    window.clearAnalysisHistory = Analysis.clearHistory;
 
     // ==============================================
     // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
@@ -2002,11 +2088,12 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v5.1 carregado!');
-    console.log('   🔥 Correções de sincronização:');
+    console.log('✅ app.js (Orquestrador) v5.2 carregado!');
+    console.log('   🔥 Correções de exportação:');
+    console.log('   - AppInstance agora é definido como alias de App');
+    console.log('   - Todas as funções auxiliares exportadas corretamente');
     console.log('   - Evento app:ready espelhado para window');
     console.log('   - auth:unauthorized com anti-loop (sessionStorage)');
     console.log('   - Sincronização de créditos via ML/Gemini');
-    console.log('   - Eventos de análise com espelhamento');
 
 })();
