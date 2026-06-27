@@ -1,92 +1,61 @@
-<!-- frontend/index.html - VERSÃO CORRIGIDA V5.1 -->
+<!-- frontend/index.html - VERSÃO OTIMIZADA V6.0 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <!-- ============================================== -->
-    <!-- 🔥 BLOQUEIO IMEDIATO COM ANTI-LOOP -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            // ==============================================
-            // 🔥 ANTI-LOOP - Evita recarregamentos infinitos
-            // ==============================================
-            const BLOCK_KEY = '_aa_auth_block';
-            const blockTime = parseInt(sessionStorage.getItem(BLOCK_KEY) || '0');
-            const now = Date.now();
-            
-            // Se houve falha nos últimos 3 segundos, NÃO TENTE NOVAMENTE
-            if (blockTime > 0 && (now - blockTime) < 3000) {
-                console.log('🚫 Bloqueio anti-loop ativo. Redirecionando para login...');
-                sessionStorage.removeItem(BLOCK_KEY);
-                window.location.replace('/login');
-                throw new Error('Redirecionando para login (anti-loop)');
-            }
-
-            const token = localStorage.getItem('access_token');
-            const isLogged = token !== null && token !== '' && token !== 'undefined' && token !== 'null';
-            
-            if (!isLogged) {
-                console.log('🔒 Acesso não autorizado. Desviando para a tela de login...');
-                sessionStorage.setItem(BLOCK_KEY, String(now));
-                window.location.replace('/login');
-                throw new Error('Redirecionando para login');
-            }
-
-            // Limpa bloqueio se autenticado
-            sessionStorage.removeItem(BLOCK_KEY);
-            console.log('✅ Sessão ativa. Carregando dashboard...');
-        })();
-    </script>
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoAnalytics - Dashboard</title>
     
-    <!-- Bootstrap 5 -->
+    <!-- ============================================== -->
+    <!-- 🔥 BLOQUEIO LEVE E INTELIGENTE -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            // Verificação assíncrona e não-bloqueante
+            const token = localStorage.getItem('access_token');
+            const isTokenValid = token && token !== '' && token !== 'undefined' && token !== 'null';
+            
+            if (!isTokenValid) {
+                // Redireciona apenas se não houver token
+                window.location.replace('/login');
+                return;
+            }
+            
+            // Marca que o usuário está autenticado para os scripts subsequentes
+            window._isAuthenticated = true;
+            console.log('✅ Autenticação verificada, carregando dashboard...');
+        })();
+    </script>
+    
+    <!-- ============================================== -->
+    <!-- 🔥 BIBLIOTECAS EXTERNAS -->
+    <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- AOS Animation -->
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Anime.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
-    
-    <!-- Toastr -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
-    <!-- Bibliotecas PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    
     <!-- ============================================== -->
-    <!-- 🔥 ESTILOS - MESMOS DO LOGIN + DASHBOARD -->
+    <!-- 🔥 ESTILOS UNIFICADOS -->
     <!-- ============================================== -->
     <style>
-        /* ===== BASE - MESMO FUNDO DO LOGIN ===== */
+        /* ===== RESET E BASE ===== */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            overflow-x: hidden;
             color: white;
+            overflow-x: hidden;
         }
 
-        /* 🔥 NAVBAR - ESTILO LOGIN */
+        /* ===== NAVBAR ===== */
         .navbar-modern {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -113,7 +82,7 @@
             color: #667eea;
         }
 
-        /* 🔥 CRÉDITS BADGE - DOURADO APENAS AQUI */
+        /* ===== COMPONENTES DA NAVBAR ===== */
         .credits-badge {
             background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%);
             padding: 0.5rem 1.5rem;
@@ -132,23 +101,12 @@
             box-shadow: 0 6px 25px rgba(205, 127, 50, 0.6);
         }
 
-        .credits-badge i {
-            margin-right: 0.5rem;
-        }
-
-        /* 🔥 USER NAME - DESTAQUE */
         .user-name-display {
             font-weight: 600;
             color: #2d3748;
             font-size: 0.95rem;
         }
 
-        .user-name-display i {
-            color: #667eea;
-            margin-right: 0.3rem;
-        }
-
-        /* 🔥 BOTÃO PLANOS */
         .btn-planos {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -167,11 +125,6 @@
             color: white;
         }
 
-        .btn-planos i {
-            margin-right: 0.4rem;
-        }
-
-        /* 🔥 BOTÃO SAIR */
         .btn-sair {
             background: transparent;
             border: 2px solid #e53e3e;
@@ -190,7 +143,7 @@
             transform: translateY(-2px);
         }
 
-        /* 🔥 POW STATUS - NOVO */
+        /* ===== STATUS POW ===== */
         .pow-status {
             display: inline-flex;
             align-items: center;
@@ -218,25 +171,18 @@
             color: #dc3545;
         }
 
-        .pow-status i {
-            font-size: 0.7rem;
-        }
-
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
 
-        /* ===== HERO / CONTEÚDO ===== */
+        /* ===== CONTEÚDO PRINCIPAL ===== */
         .hero-section {
             min-height: 100vh;
-            display: flex;
-            align-items: flex-start;
             padding: 100px 0 40px;
-            position: relative;
         }
 
-        /* ===== CARDS DE UPLOAD ===== */
+        /* ===== CARDS ===== */
         .upload-card {
             background: rgba(255, 255, 255, 0.12);
             backdrop-filter: blur(10px);
@@ -265,7 +211,7 @@
             margin-right: 0.5rem;
         }
 
-        /* 🔥 ÁREA DE UPLOAD */
+        /* ===== ÁREA DE UPLOAD ===== */
         .upload-area {
             border: 3px dashed rgba(255, 255, 255, 0.35);
             border-radius: 20px;
@@ -293,17 +239,6 @@
             margin-bottom: 0.8rem;
         }
 
-        .upload-area h4 {
-            color: rgba(255, 255, 255, 0.85);
-            font-size: 1.1rem;
-            margin-bottom: 0.3rem;
-        }
-
-        .upload-area p {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 0.85rem;
-        }
-
         .upload-area .btn-select {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -321,7 +256,7 @@
             color: white;
         }
 
-        /* 🔥 LIMITES INFO */
+        /* ===== LIMITES INFO ===== */
         .limit-info {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 12px;
@@ -333,69 +268,32 @@
             color: rgba(255, 255, 255, 0.8);
         }
 
-        .limit-info i {
-            color: #f5a623;
-            margin-right: 0.3rem;
-        }
-
         .limit-info .limit-value {
             font-weight: 700;
             color: #f5a623;
         }
 
-        /* 🔥 CARDS DE ANÁLISE - ORGANIZADOS */
-        .analyses-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 1.2rem;
-        }
-
-        .analysis-card {
-            animation: fadeInUp 0.5s ease-out;
-        }
-
-        .analysis-card .card {
-            background: rgba(255, 255, 255, 0.08) !important;
-            border: 1px solid rgba(255, 255, 255, 0.12) !important;
-            border-radius: 16px !important;
-            color: white;
-            backdrop-filter: blur(5px);
-            transition: all 0.3s;
-            overflow: hidden;
-        }
-
-        .analysis-card .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-            border-color: rgba(255, 255, 255, 0.25) !important;
-        }
-
-        .analysis-card .card-header {
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)) !important;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-            padding: 0.8rem 1.2rem;
-            color: white;
-        }
-
-        .analysis-card .metric-box {
-            background: rgba(0, 0, 0, 0.2) !important;
-            border-radius: 10px;
-            padding: 0.6rem;
+        /* ===== MÉTRICAS ===== */
+        .metric-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 1rem;
             text-align: center;
         }
 
-        .analysis-card .metric-value {
-            color: #f5a623;
-            font-size: 1.4rem;
+        .metric-value {
+            font-size: 2rem;
             font-weight: 700;
+            color: #f5a623;
         }
 
-        .analysis-card .metric-label {
+        .metric-label {
+            font-size: 0.75rem;
             color: rgba(255, 255, 255, 0.6);
-            font-size: 0.7rem;
         }
 
-        /* 🔥 BOTÃO GRADIENTE */
+        /* ===== BOTÃO GRADIENTE ===== */
         .btn-gradient {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -406,7 +304,7 @@
             transition: all 0.3s;
         }
 
-        .btn-gradient:hover {
+        .btn-gradient:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
             color: white;
@@ -418,25 +316,7 @@
             transform: none;
         }
 
-        /* 🔥 BOTÃO PDF */
-        .btn-pdf {
-            background: rgba(220, 53, 69, 0.2);
-            border: 1px solid #dc3545;
-            color: #dc3545;
-            padding: 0.4rem 1rem;
-            border-radius: 50px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .btn-pdf:hover {
-            background: #dc3545;
-            color: white;
-            transform: translateY(-2px);
-        }
-
-        /* 🔥 TELA DE CARREGAMENTO - ANIMAÇÃO BONITA */
+        /* ===== LOADING OVERLAY ===== */
         .loading-overlay {
             position: fixed;
             top: 0;
@@ -486,12 +366,6 @@
             margin-bottom: 0.5rem;
         }
 
-        .loading-subtitle {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
         .loading-steps {
             display: flex;
             justify-content: center;
@@ -517,10 +391,6 @@
             color: #48bb78;
         }
 
-        .loading-step .step-icon {
-            font-size: 1.8rem;
-        }
-
         .loading-step .step-label {
             font-size: 0.7rem;
             color: rgba(255, 255, 255, 0.6);
@@ -532,12 +402,6 @@
 
         .loading-step.done .step-label {
             color: #48bb78;
-        }
-
-        .loading-progress {
-            width: 100%;
-            max-width: 400px;
-            margin: 1rem auto;
         }
 
         .loading-progress .progress {
@@ -552,16 +416,26 @@
             transition: width 0.5s ease;
         }
 
-        .loading-percent {
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 0.8rem;
-            margin-top: 0.5rem;
-        }
-
-        /* 🔥 TIMELINE - HISTÓRICO */
+        /* ===== TIMELINE ===== */
         .timeline {
             position: relative;
             padding-left: 1.5rem;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .timeline::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .timeline::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        .timeline::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
         }
 
         .timeline::before {
@@ -610,38 +484,14 @@
             color: #f5a623;
         }
 
-        /* 🔥 MÉTRICAS RÁPIDAS */
-        .metric-card {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 1rem;
-            text-align: center;
-        }
-
-        .metric-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #f5a623;
-        }
-
-        .metric-label {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        /* 🔥 MODAL */
+        /* ===== MODAL ===== */
         .modal-content {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             border: 1px solid rgba(255, 255, 255, 0.2) !important;
             color: white;
         }
 
-        .modal-content .modal-title {
-            color: white !important;
-        }
-
-        .modal-content .btn-close-white {
+        .modal-content .btn-close {
             filter: brightness(0) invert(1);
         }
 
@@ -655,35 +505,11 @@
             color: #f5a623 !important;
         }
 
-        /* 🔥 TOASTR */
-        .toast-success {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
-        }
-        .toast-error {
-            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
-        }
-        .toast-info {
-            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
-        }
-        .toast-warning {
-            background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important;
-        }
-
-        /* 🔥 ANIMAÇÕES */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes slideInRight {
-            from { opacity: 0; transform: translateX(30px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
+        /* ===== TOASTR ===== */
+        .toast-success { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important; }
+        .toast-error { background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important; }
+        .toast-info { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important; }
+        .toast-warning { background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important; }
 
         /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 768px) {
@@ -691,59 +517,21 @@
                 flex-wrap: wrap;
                 gap: 0.5rem;
             }
-            .brand-text {
-                font-size: 1.2rem;
-            }
-            .credits-badge {
-                padding: 0.3rem 0.8rem;
-                font-size: 0.75rem;
-            }
-            .user-name-display {
-                font-size: 0.8rem;
-            }
-            .analyses-grid {
-                grid-template-columns: 1fr;
-            }
-            .loading-steps {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            .hero-section {
-                padding: 80px 0 20px;
-            }
-            .upload-area {
-                padding: 1.5rem;
-            }
-            .metric-value {
-                font-size: 1.5rem;
-            }
-            .btn-planos, .btn-sair {
-                font-size: 0.7rem;
-                padding: 0.3rem 0.8rem;
-            }
-            .pow-status {
-                font-size: 0.55rem;
-                padding: 0.15rem 0.4rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .upload-area .upload-icon {
-                font-size: 2.5rem;
-            }
-            .upload-area h4 {
-                font-size: 0.9rem;
-            }
-            .loading-title {
-                font-size: 1.3rem;
-            }
+            .brand-text { font-size: 1.2rem; }
+            .credits-badge { padding: 0.3rem 0.8rem; font-size: 0.75rem; }
+            .user-name-display { font-size: 0.8rem; }
+            .analyses-grid { grid-template-columns: 1fr; }
+            .loading-steps { flex-direction: column; gap: 0.5rem; }
+            .hero-section { padding: 80px 0 20px; }
+            .upload-area { padding: 1.5rem; }
+            .btn-planos, .btn-sair { font-size: 0.7rem; padding: 0.3rem 0.8rem; }
         }
     </style>
 </head>
 <body>
 
     <!-- ============================================== -->
-    <!-- 🔥 NAVBAR - ESTILO LOGIN -->
+    <!-- 🔥 NAVBAR -->
     <!-- ============================================== -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
@@ -754,30 +542,25 @@
                 </a>
                 
                 <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
-                    <!-- 👤 NOME DO USER - CLARO -->
                     <span class="user-name-display">
                         <i class="fas fa-user-circle"></i>
-                        <span id="userName">Usuário</span>
+                        <span id="userName">Carregando...</span>
                     </span>
                     
-                    <!-- 🔥 CRÉDITS - DOURADO (SOMENTE AQUI) -->
                     <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
                         <i class="fas fa-coins"></i>
                         <span id="creditsCount">0</span>
                     </div>
                     
-                    <!-- 🔥🔥🔥 POW STATUS - NOVO -->
-                    <span class="pow-status loading" id="powStatus" title="Proof of Work - Proteção anti-bot">
+                    <span class="pow-status loading" id="powStatus" title="Proof of Work">
                         <i class="fas fa-shield-alt"></i>
                         <span id="powStatusText">Carregando...</span>
                     </span>
                     
-                    <!-- 🔥 PLANOS -->
                     <a href="/planos" class="btn-planos">
                         <i class="fas fa-crown"></i> Planos
                     </a>
                     
-                    <!-- 🔥 SAIR -->
                     <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
                         <i class="fas fa-sign-out-alt"></i> Sair
                     </a>
@@ -787,7 +570,7 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 TELA DE CARREGAMENTO - ANIMAÇÃO BONITA -->
+    <!-- 🔥 LOADING OVERLAY -->
     <!-- ============================================== -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-container">
@@ -795,7 +578,7 @@
                 <i class="fas fa-robot" style="color: #f5a623;"></i>
             </div>
             <div class="loading-title" id="loadingTitle">Preparando sua análise</div>
-            <div class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</div>
+            <div class="loading-subtitle" id="loadingSubtitle" style="color: rgba(255,255,255,0.7);">A IA está analisando seus dados</div>
             
             <div class="loading-steps" id="loadingSteps">
                 <div class="loading-step active" data-step="0">
@@ -816,7 +599,7 @@
                 <div class="progress">
                     <div class="progress-bar" id="loadingProgressBar" style="width: 0%"></div>
                 </div>
-                <div class="loading-percent" id="loadingPercent">0%</div>
+                <div class="loading-percent" id="loadingPercent" style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">0%</div>
             </div>
         </div>
     </div>
@@ -833,11 +616,9 @@
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="upload-card" data-aos="fade-right" data-aos-duration="800">
-                                <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <h5 class="card-title mb-0">
-                                        <i class="fas fa-chart-simple"></i> Métricas
-                                    </h5>
-                                </div>
+                                <h5 class="card-title mb-3">
+                                    <i class="fas fa-chart-simple"></i> Métricas
+                                </h5>
                                 <div class="row g-2">
                                     <div class="col-6">
                                         <div class="metric-card">
@@ -861,14 +642,14 @@
                             </div>
                         </div>
                         
-                        <!-- 🔥 STATUS PREMIUM -->
+                        <!-- STATUS PREMIUM -->
                         <div class="col-12">
                             <div class="upload-card" id="premiumStatusContainer" data-aos="fade-right" data-aos-delay="100">
-                                <div class="text-center py-2">
-                                    <div class="spinner-border text-warning" role="status" style="color: #f5a623; width: 1.5rem; height: 1.5rem;">
+                                <div class="text-center py-3">
+                                    <div class="spinner-border text-warning" role="status" style="width: 1.5rem; height: 1.5rem;">
                                         <span class="visually-hidden">Carregando...</span>
                                     </div>
-                                    <p class="mt-1 small" style="color: rgba(255,255,255,0.6);">Carregando status...</p>
+                                    <p class="mt-2 small" style="color: rgba(255,255,255,0.6);">Carregando status...</p>
                                 </div>
                             </div>
                         </div>
@@ -878,7 +659,7 @@
                 <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- 🔥 UPLOAD -->
+                        <!-- UPLOAD -->
                         <div class="col-12">
                             <div class="upload-card" data-aos="fade-left" data-aos-duration="800">
                                 <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
@@ -891,7 +672,6 @@
                                     </span>
                                 </div>
                                 
-                                <!-- Limites -->
                                 <div class="limit-info">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
                                         <span><i class="fas fa-hard-drive"></i> <strong class="limit-value">200 KB</strong>/arquivo</span>
@@ -928,7 +708,7 @@
                             </div>
                         </div>
                         
-                        <!-- 🔥 ANÁLISES EM ANDAMENTO -->
+                        <!-- ANÁLISES EM ANDAMENTO -->
                         <div class="col-12">
                             <div class="upload-card" data-aos="fade-left" data-aos-delay="100">
                                 <div class="d-flex align-items-center justify-content-between mb-3">
@@ -948,14 +728,14 @@
                     </div>
                 </div>
                 
-                <!-- ===== LINHA COMPLETA - HISTÓRICO ===== -->
+                <!-- ===== HISTÓRICO ===== -->
                 <div class="col-12">
                     <div class="upload-card" data-aos="fade-up" data-aos-delay="200">
                         <div class="d-flex align-items-center mb-3">
                             <i class="fas fa-history me-2" style="color: #f5a623;"></i>
                             <h5 class="card-title mb-0">Histórico de Análises</h5>
                         </div>
-                        <div class="timeline" id="recentAnalyses" style="max-height: 350px; overflow-y: auto;">
+                        <div class="timeline" id="recentAnalyses">
                             <div class="timeline-item">
                                 <div class="timeline-marker"></div>
                                 <div class="timeline-content">
@@ -987,7 +767,7 @@
                         <i class="fas fa-coins text-warning me-2" style="color: #f5a623;"></i>
                         Meus Créditos
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center py-4">
                     <i class="fas fa-coins fa-4x mb-3" style="color: #f5a623;"></i>
@@ -1017,13 +797,13 @@
     <!-- ============================================== -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.2);">
+            <div class="modal-content">
                 <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.15);">
                     <h5 class="modal-title">
                         <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
                         GPSA - Impacto no Negócio
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="gpsaModalBody">
                     <div class="text-center py-5">
@@ -1038,453 +818,364 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICO) -->
+    <!-- 🔥 SCRIPTS - ORDEM OTIMIZADA -->
     <!-- ============================================== -->
     
-    <!-- ===== BIBLIOTECAS EXTERNAS ===== -->
-    <!-- Bootstrap -->
+    <!-- Bibliotecas Externas -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- AOS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-    
-    <!-- GSAP -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-    
-    <!-- Toastr -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    
-    <!-- PapaParse -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    
-    <!-- XLSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <!-- ============================================== -->
-    <!-- 🔥🔥🔥 ORDEM DE CARREGAMENTO DOS SCRIPTS (CRÍTICO) 🔥🔥🔥 -->
-    <!-- ============================================== -->
-    
-    <!-- 
-        ⚠️⚠️⚠️ ATENÇÃO: ORDEM OBRIGATÓRIA ⚠️⚠️⚠️
-        
-        1. pow-client.js  → Define window.powClient (PoW)
-        2. auth.js        → Define window.appAuth (Autenticação)
-        3. app.js         → Define window.App e window.app (Orquestrador)
-        4. dashboard.js   → Funcionalidades do dashboard
-        5. payment.js     → Pagamentos e planos
-        
-        NUNCA inverta esta ordem!
-    -->
-    
-    <!-- 1️⃣ POW - PRIMEIRO (Proteção anti-bot) -->
-    <script src="/static/js/pow-client.js?v=2.0" defer></script>
-    
-    <!-- 2️⃣ AUTH - SEGUNDO (Motor de autenticação) -->
-    <script src="/static/js/auth.js" defer></script>
-    
-    <!-- 3️⃣ APP - TERCEIRO (Orquestrador) -->
-    <script src="/static/js/app.js" defer></script>
-    
-    <!-- 4️⃣ DASHBOARD - QUARTO (Funcionalidades do dashboard) -->
-    <script src="/static/js/dashboard.js" defer></script>
-    
-    <!-- 5️⃣ PAYMENT - QUINTO (Pagamentos e planos) -->
-    <script src="/static/js/payment.js?v=2.0" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO - V5.1 -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS - CARREGAMENTO ESTRUTURADO -->
+    <!-- ============================================== -->
+    
+    <!-- 1️⃣ POW - Proteção anti-bot -->
+    <script src="/static/js/pow-client.js?v=2.0"></script>
+    
+    <!-- 2️⃣ AUTH - Autenticação -->
+    <script src="/static/js/auth.js"></script>
+    
+    <!-- 3️⃣ APP - Orquestrador Central -->
+    <script src="/static/js/app.js"></script>
+    
+    <!-- 4️⃣ DASHBOARD - Funcionalidades do Dashboard -->
+    <script src="/static/js/dashboard.js"></script>
+    
+    <!-- 5️⃣ PAYMENT - Pagamentos -->
+    <script src="/static/js/payment.js?v=2.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 INICIALIZAÇÃO CENTRALIZADA -->
     <!-- ============================================== -->
     <script>
-        // ==============================================
-        // 🔥 TOASTR CONFIG
-        // ==============================================
-        toastr.options = {
-            closeButton: true,
-            progressBar: true,
-            positionClass: "toast-top-right",
-            timeOut: 5000,
-            extendedTimeOut: 1000,
-            escapeHtml: true
-        };
+        (function() {
+            'use strict';
 
-        // ==============================================
-        // 🔥 CHECK APP LOADED - VERSÃO ROUBUSTA
-        // ==============================================
-        function checkAppLoaded() {
-            // Checagem ultra flexível: se o objeto App existe e o sinalizador global está ativo
-            // ou se o App já foi inicializado via window._appInitialized
-            const appExists = typeof window.App !== 'undefined' && window.App !== null;
-            const appReady = appExists && typeof window.App.isInitialized === 'function' && window.App.isInitialized();
-            const appInitFlag = !!window._appInitialized;
-            
-            // Log para debug
-            if (appExists || appReady || appInitFlag) {
-                console.log('✅ checkAppLoaded:', { 
-                    appExists, 
-                    appReady, 
-                    appInitFlag,
-                    hasIsInitialized: appExists && typeof window.App.isInitialized === 'function'
-                });
+            // ==============================================
+            // CONFIGURAÇÕES GLOBAIS
+            // ==============================================
+            const CONFIG = {
+                APP_READY_TIMEOUT: 5000,
+                FALLBACK_INTERVAL: 200,
+                MAX_FALLBACK_ATTEMPTS: 25,
+                POW_UPDATE_INTERVAL: 10000,
+                PREMIUM_POLL_INTERVAL: 60000
+            };
+
+            // ==============================================
+            // TOASTR CONFIG
+            // ==============================================
+            toastr.options = {
+                closeButton: true,
+                progressBar: true,
+                positionClass: "toast-top-right",
+                timeOut: 5000,
+                extendedTimeOut: 1000,
+                escapeHtml: true
+            };
+
+            // ==============================================
+            // ESTADO DA APLICAÇÃO
+            // ==============================================
+            let isInitialized = false;
+            let fallbackAttempts = 0;
+
+            // ==============================================
+            // FUNÇÕES DE UTILIDADE
+            // ==============================================
+            function isAppReady() {
+                // Verifica se o App existe e está inicializado
+                if (typeof window.App === 'undefined' || window.App === null) {
+                    return false;
+                }
+
+                // Verifica método isInitialized
+                if (typeof window.App.isInitialized === 'function') {
+                    return window.App.isInitialized();
+                }
+
+                // Verifica estado global
+                if (window._appInitialized === true) {
+                    return true;
+                }
+
+                // Verifica se tem usuário
+                if (window.App.user && window.App.user.id) {
+                    return true;
+                }
+
+                return false;
             }
-            
-            return appReady || appInitFlag || appExists;
-        }
 
-        // ==============================================
-        // 🔥 INICIALIZAR PAINEL SEGURO
-        // ==============================================
-        function inicializarPainelSeguro() {
-            console.log('🚀 [Fino] Casamento entre App e Dashboard concluído com sucesso.');
-            
-            // Marca como inicializado
-            window._dashboardInitialized = true;
-            
-            // Força o disparo do evento caso o app.js tenha inicializado milissegundos antes
-            if (typeof EventBus !== 'undefined' && EventBus) {
-                console.log('📢 [Index] Solicitando redispacho de segurança do app:ready...');
+            function isUserAuthenticated() {
                 try {
-                    // Tenta emitir novamente o evento app:ready via EventBus
-                    if (typeof EventBus.emit === 'function') {
-                        EventBus.emit('app:ready', { 
-                            isReady: true,
-                            fromDashboard: true,
-                            timestamp: Date.now()
-                        });
+                    if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                        return window.appAuth.isAuthenticated();
                     }
-                    
-                    // Também tenta via window
-                    window.dispatchEvent(new CustomEvent('app:ready', { 
-                        detail: { 
-                            isReady: true,
-                            fromDashboard: true,
-                            timestamp: Date.now()
-                        }
-                    }));
+                    return !!localStorage.getItem('access_token');
                 } catch (e) {
-                    console.warn('Erro ao redespachar app:ready:', e);
+                    return false;
                 }
             }
 
-            // Carrega status premium se disponível
-            try {
-                if (typeof window.loadPremiumStatus === 'function') {
-                    window.loadPremiumStatus();
-                } else if (window.App && typeof window.App.loadPremiumStatus === 'function') {
-                    window.App.loadPremiumStatus();
-                }
-            } catch (e) {
-                console.warn('Erro ao carregar status premium:', e);
-            }
-
-            // Inicia polling do premium se disponível
-            try {
-                if (typeof window.startPremiumStatusPolling === 'function') {
-                    window.startPremiumStatusPolling(60000);
-                } else if (window.App && typeof window.App.startPremiumStatusPolling === 'function') {
-                    window.App.startPremiumStatusPolling(60000);
-                }
-            } catch (e) {
-                console.warn('Erro ao iniciar polling premium:', e);
-            }
-
-            // Atualiza status PoW
-            setTimeout(function() {
-                if (typeof updatePowStatus === 'function') {
-                    updatePowStatus();
-                } else if (window.App && typeof window.App.updatePowStatus === 'function') {
-                    window.App.updatePowStatus();
-                }
-            }, 1000);
-            
-            // 🔥 Atualiza a UI do rate limiter
-            try {
-                if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
-                    window.App.updateRateLimitStatus();
-                }
-            } catch (e) {
-                console.warn('Erro ao atualizar rate limit:', e);
-            }
-            
-            console.log('✅ Dashboard inicializado com sucesso!');
-        }
-
-        // ==============================================
-        // 🔥 FUNÇÃO PARA ATUALIZAR STATUS DO POW
-        // ==============================================
-        function updatePowStatus() {
-            try {
-                const powStatusEl = document.getElementById('powStatus');
-                const powTextEl = document.getElementById('powStatusText');
-                
-                if (!powStatusEl || !powTextEl) return;
-                
-                let stats = null;
-                if (window.App && typeof window.App.getPowStats === 'function') {
-                    stats = window.App.getPowStats();
-                } else if (window.powClient && typeof window.powClient.getStats === 'function') {
-                    stats = window.powClient.getStats();
-                }
-                
-                if (stats && stats.available !== false) {
-                    const solutionsReady = stats.solutionsReady || 0;
-                    const maxStock = stats.maxStock || 2;
-                    
-                    if (solutionsReady > 0) {
-                        powStatusEl.className = 'pow-status';
-                        powTextEl.textContent = `${solutionsReady}/${maxStock} PoW`;
-                        powStatusEl.title = `${solutionsReady} soluções PoW prontas para upload`;
-                    } else if (stats.isSolving) {
-                        powStatusEl.className = 'pow-status loading';
-                        powTextEl.textContent = 'Calculando...';
-                        powStatusEl.title = 'Calculando PoW em background';
-                    } else {
-                        powStatusEl.className = 'pow-status loading';
-                        powTextEl.textContent = 'Preparando...';
-                        powStatusEl.title = 'Preparando proteção anti-bot';
-                    }
-                } else {
-                    powStatusEl.className = 'pow-status error';
-                    powTextEl.textContent = 'Indisponível';
-                    powStatusEl.title = 'PoW não disponível';
-                }
-            } catch (e) {
-                console.warn('Erro ao atualizar status PoW:', e);
-            }
-        }
-
-        // ==============================================
-        // 🔥 FUNÇÃO PARA ATUALIZAR UI DO RATE LIMITER
-        // ==============================================
-        function updateRateLimitUI(detail) {
-            const indicator = document.getElementById('rateLimitIndicator');
-            const timer = document.getElementById('rateLimitTimer');
-            const message = document.getElementById('rateLimitMessage');
-            
-            if (indicator) {
-                indicator.classList.add('show');
-            }
-            
-            if (timer) {
-                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                timer.textContent = remaining;
-                
-                if (window._rateLimitTimerInterval) {
-                    clearInterval(window._rateLimitTimerInterval);
-                }
-                window._rateLimitTimerInterval = setInterval(function() {
-                    if (window.App && window.App.isRateLimitBlocked()) {
-                        const rem = window.App.getRateLimitTimeRemaining();
-                        if (timer) timer.textContent = rem;
-                        if (rem <= 0) {
-                            clearInterval(window._rateLimitTimerInterval);
-                            hideRateLimitUI();
-                        }
-                    } else {
-                        clearInterval(window._rateLimitTimerInterval);
-                        hideRateLimitUI();
-                    }
-                }, 1000);
-            }
-            
-            if (message && detail?.message) {
-                message.textContent = detail.message;
-            }
-            
-            const uploadBtn = document.getElementById('uploadButton');
-            if (uploadBtn) {
-                uploadBtn.disabled = true;
-                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                uploadBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${remaining}s`;
-            }
-        }
-
-        function hideRateLimitUI() {
-            const indicator = document.getElementById('rateLimitIndicator');
-            const uploadBtn = document.getElementById('uploadButton');
-            
-            if (indicator) {
-                indicator.classList.remove('show');
-            }
-            
-            if (uploadBtn) {
-                uploadBtn.disabled = false;
-                uploadBtn.innerHTML = `<i class="fas fa-play-circle me-2"></i> Iniciar Análise <span class="badge ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>`;
-            }
-            
-            if (window._rateLimitTimerInterval) {
-                clearInterval(window._rateLimitTimerInterval);
-                window._rateLimitTimerInterval = null;
-            }
-        }
-
-        // ==============================================
-        // 🔥 ESCUTA EVENTO CUSTOMIZADO 'app:ready'
-        // ==============================================
-        document.addEventListener('app:ready', function(event) {
-            console.log('📢 EVENTO app:ready recebido!', event.detail);
-            
-            // Se o dashboard já foi inicializado, ignora
-            if (window._dashboardInitialized) {
-                console.log('⚠️ Dashboard já inicializado, ignorando evento duplicado');
-                return;
-            }
-            
-            // Verifica se o evento indica que o app está pronto
-            if (event.detail && (event.detail.isReady || event.detail.isAuthenticated !== undefined)) {
-                inicializarPainelSeguro();
-            } else if (event.detail && event.detail.userInitialized) {
-                inicializarPainelSeguro();
-            } else {
-                // Fallback: se o evento não trouxe dados suficientes, mas o app existe
-                if (typeof window.App !== 'undefined' && window.App !== null) {
-                    console.log('📢 App existe, inicializando mesmo sem detalhes completos');
-                    inicializarPainelSeguro();
-                }
-            }
-        });
-
-        // ==============================================
-        // 🔥 FALLBACK: Se o evento nunca for disparado
-        // ==============================================
-        let fallbackAttempts = 0;
-        const maxFallbackAttempts = 30;
-        
-        const fallbackTimer = setInterval(function() {
-            fallbackAttempts++;
-            
-            // Se o dashboard já foi inicializado, para o fallback
-            if (window._dashboardInitialized) {
-                clearInterval(fallbackTimer);
-                return;
-            }
-            
-            // 🔥 CHECAGEM PRINCIPAL: usa a função checkAppLoaded()
-            if (checkAppLoaded()) {
-                console.log('✅ Fallback: App detectado como pronto via checkAppLoaded()');
-                clearInterval(fallbackTimer);
-                inicializarPainelSeguro();
-                return;
-            }
-            
-            // Verifica se o App existe e está inicializado via método isInitialized
-            if (typeof window.App !== 'undefined' && window.App !== null) {
-                if (typeof window.App.isInitialized === 'function' && window.App.isInitialized()) {
-                    console.log('✅ Fallback: App.isInitialized() retornou true');
-                    clearInterval(fallbackTimer);
-                    inicializarPainelSeguro();
+            // ==============================================
+            // INICIALIZAÇÃO DO DASHBOARD
+            // ==============================================
+            function initializeDashboard() {
+                if (isInitialized) {
+                    console.log('⚠️ Dashboard já inicializado');
                     return;
                 }
-            }
-            
-            // Verifica se o appAuth já está pronto
-            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+
+                console.log('🚀 Inicializando dashboard...');
+                isInitialized = true;
+                window._dashboardInitialized = true;
+
+                // Dispara evento de inicialização
                 try {
-                    if (window.appAuth.isAuthenticated()) {
-                        console.log('✅ Fallback: appAuth está autenticado');
-                        clearInterval(fallbackTimer);
-                        inicializarPainelSeguro();
-                        return;
+                    window.dispatchEvent(new CustomEvent('dashboard:initialized', {
+                        detail: { timestamp: Date.now() }
+                    }));
+                } catch (e) {
+                    // Ignora
+                }
+
+                // Carrega status premium
+                try {
+                    if (typeof window.loadPremiumStatus === 'function') {
+                        window.loadPremiumStatus();
+                    } else if (window.App && typeof window.App.loadPremiumStatus === 'function') {
+                        window.App.loadPremiumStatus();
                     }
                 } catch (e) {
-                    // Ignora erro
+                    console.warn('Erro ao carregar status premium:', e);
                 }
+
+                // Inicia polling premium
+                try {
+                    if (typeof window.startPremiumStatusPolling === 'function') {
+                        window.startPremiumStatusPolling(CONFIG.PREMIUM_POLL_INTERVAL);
+                    } else if (window.App && typeof window.App.startPremiumStatusPolling === 'function') {
+                        window.App.startPremiumStatusPolling(CONFIG.PREMIUM_POLL_INTERVAL);
+                    }
+                } catch (e) {
+                    console.warn('Erro ao iniciar polling premium:', e);
+                }
+
+                // Atualiza status PoW
+                setTimeout(() => updatePowStatus(), 1000);
+
+                // Atualiza rate limit
+                try {
+                    if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
+                        window.App.updateRateLimitStatus();
+                    }
+                } catch (e) {
+                    console.warn('Erro ao atualizar rate limit:', e);
+                }
+
+                console.log('✅ Dashboard inicializado com sucesso!');
             }
-            
-            // Timeout
-            if (fallbackAttempts >= maxFallbackAttempts) {
-                console.warn('⚠️ Fallback: Timeout - App não respondeu após ' + (maxFallbackAttempts * 0.3) + 's');
-                clearInterval(fallbackTimer);
-                
-                // Última tentativa: forçar inicialização se o app existir
-                if (typeof window.App !== 'undefined' && window.App !== null) {
-                    console.log('🔄 Última tentativa: forçando inicialização do App');
-                    try {
-                        if (typeof window.App.init === 'function') {
-                            window.App.init();
-                        }
-                    } catch (e) {
-                        console.error('Erro ao forçar inicialização:', e);
+
+            // ==============================================
+            // ATUALIZA STATUS POW
+            // ==============================================
+            function updatePowStatus() {
+                try {
+                    const powStatusEl = document.getElementById('powStatus');
+                    const powTextEl = document.getElementById('powStatusText');
+                    
+                    if (!powStatusEl || !powTextEl) return;
+                    
+                    let stats = null;
+                    if (window.App && typeof window.App.getPowStats === 'function') {
+                        stats = window.App.getPowStats();
+                    } else if (window.powClient && typeof window.powClient.getStats === 'function') {
+                        stats = window.powClient.getStats();
                     }
                     
-                    // Tentar novamente após 1s
-                    setTimeout(function() {
-                        if (!window._dashboardInitialized && checkAppLoaded()) {
-                            inicializarPainelSeguro();
+                    if (stats && stats.available !== false) {
+                        const solutionsReady = stats.solutionsReady || 0;
+                        const maxStock = stats.maxStock || 2;
+                        
+                        if (solutionsReady > 0) {
+                            powStatusEl.className = 'pow-status';
+                            powTextEl.textContent = `${solutionsReady}/${maxStock} PoW`;
+                            powStatusEl.title = `${solutionsReady} soluções PoW prontas para upload`;
+                        } else if (stats.isSolving) {
+                            powStatusEl.className = 'pow-status loading';
+                            powTextEl.textContent = 'Calculando...';
+                            powStatusEl.title = 'Calculando PoW em background';
+                        } else {
+                            powStatusEl.className = 'pow-status loading';
+                            powTextEl.textContent = 'Preparando...';
+                            powStatusEl.title = 'Preparando proteção anti-bot';
                         }
-                    }, 1000);
+                    } else {
+                        powStatusEl.className = 'pow-status error';
+                        powTextEl.textContent = 'Indisponível';
+                        powStatusEl.title = 'PoW não disponível';
+                    }
+                } catch (e) {
+                    console.warn('Erro ao atualizar status PoW:', e);
                 }
             }
-        }, 300);
 
-        // ==============================================
-        // 🔥 EVENTOS ADICIONAIS
-        // ==============================================
-        
-        // authReady para compatibilidade
-        window.addEventListener('authReady', function(event) {
-            console.log('📢 authReady recebido (compatibilidade)');
-            if (event.detail && event.detail.isAuthenticated) {
-                // Verifica se o dashboard já foi inicializado
-                if (!window._dashboardInitialized && checkAppLoaded()) {
-                    inicializarPainelSeguro();
-                }
-            }
-        });
-
-        // creditsUpdated
-        window.addEventListener('creditsUpdated', function(event) {
-            const creditsDisplay = document.getElementById('creditsDisplay');
-            if (creditsDisplay && event.detail && event.detail.display) {
-                creditsDisplay.textContent = event.detail.display;
-            }
-        });
-
-        // powReady
-        window.addEventListener('powReady', function() {
-            setTimeout(updatePowStatus, 500);
-        });
-
-        // Atualização periódica do POW
-        setInterval(updatePowStatus, 10000);
-
-        // ==============================================
-        // 🔥 GSAP e AOS
-        // ==============================================
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof AOS !== 'undefined') {
-                AOS.init({ once: true, duration: 800, offset: 50 });
-            }
+            // ==============================================
+            // ESCUTA EVENTOS
+            // ==============================================
             
-            if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                gsap.registerPlugin(ScrollTrigger);
-                gsap.from('.upload-card', {
-                    scrollTrigger: {
-                        trigger: '.upload-card',
-                        start: 'top 90%',
-                        toggleActions: 'play none none reverse'
-                    },
-                    duration: 0.8,
-                    y: 30,
-                    opacity: 0,
-                    stagger: 0.15,
-                    ease: 'power3.out'
-                });
+            // Evento principal do App
+            document.addEventListener('app:ready', function(event) {
+                console.log('📢 Evento app:ready recebido');
+                if (!isInitialized && isAppReady()) {
+                    initializeDashboard();
+                }
+            });
+
+            // Evento de autenticação
+            document.addEventListener('authReady', function(event) {
+                console.log('📢 Evento authReady recebido');
+                if (!isInitialized && event.detail?.isAuthenticated) {
+                    // Aguarda um pouco para o App terminar de carregar
+                    setTimeout(() => {
+                        if (isAppReady()) {
+                            initializeDashboard();
+                        }
+                    }, 500);
+                }
+            });
+
+            // Atualização de créditos
+            document.addEventListener('creditsUpdated', function(event) {
+                const creditsDisplay = document.getElementById('creditsDisplay');
+                if (creditsDisplay && event.detail && event.detail.display) {
+                    creditsDisplay.textContent = event.detail.display;
+                }
+            });
+
+            // PoW pronto
+            document.addEventListener('powReady', function() {
+                setTimeout(updatePowStatus, 500);
+            });
+
+            // ==============================================
+            // FALLBACK - Garantia de inicialização
+            // ==============================================
+            function startFallback() {
+                const fallbackTimer = setInterval(function() {
+                    fallbackAttempts++;
+
+                    // Se já inicializou, para o fallback
+                    if (isInitialized) {
+                        clearInterval(fallbackTimer);
+                        return;
+                    }
+
+                    // Verifica se o App está pronto
+                    if (isAppReady()) {
+                        console.log('✅ Fallback: App detectado como pronto');
+                        clearInterval(fallbackTimer);
+                        initializeDashboard();
+                        return;
+                    }
+
+                    // Verifica autenticação
+                    if (isUserAuthenticated() && typeof window.App !== 'undefined') {
+                        console.log('✅ Fallback: Usuário autenticado, tentando inicializar App');
+                        try {
+                            if (typeof window.App.init === 'function') {
+                                window.App.init();
+                            }
+                        } catch (e) {
+                            console.warn('Erro ao inicializar App via fallback:', e);
+                        }
+                    }
+
+                    // Timeout
+                    if (fallbackAttempts >= CONFIG.MAX_FALLBACK_ATTEMPTS) {
+                        console.warn('⚠️ Fallback: Timeout - App não respondeu');
+                        clearInterval(fallbackTimer);
+                        
+                        // Última tentativa
+                        if (typeof window.App !== 'undefined' && window.App !== null) {
+                            try {
+                                if (typeof window.App.init === 'function') {
+                                    window.App.init();
+                                }
+                            } catch (e) {
+                                console.error('Erro ao forçar inicialização:', e);
+                            }
+                            
+                            setTimeout(function() {
+                                if (!isInitialized && isAppReady()) {
+                                    initializeDashboard();
+                                }
+                            }, 1000);
+                        }
+                    }
+                }, CONFIG.FALLBACK_INTERVAL);
             }
-        });
 
-        // ==============================================
-        // 🔥 EXPORTA FUNÇÕES GLOBAIS
-        // ==============================================
-        window.checkAppLoaded = checkAppLoaded;
-        window.inicializarPainelSeguro = inicializarPainelSeguro;
-        window.updatePowStatus = updatePowStatus;
-        window.updateRateLimitUI = updateRateLimitUI;
-        window.hideRateLimitUI = hideRateLimitUI;
+            // ==============================================
+            // DOM CONTENT LOADED
+            // ==============================================
+            document.addEventListener('DOMContentLoaded', function() {
+                // Inicializa AOS
+                if (typeof AOS !== 'undefined') {
+                    AOS.init({ once: true, duration: 800, offset: 50 });
+                }
+                
+                // Inicializa GSAP
+                if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                    gsap.registerPlugin(ScrollTrigger);
+                    gsap.from('.upload-card', {
+                        scrollTrigger: {
+                            trigger: '.upload-card',
+                            start: 'top 90%',
+                            toggleActions: 'play none none reverse'
+                        },
+                        duration: 0.8,
+                        y: 30,
+                        opacity: 0,
+                        stagger: 0.15,
+                        ease: 'power3.out'
+                    });
+                }
 
-        console.log('✅ Dashboard V5.1 carregado!');
-        console.log('⚡ Aguardando evento app:ready para iniciar...');
-        console.log('⚡ Fallback ativo: ' + maxFallbackAttempts + ' tentativas a cada 300ms');
+                // Verifica se já está pronto para inicializar
+                if (isAppReady()) {
+                    initializeDashboard();
+                } else {
+                    // Inicia fallback
+                    startFallback();
+                }
+
+                // Atualização periódica do POW
+                setInterval(updatePowStatus, CONFIG.POW_UPDATE_INTERVAL);
+            });
+
+            // ==============================================
+            // EXPOSIÇÃO GLOBAL
+            // ==============================================
+            window.isAppReady = isAppReady;
+            window.isUserAuthenticated = isUserAuthenticated;
+            window.initializeDashboard = initializeDashboard;
+            window.updatePowStatus = updatePowStatus;
+
+            console.log('✅ Dashboard V6.0 carregado!');
+            console.log('⚡ Aguardando eventos de inicialização...');
+
+        })();
     </script>
 </body>
 </html>

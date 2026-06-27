@@ -1,26 +1,23 @@
-// frontend/js/dashboard.js - VERSÃO REVOLUCIONÁRIA V5.5
+// frontend/js/dashboard.js - VERSÃO V6.0 - FOCADO EM DADOS E MÉTRICAS
 /**
- * AutoAnalytics - Módulo de Visualização e Esteira de Análise
- * Fluxo: Drag & Drop (CSV/Excel) -> ML -> Gemini IA -> PDF -> 3 Gráficos Lado a Lado
+ * AutoAnalytics - Módulo de Dashboard para Mecânicos
  * 
- * 🏗️ ARQUITETURA V5.5:
- * 1. 🔥 Escopo Isolado (IIFE) - Proteção contra vazamentos
- * 2. 🔥 Gatilho por Evento 'app:ready' - Sincronização com app.js v5.1
- * 3. 🔥 Cleanup de Gráficos - Prevenção de memory leaks
- * 4. 🔥 Anti-Concorrência no PDF - Botão com lock e feedback visual
- * 5. 🔥 Autolimpeza em Desautenticação - Evento 'auth:unauthorized'
- * 6. 🔥 Sistema de Polling Inteligente com Rate Limiter
- * 7. 🔥 Cache de Elementos DOM para Performance
- * 8. 🔥 Animações com GSAP e AOS integradas
+ * 🏗️ ARQUITETURA V6.0:
+ * 1. 🔥 Sincronização com window.__APP_STATE (v5.4+)
+ * 2. 🔥 Foco em métricas e dados, sem gráficos desnecessários
+ * 3. 🔥 Cards informativos com dados relevantes
+ * 4. 🔥 Sistema de análises com histórico
+ * 5. 🔥 Exportação de relatórios
+ * 6. 🔥 UI limpa e profissional
  */
 
 (function() {
     'use strict';
 
-    console.log('📦 [Dashboard] Módulo carregado na memória. Aguardando sinal "app:ready"...');
+    console.log('📦 [Dashboard V6.0] Módulo carregado.');
 
     // ============================================================================
-    // 🔥 CONFIGURAÇÕES (SINCRONIZADAS COM APP.JS)
+    // 🔥 CONFIGURAÇÕES
     // ============================================================================
     
     const CONFIG = {
@@ -30,40 +27,31 @@
         POLLING_INTERVAL: 2000,
         MAX_POLLING_ATTEMPTS: 60,
         CREDITS_CHECK_INTERVAL: 30000,
-        CHART_COLORS: {
-            primary: '#667eea',
-            success: '#48bb78',
-            warning: '#f5a623',
-            danger: '#f56565',
-            info: '#4299e1',
-            dark: '#2d3748'
-        }
+        MAX_CREDITS_BALANCE: 3
     };
 
     // ============================================================================
-    // 🔥 GERENCIAMENTO DE ESTADO ISOLADO
+    // 🔥 ESTADO DA APLICAÇÃO
     // ============================================================================
     
     const State = {
         activeAnalyses: [],
         pollingIntervals: [],
         isProcessing: false,
-        currentUser: null,
-        credits: 0,
         isPremium: false,
         isAdmin: false,
-        chartInstances: {
-            trend: null,
-            risk: null,
-            perf: null,
-            gpsa: null
-        },
+        credits: 0,
+        userId: null,
+        userName: 'Usuário',
         domCache: new Map(),
-        _initialized: false
+        eventListeners: [],
+        _initialized: false,
+        _appStateVersion: null,
+        historyData: []
     };
 
     // ============================================================================
-    // 🔥 UTILITÁRIOS DE DOM (COM CACHE)
+    // 🔥 UTILITÁRIOS DE DOM
     // ============================================================================
     
     const DOM = {
@@ -76,37 +64,168 @@
             return State.domCache.get(selector);
         },
         
-        getAll: (selector) => {
-            return document.querySelectorAll(selector);
-        },
+        getAll: (selector) => document.querySelectorAll(selector),
         
         clearCache: () => {
             State.domCache.clear();
         },
         
-        create: (tag, classes = '', attributes = {}) => {
-            const el = document.createElement(tag);
-            if (classes) el.className = classes;
-            Object.entries(attributes).forEach(([key, value]) => {
-                el.setAttribute(key, value);
-            });
-            return el;
+        updateText: (selector, text) => {
+            const el = DOM.get(selector);
+            if (el) el.textContent = text;
+        },
+        
+        updateHTML: (selector, html) => {
+            const el = DOM.get(selector);
+            if (el) el.innerHTML = html;
         }
     };
 
     // ============================================================================
-    // 🔥 GERENCIADOR DE NOTIFICAÇÕES
+    // 🔥 GERENCIADOR DE ESTADO GLOBAL
+    // ============================================================================
+    
+    const AppState = {
+        get() {
+            // Prioridade 1: window.__APP_STATE
+            if (window.__APP_STATE && typeof window.__APP_STATE === 'object') {
+                return window.__APP_STATE;
+            }
+            
+            // Prioridade 2: App global
+            if (window.App && typeof window.App === 'object') {
+                const state = window.App.state || {};
+                return {
+                    user: state.user || null,
+                    isAuthenticated: !!state.user,
+                    isPremium: state.isPremium || false,
+                    isAdmin: state.isAdmin || false,
+                    credits: state.credits || 0,
+                    userId: state.user?.id || null,
+                    userName: state.user?.name || state.user?.email || 'Usuário'
+                };
+            }
+            
+            // Fallback: localStorage
+            try {
+                const token = localStorage.getItem('access_token');
+                const userStr = localStorage.getItem('user_data');
+                const user = userStr ? JSON.parse(userStr) : null;
+                return {
+                    user: user,
+                    isAuthenticated: !!token,
+                    isPremium: user?.is_premium || false,
+                    isAdmin: user?.is_admin || false,
+                    credits: user?.credits || 0,
+                    userId: user?.id || null,
+                    userName: user?.name || user?.email || 'Usuário'
+                };
+            } catch (e) {
+                return {
+                    user: null,
+                    isAuthenticated: false,
+                    isPremium: false,
+                    isAdmin: false,
+                    credits: 0,
+                    userId: null,
+                    userName: 'Usuário'
+                };
+            }
+        },
+        
+        sync() {
+            const globalState = this.get();
+            
+            State.isPremium = globalState.isPremium || false;
+            State.isAdmin = globalState.isAdmin || false;
+            State.credits = globalState.credits || 0;
+            State.userId = globalState.userId || globalState.user?.id || null;
+            State.userName = globalState.userName || globalState.user?.name || 'Usuário';
+            
+            this.updateUI();
+            
+            return globalState;
+        },
+        
+        updateUI() {
+            const display = this.getCreditsDisplay();
+            
+            // Atualiza créditos
+            ['#creditsDisplay', '#creditsCount', '#uploadCredits', '#modalCreditsCount'].forEach(selector => {
+                DOM.updateText(selector, display);
+            });
+            
+            // Atualiza nome do usuário
+            DOM.updateText('#userName', State.userName);
+            
+            // Atualiza status premium
+            this.updatePremiumStatusUI();
+        },
+        
+        getCreditsDisplay() {
+            if (State.isAdmin) return '∞';
+            if (State.isPremium) return `${State.credits}/${CONFIG.MAX_CREDITS_BALANCE}`;
+            return String(State.credits || 0);
+        },
+        
+        updatePremiumStatusUI() {
+            const container = DOM.get('#premiumStatusContainer');
+            if (!container) return;
+            
+            let html = '';
+            
+            if (State.isAdmin) {
+                html = `
+                    <div class="text-center py-2">
+                        <span class="badge" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.4rem 1.5rem; font-size: 0.8rem;">
+                            <i class="fas fa-user-shield me-2"></i> Administrador
+                        </span>
+                        <p class="mt-1 small" style="color: rgba(255,255,255,0.5);">
+                            <i class="fas fa-infinity me-1"></i> Créditos ilimitados
+                        </p>
+                    </div>
+                `;
+            } else if (State.isPremium) {
+                html = `
+                    <div class="text-center py-2">
+                        <span class="badge" style="background: linear-gradient(135deg, #f5a623, #cd7f32); color: white; padding: 0.4rem 1.5rem; font-size: 0.8rem;">
+                            <i class="fas fa-crown me-2"></i> Premium
+                        </span>
+                        <p class="mt-1 small" style="color: rgba(255,255,255,0.5);">
+                            <i class="fas fa-coins me-1"></i> ${State.credits} créditos
+                        </p>
+                    </div>
+                `;
+            } else {
+                html = `
+                    <div class="text-center py-2">
+                        <span class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); padding: 0.4rem 1.5rem; font-size: 0.8rem;">
+                            <i class="fas fa-user me-2"></i> Grátis
+                        </span>
+                        <p class="mt-1 small" style="color: rgba(255,255,255,0.5);">
+                            <i class="fas fa-coins me-1"></i> ${State.credits} créditos
+                            <a href="/planos" class="text-warning text-decoration-none ms-1" style="font-size: 0.7rem;">Fazer upgrade</a>
+                        </p>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+    };
+
+    // ============================================================================
+    // 🔥 NOTIFICAÇÕES
     // ============================================================================
     
     const Notify = {
         show: (message, type = 'info', duration = 5000) => {
-            // Tenta usar toastr se disponível
             if (window.toastr && window.toastr[type]) {
                 window.toastr[type](message);
                 return;
             }
             
-            // Fallback: notificação customizada
+            // Fallback visual
             const colors = {
                 success: '#48bb78',
                 error: '#f56565',
@@ -114,24 +233,18 @@
                 info: '#667eea'
             };
             
-            const bgColor = colors[type] || colors.info;
-            const icon = type === 'success' ? 'check-circle' : 
-                        type === 'error' ? 'times-circle' : 
-                        type === 'warning' ? 'exclamation-triangle' : 'info-circle';
-            
-            const notification = DOM.create('div', 'custom-notification');
+            const notification = document.createElement('div');
             notification.style.cssText = `
                 position: fixed; bottom: 20px; right: 20px; 
-                background: white; border-left: 4px solid ${bgColor}; 
+                background: white; border-left: 4px solid ${colors[type] || colors.info}; 
                 padding: 12px 20px; border-radius: 8px; 
                 box-shadow: 0 4px 20px rgba(0,0,0,0.15); 
                 z-index: 10000; 
-                animation: slideInRight 0.3s ease;
                 max-width: 350px;
                 font-family: 'Inter', sans-serif;
+                animation: slideInRight 0.3s ease;
             `;
             notification.innerHTML = `
-                <i class="fas fa-${icon}" style="color: ${bgColor}; margin-right: 8px;"></i>
                 <span style="color: #2d3748;">${message}</span>
             `;
             document.body.appendChild(notification);
@@ -151,7 +264,7 @@
     };
 
     // ============================================================================
-    // 🔥 GERENCIADOR DE LOADING (COM ANIMAÇÃO)
+    // 🔥 LOADING
     // ============================================================================
     
     const Loading = {
@@ -159,46 +272,36 @@
             const overlay = DOM.get('#loadingOverlay');
             if (!overlay) return;
             
-            const text = DOM.get('#loadingText');
-            const subtext = DOM.get('#loadingSubtext');
+            DOM.updateText('#loadingTitle', message);
+            DOM.updateText('#loadingSubtitle', submessage);
+            
             const progress = DOM.get('#loadingProgressBar');
-            const percent = DOM.get('#loadingPercent');
-            const steps = DOM.getAll('.loading-step');
-            
-            if (text) text.textContent = message;
-            if (subtext) subtext.textContent = submessage;
             if (progress) progress.style.width = '0%';
-            if (percent) percent.textContent = '0%';
+            DOM.updateText('#loadingPercent', '0%');
             
+            // Reset steps
+            const steps = DOM.getAll('.loading-step');
             steps.forEach((step, index) => {
                 step.classList.remove('active', 'done');
                 if (index === 0) step.classList.add('active');
             });
             
             overlay.classList.add('show');
-            
-            // Anima entrada
-            if (window.gsap) {
-                window.gsap.from(overlay, {
-                    opacity: 0,
-                    duration: 0.4,
-                    ease: 'power2.out'
-                });
-            }
         },
         
         update: (percent, message = null) => {
             const progress = DOM.get('#loadingProgressBar');
-            const text = DOM.get('#loadingText');
             const percentText = DOM.get('#loadingPercent');
-            const steps = DOM.getAll('.loading-step');
             
             const clampedPercent = Math.min(100, Math.max(0, percent));
             
             if (progress) progress.style.width = `${clampedPercent}%`;
             if (percentText) percentText.textContent = `${Math.round(clampedPercent)}%`;
-            if (message && text) text.textContent = message;
             
+            if (message) DOM.updateText('#loadingTitle', message);
+            
+            // Update steps
+            const steps = DOM.getAll('.loading-step');
             if (steps.length > 0) {
                 const activeStep = Math.floor((clampedPercent / 100) * steps.length);
                 steps.forEach((step, index) => {
@@ -214,548 +317,9 @@
         
         hide: () => {
             const overlay = DOM.get('#loadingOverlay');
-            if (!overlay) return;
-            
-            if (window.gsap) {
-                window.gsap.to(overlay, {
-                    opacity: 0,
-                    duration: 0.3,
-                    ease: 'power2.in',
-                    onComplete: () => overlay.classList.remove('show')
-                });
-            } else {
-                overlay.classList.remove('show');
-            }
+            if (overlay) overlay.classList.remove('show');
         }
     };
-
-    // ============================================================================
-    // 🔥 CLASSE GPSA - GERENCIADOR DE VISUALIZAÇÃO (3 GRÁFICOS LADO A LADO)
-    // ============================================================================
-    
-    class GPSAVisualization {
-        constructor() {
-            this.container = null;
-            this.currentResult = null;
-            this.chartInstances = {
-                trend: null,
-                risk: null,
-                perf: null
-            };
-            this.animations = [];
-        }
-        
-        /**
-         * Inicializa e exibe o painel dinâmico na tela
-         */
-        showDashboard(containerId, resultData) {
-            this.container = document.getElementById(containerId);
-            if (!this.container) {
-                console.error(`❌ [Dashboard] Contêiner #${containerId} não encontrado.`);
-                return;
-            }
-            
-            this.currentResult = resultData;
-            this.container.style.display = 'block';
-            
-            // 🔥 Limpa gráficos antigos para liberar memória
-            this.cleanupExistingCharts();
-            
-            this.renderDashboardLayout();
-            this.initializeCharts();
-            this.triggerVisualEffects();
-        }
-
-        /**
-         * Destrói instâncias antigas para evitar memory leaks
-         */
-        cleanupExistingCharts() {
-            console.log('🧹 [Dashboard] Limpando instâncias anteriores de gráficos...');
-            
-            Object.keys(this.chartInstances).forEach(key => {
-                if (this.chartInstances[key]) {
-                    try {
-                        this.chartInstances[key].destroy();
-                    } catch (e) {
-                        // Ignora erro de destruição
-                    }
-                    this.chartInstances[key] = null;
-                }
-            });
-            
-            // Limpa também do State global
-            Object.keys(State.chartInstances).forEach(key => {
-                if (State.chartInstances[key]) {
-                    try {
-                        State.chartInstances[key].destroy();
-                    } catch (e) {
-                        // Ignora erro de destruição
-                    }
-                    State.chartInstances[key] = null;
-                }
-            });
-        }
-
-        /**
-         * Injeta a estrutura HTML responsiva para os 3 gráficos lado a lado
-         */
-        renderDashboardLayout() {
-            const data = this.currentResult || {};
-            const stats = data.stats || {};
-            const predictions = data.predictions_summary || {};
-            
-            const totalRegistros = stats.rows || predictions.total || 0;
-            const scoreMedio = predictions.mean || 0.65;
-            const altoRisco = predictions.high_risk_percentage || 0;
-            const baixoRisco = predictions.low_risk_percentage || 0;
-            const medioRisco = 100 - altoRisco - baixoRisco;
-            
-            const crescimento = Math.round(scoreMedio * 50);
-            const economia = Math.round(5000 * scoreMedio);
-            const retencao = Math.round(60 + scoreMedio * 30);
-            
-            // Detecta tipo de crescimento
-            const growth = this.detectGrowthType(scoreMedio);
-            
-            this.container.innerHTML = `
-                <div class="gpsa-dashboard" style="color: white;">
-                    <!-- HEADER -->
-                    <div class="text-center mb-4">
-                        <h5 style="color: #f5a623;">
-                            <i class="fas fa-chart-line me-2"></i>
-                            GPSA - Impacto no Negócio
-                        </h5>
-                        <p style="color: rgba(255,255,255,0.5); font-size: 0.85rem;">
-                            Análise baseada em ${totalRegistros.toLocaleString()} registros
-                        </p>
-                    </div>
-                    
-                    <!-- SCORE CIRCULAR -->
-                    <div class="text-center mb-4">
-                        <div style="position: relative; display: inline-block;">
-                            <svg width="120" height="120" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="8"/>
-                                <circle class="gpsa-score-ring" cx="60" cy="60" r="50" fill="none" 
-                                        stroke="url(#gpsaGrad)" stroke-width="8" 
-                                        stroke-dasharray="314" stroke-dashoffset="314"
-                                        style="transform: rotate(-90deg); transform-origin: 50% 50%;"/>
-                                <defs>
-                                    <linearGradient id="gpsaGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                        <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-                                        <stop offset="100%" style="stop-color:#f5a623;stop-opacity:1" />
-                                    </linearGradient>
-                                </defs>
-                            </svg>
-                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
-                                <div class="gpsa-score-value" style="font-size: 28px; font-weight: bold; color: #f5a623;">0%</div>
-                                <div style="font-size: 10px; color: rgba(255,255,255,0.4);">Confiança</div>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="badge" style="background: ${growth.color}; color: white; padding: 0.4rem 1rem; font-size: 0.85rem;">
-                                ${growth.icon} ${growth.label}
-                            </span>
-                        </div>
-                        <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin-top: 0.3rem;">
-                            ${growth.desc}
-                        </p>
-                    </div>
-                    
-                    <!-- 3 CARDS DE IMPACTO -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-md-4">
-                            <div class="impact-card text-center p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); transition: transform 0.3s;">
-                                <i class="fas fa-chart-line fa-2x" style="color: #48bb78;"></i>
-                                <h6 class="mt-2" style="color: white; font-size: 0.85rem;">Crescimento</h6>
-                                <div class="impact-value" style="font-size: 28px; font-weight: bold; color: #48bb78;" data-target="${crescimento}">0%</div>
-                                <small style="color: rgba(255,255,255,0.4); font-size: 0.7rem;">em 3 meses</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="impact-card text-center p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); transition: transform 0.3s;">
-                                <i class="fas fa-coins fa-2x" style="color: #f5a623;"></i>
-                                <h6 class="mt-2" style="color: white; font-size: 0.85rem;">Economia</h6>
-                                <div class="impact-value" style="font-size: 28px; font-weight: bold; color: #f5a623;" data-target="${economia}">R$ 0</div>
-                                <small style="color: rgba(255,255,255,0.4); font-size: 0.7rem;">por mês</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="impact-card text-center p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); transition: transform 0.3s;">
-                                <i class="fas fa-users fa-2x" style="color: #667eea;"></i>
-                                <h6 class="mt-2" style="color: white; font-size: 0.85rem;">Retenção</h6>
-                                <div class="impact-value" style="font-size: 28px; font-weight: bold; color: #667eea;" data-target="${retencao}">0%</div>
-                                <small style="color: rgba(255,255,255,0.4); font-size: 0.7rem;">clientes fiéis</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- GRÁFICO + INSIGHTS LADO A LADO -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-md-6">
-                            <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
-                                <h6 style="color: white; font-size: 0.85rem;">
-                                    <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
-                                    Projeção de Crescimento
-                                </h6>
-                                <div style="height: 180px;">
-                                    <canvas id="gpsaTrendChart"></canvas>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
-                                <h6 style="color: white; font-size: 0.85rem;">
-                                    <i class="fas fa-lightbulb me-2" style="color: #f5a623;"></i>
-                                    Insights IA
-                                </h6>
-                                <div class="gpsa-insights" style="max-height: 180px; overflow-y: auto; font-size: 0.8rem;">
-                                    ${this.renderInsights(data)}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- RISCO -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-12">
-                            <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
-                                <h6 style="color: white; font-size: 0.85rem;">
-                                    <i class="fas fa-chart-pie me-2" style="color: #f5a623;"></i>
-                                    Distribuição de Risco
-                                </h6>
-                                <div class="row text-center">
-                                    <div class="col-4">
-                                        <div style="background: rgba(245,101,101,0.12); border-radius: 10px; padding: 0.5rem; border: 1px solid rgba(245,101,101,0.2);">
-                                            <div style="color: #f56565; font-size: 20px; font-weight: bold;">${Math.round(altoRisco)}%</div>
-                                            <div style="color: rgba(255,255,255,0.4); font-size: 0.65rem;">🔴 Alto Risco</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-4">
-                                        <div style="background: rgba(245,166,35,0.12); border-radius: 10px; padding: 0.5rem; border: 1px solid rgba(245,166,35,0.2);">
-                                            <div style="color: #f5a623; font-size: 20px; font-weight: bold;">${Math.round(medioRisco)}%</div>
-                                            <div style="color: rgba(255,255,255,0.4); font-size: 0.65rem;">🟡 Médio Risco</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-4">
-                                        <div style="background: rgba(72,187,120,0.12); border-radius: 10px; padding: 0.5rem; border: 1px solid rgba(72,187,120,0.2);">
-                                            <div style="color: #48bb78; font-size: 20px; font-weight: bold;">${Math.round(baixoRisco)}%</div>
-                                            <div style="color: rgba(255,255,255,0.4); font-size: 0.65rem;">🟢 Baixo Risco</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- FECHAR -->
-                    <div class="text-center">
-                        <button class="btn btn-outline-light btn-sm" onclick="window.closeGPSA()" style="border-radius: 50px; padding: 0.4rem 1.5rem; font-size: 0.8rem;">
-                            <i class="fas fa-times me-2"></i> Fechar
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-        
-        renderInsights(data) {
-            const insights = data.insights || {};
-            const recommendations = insights.recomendacoes || insights.recommendations || [];
-            
-            if (recommendations.length > 0) {
-                return recommendations.slice(0, 4).map(r => `
-                    <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.15); border-left: 3px solid #f5a623;">
-                        💡 ${escapeHtml(r)}
-                    </div>
-                `).join('');
-            }
-            
-            const scoreMedio = data.predictions_summary?.mean || 0.65;
-            const crescimento = Math.round(scoreMedio * 50);
-            const retencao = Math.round(60 + scoreMedio * 30);
-            
-            return `
-                <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.15); border-left: 3px solid #48bb78;">
-                    ✅ Score de confiança: ${Math.round(scoreMedio * 100)}%
-                </div>
-                <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.15); border-left: 3px solid #f5a623;">
-                    📈 Crescimento projetado: ${crescimento}%
-                </div>
-                <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.15); border-left: 3px solid #667eea;">
-                    👥 Retenção de clientes: ${retencao}%
-                </div>
-            `;
-        }
-        
-        detectGrowthType(scoreMedio) {
-            if (scoreMedio > 0.85) {
-                return { type: 'exponential', icon: '🚀', label: 'Acelerado', desc: 'Crescimento rápido! Continue assim!', color: '#48bb78' };
-            } else if (scoreMedio > 0.7) {
-                return { type: 'quadratic', icon: '📈', label: 'Forte', desc: 'Tendência de aceleração!', color: '#f5a623' };
-            } else if (scoreMedio > 0.55) {
-                return { type: 'linear', icon: '➡️', label: 'Constante', desc: 'Crescimento estável e previsível.', color: '#667eea' };
-            } else {
-                return { type: 'logarithmic', icon: '🔄', label: 'Desacelerando', desc: 'Hora de inovar e reverter!', color: '#f56565' };
-            }
-        }
-
-        /**
-         * Renderiza os novos gráficos a partir das métricas calculadas pelo ML
-         */
-        initializeCharts() {
-            console.log('📊 [Dashboard] Inicializando renderização gráfica...');
-            const data = this.currentResult || {};
-            const predictions = data.predictions_summary || {};
-            const scoreMedio = predictions.mean || 0.65;
-            const growth = this.detectGrowthType(scoreMedio);
-            
-            // GRÁFICO DE TENDÊNCIA
-            const ctxTrend = document.getElementById('gpsaTrendChart')?.getContext('2d');
-            if (ctxTrend) {
-                const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-                const dados = this.generateGrowthData(scoreMedio, growth.type);
-                
-                this.chartInstances.trend = new Chart(ctxTrend, {
-                    type: 'line',
-                    data: {
-                        labels: meses,
-                        datasets: [{
-                            label: 'Crescimento',
-                            data: dados,
-                            borderColor: '#f5a623',
-                            backgroundColor: 'rgba(245, 166, 35, 0.1)',
-                            borderWidth: 2,
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 2,
-                            pointBackgroundColor: '#f5a623'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false }
-                        },
-                        scales: {
-                            y: { 
-                                min: 0, 
-                                max: 100, 
-                                grid: { color: 'rgba(255,255,255,0.05)' },
-                                ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 8 } }
-                            },
-                            x: { 
-                                grid: { display: false },
-                                ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 8 } }
-                            }
-                        }
-                    }
-                });
-            }
-            
-            // Armazena no State global
-            State.chartInstances.gpsa = this.chartInstances;
-        }
-        
-        generateGrowthData(scoreMedio, growthType) {
-            const baseValue = 20;
-            const maxGrowth = Math.round(scoreMedio * 50);
-            const dados = [];
-            
-            for (let i = 0; i < 12; i++) {
-                let t = i / 11;
-                let valor;
-                switch(growthType) {
-                    case 'exponential':
-                        valor = baseValue + (maxGrowth) * (Math.pow(2, t) - 1);
-                        break;
-                    case 'quadratic':
-                        valor = baseValue + (maxGrowth) * Math.pow(t, 1.5);
-                        break;
-                    case 'linear':
-                        valor = baseValue + (maxGrowth) * t;
-                        break;
-                    default:
-                        valor = baseValue + (maxGrowth) * Math.log(1 + t * 2) / Math.log(3);
-                }
-                dados.push(Math.min(100, Math.round(valor)));
-            }
-            return dados;
-        }
-
-        triggerVisualEffects() {
-            // Anima score circular
-            const scoreElement = this.container.querySelector('.gpsa-score-value');
-            const ring = this.container.querySelector('.gpsa-score-ring');
-            const impactValues = this.container.querySelectorAll('.impact-value');
-            const cards = this.container.querySelectorAll('.impact-card');
-            
-            const targetScore = Math.round((this.currentResult?.predictions_summary?.mean || 0.65) * 100);
-            const circumference = 314;
-            
-            // Anima score com GSAP ou Anime.js
-            if (window.anime) {
-                // Score
-                if (scoreElement) {
-                    window.anime({
-                        targets: { value: 0 },
-                        value: targetScore,
-                        duration: 2500,
-                        easing: 'easeOutElastic(1, .8)',
-                        update: function(anim) {
-                            scoreElement.textContent = Math.round(anim.animations[0].currentValue) + '%';
-                        }
-                    });
-                }
-                
-                // Ring
-                if (ring) {
-                    window.anime({
-                        targets: { value: 0 },
-                        value: targetScore,
-                        duration: 2500,
-                        easing: 'easeOutElastic(1, .8)',
-                        update: function(anim) {
-                            const current = Math.round(anim.animations[0].currentValue);
-                            const offset = circumference - (current / 100) * circumference;
-                            ring.style.strokeDashoffset = offset;
-                        }
-                    });
-                }
-                
-                // Impact values
-                impactValues.forEach(el => {
-                    const target = parseInt(el.dataset.target);
-                    if (isNaN(target)) return;
-                    const isCurrency = el.textContent.includes('R$');
-                    
-                    window.anime({
-                        targets: { value: 0 },
-                        value: target,
-                        duration: 2500,
-                        easing: 'easeOutQuad',
-                        update: function(anim) {
-                            const current = Math.round(anim.animations[0].currentValue);
-                            if (isCurrency) {
-                                el.textContent = `R$ ${current.toLocaleString('pt-BR')}`;
-                            } else {
-                                el.textContent = current + '%';
-                            }
-                        }
-                    });
-                });
-                
-                // Cards com stagger
-                if (cards.length > 0 && window.gsap) {
-                    window.gsap.from(cards, {
-                        y: 20,
-                        opacity: 0,
-                        duration: 0.6,
-                        stagger: 0.1,
-                        ease: 'power3.out'
-                    });
-                }
-            }
-            
-            // Refresh AOS
-            if (typeof AOS !== 'undefined') {
-                AOS.refresh();
-            }
-        }
-        
-        hide() {
-            if (this.container) {
-                if (window.gsap) {
-                    window.gsap.to(this.container, {
-                        opacity: 0,
-                        duration: 0.3,
-                        ease: 'power2.in',
-                        onComplete: () => {
-                            this.container.style.display = 'none';
-                            this.cleanupExistingCharts();
-                        }
-                    });
-                } else {
-                    this.container.style.display = 'none';
-                    this.cleanupExistingCharts();
-                }
-            }
-        }
-    }
-
-    // ============================================================================
-    // 🔥 INSTÂNCIA DO GPSA
-    // ============================================================================
-    
-    const gpsaVisualizer = new GPSAVisualization();
-
-    // ============================================================================
-    // 🔥 FUNÇÕES DE FETCH COM AUTH E RATE LIMIT
-    // ============================================================================
-    
-    async function fetchWithAuth(url, options = {}) {
-        if (window.App && typeof window.App.fetchWithAuth === 'function') {
-            return window.App.fetchWithAuth(url, options);
-        }
-        
-        const token = localStorage.getItem('access_token');
-        if (!token) {
-            Notify.warning('Sessão expirada. Faça login novamente.');
-            return null;
-        }
-        
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            ...options.headers
-        };
-        
-        try {
-            const response = await fetch(url, { ...options, headers });
-            
-            if (response.status === 401) {
-                // Dispara evento de não autorizado
-                window.dispatchEvent(new CustomEvent('auth:unauthorized', {
-                    detail: { message: 'Token expirado' }
-                }));
-                return null;
-            }
-            
-            if (response.status === 429) {
-                const data = await response.json().catch(() => ({}));
-                Notify.warning(data.message || 'Muitas requisições. Aguarde um momento.');
-                return response;
-            }
-            
-            return response;
-        } catch (error) {
-            console.error('Fetch error:', error);
-            Notify.error('Erro de conexão. Tente novamente.');
-            return null;
-        }
-    }
-
-    // ============================================================================
-    // 🔥 GERENCIADOR DE CRÉDITOS (REATIVO)
-    // ============================================================================
-    
-    function updateCreditsDisplay() {
-        const credits = State.credits;
-        const isPremium = State.isPremium;
-        const isAdmin = State.isAdmin;
-        
-        let display = '0';
-        if (isAdmin) {
-            display = '∞';
-        } else if (isPremium) {
-            display = `${credits}/${CONFIG.MAX_CREDITS_BALANCE || 3}`;
-        } else {
-            display = String(credits || 0);
-        }
-        
-        document.querySelectorAll('.credits-display, .user-credits, #creditsCount, #uploadCredits, #creditsDisplay').forEach(el => {
-            if (el) el.textContent = display;
-        });
-    }
 
     // ============================================================================
     // 🔥 FUNÇÕES DE UPLOAD E PROCESSAMENTO
@@ -772,7 +336,7 @@
             return;
         }
         
-        // Verifica tamanho dos arquivos
+        // Verifica tamanho
         for (const file of files) {
             if (file.size > CONFIG.MAX_FILE_SIZE_KB * 1024) {
                 Notify.error(`❌ ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB`);
@@ -780,16 +344,27 @@
             }
         }
         
-        // Verifica créditos
-        if (!await checkCreditsBeforeUpload(files.length)) {
-            return;
+        // Verifica créditos (apenas se não for admin)
+        if (!State.isAdmin) {
+            // Se não for premium, verifica créditos
+            if (!State.isPremium && State.credits < files.length) {
+                Notify.warning(`❌ Você precisa de ${files.length} crédito(s). Você tem apenas ${State.credits || 0}.`);
+                showCreditsModal();
+                return;
+            }
+            // Se for premium, verifica se tem créditos suficientes
+            if (State.isPremium && State.credits < files.length) {
+                Notify.warning(`❌ Você precisa de ${files.length} crédito(s). Você tem apenas ${State.credits || 0}.`);
+                showCreditsModal();
+                return;
+            }
         }
         
         // Inicia loading
-        Loading.show('Iniciando análise...', `Preparando ${files.length} arquivo(s) para processamento`);
-        Loading.update(5, 'Iniciando...');
+        Loading.show('Iniciando análise...', `Preparando ${files.length} arquivo(s)`);
+        Loading.update(5);
         
-        // 🔥 Prepara PoW se disponível
+        // Prepara PoW se disponível
         try {
             if (window.App && typeof window.App.preparePowForUpload === 'function') {
                 await window.App.preparePowForUpload();
@@ -806,25 +381,18 @@
         formData.append('ai_model', 'auto');
         
         const token = localStorage.getItem('access_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
         
-        // 🔥 Adiciona PoW ao upload
-        const headers = {
-            'Authorization': `Bearer ${token}`
-        };
-        
+        // Adiciona PoW
         try {
-            // Tenta obter solução PoW
             if (window.App && typeof window.App.getPowStats === 'function') {
                 const stats = window.App.getPowStats();
-                if (stats && stats.solutionsReady > 0) {
-                    if (window.powClient && typeof window.powClient.getInstantSolution === 'function') {
-                        const solution = await window.powClient.getInstantSolution();
-                        if (solution) {
-                            headers['X-PoW-Prefix'] = solution.prefix;
-                            headers['X-PoW-Nonce'] = solution.nonce;
-                            headers['X-PoW-Complexity'] = String(solution.complexity);
-                            console.log('⚡ PoW adicionado ao upload');
-                        }
+                if (stats && stats.solutionsReady > 0 && window.powClient) {
+                    const solution = await window.powClient.getInstantSolution();
+                    if (solution) {
+                        headers['X-PoW-Prefix'] = solution.prefix;
+                        headers['X-PoW-Nonce'] = solution.nonce;
+                        headers['X-PoW-Complexity'] = String(solution.complexity);
                     }
                 }
             }
@@ -839,7 +407,7 @@
                 body: formData
             });
             
-            // 🔥 Tratamento do PoW (428 = Precondition Required)
+            // Trata PoW
             if (response.status === 428) {
                 Notify.info('Proteção anti-bot: recalculando...');
                 
@@ -847,7 +415,6 @@
                     await window.App.preparePowForUpload();
                 }
                 
-                // Retry com novo PoW
                 const retryResponse = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
                     method: 'POST',
                     headers: headers,
@@ -890,13 +457,19 @@
         }
         
         // Atualiza créditos
-        loadUserCredits();
+        AppState.sync();
         
         // Limpa input
         const fileInput = DOM.get('#fileInput');
         if (fileInput) fileInput.value = '';
-        const previewContainer = DOM.get('#filePreviewContainer');
-        if (previewContainer) previewContainer.innerHTML = '';
+        DOM.updateHTML('#filePreviewContainer', '');
+        
+        // Desabilita botão de upload
+        const uploadBtn = DOM.get('#uploadButton');
+        if (uploadBtn) {
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i> Processando...`;
+        }
     }
     
     async function startPolling(processId, filename) {
@@ -907,51 +480,76 @@
             attempts++;
             
             try {
-                const response = await fetchWithAuth(`${CONFIG.API_BASE}/status/${processId}`);
-                if (!response) return;
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`${CONFIG.API_BASE}/status/${processId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        clearInterval(interval);
+                        Notify.warning('Sessão expirada.');
+                        return;
+                    }
+                    if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        Notify.warning(`⏳ Análise ${filename} está demorando.`);
+                        Loading.hide();
+                    }
+                    return;
+                }
                 
                 const data = await response.json();
-                
-                // Atualiza progresso
-                Loading.update(data.progress || 0, data.status === 'processing' ? 'Processando dados...' : 'Finalizando...');
+                Loading.update(data.progress || 0);
                 
                 if (data.status === 'completed') {
                     clearInterval(interval);
                     
-                    // 🔥 Notifica sucesso
-                    Notify.success(`✅ Análise concluída: ${filename}`);
-                    Loading.update(100, '✅ Análise concluída!');
+                    // Recupera o resultado completo
+                    const resultResponse = await fetch(`${CONFIG.API_BASE}/analysis/${processId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
                     
-                    // 🔥 Dispara evento para o dashboard
-                    window.dispatchEvent(new CustomEvent('analysis:success', {
-                        detail: {
+                    if (resultResponse.ok) {
+                        const resultData = await resultResponse.json();
+                        
+                        Notify.success(`✅ Análise concluída: ${filename}`);
+                        Loading.update(100, '✅ Análise concluída!');
+                        
+                        // Dispara evento de sucesso
+                        window.dispatchEvent(new CustomEvent('analysis:success', {
+                            detail: {
+                                processId,
+                                filename,
+                                result: resultData
+                            }
+                        }));
+                        
+                        // Adiciona à lista
+                        const analysisData = {
                             processId,
                             filename,
-                            result: data
+                            status: 'completed',
+                            result: resultData
+                        };
+                        
+                        State.activeAnalyses.push(analysisData);
+                        
+                        // Renderiza na UI
+                        renderAnalysisCard(analysisData);
+                        
+                        // Atualiza histórico
+                        loadHistory();
+                        
+                        // Habilita botão de upload novamente
+                        const uploadBtn = DOM.get('#uploadButton');
+                        if (uploadBtn) {
+                            uploadBtn.disabled = false;
+                            uploadBtn.innerHTML = `<i class="fas fa-play-circle me-2"></i> Iniciar Análise <span class="badge ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>`;
                         }
-                    }));
-                    
-                    // Adiciona à lista de análises
-                    const analysisData = {
-                        processId,
-                        filename,
-                        status: 'completed',
-                        result: data
-                    };
-                    
-                    State.activeAnalyses.push(analysisData);
-                    
-                    // Renderiza na UI
-                    renderAnalysisCard(analysisData);
-                    
-                    // Gera PDF automático
-                    setTimeout(() => generatePDF(processId, data), 1500);
-                    
-                    // Esconde loading
-                    setTimeout(Loading.hide, 800);
-                    
-                    // Atualiza histórico
-                    loadHistory();
+                        
+                        setTimeout(Loading.hide, 800);
+                    }
                     
                 } else if (data.status === 'error') {
                     clearInterval(interval);
@@ -961,7 +559,7 @@
                 
                 if (attempts >= maxAttempts) {
                     clearInterval(interval);
-                    Notify.warning(`⏳ Análise ${filename} está demorando mais que o esperado.`);
+                    Notify.warning(`⏳ Análise ${filename} está demorando.`);
                     Loading.hide();
                 }
             } catch (error) {
@@ -976,7 +574,7 @@
     }
 
     // ============================================================================
-    // 🔥 RENDERIZAÇÃO DE ANÁLISE (3 GRÁFICOS LADO A LADO)
+    // 🔥 RENDERIZAÇÃO DE ANÁLISE - FOCADO EM DADOS E MÉTRICAS
     // ============================================================================
     
     function renderAnalysisCard(analysis) {
@@ -987,18 +585,34 @@
         const stats = data.stats || {};
         const predictions = data.predictions_summary || {};
         
+        // Métricas principais
         const totalRegistros = stats.rows || predictions.total || 0;
         const scoreMedio = predictions.mean || 0.65;
-        const altoRisco = predictions.high_risk_percentage || 0;
-        const baixoRisco = predictions.low_risk_percentage || 0;
-        const medioRisco = 100 - altoRisco - baixoRisco;
+        const scoreMin = predictions.min || 0.2;
+        const scoreMax = predictions.max || 0.9;
+        const scoreStd = predictions.std || 0.15;
         
-        const growth = detectGrowthType(scoreMedio);
+        // Distribuição de risco (valores numéricos)
+        const altoRisco = predictions.high_risk_percentage || 0;
+        const medioRisco = predictions.medium_risk_percentage || 0;
+        const baixoRisco = predictions.low_risk_percentage || 0;
+        
+        // Métricas de impacto
         const crescimento = Math.round(scoreMedio * 50);
         const economia = Math.round(5000 * scoreMedio);
         const retencao = Math.round(60 + scoreMedio * 30);
+        const confianca = Math.round(scoreMedio * 100);
+        
+        // Determina status
+        const statusColor = scoreMedio > 0.7 ? '#48bb78' : (scoreMedio > 0.5 ? '#f5a623' : '#f56565');
+        const statusIcon = scoreMedio > 0.7 ? '🚀' : (scoreMedio > 0.5 ? '📈' : '🔄');
+        const statusLabel = scoreMedio > 0.7 ? 'Alto potencial' : (scoreMedio > 0.5 ? 'Potencial médio' : 'Baixo potencial');
         
         const cardId = `analysis-card-${analysis.processId}`;
+        
+        // Remove card antigo se existir
+        const existingCard = document.getElementById(cardId);
+        if (existingCard) existingCard.remove();
         
         const cardHTML = `
             <div class="analysis-card mb-4" id="${cardId}" data-process-id="${analysis.processId}">
@@ -1010,125 +624,133 @@
                             <div>
                                 <h5 class="mb-0 fw-bold" style="color: white;">
                                     <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
-                                    Análise #${State.activeAnalyses.length}
-                                    <span class="badge ms-2" style="background: ${growth.color}; color: white;">${growth.icon} ${growth.label}</span>
+                                    ${analysis.filename || 'Análise'}
+                                    <span class="badge ms-2" style="background: ${statusColor}; color: white; font-size: 0.7rem;">
+                                        ${statusIcon} ${statusLabel}
+                                    </span>
                                 </h5>
                                 <small style="color: rgba(255,255,255,0.4);">
-                                    <i class="fas fa-file me-1"></i> ${analysis.filename || 'Arquivo'}
+                                    <i class="fas fa-calendar me-1"></i> ${new Date().toLocaleDateString('pt-BR')}
+                                    <i class="fas fa-database ms-2 me-1"></i> ${totalRegistros.toLocaleString()} registros
                                 </small>
                             </div>
-                            <div>
-                                <span class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); padding: 0.3rem 0.6rem;">
-                                    <i class="fas fa-database me-1"></i> ${totalRegistros.toLocaleString()}
-                                </span>
+                            <div class="mt-2 mt-md-0">
+                                <button class="btn btn-sm btn-pdf" onclick="window.generatePDFReport('${analysis.processId}')" style="background: rgba(220,53,69,0.15); border: 1px solid #dc3545; color: #dc3545; border-radius: 50px; padding: 0.3rem 0.8rem; font-size: 0.7rem;">
+                                    <i class="fas fa-file-pdf me-1"></i> PDF
+                                </button>
+                                <button class="btn btn-sm btn-gpsa ms-1" onclick="window.showGPSAForAnalysis('${analysis.processId}')" style="background: rgba(245,166,35,0.15); border: 1px solid #f5a623; color: #f5a623; border-radius: 50px; padding: 0.3rem 0.8rem; font-size: 0.7rem;">
+                                    <i class="fas fa-chart-line me-1"></i> Detalhes
+                                </button>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- CORPO - 3 GRÁFICOS -->
+                    <!-- CORPO - MÉTRICAS E DADOS -->
                     <div class="card-body p-4">
-                        <div class="row g-3">
-                            <!-- GRÁFICO 1: CRESCIMENTO -->
-                            <div class="col-lg-4">
-                                <div class="p-3 rounded-4 h-100" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
-                                    <h6 style="color: rgba(255,255,255,0.7); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                        <i class="fas fa-chart-line me-1" style="color: ${growth.color};"></i> Crescimento
-                                    </h6>
-                                    <canvas id="growthChart_${analysis.processId}" height="120"></canvas>
-                                    <div class="text-center mt-2">
-                                        <span class="badge" style="background: ${growth.color}; color: white; font-size: 0.65rem;">
-                                            📈 ${growth.label}
-                                        </span>
-                                        <span class="badge ms-1" style="background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.6); font-size: 0.65rem;">
-                                            +${crescimento}%
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- GRÁFICO 2: RISCO -->
-                            <div class="col-lg-4">
-                                <div class="p-3 rounded-4 h-100" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
-                                    <h6 style="color: rgba(255,255,255,0.7); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                        <i class="fas fa-chart-pie me-1" style="color: #f5a623;"></i> Risco
-                                    </h6>
-                                    <canvas id="riskChart_${analysis.processId}" height="120"></canvas>
-                                    <div class="text-center mt-2">
-                                        <span class="badge" style="background: #48bb78; color: white; font-size: 0.55rem;">🟢 ${Math.round(baixoRisco)}%</span>
-                                        <span class="badge ms-1" style="background: #f5a623; color: white; font-size: 0.55rem;">🟡 ${Math.round(medioRisco)}%</span>
-                                        <span class="badge ms-1" style="background: #f56565; color: white; font-size: 0.55rem;">🔴 ${Math.round(altoRisco)}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- GRÁFICO 3: PERFORMANCE -->
-                            <div class="col-lg-4">
-                                <div class="p-3 rounded-4 h-100" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
-                                    <h6 style="color: rgba(255,255,255,0.7); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                        <i class="fas fa-bullseye me-1" style="color: #f5a623;"></i> Performance
-                                    </h6>
-                                    <div class="mt-1">
-                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <span style="color: rgba(255,255,255,0.5); font-size: 0.7rem;">📈 Crescimento</span>
-                                            <span style="color: #48bb78; font-size: 0.8rem; font-weight: bold;">+${crescimento}%</span>
+                        <!-- SCORE PRINCIPAL -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-12">
+                                <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <div style="color: rgba(255,255,255,0.5); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                <i class="fas fa-gem me-1" style="color: #f5a623;"></i> Score de Confiança
+                                            </div>
+                                            <div style="font-size: 2.5rem; font-weight: 700; color: ${statusColor};">
+                                                ${confianca}%
+                                            </div>
+                                            <div style="color: rgba(255,255,255,0.4); font-size: 0.7rem;">
+                                                Min: ${Math.round(scoreMin * 100)}% · Max: ${Math.round(scoreMax * 100)}% · Desvio: ${Math.round(scoreStd * 100)}%
+                                            </div>
                                         </div>
-                                        <div class="progress mb-2" style="height: 3px; background: rgba(255,255,255,0.05);">
-                                            <div class="progress-bar" style="width: ${crescimento}%; background: ${growth.color};"></div>
+                                        <div class="text-end">
+                                            <div style="color: rgba(255,255,255,0.4); font-size: 0.65rem;">Intervalo de confiança</div>
+                                            <div style="width: 150px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 4px; margin-top: 4px;">
+                                                <div style="width: ${confianca}%; height: 100%; background: ${statusColor}; border-radius: 4px;"></div>
+                                            </div>
                                         </div>
-                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <span style="color: rgba(255,255,255,0.5); font-size: 0.7rem;">💰 Economia</span>
-                                            <span style="color: #f5a623; font-size: 0.8rem; font-weight: bold;">R$ ${economia}</span>
-                                        </div>
-                                        <div class="progress mb-2" style="height: 3px; background: rgba(255,255,255,0.05);">
-                                            <div class="progress-bar" style="width: ${Math.min(100, economia/100)}%; background: #f5a623;"></div>
-                                        </div>
-                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <span style="color: rgba(255,255,255,0.5); font-size: 0.7rem;">👥 Retenção</span>
-                                            <span style="color: #667eea; font-size: 0.8rem; font-weight: bold;">${retencao}%</span>
-                                        </div>
-                                        <div class="progress" style="height: 3px; background: rgba(255,255,255,0.05);">
-                                            <div class="progress-bar" style="width: ${retencao}%; background: #667eea;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="text-center mt-2">
-                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.5); font-size: 0.6rem;">
-                                            ✅ Confiança: ${Math.round(scoreMedio * 100)}%
-                                        </span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- RELATÓRIO (ABAIXO) -->
-                        <div class="mt-3 p-3 rounded-4" style="background: rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.03);">
-                            <div class="row align-items-center">
-                                <div class="col-md-8">
-                                    <div class="d-flex flex-wrap gap-4">
-                                        <div>
-                                            <small style="color: rgba(255,255,255,0.3); font-size: 0.6rem;">📊 REGISTROS</small>
-                                            <div style="color: white; font-weight: bold; font-size: 0.9rem;">${totalRegistros.toLocaleString()}</div>
+                        <!-- MÉTRICAS EM GRID -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3 col-6">
+                                <div class="p-3 rounded-4 text-center" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                                    <i class="fas fa-chart-line fa-lg" style="color: #48bb78;"></i>
+                                    <div style="color: white; font-size: 1.2rem; font-weight: 600; margin-top: 4px;">${crescimento}%</div>
+                                    <div style="color: rgba(255,255,255,0.3); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.3px;">Crescimento</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="p-3 rounded-4 text-center" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                                    <i class="fas fa-coins fa-lg" style="color: #f5a623;"></i>
+                                    <div style="color: #f5a623; font-size: 1.2rem; font-weight: 600; margin-top: 4px;">R$ ${economia}</div>
+                                    <div style="color: rgba(255,255,255,0.3); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.3px;">Economia/mês</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="p-3 rounded-4 text-center" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                                    <i class="fas fa-users fa-lg" style="color: #667eea;"></i>
+                                    <div style="color: #667eea; font-size: 1.2rem; font-weight: 600; margin-top: 4px;">${retencao}%</div>
+                                    <div style="color: rgba(255,255,255,0.3); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.3px;">Retenção</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="p-3 rounded-4 text-center" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                                    <i class="fas fa-database fa-lg" style="color: #4299e1;"></i>
+                                    <div style="color: white; font-size: 1.2rem; font-weight: 600; margin-top: 4px;">${totalRegistros.toLocaleString()}</div>
+                                    <div style="color: rgba(255,255,255,0.3); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.3px;">Registros</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- DISTRIBUIÇÃO DE RISCO -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-12">
+                                <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                                    <div style="color: rgba(255,255,255,0.5); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                                        <i class="fas fa-shield-alt me-1" style="color: #f5a623;"></i> Distribuição de Risco
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-4">
+                                            <div class="p-2 rounded-3 text-center" style="background: rgba(72,187,120,0.12); border: 1px solid rgba(72,187,120,0.15);">
+                                                <div style="color: #48bb78; font-size: 1.1rem; font-weight: 600;">${Math.round(baixoRisco)}%</div>
+                                                <div style="color: rgba(255,255,255,0.3); font-size: 0.55rem;">🟢 Baixo Risco</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <small style="color: rgba(255,255,255,0.3); font-size: 0.6rem;">💰 ECONOMIA/MÊS</small>
-                                            <div style="color: #f5a623; font-weight: bold; font-size: 0.9rem;">R$ ${economia}</div>
+                                        <div class="col-4">
+                                            <div class="p-2 rounded-3 text-center" style="background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.15);">
+                                                <div style="color: #f5a623; font-size: 1.1rem; font-weight: 600;">${Math.round(medioRisco)}%</div>
+                                                <div style="color: rgba(255,255,255,0.3); font-size: 0.55rem;">🟡 Médio Risco</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <small style="color: rgba(255,255,255,0.3); font-size: 0.6rem;">👥 RETENÇÃO</small>
-                                            <div style="color: #667eea; font-weight: bold; font-size: 0.9rem;">${retencao}%</div>
-                                        </div>
-                                        <div>
-                                            <small style="color: rgba(255,255,255,0.3); font-size: 0.6rem;">✅ CONFIANÇA</small>
-                                            <div style="color: #48bb78; font-weight: bold; font-size: 0.9rem;">${Math.round(scoreMedio * 100)}%</div>
+                                        <div class="col-4">
+                                            <div class="p-2 rounded-3 text-center" style="background: rgba(245,101,101,0.12); border: 1px solid rgba(245,101,101,0.15);">
+                                                <div style="color: #f56565; font-size: 1.1rem; font-weight: 600;">${Math.round(altoRisco)}%</div>
+                                                <div style="color: rgba(255,255,255,0.3); font-size: 0.55rem;">🔴 Alto Risco</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-md-4 text-end mt-2 mt-md-0">
-                                    <button class="btn btn-sm btn-pdf" onclick="window.generatePDFReport('${analysis.processId}')" style="background: rgba(220,53,69,0.15); border: 1px solid #dc3545; color: #dc3545; border-radius: 50px; padding: 0.3rem 0.8rem; font-size: 0.7rem;">
-                                        <i class="fas fa-file-pdf me-1"></i> PDF
-                                    </button>
-                                    <button class="btn btn-sm btn-gpsa ms-1" onclick="window.showGPSAForAnalysis('${analysis.processId}')" style="background: rgba(245,166,35,0.15); border: 1px solid #f5a623; color: #f5a623; border-radius: 50px; padding: 0.3rem 0.8rem; font-size: 0.7rem;">
-                                        <i class="fas fa-chart-line me-1"></i> GPSA
-                                    </button>
+                            </div>
+                        </div>
+                        
+                        <!-- INSIGHTS (se disponíveis) -->
+                        ${renderInsights(data)}
+                        
+                        <!-- RODAPÉ -->
+                        <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.03);">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                <div style="color: rgba(255,255,255,0.2); font-size: 0.55rem;">
+                                    <i class="fas fa-fingerprint me-1"></i> ID: ${analysis.processId.substring(0, 12)}...
+                                </div>
+                                <div>
+                                    <span class="badge me-1" style="background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.3); font-size: 0.55rem;">
+                                        <i class="fas fa-robot me-1"></i> IA
+                                    </span>
+                                    ${data.pow_verified ? `<span class="badge" style="background: rgba(72,187,120,0.15); color: #48bb78; font-size: 0.55rem;">🔒 PoW</span>` : ''}
                                 </div>
                             </div>
                         </div>
@@ -1137,279 +759,55 @@
             </div>
         `;
         
-        // Insere o card no container
-        const existingCards = container.querySelectorAll('.analysis-card');
-        if (existingCards.length > 0) {
-            container.insertAdjacentHTML('afterbegin', cardHTML);
-        } else {
-            container.innerHTML = cardHTML;
-        }
+        // Insere no container (primeiro)
+        container.insertAdjacentHTML('afterbegin', cardHTML);
+    }
+    
+    function renderInsights(data) {
+        const insights = data.insights || {};
+        const recommendations = insights.recomendacoes || insights.recommendations || [];
         
-        // Inicializa os gráficos do card
-        setTimeout(() => {
-            initGrowthChart(`growthChart_${analysis.processId}`, growth.type, scoreMedio);
-            initRiskChart(`riskChart_${analysis.processId}`, altoRisco, medioRisco, baixoRisco);
-        }, 300);
+        if (recommendations.length === 0) return '';
+        
+        return `
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                            <i class="fas fa-lightbulb me-1" style="color: #f5a623;"></i> Insights da IA
+                        </div>
+                        ${recommendations.slice(0, 3).map(r => `
+                            <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.1); border-left: 3px solid #f5a623; color: rgba(255,255,255,0.8); font-size: 0.8rem;">
+                                ${escapeHtml(r)}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // ============================================================================
-    // 🔥 INICIALIZAÇÃO DE GRÁFICOS
+    // 🔥 HISTÓRICO
     // ============================================================================
     
-    function initGrowthChart(canvasId, growthType, scoreMedio) {
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) return;
-        
-        // 🔥 Limpa instância anterior se existir
-        if (State.chartInstances.trend) {
-            try { State.chartInstances.trend.destroy(); } catch(e) {}
-            State.chartInstances.trend = null;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-        const baseValue = 20;
-        const maxGrowth = Math.round(scoreMedio * 50);
-        const dados = [];
-        
-        for (let i = 0; i < 12; i++) {
-            let t = i / 11;
-            let valor;
-            switch(growthType) {
-                case 'exponential':
-                    valor = baseValue + (maxGrowth) * (Math.pow(2, t) - 1);
-                    break;
-                case 'quadratic':
-                    valor = baseValue + (maxGrowth) * Math.pow(t, 1.5);
-                    break;
-                case 'linear':
-                    valor = baseValue + (maxGrowth) * t;
-                    break;
-                default:
-                    valor = baseValue + (maxGrowth) * Math.log(1 + t * 2) / Math.log(3);
-            }
-            dados.push(Math.min(100, Math.round(valor)));
-        }
-        
-        State.chartInstances.trend = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: meses,
-                datasets: [{
-                    label: 'Crescimento',
-                    data: dados,
-                    borderColor: '#f5a623',
-                    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 2,
-                    pointBackgroundColor: '#f5a623'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    y: { 
-                        min: 0, 
-                        max: 100, 
-                        grid: { color: 'rgba(255,255,255,0.03)' },
-                        ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 7 } }
-                    },
-                    x: { 
-                        grid: { display: false },
-                        ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 7 } }
-                    }
-                }
-            }
-        });
-    }
-    
-    function initRiskChart(canvasId, altoRisco, medioRisco, baixoRisco) {
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) return;
-        
-        // 🔥 Limpa instância anterior se existir
-        if (State.chartInstances.risk) {
-            try { State.chartInstances.risk.destroy(); } catch(e) {}
-            State.chartInstances.risk = null;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        
-        State.chartInstances.risk = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Baixo', 'Médio', 'Alto'],
-                datasets: [{
-                    data: [baixoRisco, medioRisco, altoRisco],
-                    backgroundColor: ['#48bb78', '#f5a623', '#f56565'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { 
-                        position: 'bottom',
-                        labels: { 
-                            color: 'rgba(255,255,255,0.3)',
-                            font: { size: 7 },
-                            boxWidth: 8,
-                            padding: 3
-                        }
-                    }
-                },
-                cutout: '70%'
-            }
-        });
-    }
-
-    // ============================================================================
-    // 🔥 DETECTAR TIPO DE CRESCIMENTO
-    // ============================================================================
-    
-    function detectGrowthType(scoreMedio) {
-        if (scoreMedio > 0.85) {
-            return { type: 'exponential', icon: '🚀', label: 'Acelerado', desc: 'Crescimento rápido! Continue assim!', color: '#48bb78' };
-        } else if (scoreMedio > 0.7) {
-            return { type: 'quadratic', icon: '📈', label: 'Forte', desc: 'Tendência de aceleração!', color: '#f5a623' };
-        } else if (scoreMedio > 0.55) {
-            return { type: 'linear', icon: '➡️', label: 'Constante', desc: 'Crescimento estável e previsível.', color: '#667eea' };
-        } else {
-            return { type: 'logarithmic', icon: '🔄', label: 'Desacelerando', desc: 'Hora de inovar e reverter!', color: '#f56565' };
-        }
-    }
-
-    // ============================================================================
-    // 🔥 FUNÇÕES DE CRÉDITOS
-    // ============================================================================
-    
-    async function loadUserCredits() {
+    async function loadHistory() {
         try {
-            if (window.App && typeof window.App.getCreditsBalance === 'function') {
-                State.credits = window.App.getCreditsBalance() || 0;
-                State.isPremium = window.App.isPremium() || false;
-                State.isAdmin = window.App.state?.isAdmin || false;
-                updateCreditsDisplay();
-                return;
-            }
-            
             const token = localStorage.getItem('access_token');
-            if (!token) return;
-            
-            const response = await fetch(`${CONFIG.API_BASE}/auth/me`, {
+            const response = await fetch(`${CONFIG.API_BASE}/analyses/history`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
             if (response.ok) {
                 const data = await response.json();
-                State.credits = data.credits || 0;
-                State.isPremium = data.is_premium || false;
-                State.isAdmin = data.is_admin || false;
-                updateCreditsDisplay();
-            }
-        } catch (e) {
-            console.warn('Erro ao carregar créditos:', e);
-        }
-    }
-    
-    async function checkCreditsBeforeUpload(filesCount = 1) {
-        if (State.isAdmin) return true;
-        
-        if (State.credits < filesCount) {
-            Notify.warning(`❌ Você precisa de ${filesCount} crédito(s). Você tem apenas ${State.credits || 0}.`);
-            showCreditsModal();
-            return false;
-        }
-        return true;
-    }
-    
-    function showCreditsModal() {
-        const modal = document.getElementById('creditsModal');
-        if (modal) {
-            const bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
-            bsModal.show();
-        }
-    }
-
-    // ============================================================================
-    // 🔥 GERENCIAMENTO DE PDF (COM ANTI-CONCORRÊNCIA)
-    // ============================================================================
-    
-    let pdfGenerationLock = false;
-    
-    async function generatePDF(processId, analysisResult) {
-        console.log(`📄 [PDF] Gerando relatório para ${processId}...`);
-        Notify.info('📄 Gerando relatório PDF automático...');
-        
-        // 🔥 Dispara evento de PDF gerado
-        window.dispatchEvent(new CustomEvent('pdf:generated', {
-            detail: {
-                processId,
-                analysisResult
-            }
-        }));
-    }
-    
-    window.generatePDFReport = async function(processId) {
-        // 🔥 ANTI-CONCORRÊNCIA: Lock para evitar múltiplos cliques
-        if (pdfGenerationLock) {
-            Notify.warning('⏳ Aguarde, o PDF já está sendo gerado...');
-            return;
-        }
-        
-        const analysis = State.activeAnalyses.find(a => a.processId === processId);
-        if (!analysis || !analysis.result) {
-            Notify.warning('Aguardando conclusão da análise...');
-            return;
-        }
-        
-        pdfGenerationLock = true;
-        
-        // Feedback visual no botão
-        const buttons = document.querySelectorAll(`[onclick*="generatePDFReport('${processId}')"]`);
-        const originalTexts = [];
-        
-        buttons.forEach(btn => {
-            originalTexts.push(btn.innerHTML);
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Gerando...';
-            btn.style.opacity = '0.7';
-        });
-        
-        try {
-            await generatePDF(processId, analysis.result);
-            Notify.success('✅ PDF gerado com sucesso!');
-        } catch (error) {
-            console.error('Erro ao gerar PDF:', error);
-            Notify.error('❌ Erro ao gerar PDF');
-        } finally {
-            // Restaura botões
-            buttons.forEach((btn, index) => {
-                btn.disabled = false;
-                btn.innerHTML = originalTexts[index] || '<i class="fas fa-file-pdf me-1"></i> PDF';
-                btn.style.opacity = '1';
-            });
-            pdfGenerationLock = false;
-        }
-    };
-
-    // ============================================================================
-    // 🔥 LOAD HISTORY
-    // ============================================================================
-    
-    async function loadHistory() {
-        try {
-            const response = await fetchWithAuth(`${CONFIG.API_BASE}/analyses/history`);
-            if (response && response.ok) {
-                const data = await response.json();
-                updateHistoryUI(data.analyses || data);
+                State.historyData = data.analyses || data || [];
+                updateHistoryUI(State.historyData);
             }
         } catch (error) {
             console.error('Erro ao carregar histórico:', error);
@@ -1439,7 +837,7 @@
                         <strong>${escapeHtml(a.filename || 'Análise')}</strong>
                         <br><small style="color: rgba(255,255,255,0.3);">${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}</small>
                         <br><span class="badge ${a.status === 'completed' ? 'bg-success' : 'bg-secondary'}" style="font-size: 0.55rem;">${a.status === 'completed' ? '✅ Concluído' : a.status}</span>
-                        ${a.pow_verified ? `<span class="badge bg-info ms-1" style="font-size: 0.5rem;">🔒 PoW</span>` : ''}
+                        ${a.score ? `<span class="badge ms-1" style="background: rgba(245,166,35,0.15); color: #f5a623; font-size: 0.55rem;">${Math.round(a.score * 100)}%</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1449,66 +847,60 @@
     }
 
     // ============================================================================
-    // 🔥 DRAG & DROP (COM POLLING DE PoW)
+    // 🔥 MODAL DE CRÉDITOS
+    // ============================================================================
+    
+    function showCreditsModal() {
+        const modal = document.getElementById('creditsModal');
+        if (modal) {
+            const bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+            bsModal.show();
+        }
+    }
+
+    // ============================================================================
+    // 🔥 DRAG & DROP
     // ============================================================================
     
     function setupDragAndDrop() {
         const dropZone = DOM.get('#dropArea');
         if (!dropZone) return;
         
-        // Prepara PoW durante drag
         dropZone.addEventListener('dragenter', (e) => {
             e.preventDefault();
-            dropZone.classList.add('dragover-active');
+            dropZone.classList.add('dragover');
             
-            // 🔥 Prepara PoW durante o drag
+            // Prepara PoW durante drag
             if (window.App && typeof window.App.preparePowForUpload === 'function') {
-                window.App.preparePowForUpload().catch(err => {
-                    console.warn('Erro ao preparar PoW:', err);
-                });
+                window.App.preparePowForUpload().catch(() => {});
             }
         });
         
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropZone.classList.add('dragover-active');
+            dropZone.classList.add('dragover');
         });
         
         dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover-active');
+            dropZone.classList.remove('dragover');
         });
         
         dropZone.addEventListener('drop', async (e) => {
             e.preventDefault();
-            dropZone.classList.remove('dragover-active');
-            
-            // Verifica PoW
-            if (window.App && typeof window.App.isPowAvailable === 'function') {
-                const available = window.App.isPowAvailable();
-                if (!available) {
-                    Notify.info('Preparando proteção anti-bot...');
-                    if (typeof window.App.preparePowForUpload === 'function') {
-                        await window.App.preparePowForUpload();
-                    }
-                }
-            }
+            dropZone.classList.remove('dragover');
             
             const files = Array.from(e.dataTransfer.files);
             await processUpload(files);
         });
         
-        // Click para abrir seletor
         dropZone.addEventListener('click', () => {
-            if (window.App && typeof window.App.preparePowForUpload === 'function') {
-                window.App.preparePowForUpload();
-            }
             const fileInput = DOM.get('#fileInput');
             if (fileInput) fileInput.click();
         });
     }
 
     // ============================================================================
-    // 🔥 SHOW GPSA (EXPOSTO GLOBALMENTE)
+    // 🔥 GPSA (DETALHES DA ANÁLISE)
     // ============================================================================
     
     window.showGPSAForAnalysis = function(processId) {
@@ -1518,40 +910,118 @@
             return;
         }
         
-        let gpsaModal = document.getElementById('gpsaModal');
-        if (!gpsaModal) {
-            gpsaModal = document.createElement('div');
-            gpsaModal.id = 'gpsaModal';
-            gpsaModal.className = 'modal fade modal-lg';
-            gpsaModal.setAttribute('tabindex', '-1');
-            gpsaModal.innerHTML = `
-                <div class="modal-dialog modal-dialog-centered modal-xl">
-                    <div class="modal-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 1px solid rgba(255,255,255,0.1);">
-                        <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <h5 class="modal-title" style="color: white;">
-                                <i class="fas fa-chart-line me-2" style="color: #f5a623;"></i>
-                                GPSA - Impacto no Negócio
-                            </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body" id="gpsaModalBody">
-                            <div class="text-center py-5">
-                                <div class="spinner-border text-warning" role="status" style="color: #f5a623;">
-                                    <span class="visually-hidden">Carregando...</span>
+        const data = analysis.result;
+        const stats = data.stats || {};
+        const predictions = data.predictions_summary || {};
+        
+        const totalRegistros = stats.rows || predictions.total || 0;
+        const scoreMedio = predictions.mean || 0.65;
+        const confianca = Math.round(scoreMedio * 100);
+        const crescimento = Math.round(scoreMedio * 50);
+        const economia = Math.round(5000 * scoreMedio);
+        const retencao = Math.round(60 + scoreMedio * 30);
+        
+        // Abre modal com detalhes
+        const modalBody = DOM.get('#gpsaModalBody');
+        if (modalBody) {
+            modalBody.innerHTML = `
+                <div style="color: white; padding: 0.5rem;">
+                    <div class="row g-3">
+                        <!-- Informações Gerais -->
+                        <div class="col-12">
+                            <h6 style="color: #f5a623; font-size: 0.85rem;">
+                                <i class="fas fa-info-circle me-2"></i> Informações da Análise
+                            </h6>
+                            <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div style="color: rgba(255,255,255,0.4); font-size: 0.6rem;">Arquivo</div>
+                                        <div style="color: white; font-weight: 500;">${escapeHtml(analysis.filename || 'Desconhecido')}</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div style="color: rgba(255,255,255,0.4); font-size: 0.6rem;">Registros</div>
+                                        <div style="color: white; font-weight: 500;">${totalRegistros.toLocaleString()}</div>
+                                    </div>
+                                    <div class="col-6 mt-2">
+                                        <div style="color: rgba(255,255,255,0.4); font-size: 0.6rem;">Score Médio</div>
+                                        <div style="color: ${scoreMedio > 0.7 ? '#48bb78' : '#f5a623'}; font-weight: 500;">${Math.round(scoreMedio * 100)}%</div>
+                                    </div>
+                                    <div class="col-6 mt-2">
+                                        <div style="color: rgba(255,255,255,0.4); font-size: 0.6rem;">Confiança</div>
+                                        <div style="color: white; font-weight: 500;">${confianca}%</div>
+                                    </div>
                                 </div>
-                                <p class="mt-3" style="color: rgba(255,255,255,0.5);">Carregando análise...</p>
                             </div>
+                        </div>
+                        
+                        <!-- Métricas de Impacto -->
+                        <div class="col-12">
+                            <h6 style="color: #f5a623; font-size: 0.85rem;">
+                                <i class="fas fa-chart-line me-2"></i> Métricas de Impacto
+                            </h6>
+                            <div class="row g-2">
+                                <div class="col-4">
+                                    <div class="p-2 rounded-3 text-center" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                                        <div style="color: #48bb78; font-size: 1rem; font-weight: 600;">${crescimento}%</div>
+                                        <div style="color: rgba(255,255,255,0.3); font-size: 0.5rem;">Crescimento</div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="p-2 rounded-3 text-center" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                                        <div style="color: #f5a623; font-size: 1rem; font-weight: 600;">R$ ${economia}</div>
+                                        <div style="color: rgba(255,255,255,0.3); font-size: 0.5rem;">Economia/mês</div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="p-2 rounded-3 text-center" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                                        <div style="color: #667eea; font-size: 1rem; font-weight: 600;">${retencao}%</div>
+                                        <div style="color: rgba(255,255,255,0.3); font-size: 0.5rem;">Retenção</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Insights -->
+                        ${renderInsightsModal(data)}
+                        
+                        <div class="text-center mt-3">
+                            <button class="btn btn-outline-light btn-sm" onclick="window.closeGPSA()" style="border-radius: 50px; padding: 0.4rem 1.5rem; font-size: 0.8rem;">
+                                <i class="fas fa-times me-2"></i> Fechar
+                            </button>
                         </div>
                     </div>
                 </div>
             `;
-            document.body.appendChild(gpsaModal);
         }
         
-        gpsaVisualizer.showDashboard('gpsaModalBody', analysis.result);
-        const modal = new bootstrap.Modal(gpsaModal);
-        modal.show();
+        const modal = document.getElementById('gpsaModal');
+        if (modal) {
+            const bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+            bsModal.show();
+        }
     };
+    
+    function renderInsightsModal(data) {
+        const insights = data.insights || {};
+        const recommendations = insights.recomendacoes || insights.recommendations || [];
+        
+        if (recommendations.length === 0) return '';
+        
+        return `
+            <div class="col-12">
+                <h6 style="color: #f5a623; font-size: 0.85rem;">
+                    <i class="fas fa-lightbulb me-2"></i> Insights da IA
+                </h6>
+                <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
+                    ${recommendations.slice(0, 3).map(r => `
+                        <div class="mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.1); border-left: 3px solid #f5a623; color: rgba(255,255,255,0.8); font-size: 0.8rem;">
+                            ${escapeHtml(r)}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
     
     window.closeGPSA = function() {
         const modal = document.getElementById('gpsaModal');
@@ -1559,30 +1029,46 @@
             const bsModal = bootstrap.Modal.getInstance(modal);
             if (bsModal) bsModal.hide();
         }
-        gpsaVisualizer.hide();
     };
 
     // ============================================================================
-    // 🔥 ESCUTA DE EVENTOS (CICLO DE VIDA)
+    // 🔥 PDF (SIMPLIFICADO)
     // ============================================================================
     
-    // 🔥 1. GATILHO PRINCIPAL: 'app:ready'
-    window.addEventListener('app:ready', function(event) {
-        console.log('🚀 [Dashboard] Sessão validada! Ativando esteira analítica...');
+    window.generatePDFReport = async function(processId) {
+        const analysis = State.activeAnalyses.find(a => a.processId === processId);
+        if (!analysis || !analysis.result) {
+            Notify.warning('Aguardando conclusão da análise...');
+            return;
+        }
         
-        const detail = event.detail || {};
-        State.currentUser = detail.user || null;
-        State.isAdmin = detail.isAdmin || false;
-        State.isPremium = detail.isPremium || false;
-        State.credits = detail.credits || 0;
+        Notify.info('📄 Gerando relatório PDF...');
         
-        // Atualiza UI
-        updateCreditsDisplay();
+        // Dispara evento para o app.js processar
+        window.dispatchEvent(new CustomEvent('pdf:generate', {
+            detail: {
+                processId,
+                analysis: analysis.result
+            }
+        }));
+    };
+
+    // ============================================================================
+    // 🔥 EVENTOS E INICIALIZAÇÃO
+    // ============================================================================
+    
+    function initialize() {
+        if (State._initialized) return;
         
-        // Configura Drag & Drop
+        console.log('🚀 [Dashboard V6.0] Inicializando...');
+        
+        // Sincroniza estado
+        AppState.sync();
+        
+        // Setup Drag & Drop
         setupDragAndDrop();
         
-        // Configura form de upload
+        // Setup upload form
         const uploadForm = DOM.get('#uploadForm');
         if (uploadForm) {
             uploadForm.addEventListener('submit', async (e) => {
@@ -1596,7 +1082,7 @@
             });
         }
         
-        // Configura file input
+        // Setup file input
         const fileInput = DOM.get('#fileInput');
         if (fileInput) {
             fileInput.setAttribute('multiple', 'multiple');
@@ -1607,80 +1093,15 @@
             });
         }
         
-        // Carrega dados iniciais
-        loadUserCredits();
+        // Carrega dados
         loadHistory();
+        
+        // Inicia polling de créditos
+        setInterval(() => AppState.sync(), CONFIG.CREDITS_CHECK_INTERVAL);
         
         State._initialized = true;
-        console.log('✅ [Dashboard] Inicializado com sucesso!');
-    });
-    
-    // 🔥 2. ESCUTA DE EMERGÊNCIA: 'auth:unauthorized'
-    window.addEventListener('auth:unauthorized', function() {
-        console.log('🧹 [Dashboard] Limpando recursos em desautenticação...');
-        
-        // Limpa gráficos
-        Object.keys(State.chartInstances).forEach(key => {
-            if (State.chartInstances[key]) {
-                try { State.chartInstances[key].destroy(); } catch(e) {}
-                State.chartInstances[key] = null;
-            }
-        });
-        
-        // Limpa polling intervals
-        State.pollingIntervals.forEach(clearInterval);
-        State.pollingIntervals = [];
-        
-        // Limpa estado
-        State.activeAnalyses = [];
-        State._initialized = false;
-        
-        // Limpa cache DOM
-        DOM.clearCache();
-        
-        Notify.info('Sessão expirada. Faça login novamente.', 3000);
-    });
-    
-    // 🔥 3. ESCUTA DE SUCESSO: 'analysis:success'
-    window.addEventListener('analysis:success', function(event) {
-        console.log('✅ [Dashboard] Análise concluída:', event.detail);
-        
-        const detail = event.detail || {};
-        const analysisData = {
-            processId: detail.processId,
-            filename: detail.filename,
-            status: 'completed',
-            result: detail.result
-        };
-        
-        // Adiciona se não existir
-        if (!State.activeAnalyses.find(a => a.processId === detail.processId)) {
-            State.activeAnalyses.push(analysisData);
-        }
-        
-        // Atualiza UI
-        renderAnalysisCard(analysisData);
-        loadHistory();
-        
-        // Atualiza créditos
-        if (detail.result?.user_credits !== undefined) {
-            State.credits = detail.result.user_credits;
-            updateCreditsDisplay();
-        }
-    });
-    
-    // 🔥 4. ESCUTA DE CRÉDITOS: 'credits:updated'
-    window.addEventListener('credits:updated', function(event) {
-        if (event.detail) {
-            State.credits = event.detail.credits || 0;
-            State.isPremium = event.detail.isPremium || false;
-            updateCreditsDisplay();
-        }
-    });
-
-    // ============================================================================
-    // 🔥 FUNÇÕES AUXILIARES DE UI
-    // ============================================================================
+        console.log('✅ [Dashboard V6.0] Inicializado com sucesso!');
+    }
     
     function showFilePreview(files) {
         const container = DOM.get('#filePreviewContainer');
@@ -1720,49 +1141,110 @@
                 container.innerHTML = '';
             });
         }
-    }
-    
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        
+        // Habilita botão de upload
+        const uploadBtn = DOM.get('#uploadButton');
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = `<i class="fas fa-play-circle me-2"></i> Iniciar Análise <span class="badge ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>`;
+        }
     }
 
     // ============================================================================
-    // 🔥 INJEÇÃO DE ESTILOS ADICIONAIS
+    // 🔥 ESCUTA DE EVENTOS
+    // ============================================================================
+    
+    // Evento principal do app
+    document.addEventListener('app:ready', function(event) {
+        console.log('📢 [Dashboard] app:ready recebido');
+        initialize();
+    });
+    
+    // Evento de autenticação
+    document.addEventListener('authReady', function(event) {
+        console.log('📢 [Dashboard] authReady recebido');
+        if (event.detail?.isAuthenticated) {
+            setTimeout(initialize, 300);
+        }
+    });
+    
+    // Atualização de créditos
+    document.addEventListener('creditsUpdated', function(event) {
+        AppState.sync();
+    });
+    
+    // Análise concluída
+    document.addEventListener('analysis:success', function(event) {
+        const detail = event.detail || {};
+        const analysisData = {
+            processId: detail.processId,
+            filename: detail.filename,
+            status: 'completed',
+            result: detail.result
+        };
+        
+        if (!State.activeAnalyses.find(a => a.processId === detail.processId)) {
+            State.activeAnalyses.push(analysisData);
+        }
+        
+        renderAnalysisCard(analysisData);
+        loadHistory();
+        
+        // Atualiza créditos
+        if (detail.result?.user_credits !== undefined) {
+            State.credits = detail.result.user_credits;
+            AppState.sync();
+        }
+    });
+    
+    // Desautenticação
+    document.addEventListener('auth:unauthorized', function() {
+        console.log('🧹 [Dashboard] Limpando recursos...');
+        
+        // Limpa polling
+        State.pollingIntervals.forEach(clearInterval);
+        State.pollingIntervals = [];
+        State.activeAnalyses = [];
+        State._initialized = false;
+        
+        DOM.clearCache();
+    });
+    
+    // PDF gerado
+    document.addEventListener('pdf:generated', function(event) {
+        if (event.detail) {
+            Notify.success('✅ PDF gerado com sucesso!');
+        }
+    });
+    
+    // PDF error
+    document.addEventListener('pdf:error', function(event) {
+        Notify.error('❌ Erro ao gerar PDF: ' + (event.detail?.message || ''));
+    });
+
+    // ============================================================================
+    // 🔥 ESTILOS ADICIONAIS
     // ============================================================================
     
     (function injectStyles() {
-        if (document.getElementById('dashboardV55Styles')) return;
+        if (document.getElementById('dashboardV60Styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'dashboardV55Styles';
+        style.id = 'dashboardV60Styles';
         style.textContent = `
             .analysis-card {
-                animation: fadeInUp 0.6s ease-out;
+                animation: fadeInUp 0.5s ease-out;
             }
             
             @keyframes fadeInUp {
-                from { opacity: 0; transform: translateY(30px); }
+                from { opacity: 0; transform: translateY(20px); }
                 to { opacity: 1; transform: translateY(0); }
             }
             
-            .gpsa-dashboard {
-                animation: fadeIn 0.5s ease-out;
-            }
-            
-            @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-            }
-            
-            .impact-card {
-                transition: all 0.3s ease;
-            }
-            
-            .impact-card:hover {
-                transform: translateY(-3px);
-                background: rgba(0,0,0,0.3) !important;
+            .dragover {
+                border-color: #48bb78 !important;
+                background: rgba(72, 187, 120, 0.15) !important;
+                transform: scale(1.02);
             }
             
             .btn-pdf:hover {
@@ -1777,41 +1259,87 @@
                 transform: translateY(-2px);
             }
             
-            .progress {
-                border-radius: 10px;
-                overflow: hidden;
+            .timeline {
+                position: relative;
+                padding-left: 1.5rem;
+                max-height: 350px;
+                overflow-y: auto;
             }
             
-            .progress-bar {
-                transition: width 1s ease-out;
+            .timeline::-webkit-scrollbar {
+                width: 4px;
+            }
+            
+            .timeline::-webkit-scrollbar-track {
+                background: rgba(255,255,255,0.05);
+                border-radius: 4px;
+            }
+            
+            .timeline::-webkit-scrollbar-thumb {
+                background: rgba(255,255,255,0.2);
+                border-radius: 4px;
+            }
+            
+            .timeline::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+                border-radius: 2px;
+            }
+            
+            .timeline-item {
+                position: relative;
+                padding-bottom: 1.2rem;
+            }
+            
+            .timeline-item:last-child {
+                padding-bottom: 0;
+            }
+            
+            .timeline-marker {
+                position: absolute;
+                left: -1.5rem;
+                top: 0.25rem;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #667eea;
+                border: 2px solid white;
+                box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+            }
+            
+            .timeline-marker.bg-success {
+                background: #48bb78;
+                box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+            }
+            
+            .timeline-content {
+                padding-left: 0.5rem;
+                color: rgba(255,255,255,0.85);
+            }
+            
+            .timeline-content strong {
+                color: #f5a623;
             }
             
             .modal-content {
                 border-radius: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                border: 1px solid rgba(255,255,255,0.1) !important;
+                color: white;
             }
             
-            .gpsa-score-ring {
-                transition: stroke-dashoffset 2.5s ease-out;
-            }
-            
-            .dragover-active {
-                border-color: #48bb78 !important;
-                background: rgba(72, 187, 120, 0.15) !important;
-                transform: scale(1.02);
-            }
-            
-            .custom-notification {
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            }
-            
-            @keyframes slideInRight {
-                from { opacity: 0; transform: translateX(30px); }
-                to { opacity: 1; transform: translateX(0); }
+            .modal-content .btn-close {
+                filter: brightness(0) invert(1);
             }
         `;
         document.head.appendChild(style);
     })();
 
-    console.log('📦 [Dashboard] Módulo V5.5 carregado e aguardando eventos.');
+    console.log('✅ [Dashboard V6.0] Módulo carregado e aguardando eventos.');
 
 })();
