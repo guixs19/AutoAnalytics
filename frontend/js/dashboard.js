@@ -1,19 +1,10 @@
-// frontend/js/dashboard.js - VERSÃO V6.1 - PoW APENAS NO UPLOAD
-/**
- * AutoAnalytics - Módulo de Dashboard para Mecânicos
- * 
- * 🏗️ ARQUITETURA V6.1:
- * 1. 🔥 Sincronização com window.__APP_STATE (v5.4+)
- * 2. 🔥 PoW ATIVADO APENAS NO UPLOAD (não em background)
- * 3. 🔥 Foco em métricas e dados, sem gráficos desnecessários
- * 4. 🔥 Cards informativos com dados relevantes
- * 5. 🔥 UI limpa e profissional
- */
+// frontend/js/dashboard.js - VERSÃO CORRIGIDA V6.2 (COM FALLBACK INTELIGENTE)
+// 🔥 CORREÇÃO: Adicionada trava no startFallback para evitar loop infinito
 
 (function() {
     'use strict';
 
-    console.log('📦 [Dashboard V6.1] Módulo carregado (PoW sob demanda).');
+    console.log('📦 [Dashboard V6.2] Módulo carregado (PoW sob demanda).');
 
     // ============================================================================
     // 🔥 CONFIGURAÇÕES
@@ -27,8 +18,11 @@
         MAX_POLLING_ATTEMPTS: 60,
         CREDITS_CHECK_INTERVAL: 30000,
         MAX_CREDITS_BALANCE: 3,
-        // 🔥 PoW só no upload
-        POW_ENABLED: true
+        POW_ENABLED: true,
+        // 🔥 CONFIGURAÇÕES DO FALLBACK
+        FALLBACK_INTERVAL: 300,
+        MAX_FALLBACK_ATTEMPTS: 20,
+        APP_READY_TIMEOUT: 5000
     };
 
     // ============================================================================
@@ -48,7 +42,11 @@
         eventListeners: [],
         _initialized: false,
         _appStateVersion: null,
-        historyData: []
+        historyData: [],
+        // 🔥 CONTROLE DE FALLBACK
+        _fallbackActive: false,
+        _fallbackAttempts: 0,
+        _redirected: false
     };
 
     // ============================================================================
@@ -318,16 +316,14 @@
      * 🔥 PREPARA PoW APENAS QUANDO O USUÁRIO VAI FAZER UPLOAD
      */
     async function preparePowForUpload() {
-        // Verifica se PoW está disponível
         if (!window.powClient) {
             console.log('⏳ PoW client não disponível, prosseguindo sem proteção');
             return true;
         }
 
-        // Verifica autenticação
         if (!window.powClient._isAuthenticated()) {
             console.log('⏳ PoW: aguardando autenticação...');
-            return true; // Continua sem PoW se não autenticado
+            return true;
         }
 
         try {
@@ -339,11 +335,11 @@
                 return true;
             } else {
                 console.warn('⚠️ Não foi possível preparar PoW, prosseguindo sem proteção');
-                return true; // Continua mesmo sem PoW (fallback)
+                return true;
             }
         } catch (error) {
             console.warn('⚠️ Erro ao preparar PoW:', error.message);
-            return true; // Continua sem PoW em caso de erro
+            return true;
         }
     }
 
@@ -358,7 +354,6 @@
             return;
         }
         
-        // Verifica tamanho
         for (const file of files) {
             if (file.size > CONFIG.MAX_FILE_SIZE_KB * 1024) {
                 Notify.error(`❌ ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB`);
@@ -366,7 +361,6 @@
             }
         }
         
-        // Verifica créditos
         if (!State.isAdmin) {
             if (!State.isPremium && State.credits < files.length) {
                 Notify.warning(`❌ Você precisa de ${files.length} crédito(s). Você tem apenas ${State.credits || 0}.`);
@@ -380,11 +374,9 @@
             }
         }
         
-        // Inicia loading
         Loading.show('Iniciando análise...', `Preparando ${files.length} arquivo(s)`);
         Loading.update(5);
         
-        // 🔥 PREPARA PoW APENAS AGORA (NO MOMENTO DO UPLOAD)
         if (CONFIG.POW_ENABLED) {
             await preparePowForUpload();
         }
@@ -402,33 +394,24 @@
             let response;
             let powSolution = null;
             
-            // 🔥 TENTA UPLOAD COM PoW (SE DISPONÍVEL)
             if (CONFIG.POW_ENABLED && window.powClient && window.powClient._isAuthenticated()) {
                 try {
-                    // 🔥 Obtém solução PoW e faz upload diretamente
                     powSolution = await window.powClient.getSolutionForUpload();
                     
                     if (powSolution && window.powClient.uploadWithPow) {
-                        // Usa uploadWithPow do cliente
-                        const data = await window.powClient.uploadWithPow(files[0]); // Suporta múltiplos?
-                        
-                        // Se for múltiplos, precisamos adaptar
                         if (files.length === 1) {
                             const result = await window.powClient.uploadWithPow(files[0]);
                             handleUploadResponse({ processed_files: [{ process_id: result.process_id, filename: result.filename }] }, files);
                             Loading.update(10, 'Analisando dados...');
                             return;
                         } else {
-                            // Fallback para múltiplos arquivos (usa fetch manual)
                             response = await fetchWithPow(formData, powSolution, token);
                         }
                     } else {
-                        // Fallback: fetch manual com headers
                         response = await fetchWithPow(formData, powSolution, token);
                     }
                 } catch (powError) {
                     console.warn('⚠️ PoW falhou, tentando sem proteção:', powError.message);
-                    // Fallback: tenta sem PoW
                     response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${token}` },
@@ -436,7 +419,6 @@
                     });
                 }
             } else {
-                // Sem PoW disponível
                 response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -444,18 +426,15 @@
                 });
             }
             
-            // Se não tivermos resposta ainda (caso do fetchWithPow)
             if (!response) {
                 Notify.error('Erro no upload');
                 Loading.hide();
                 return;
             }
             
-            // Trata PoW expirado (428)
             if (response.status === 428) {
                 Notify.info('Proteção anti-bot: recalculando...');
                 
-                // Tenta novamente com nova solução
                 if (window.powClient) {
                     try {
                         const newSolution = await window.powClient.getSolutionForUpload();
@@ -473,7 +452,6 @@
                     }
                 }
                 
-                // Último fallback: tenta sem PoW
                 const fallbackResponse = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -508,16 +486,12 @@
         }
     }
     
-    /**
-     * 🔥 FETCH COM HEADERS PoW (X-PoW-Challenge e X-PoW-Nonce)
-     */
     async function fetchWithPow(formData, solution, token) {
         const headers = {
             'Authorization': `Bearer ${token}`
         };
         
         if (solution && solution.prefix && solution.nonce) {
-            // 🔥 HEADERS CORRETOS (ALINHADOS COM pow_routes.py)
             headers['X-PoW-Challenge'] = solution.prefix;
             headers['X-PoW-Nonce'] = solution.nonce;
             console.log(`🔐 Headers PoW: X-PoW-Challenge=${solution.prefix.substring(0, 8)}..., X-PoW-Nonce=${solution.nonce.substring(0, 8)}...`);
@@ -929,7 +903,6 @@
         dropZone.addEventListener('dragenter', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
-            // 🔥 NÃO prepara PoW aqui - só no upload
         });
         
         dropZone.addEventListener('dragover', (e) => {
@@ -1105,13 +1078,156 @@
     };
 
     // ============================================================================
+    // 🔥 FALLBACK INTELIGENTE (CORRIGIDO)
+    // ============================================================================
+    
+    function startFallback() {
+        // 🔥 PREVENÇÃO: Se já houve redirecionamento, NÃO continua
+        if (State._redirected) {
+            console.log('🛑 Fallback interrompido: redirecionamento já ocorreu');
+            return;
+        }
+        
+        // 🔥 PREVENÇÃO: Se o App já está inicializado, NÃO continua
+        if (window._appReadyFired || window._appInitialized) {
+            console.log('✅ App já inicializado, fallback desnecessário');
+            return;
+        }
+        
+        // 🔥 PREVENÇÃO: Verifica autenticação real
+        const isReallyAuthenticated = window.appAuth && typeof window.appAuth.isAuthenticated === 'function' 
+            ? window.appAuth.isAuthenticated() 
+            : !!localStorage.getItem('access_token');
+        
+        if (!isReallyAuthenticated) {
+            console.log('🔒 Usuário não autenticado, fallback interrompido');
+            State._redirected = true;
+            return;
+        }
+        
+        if (State._fallbackActive) {
+            console.log('⏳ Fallback já em execução');
+            return;
+        }
+        
+        State._fallbackActive = true;
+        State._fallbackAttempts = 0;
+        
+        console.log('🔄 Iniciando fallback inteligente...');
+        
+        const fallbackTimer = setInterval(function() {
+            State._fallbackAttempts++;
+            
+            // 🔥 VERIFICAÇÕES DE SEGURANÇA A CADA ITERAÇÃO
+            
+            // 1. Se o App já está pronto, para o fallback
+            if (window._appReadyFired || window._appInitialized) {
+                console.log('✅ App detectado como pronto, fallback concluído');
+                clearInterval(fallbackTimer);
+                State._fallbackActive = false;
+                return;
+            }
+            
+            // 2. Se o dashboard já foi inicializado, para o fallback
+            if (State._initialized) {
+                console.log('✅ Dashboard já inicializado, fallback concluído');
+                clearInterval(fallbackTimer);
+                State._fallbackActive = false;
+                return;
+            }
+            
+            // 3. Se perdeu autenticação, para o fallback
+            const stillAuthenticated = window.appAuth && typeof window.appAuth.isAuthenticated === 'function' 
+                ? window.appAuth.isAuthenticated() 
+                : !!localStorage.getItem('access_token');
+            
+            if (!stillAuthenticated) {
+                console.log('🔒 Autenticação perdida, fallback interrompido');
+                clearInterval(fallbackTimer);
+                State._fallbackActive = false;
+                State._redirected = true;
+                return;
+            }
+            
+            // 4. Verifica se o App existe
+            if (typeof window.App !== 'undefined' && window.App !== null) {
+                console.log(`🔄 Tentativa ${State._fallbackAttempts}: App existe, tentando inicializar...`);
+                
+                try {
+                    // Verifica se o App já está inicializado via método
+                    if (typeof window.App.isInitialized === 'function' && window.App.isInitialized()) {
+                        console.log('✅ App.isInitialized() retornou true');
+                        clearInterval(fallbackTimer);
+                        State._fallbackActive = false;
+                        // Dispara evento de ready manualmente
+                        window.dispatchEvent(new CustomEvent('app:ready', { 
+                            detail: { isReady: true, fromFallback: true }
+                        }));
+                        return;
+                    }
+                    
+                    // Tenta inicializar o App
+                    if (typeof window.App.init === 'function') {
+                        console.log('🔄 Chamando window.App.init()...');
+                        window.App.init();
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro ao tentar inicializar App via fallback:', e.message);
+                }
+            }
+            
+            // 5. Verifica se o auth está pronto
+            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                try {
+                    if (window.appAuth.isAuthenticated()) {
+                        // Dispara evento authReady se não tiver sido disparado
+                        if (!window._authReadyFired) {
+                            console.log('🔄 Disparando authReady via fallback');
+                            window._authReadyFired = true;
+                            window.dispatchEvent(new CustomEvent('authReady', { 
+                                detail: { isAuthenticated: true, fromFallback: true }
+                            }));
+                        }
+                    }
+                } catch (e) {
+                    // Ignora
+                }
+            }
+            
+            // 6. Timeout - máximo de tentativas
+            if (State._fallbackAttempts >= CONFIG.MAX_FALLBACK_ATTEMPTS) {
+                console.warn(`⚠️ Fallback: timeout após ${CONFIG.MAX_FALLBACK_ATTEMPTS} tentativas`);
+                clearInterval(fallbackTimer);
+                State._fallbackActive = false;
+                
+                // Última tentativa: verifica se o App está disponível mesmo sem ready
+                if (typeof window.App !== 'undefined' && window.App !== null) {
+                    try {
+                        if (typeof window.App.init === 'function') {
+                            window.App.init();
+                        }
+                        // Aguarda 1s e tenta novamente
+                        setTimeout(function() {
+                            if (!State._initialized && window._appReadyFired) {
+                                initialize();
+                            }
+                        }, 1000);
+                    } catch (e) {
+                        console.error('Erro na última tentativa do fallback:', e);
+                    }
+                }
+            }
+        }, CONFIG.FALLBACK_INTERVAL);
+    }
+
+    // ============================================================================
     // 🔥 EVENTOS E INICIALIZAÇÃO
     // ============================================================================
     
     function initialize() {
         if (State._initialized) return;
         
-        console.log('🚀 [Dashboard V6.1] Inicializando...');
+        console.log('🚀 [Dashboard V6.2] Inicializando...');
         
         AppState.sync();
         setupDragAndDrop();
@@ -1143,7 +1259,7 @@
         setInterval(() => AppState.sync(), CONFIG.CREDITS_CHECK_INTERVAL);
         
         State._initialized = true;
-        console.log('✅ [Dashboard V6.1] Inicializado com sucesso (PoW sob demanda)!');
+        console.log('✅ [Dashboard V6.2] Inicializado com sucesso (PoW sob demanda)!');
     }
     
     function showFilePreview(files) {
@@ -1198,6 +1314,7 @@
     
     document.addEventListener('app:ready', function(event) {
         console.log('📢 [Dashboard] app:ready recebido');
+        State._fallbackActive = false; // Para o fallback
         initialize();
     });
     
@@ -1240,6 +1357,8 @@
         State.pollingIntervals = [];
         State.activeAnalyses = [];
         State._initialized = false;
+        State._fallbackActive = false;
+        State._redirected = true;
         DOM.clearCache();
     });
     
@@ -1254,14 +1373,43 @@
     });
 
     // ============================================================================
+    // 🔥 DOM CONTENT LOADED - INICIA FALLBACK
+    // ============================================================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Verifica se já está inicializado
+        if (State._initialized || window._appReadyFired) {
+            console.log('✅ Dashboard já inicializado ou App pronto');
+            return;
+        }
+        
+        // Verifica autenticação
+        const token = localStorage.getItem('access_token');
+        const isAuth = token && token !== 'undefined' && token !== 'null';
+        
+        if (!isAuth) {
+            console.log('🔒 Usuário não autenticado, aguardando login...');
+            return;
+        }
+        
+        // Aguarda um pouco e inicia fallback se necessário
+        setTimeout(function() {
+            if (!State._initialized && !window._appReadyFired) {
+                console.log('🔄 Iniciando fallback para inicialização do dashboard...');
+                startFallback();
+            }
+        }, 1000);
+    });
+
+    // ============================================================================
     // 🔥 ESTILOS ADICIONAIS
     // ============================================================================
     
     (function injectStyles() {
-        if (document.getElementById('dashboardV61Styles')) return;
+        if (document.getElementById('dashboardV62Styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'dashboardV61Styles';
+        style.id = 'dashboardV62Styles';
         style.textContent = `
             .analysis-card { animation: fadeInUp 0.5s ease-out; }
             @keyframes fadeInUp {
@@ -1335,6 +1483,6 @@
         document.head.appendChild(style);
     })();
 
-    console.log('✅ [Dashboard V6.1] Módulo carregado (PoW apenas no upload).');
+    console.log('✅ [Dashboard V6.2] Módulo carregado (PoW apenas no upload, fallback inteligente).');
 
 })();

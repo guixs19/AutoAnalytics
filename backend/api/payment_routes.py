@@ -1049,7 +1049,114 @@ async def process_payment_webhook(payment_id: str):
         db.close()
         logger.info(f"✅ Processamento do webhook {payment_id} finalizado")
 
+# backend/api/payment_routes.py - ADICIONAR ESTA ROTA
 
+@router.get("/premium-status", response_model=None)
+async def get_premium_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 Retorna status premium do usuário (compatível com payment.js)
+    Esta rota é chamada pelo loadPremiumStatus() no frontend
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verifica status premium
+    premium_status = crud.check_premium_status(db, user.id)
+    is_premium = premium_status.get("is_premium", False)
+    days_left = premium_status.get("days_left", 0)
+    expires_at = premium_status.get("expires_at")
+    activated_at = premium_status.get("activated_at")
+    
+    # Verifica se pode receber crédito hoje
+    can_receive = crud.can_receive_daily_credit(db, user.id) if is_premium else {"can_receive": False}
+    
+    # Verifica se já recebeu hoje
+    received_today = False
+    if is_premium:
+        today = _today_brasil()
+        daily_log = db.query(DailyCreditLog).filter(
+            DailyCreditLog.user_id == user.id,
+            DailyCreditLog.date == today,
+            DailyCreditLog.source == "premium_daily"
+        ).first()
+        received_today = daily_log is not None
+    
+    # 🔥 Verifica se é admin
+    if user.is_admin:
+        return sanitize_response({
+            "is_premium": True,
+            "days_left": 999,
+            "is_admin": True,
+            "credits_balance": "∞",
+            "max_credits_balance": MAX_CREDITS_PREMIUM,
+            "plan": "admin",
+            "can_receive_today": False,
+            "received_today": True,
+            "promotional_price_locked": user.promotional_price_locked,
+            "promotional_price": user.promotional_price,
+            "is_vitalicio": user.promotional_price_locked,
+            "next_credit_date": None,
+            "activated_at": None,
+            "expires_at": None,
+            "days_used": 0
+        })
+    
+    # 🔥 Verifica se é gratuito
+    if not is_premium:
+        return sanitize_response({
+            "is_premium": False,
+            "days_left": 0,
+            "is_admin": False,
+            "credits_balance": user.credits or 0,
+            "max_credits_balance": MAX_CREDITS_PREMIUM,
+            "plan": "free",
+            "can_receive_today": False,
+            "received_today": False,
+            "promotional_price_locked": user.promotional_price_locked,
+            "promotional_price": user.promotional_price,
+            "is_vitalicio": user.promotional_price_locked,
+            "next_credit_date": None,
+            "activated_at": None,
+            "expires_at": None,
+            "days_used": 0
+        })
+    
+    # 🔥 Usuário premium
+    # Calcular dias usados
+    days_used = 0
+    if activated_at:
+        days_used = (date.today() - activated_at.date()).days
+        days_used = max(0, min(DAYS_PREMIUM, days_used))
+    
+    # Próximo crédito
+    next_credit_date = None
+    if is_premium and not received_today and can_receive.get("can_receive", False):
+        next_credit_date = _today_brasil().isoformat()
+    elif is_premium and received_today:
+        next_credit_date = (_today_brasil() + timedelta(days=1)).isoformat()
+    
+    return sanitize_response({
+        "is_premium": True,
+        "days_left": max(0, days_left),
+        "is_admin": False,
+        "credits_balance": user.credits or 0,
+        "max_credits_balance": MAX_CREDITS_PREMIUM,
+        "plan": "premium_mensal",
+        "can_receive_today": can_receive.get("can_receive", False),
+        "received_today": received_today,
+        "promotional_price_locked": user.promotional_price_locked,
+        "promotional_price": user.promotional_price,
+        "is_vitalicio": user.promotional_price_locked,
+        "next_credit_date": next_credit_date,
+        "activated_at": activated_at.isoformat() if activated_at else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "days_used": days_used,
+        "total_days": DAYS_PREMIUM
+    })
 print("✅ payment_routes.py carregado - SISTEMA DE PREÇO FUNDADOR VITALÍCIO")
 print(f"   💰 Preço de fundador: R$ {PROMOTIONAL_PRICE} (vitalício)")
 print(f"   💰 Preço cheio: R$ {REGULAR_PRICE}")
