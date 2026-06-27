@@ -1,20 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO V6.0 - FOCADO EM DADOS E MÉTRICAS
+// frontend/js/dashboard.js - VERSÃO V6.1 - PoW APENAS NO UPLOAD
 /**
  * AutoAnalytics - Módulo de Dashboard para Mecânicos
  * 
- * 🏗️ ARQUITETURA V6.0:
+ * 🏗️ ARQUITETURA V6.1:
  * 1. 🔥 Sincronização com window.__APP_STATE (v5.4+)
- * 2. 🔥 Foco em métricas e dados, sem gráficos desnecessários
- * 3. 🔥 Cards informativos com dados relevantes
- * 4. 🔥 Sistema de análises com histórico
- * 5. 🔥 Exportação de relatórios
- * 6. 🔥 UI limpa e profissional
+ * 2. 🔥 PoW ATIVADO APENAS NO UPLOAD (não em background)
+ * 3. 🔥 Foco em métricas e dados, sem gráficos desnecessários
+ * 4. 🔥 Cards informativos com dados relevantes
+ * 5. 🔥 UI limpa e profissional
  */
 
 (function() {
     'use strict';
 
-    console.log('📦 [Dashboard V6.0] Módulo carregado.');
+    console.log('📦 [Dashboard V6.1] Módulo carregado (PoW sob demanda).');
 
     // ============================================================================
     // 🔥 CONFIGURAÇÕES
@@ -27,7 +26,9 @@
         POLLING_INTERVAL: 2000,
         MAX_POLLING_ATTEMPTS: 60,
         CREDITS_CHECK_INTERVAL: 30000,
-        MAX_CREDITS_BALANCE: 3
+        MAX_CREDITS_BALANCE: 3,
+        // 🔥 PoW só no upload
+        POW_ENABLED: true
     };
 
     // ============================================================================
@@ -87,12 +88,10 @@
     
     const AppState = {
         get() {
-            // Prioridade 1: window.__APP_STATE
             if (window.__APP_STATE && typeof window.__APP_STATE === 'object') {
                 return window.__APP_STATE;
             }
             
-            // Prioridade 2: App global
             if (window.App && typeof window.App === 'object') {
                 const state = window.App.state || {};
                 return {
@@ -106,7 +105,6 @@
                 };
             }
             
-            // Fallback: localStorage
             try {
                 const token = localStorage.getItem('access_token');
                 const userStr = localStorage.getItem('user_data');
@@ -150,15 +148,11 @@
         updateUI() {
             const display = this.getCreditsDisplay();
             
-            // Atualiza créditos
             ['#creditsDisplay', '#creditsCount', '#uploadCredits', '#modalCreditsCount'].forEach(selector => {
                 DOM.updateText(selector, display);
             });
             
-            // Atualiza nome do usuário
             DOM.updateText('#userName', State.userName);
-            
-            // Atualiza status premium
             this.updatePremiumStatusUI();
         },
         
@@ -225,7 +219,6 @@
                 return;
             }
             
-            // Fallback visual
             const colors = {
                 success: '#48bb78',
                 error: '#f56565',
@@ -244,9 +237,7 @@
                 font-family: 'Inter', sans-serif;
                 animation: slideInRight 0.3s ease;
             `;
-            notification.innerHTML = `
-                <span style="color: #2d3748;">${message}</span>
-            `;
+            notification.innerHTML = `<span style="color: #2d3748;">${message}</span>`;
             document.body.appendChild(notification);
             
             setTimeout(() => {
@@ -279,7 +270,6 @@
             if (progress) progress.style.width = '0%';
             DOM.updateText('#loadingPercent', '0%');
             
-            // Reset steps
             const steps = DOM.getAll('.loading-step');
             steps.forEach((step, index) => {
                 step.classList.remove('active', 'done');
@@ -300,7 +290,6 @@
             
             if (message) DOM.updateText('#loadingTitle', message);
             
-            // Update steps
             const steps = DOM.getAll('.loading-step');
             if (steps.length > 0) {
                 const activeStep = Math.floor((clampedPercent / 100) * steps.length);
@@ -322,9 +311,42 @@
     };
 
     // ============================================================================
-    // 🔥 FUNÇÕES DE UPLOAD E PROCESSAMENTO
+    // 🔥 FUNÇÕES DE UPLOAD E PROCESSAMENTO (COM PoW SOB DEMANDA)
     // ============================================================================
     
+    /**
+     * 🔥 PREPARA PoW APENAS QUANDO O USUÁRIO VAI FAZER UPLOAD
+     */
+    async function preparePowForUpload() {
+        // Verifica se PoW está disponível
+        if (!window.powClient) {
+            console.log('⏳ PoW client não disponível, prosseguindo sem proteção');
+            return true;
+        }
+
+        // Verifica autenticação
+        if (!window.powClient._isAuthenticated()) {
+            console.log('⏳ PoW: aguardando autenticação...');
+            return true; // Continua sem PoW se não autenticado
+        }
+
+        try {
+            console.log('🔄 Preparando PoW para upload...');
+            const ready = await window.powClient.prepareForUpload();
+            
+            if (ready) {
+                console.log('✅ PoW pronto para upload');
+                return true;
+            } else {
+                console.warn('⚠️ Não foi possível preparar PoW, prosseguindo sem proteção');
+                return true; // Continua mesmo sem PoW (fallback)
+            }
+        } catch (error) {
+            console.warn('⚠️ Erro ao preparar PoW:', error.message);
+            return true; // Continua sem PoW em caso de erro
+        }
+    }
+
     async function processUpload(files) {
         if (!files || files.length === 0) {
             Notify.warning('Selecione pelo menos um arquivo');
@@ -344,15 +366,13 @@
             }
         }
         
-        // Verifica créditos (apenas se não for admin)
+        // Verifica créditos
         if (!State.isAdmin) {
-            // Se não for premium, verifica créditos
             if (!State.isPremium && State.credits < files.length) {
                 Notify.warning(`❌ Você precisa de ${files.length} crédito(s). Você tem apenas ${State.credits || 0}.`);
                 showCreditsModal();
                 return;
             }
-            // Se for premium, verifica se tem créditos suficientes
             if (State.isPremium && State.credits < files.length) {
                 Notify.warning(`❌ Você precisa de ${files.length} crédito(s). Você tem apenas ${State.credits || 0}.`);
                 showCreditsModal();
@@ -364,13 +384,9 @@
         Loading.show('Iniciando análise...', `Preparando ${files.length} arquivo(s)`);
         Loading.update(5);
         
-        // Prepara PoW se disponível
-        try {
-            if (window.App && typeof window.App.preparePowForUpload === 'function') {
-                await window.App.preparePowForUpload();
-            }
-        } catch (e) {
-            console.warn('Erro ao preparar PoW:', e);
+        // 🔥 PREPARA PoW APENAS AGORA (NO MOMENTO DO UPLOAD)
+        if (CONFIG.POW_ENABLED) {
+            await preparePowForUpload();
         }
         
         const formData = new FormData();
@@ -381,54 +397,99 @@
         formData.append('ai_model', 'auto');
         
         const token = localStorage.getItem('access_token');
-        const headers = { 'Authorization': `Bearer ${token}` };
-        
-        // Adiciona PoW
-        try {
-            if (window.App && typeof window.App.getPowStats === 'function') {
-                const stats = window.App.getPowStats();
-                if (stats && stats.solutionsReady > 0 && window.powClient) {
-                    const solution = await window.powClient.getInstantSolution();
-                    if (solution) {
-                        headers['X-PoW-Prefix'] = solution.prefix;
-                        headers['X-PoW-Nonce'] = solution.nonce;
-                        headers['X-PoW-Complexity'] = String(solution.complexity);
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('Erro ao obter PoW:', e);
-        }
         
         try {
-            const response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
-                method: 'POST',
-                headers: headers,
-                body: formData
-            });
+            let response;
+            let powSolution = null;
             
-            // Trata PoW
+            // 🔥 TENTA UPLOAD COM PoW (SE DISPONÍVEL)
+            if (CONFIG.POW_ENABLED && window.powClient && window.powClient._isAuthenticated()) {
+                try {
+                    // 🔥 Obtém solução PoW e faz upload diretamente
+                    powSolution = await window.powClient.getSolutionForUpload();
+                    
+                    if (powSolution && window.powClient.uploadWithPow) {
+                        // Usa uploadWithPow do cliente
+                        const data = await window.powClient.uploadWithPow(files[0]); // Suporta múltiplos?
+                        
+                        // Se for múltiplos, precisamos adaptar
+                        if (files.length === 1) {
+                            const result = await window.powClient.uploadWithPow(files[0]);
+                            handleUploadResponse({ processed_files: [{ process_id: result.process_id, filename: result.filename }] }, files);
+                            Loading.update(10, 'Analisando dados...');
+                            return;
+                        } else {
+                            // Fallback para múltiplos arquivos (usa fetch manual)
+                            response = await fetchWithPow(formData, powSolution, token);
+                        }
+                    } else {
+                        // Fallback: fetch manual com headers
+                        response = await fetchWithPow(formData, powSolution, token);
+                    }
+                } catch (powError) {
+                    console.warn('⚠️ PoW falhou, tentando sem proteção:', powError.message);
+                    // Fallback: tenta sem PoW
+                    response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                    });
+                }
+            } else {
+                // Sem PoW disponível
+                response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+            }
+            
+            // Se não tivermos resposta ainda (caso do fetchWithPow)
+            if (!response) {
+                Notify.error('Erro no upload');
+                Loading.hide();
+                return;
+            }
+            
+            // Trata PoW expirado (428)
             if (response.status === 428) {
                 Notify.info('Proteção anti-bot: recalculando...');
                 
-                if (window.App && typeof window.App.preparePowForUpload === 'function') {
-                    await window.App.preparePowForUpload();
+                // Tenta novamente com nova solução
+                if (window.powClient) {
+                    try {
+                        const newSolution = await window.powClient.getSolutionForUpload();
+                        const retryResponse = await fetchWithPow(formData, newSolution, token);
+                        
+                        if (retryResponse && retryResponse.ok) {
+                            const retryData = await retryResponse.json();
+                            if (retryData.processed_files?.length > 0) {
+                                handleUploadResponse(retryData, files);
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Erro no retry com PoW:', e);
+                    }
                 }
                 
-                const retryResponse = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
+                // Último fallback: tenta sem PoW
+                const fallbackResponse = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
                     method: 'POST',
-                    headers: headers,
+                    headers: { 'Authorization': `Bearer ${token}` },
                     body: formData
                 });
                 
-                const retryData = await retryResponse.json();
-                
-                if (retryResponse.ok && retryData.processed_files?.length > 0) {
-                    handleUploadResponse(retryData, files);
-                } else {
-                    Notify.error(retryData?.detail || 'Erro no upload com PoW');
-                    Loading.hide();
+                if (fallbackResponse.ok) {
+                    const data = await fallbackResponse.json();
+                    if (data.processed_files?.length > 0) {
+                        handleUploadResponse(data, files);
+                        return;
+                    }
                 }
+                
+                Notify.error('Erro no upload após tentativas com PoW');
+                Loading.hide();
                 return;
             }
             
@@ -447,24 +508,42 @@
         }
     }
     
+    /**
+     * 🔥 FETCH COM HEADERS PoW (X-PoW-Challenge e X-PoW-Nonce)
+     */
+    async function fetchWithPow(formData, solution, token) {
+        const headers = {
+            'Authorization': `Bearer ${token}`
+        };
+        
+        if (solution && solution.prefix && solution.nonce) {
+            // 🔥 HEADERS CORRETOS (ALINHADOS COM pow_routes.py)
+            headers['X-PoW-Challenge'] = solution.prefix;
+            headers['X-PoW-Nonce'] = solution.nonce;
+            console.log(`🔐 Headers PoW: X-PoW-Challenge=${solution.prefix.substring(0, 8)}..., X-PoW-Nonce=${solution.nonce.substring(0, 8)}...`);
+        }
+        
+        return fetch(`${CONFIG.API_BASE}/upload-auto`, {
+            method: 'POST',
+            headers: headers,
+            body: formData
+        });
+    }
+    
     function handleUploadResponse(data, files) {
         Notify.success(`✅ ${data.processed_files.length} arquivo(s) processado(s)!`);
         Loading.update(10, 'Analisando dados...');
         
-        // Inicia polling para cada arquivo
         for (const processed of data.processed_files) {
             startPolling(processed.process_id, processed.filename);
         }
         
-        // Atualiza créditos
         AppState.sync();
         
-        // Limpa input
         const fileInput = DOM.get('#fileInput');
         if (fileInput) fileInput.value = '';
         DOM.updateHTML('#filePreviewContainer', '');
         
-        // Desabilita botão de upload
         const uploadBtn = DOM.get('#uploadButton');
         if (uploadBtn) {
             uploadBtn.disabled = true;
@@ -505,7 +584,6 @@
                 if (data.status === 'completed') {
                     clearInterval(interval);
                     
-                    // Recupera o resultado completo
                     const resultResponse = await fetch(`${CONFIG.API_BASE}/analysis/${processId}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
@@ -516,7 +594,6 @@
                         Notify.success(`✅ Análise concluída: ${filename}`);
                         Loading.update(100, '✅ Análise concluída!');
                         
-                        // Dispara evento de sucesso
                         window.dispatchEvent(new CustomEvent('analysis:success', {
                             detail: {
                                 processId,
@@ -525,7 +602,6 @@
                             }
                         }));
                         
-                        // Adiciona à lista
                         const analysisData = {
                             processId,
                             filename,
@@ -534,14 +610,9 @@
                         };
                         
                         State.activeAnalyses.push(analysisData);
-                        
-                        // Renderiza na UI
                         renderAnalysisCard(analysisData);
-                        
-                        // Atualiza histórico
                         loadHistory();
                         
-                        // Habilita botão de upload novamente
                         const uploadBtn = DOM.get('#uploadButton');
                         if (uploadBtn) {
                             uploadBtn.disabled = false;
@@ -574,7 +645,7 @@
     }
 
     // ============================================================================
-    // 🔥 RENDERIZAÇÃO DE ANÁLISE - FOCADO EM DADOS E MÉTRICAS
+    // 🔥 RENDERIZAÇÃO DE ANÁLISE
     // ============================================================================
     
     function renderAnalysisCard(analysis) {
@@ -585,32 +656,26 @@
         const stats = data.stats || {};
         const predictions = data.predictions_summary || {};
         
-        // Métricas principais
         const totalRegistros = stats.rows || predictions.total || 0;
         const scoreMedio = predictions.mean || 0.65;
         const scoreMin = predictions.min || 0.2;
         const scoreMax = predictions.max || 0.9;
         const scoreStd = predictions.std || 0.15;
         
-        // Distribuição de risco (valores numéricos)
         const altoRisco = predictions.high_risk_percentage || 0;
         const medioRisco = predictions.medium_risk_percentage || 0;
         const baixoRisco = predictions.low_risk_percentage || 0;
         
-        // Métricas de impacto
         const crescimento = Math.round(scoreMedio * 50);
         const economia = Math.round(5000 * scoreMedio);
         const retencao = Math.round(60 + scoreMedio * 30);
         const confianca = Math.round(scoreMedio * 100);
         
-        // Determina status
         const statusColor = scoreMedio > 0.7 ? '#48bb78' : (scoreMedio > 0.5 ? '#f5a623' : '#f56565');
         const statusIcon = scoreMedio > 0.7 ? '🚀' : (scoreMedio > 0.5 ? '📈' : '🔄');
         const statusLabel = scoreMedio > 0.7 ? 'Alto potencial' : (scoreMedio > 0.5 ? 'Potencial médio' : 'Baixo potencial');
         
         const cardId = `analysis-card-${analysis.processId}`;
-        
-        // Remove card antigo se existir
         const existingCard = document.getElementById(cardId);
         if (existingCard) existingCard.remove();
         
@@ -618,7 +683,6 @@
             <div class="analysis-card mb-4" id="${cardId}" data-process-id="${analysis.processId}">
                 <div class="card border-0 shadow-lg rounded-4 overflow-hidden" style="background: rgba(255,255,255,0.06); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);">
                     
-                    <!-- HEADER -->
                     <div class="card-header py-3 px-4" style="background: linear-gradient(135deg, rgba(102,126,234,0.2), rgba(118,75,162,0.2)); border-bottom: 1px solid rgba(255,255,255,0.05);">
                         <div class="d-flex justify-content-between align-items-center flex-wrap">
                             <div>
@@ -645,9 +709,8 @@
                         </div>
                     </div>
                     
-                    <!-- CORPO - MÉTRICAS E DADOS -->
                     <div class="card-body p-4">
-                        <!-- SCORE PRINCIPAL -->
+                        <!-- SCORE -->
                         <div class="row g-3 mb-4">
                             <div class="col-12">
                                 <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
@@ -674,7 +737,7 @@
                             </div>
                         </div>
                         
-                        <!-- MÉTRICAS EM GRID -->
+                        <!-- MÉTRICAS -->
                         <div class="row g-3 mb-4">
                             <div class="col-md-3 col-6">
                                 <div class="p-3 rounded-4 text-center" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
@@ -706,7 +769,7 @@
                             </div>
                         </div>
                         
-                        <!-- DISTRIBUIÇÃO DE RISCO -->
+                        <!-- RISCO -->
                         <div class="row g-3 mb-4">
                             <div class="col-12">
                                 <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
@@ -737,10 +800,8 @@
                             </div>
                         </div>
                         
-                        <!-- INSIGHTS (se disponíveis) -->
                         ${renderInsights(data)}
                         
-                        <!-- RODAPÉ -->
                         <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.03);">
                             <div class="d-flex justify-content-between align-items-center flex-wrap">
                                 <div style="color: rgba(255,255,255,0.2); font-size: 0.55rem;">
@@ -759,7 +820,6 @@
             </div>
         `;
         
-        // Insere no container (primeiro)
         container.insertAdjacentHTML('afterbegin', cardHTML);
     }
     
@@ -859,7 +919,7 @@
     }
 
     // ============================================================================
-    // 🔥 DRAG & DROP
+    // 🔥 DRAG & DROP (SEM PoW em background)
     // ============================================================================
     
     function setupDragAndDrop() {
@@ -869,11 +929,7 @@
         dropZone.addEventListener('dragenter', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
-            
-            // Prepara PoW durante drag
-            if (window.App && typeof window.App.preparePowForUpload === 'function') {
-                window.App.preparePowForUpload().catch(() => {});
-            }
+            // 🔥 NÃO prepara PoW aqui - só no upload
         });
         
         dropZone.addEventListener('dragover', (e) => {
@@ -921,13 +977,11 @@
         const economia = Math.round(5000 * scoreMedio);
         const retencao = Math.round(60 + scoreMedio * 30);
         
-        // Abre modal com detalhes
         const modalBody = DOM.get('#gpsaModalBody');
         if (modalBody) {
             modalBody.innerHTML = `
                 <div style="color: white; padding: 0.5rem;">
                     <div class="row g-3">
-                        <!-- Informações Gerais -->
                         <div class="col-12">
                             <h6 style="color: #f5a623; font-size: 0.85rem;">
                                 <i class="fas fa-info-circle me-2"></i> Informações da Análise
@@ -954,7 +1008,6 @@
                             </div>
                         </div>
                         
-                        <!-- Métricas de Impacto -->
                         <div class="col-12">
                             <h6 style="color: #f5a623; font-size: 0.85rem;">
                                 <i class="fas fa-chart-line me-2"></i> Métricas de Impacto
@@ -981,7 +1034,6 @@
                             </div>
                         </div>
                         
-                        <!-- Insights -->
                         ${renderInsightsModal(data)}
                         
                         <div class="text-center mt-3">
@@ -1032,7 +1084,7 @@
     };
 
     // ============================================================================
-    // 🔥 PDF (SIMPLIFICADO)
+    // 🔥 PDF
     // ============================================================================
     
     window.generatePDFReport = async function(processId) {
@@ -1044,7 +1096,6 @@
         
         Notify.info('📄 Gerando relatório PDF...');
         
-        // Dispara evento para o app.js processar
         window.dispatchEvent(new CustomEvent('pdf:generate', {
             detail: {
                 processId,
@@ -1060,15 +1111,11 @@
     function initialize() {
         if (State._initialized) return;
         
-        console.log('🚀 [Dashboard V6.0] Inicializando...');
+        console.log('🚀 [Dashboard V6.1] Inicializando...');
         
-        // Sincroniza estado
         AppState.sync();
-        
-        // Setup Drag & Drop
         setupDragAndDrop();
         
-        // Setup upload form
         const uploadForm = DOM.get('#uploadForm');
         if (uploadForm) {
             uploadForm.addEventListener('submit', async (e) => {
@@ -1082,7 +1129,6 @@
             });
         }
         
-        // Setup file input
         const fileInput = DOM.get('#fileInput');
         if (fileInput) {
             fileInput.setAttribute('multiple', 'multiple');
@@ -1093,14 +1139,11 @@
             });
         }
         
-        // Carrega dados
         loadHistory();
-        
-        // Inicia polling de créditos
         setInterval(() => AppState.sync(), CONFIG.CREDITS_CHECK_INTERVAL);
         
         State._initialized = true;
-        console.log('✅ [Dashboard V6.0] Inicializado com sucesso!');
+        console.log('✅ [Dashboard V6.1] Inicializado com sucesso (PoW sob demanda)!');
     }
     
     function showFilePreview(files) {
@@ -1142,7 +1185,6 @@
             });
         }
         
-        // Habilita botão de upload
         const uploadBtn = DOM.get('#uploadButton');
         if (uploadBtn) {
             uploadBtn.disabled = false;
@@ -1154,13 +1196,11 @@
     // 🔥 ESCUTA DE EVENTOS
     // ============================================================================
     
-    // Evento principal do app
     document.addEventListener('app:ready', function(event) {
         console.log('📢 [Dashboard] app:ready recebido');
         initialize();
     });
     
-    // Evento de autenticação
     document.addEventListener('authReady', function(event) {
         console.log('📢 [Dashboard] authReady recebido');
         if (event.detail?.isAuthenticated) {
@@ -1168,12 +1208,10 @@
         }
     });
     
-    // Atualização de créditos
     document.addEventListener('creditsUpdated', function(event) {
         AppState.sync();
     });
     
-    // Análise concluída
     document.addEventListener('analysis:success', function(event) {
         const detail = event.detail || {};
         const analysisData = {
@@ -1190,34 +1228,27 @@
         renderAnalysisCard(analysisData);
         loadHistory();
         
-        // Atualiza créditos
         if (detail.result?.user_credits !== undefined) {
             State.credits = detail.result.user_credits;
             AppState.sync();
         }
     });
     
-    // Desautenticação
     document.addEventListener('auth:unauthorized', function() {
         console.log('🧹 [Dashboard] Limpando recursos...');
-        
-        // Limpa polling
         State.pollingIntervals.forEach(clearInterval);
         State.pollingIntervals = [];
         State.activeAnalyses = [];
         State._initialized = false;
-        
         DOM.clearCache();
     });
     
-    // PDF gerado
     document.addEventListener('pdf:generated', function(event) {
         if (event.detail) {
             Notify.success('✅ PDF gerado com sucesso!');
         }
     });
     
-    // PDF error
     document.addEventListener('pdf:error', function(event) {
         Notify.error('❌ Erro ao gerar PDF: ' + (event.detail?.message || ''));
     });
@@ -1227,59 +1258,40 @@
     // ============================================================================
     
     (function injectStyles() {
-        if (document.getElementById('dashboardV60Styles')) return;
+        if (document.getElementById('dashboardV61Styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'dashboardV60Styles';
+        style.id = 'dashboardV61Styles';
         style.textContent = `
-            .analysis-card {
-                animation: fadeInUp 0.5s ease-out;
-            }
-            
+            .analysis-card { animation: fadeInUp 0.5s ease-out; }
             @keyframes fadeInUp {
                 from { opacity: 0; transform: translateY(20px); }
                 to { opacity: 1; transform: translateY(0); }
             }
-            
             .dragover {
                 border-color: #48bb78 !important;
                 background: rgba(72, 187, 120, 0.15) !important;
                 transform: scale(1.02);
             }
-            
             .btn-pdf:hover {
                 background: #dc3545 !important;
                 color: white !important;
                 transform: translateY(-2px);
             }
-            
             .btn-gpsa:hover {
                 background: #f5a623 !important;
                 color: white !important;
                 transform: translateY(-2px);
             }
-            
             .timeline {
                 position: relative;
                 padding-left: 1.5rem;
                 max-height: 350px;
                 overflow-y: auto;
             }
-            
-            .timeline::-webkit-scrollbar {
-                width: 4px;
-            }
-            
-            .timeline::-webkit-scrollbar-track {
-                background: rgba(255,255,255,0.05);
-                border-radius: 4px;
-            }
-            
-            .timeline::-webkit-scrollbar-thumb {
-                background: rgba(255,255,255,0.2);
-                border-radius: 4px;
-            }
-            
+            .timeline::-webkit-scrollbar { width: 4px; }
+            .timeline::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+            .timeline::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
             .timeline::before {
                 content: '';
                 position: absolute;
@@ -1290,16 +1302,8 @@
                 background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
                 border-radius: 2px;
             }
-            
-            .timeline-item {
-                position: relative;
-                padding-bottom: 1.2rem;
-            }
-            
-            .timeline-item:last-child {
-                padding-bottom: 0;
-            }
-            
+            .timeline-item { position: relative; padding-bottom: 1.2rem; }
+            .timeline-item:last-child { padding-bottom: 0; }
             .timeline-marker {
                 position: absolute;
                 left: -1.5rem;
@@ -1311,35 +1315,26 @@
                 border: 2px solid white;
                 box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
             }
-            
             .timeline-marker.bg-success {
                 background: #48bb78;
                 box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
             }
-            
             .timeline-content {
                 padding-left: 0.5rem;
                 color: rgba(255,255,255,0.85);
             }
-            
-            .timeline-content strong {
-                color: #f5a623;
-            }
-            
+            .timeline-content strong { color: #f5a623; }
             .modal-content {
                 border-radius: 20px;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
                 border: 1px solid rgba(255,255,255,0.1) !important;
                 color: white;
             }
-            
-            .modal-content .btn-close {
-                filter: brightness(0) invert(1);
-            }
+            .modal-content .btn-close { filter: brightness(0) invert(1); }
         `;
         document.head.appendChild(style);
     })();
 
-    console.log('✅ [Dashboard V6.0] Módulo carregado e aguardando eventos.');
+    console.log('✅ [Dashboard V6.1] Módulo carregado (PoW apenas no upload).');
 
 })();
