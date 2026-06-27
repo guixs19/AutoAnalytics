@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO CORRIGIDA V5.0 -->
+<!-- frontend/index.html - VERSÃO CORRIGIDA V5.1 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1093,7 +1093,7 @@
     <script src="/static/js/payment.js?v=2.0" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO - V5.0 -->
+    <!-- 🔥 CONFIGURAÇÕES E INICIALIZAÇÃO - V5.1 -->
     <!-- ============================================== -->
     <script>
         // ==============================================
@@ -1107,6 +1107,107 @@
             extendedTimeOut: 1000,
             escapeHtml: true
         };
+
+        // ==============================================
+        // 🔥 CHECK APP LOADED - VERSÃO ROUBUSTA
+        // ==============================================
+        function checkAppLoaded() {
+            // Checagem ultra flexível: se o objeto App existe e o sinalizador global está ativo
+            // ou se o App já foi inicializado via window._appInitialized
+            const appExists = typeof window.App !== 'undefined' && window.App !== null;
+            const appReady = appExists && typeof window.App.isInitialized === 'function' && window.App.isInitialized();
+            const appInitFlag = !!window._appInitialized;
+            
+            // Log para debug
+            if (appExists || appReady || appInitFlag) {
+                console.log('✅ checkAppLoaded:', { 
+                    appExists, 
+                    appReady, 
+                    appInitFlag,
+                    hasIsInitialized: appExists && typeof window.App.isInitialized === 'function'
+                });
+            }
+            
+            return appReady || appInitFlag || appExists;
+        }
+
+        // ==============================================
+        // 🔥 INICIALIZAR PAINEL SEGURO
+        // ==============================================
+        function inicializarPainelSeguro() {
+            console.log('🚀 [Fino] Casamento entre App e Dashboard concluído com sucesso.');
+            
+            // Marca como inicializado
+            window._dashboardInitialized = true;
+            
+            // Força o disparo do evento caso o app.js tenha inicializado milissegundos antes
+            if (typeof EventBus !== 'undefined' && EventBus) {
+                console.log('📢 [Index] Solicitando redispacho de segurança do app:ready...');
+                try {
+                    // Tenta emitir novamente o evento app:ready via EventBus
+                    if (typeof EventBus.emit === 'function') {
+                        EventBus.emit('app:ready', { 
+                            isReady: true,
+                            fromDashboard: true,
+                            timestamp: Date.now()
+                        });
+                    }
+                    
+                    // Também tenta via window
+                    window.dispatchEvent(new CustomEvent('app:ready', { 
+                        detail: { 
+                            isReady: true,
+                            fromDashboard: true,
+                            timestamp: Date.now()
+                        }
+                    }));
+                } catch (e) {
+                    console.warn('Erro ao redespachar app:ready:', e);
+                }
+            }
+
+            // Carrega status premium se disponível
+            try {
+                if (typeof window.loadPremiumStatus === 'function') {
+                    window.loadPremiumStatus();
+                } else if (window.App && typeof window.App.loadPremiumStatus === 'function') {
+                    window.App.loadPremiumStatus();
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar status premium:', e);
+            }
+
+            // Inicia polling do premium se disponível
+            try {
+                if (typeof window.startPremiumStatusPolling === 'function') {
+                    window.startPremiumStatusPolling(60000);
+                } else if (window.App && typeof window.App.startPremiumStatusPolling === 'function') {
+                    window.App.startPremiumStatusPolling(60000);
+                }
+            } catch (e) {
+                console.warn('Erro ao iniciar polling premium:', e);
+            }
+
+            // Atualiza status PoW
+            setTimeout(function() {
+                if (typeof updatePowStatus === 'function') {
+                    updatePowStatus();
+                } else if (window.App && typeof window.App.updatePowStatus === 'function') {
+                    window.App.updatePowStatus();
+                }
+            }, 1000);
+            
+            // 🔥 Atualiza a UI do rate limiter
+            try {
+                if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
+                    window.App.updateRateLimitStatus();
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar rate limit:', e);
+            }
+            
+            console.log('✅ Dashboard inicializado com sucesso!');
+        }
 
         // ==============================================
         // 🔥 FUNÇÃO PARA ATUALIZAR STATUS DO POW
@@ -1218,45 +1319,28 @@
         }
 
         // ==============================================
-        // 🔥 FUNÇÕES DE INICIALIZAÇÃO - SEM POLLING
-        // ==============================================
-        function inicializarDashboard() {
-            console.log('🚀 [Fino] Inicializando Dashboard...');
-            
-            // Carrega status premium
-            try {
-                if (typeof window.loadPremiumStatus === 'function') {
-                    window.loadPremiumStatus();
-                } else if (window.App && typeof window.App.loadPremiumStatus === 'function') {
-                    window.App.loadPremiumStatus();
-                }
-            } catch (e) {
-                console.warn('Erro ao carregar status premium:', e);
-            }
-
-            // Inicia polling do premium
-            try {
-                if (typeof window.startPremiumStatusPolling === 'function') {
-                    window.startPremiumStatusPolling(60000);
-                } else if (window.App && typeof window.App.startPremiumStatusPolling === 'function') {
-                    window.App.startPremiumStatusPolling(60000);
-                }
-            } catch (e) {
-                console.warn('Erro ao iniciar polling premium:', e);
-            }
-
-            // Atualiza status PoW
-            setTimeout(updatePowStatus, 1000);
-        }
-
-        // ==============================================
         // 🔥 ESCUTA EVENTO CUSTOMIZADO 'app:ready'
         // ==============================================
         document.addEventListener('app:ready', function(event) {
             console.log('📢 EVENTO app:ready recebido!', event.detail);
             
-            if (event.detail && event.detail.isReady) {
-                inicializarDashboard();
+            // Se o dashboard já foi inicializado, ignora
+            if (window._dashboardInitialized) {
+                console.log('⚠️ Dashboard já inicializado, ignorando evento duplicado');
+                return;
+            }
+            
+            // Verifica se o evento indica que o app está pronto
+            if (event.detail && (event.detail.isReady || event.detail.isAuthenticated !== undefined)) {
+                inicializarPainelSeguro();
+            } else if (event.detail && event.detail.userInitialized) {
+                inicializarPainelSeguro();
+            } else {
+                // Fallback: se o evento não trouxe dados suficientes, mas o app existe
+                if (typeof window.App !== 'undefined' && window.App !== null) {
+                    console.log('📢 App existe, inicializando mesmo sem detalhes completos');
+                    inicializarPainelSeguro();
+                }
             }
         });
 
@@ -1264,32 +1348,72 @@
         // 🔥 FALLBACK: Se o evento nunca for disparado
         // ==============================================
         let fallbackAttempts = 0;
-        const maxFallbackAttempts = 20;
+        const maxFallbackAttempts = 30;
         
         const fallbackTimer = setInterval(function() {
             fallbackAttempts++;
             
-            // Verifica se o app está disponível
-            const appReady = window.App !== undefined && window.App !== null && 
-                            typeof window.App.isReady === 'function' && 
-                            window.App.isReady();
-            
-            if (appReady) {
-                console.log('✅ Fallback: App detectado como pronto');
-                clearInterval(fallbackTimer);
-                inicializarDashboard();
-                return;
-            }
-            
-            // Verifica se já foi iniciado
+            // Se o dashboard já foi inicializado, para o fallback
             if (window._dashboardInitialized) {
                 clearInterval(fallbackTimer);
                 return;
             }
             
-            if (fallbackAttempts >= maxFallbackAttempts) {
-                console.warn('⚠️ Fallback: Timeout - App não respondeu');
+            // 🔥 CHECAGEM PRINCIPAL: usa a função checkAppLoaded()
+            if (checkAppLoaded()) {
+                console.log('✅ Fallback: App detectado como pronto via checkAppLoaded()');
                 clearInterval(fallbackTimer);
+                inicializarPainelSeguro();
+                return;
+            }
+            
+            // Verifica se o App existe e está inicializado via método isInitialized
+            if (typeof window.App !== 'undefined' && window.App !== null) {
+                if (typeof window.App.isInitialized === 'function' && window.App.isInitialized()) {
+                    console.log('✅ Fallback: App.isInitialized() retornou true');
+                    clearInterval(fallbackTimer);
+                    inicializarPainelSeguro();
+                    return;
+                }
+            }
+            
+            // Verifica se o appAuth já está pronto
+            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                try {
+                    if (window.appAuth.isAuthenticated()) {
+                        console.log('✅ Fallback: appAuth está autenticado');
+                        clearInterval(fallbackTimer);
+                        inicializarPainelSeguro();
+                        return;
+                    }
+                } catch (e) {
+                    // Ignora erro
+                }
+            }
+            
+            // Timeout
+            if (fallbackAttempts >= maxFallbackAttempts) {
+                console.warn('⚠️ Fallback: Timeout - App não respondeu após ' + (maxFallbackAttempts * 0.3) + 's');
+                clearInterval(fallbackTimer);
+                
+                // Última tentativa: forçar inicialização se o app existir
+                if (typeof window.App !== 'undefined' && window.App !== null) {
+                    console.log('🔄 Última tentativa: forçando inicialização do App');
+                    try {
+                        if (typeof window.App.init === 'function') {
+                            window.App.init();
+                        }
+                    } catch (e) {
+                        console.error('Erro ao forçar inicialização:', e);
+                    }
+                    
+                    // Tentar novamente após 1s
+                    setTimeout(function() {
+                        if (!window._dashboardInitialized && checkAppLoaded()) {
+                            inicializarPainelSeguro();
+                        }
+                    }, 1000);
+                }
             }
         }, 300);
 
@@ -1301,7 +1425,10 @@
         window.addEventListener('authReady', function(event) {
             console.log('📢 authReady recebido (compatibilidade)');
             if (event.detail && event.detail.isAuthenticated) {
-                // Não faz nada, aguarda app:ready
+                // Verifica se o dashboard já foi inicializado
+                if (!window._dashboardInitialized && checkAppLoaded()) {
+                    inicializarPainelSeguro();
+                }
             }
         });
 
@@ -1346,8 +1473,18 @@
             }
         });
 
-        console.log('✅ Dashboard V5.0 carregado!');
+        // ==============================================
+        // 🔥 EXPORTA FUNÇÕES GLOBAIS
+        // ==============================================
+        window.checkAppLoaded = checkAppLoaded;
+        window.inicializarPainelSeguro = inicializarPainelSeguro;
+        window.updatePowStatus = updatePowStatus;
+        window.updateRateLimitUI = updateRateLimitUI;
+        window.hideRateLimitUI = hideRateLimitUI;
+
+        console.log('✅ Dashboard V5.1 carregado!');
         console.log('⚡ Aguardando evento app:ready para iniciar...');
+        console.log('⚡ Fallback ativo: ' + maxFallbackAttempts + ' tentativas a cada 300ms');
     </script>
 </body>
 </html>

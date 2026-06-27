@@ -1,19 +1,20 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.2 (COM CORREÇÕES DE EXPORTAÇÃO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.3 (COM MELHORIAS DE INICIALIZAÇÃO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V5.2:
- * 1. 🔥 Correção da exportação de AppInstance
- * 2. 🔥 Ajuste de caminhos para usar barras iniciais
- * 3. 🔥 Evento 'app:ready' espelhado para window
- * 4. 🔥 Sincronização correta com index.html
- * 5. 🔥 Tratamento de unauthorized com anti-loop
+ * 🏗️ ARQUITETURA V5.3:
+ * 1. 🔥 Exportação com isInitialized() para quebrar loop infinito
+ * 2. 🔥 State.userInitialized para tracking de inicialização
+ * 3. 🔥 Melhorias no anti-loop com fallbacks
+ * 4. 🔥 Evento 'app:ready' espelhado para window
+ * 5. 🔥 Sincronização robusta com index.html
+ * 6. 🔥 Tratamento de unauthorized com anti-loop
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v5.2...');
+    console.log('🚀 Inicializando App (Orquestrador) v5.3...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -115,6 +116,7 @@
         creditsDisplay: '0',
         
         initialized: false,
+        userInitialized: false, // 🔥 NOVO: tracking de inicialização do usuário
         isAppReady: false,
         tokenValid: false,
         tokenExpiresAt: null,
@@ -963,6 +965,7 @@
             // Reseta estado
             State.isAuthenticated = false;
             State.user = null;
+            State.userInitialized = false;
             State.credits = 0;
             State.isPremium = false;
             State.isAdmin = false;
@@ -1445,6 +1448,7 @@
                     State.isAdmin = userData.is_admin || false;
                     State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
                     State.tokenValid = true;
+                    State.userInitialized = true; // 🔥 MARCA COMO INICIALIZADO
                     
                     UI.updateNavbar();
                     Credits.startPolling();
@@ -1454,11 +1458,13 @@
                     setTimeout(() => Pow.startAutoRefill(), 1000);
                 } else {
                     State.tokenValid = false;
+                    State.userInitialized = false;
                 }
 
                 return isAuth;
             } catch (e) {
                 console.error('Erro ao sincronizar auth:', e);
+                State.userInitialized = false;
                 return false;
             }
         },
@@ -1623,6 +1629,7 @@
                 if (event.detail) {
                     State.isAuthenticated = event.detail.isAuthenticated || false;
                     State.user = event.detail.user || null;
+                    State.userInitialized = true;
                 }
                 UI.updateNavbar();
                 setTimeout(() => Pow.startAutoRefill(), 1000);
@@ -1812,7 +1819,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v5.2...');
+        console.log('🚀 Inicializando App (Orquestrador) v5.3...');
 
         try {
             // 1. Resetar contador de reloads
@@ -1857,6 +1864,7 @@
             // 10. Marcar como inicializado
             State.initialized = true;
             State.isAppReady = true;
+            State.userInitialized = true;
 
             // ==============================================
             // 🔥🔥🔥 ESPELHAMENTO DO EVENTO app:ready 🔥🔥🔥
@@ -1879,7 +1887,8 @@
                 rateLimitTimeRemaining: Utils.getRateLimitTimeRemaining(),
                 displayName: State.user?.name || 'Usuário',
                 workshopName: State.user?.workshop_name || 'Oficina',
-                version: '5.2'
+                userInitialized: State.userInitialized,
+                version: '5.3'
             };
 
             // 🔥 Dispara via EventBus (interno)
@@ -1890,7 +1899,7 @@
                 detail: appReadyData 
             }));
 
-            console.log('✅ App (Orquestrador) v5.2 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v5.3 inicializado com sucesso!');
             console.log('📢 Evento app:ready disparado para window');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${Utils.getCurrentPath()}`);
@@ -1900,6 +1909,7 @@
             console.log(`📌 Preço Vitalício: ${State.hasPromotionalPrice ? `R$ ${State.promotionalPrice}` : 'Não'}`);
             console.log(`📌 Rate Limit: ${State.rateLimitBlocked ? `🔴 Bloqueado (${Utils.getRateLimitTimeRemaining()}s)` : '🟢 Disponível'}`);
             console.log(`📌 EventBus: ${EventBus._handlers.size} handlers registrados`);
+            console.log(`📌 userInitialized: ${State.userInitialized}`);
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
@@ -1913,14 +1923,14 @@
             
             State.initialized = false;
             State.isAppReady = false;
+            State.userInitialized = false;
         }
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS (CORRIGIDAS V5.2)
+    // 🔥 OBJETO PRINCIPAL DA APLICAÇÃO (V5.3)
     // ==============================================
 
-    // 🔥 OBJETO PRINCIPAL DA APLICAÇÃO
     const App = {
         // Configurações
         CONFIG,
@@ -1945,6 +1955,11 @@
         
         // Métodos públicos principais
         init: initApp,
+        
+        // 🔥 NOVO: Método para verificar inicialização (quebra loop infinito)
+        isInitialized: function() {
+            return !!window._appInitialized && State.userInitialized === true;
+        },
         
         // Aliases para compatibilidade
         auth: Auth,
@@ -2021,11 +2036,24 @@
         formatCreditsDisplay: Utils.formatCreditsDisplay
     };
 
-    // 🔥 EXPORTAÇÕES GLOBAIS - CORRIGIDAS
-    window.App = App;
-    window.AppInstance = App;  // 🔥 MANTÉM ALIAS DE SEGURANÇA
-    window.app = App;
-    window.autoAnalytics = App;
+    // ==============================================
+    // 🔥 EXPOR MÓDULOS PARA O ESCOPO GLOBAL (V5.3)
+    // ==============================================
+    
+    // 🔥 OBJETO FINAL COM isInitialized
+    const AppFinal = {
+        ...App,
+        // Injeta o método que o index.html está cobrando para quebrar o loop infinito
+        isInitialized: function() {
+            return !!window._appInitialized && State.userInitialized === true;
+        }
+    };
+
+    // 🔥 EXPORTAÇÕES GLOBAIS
+    window.App = AppFinal;
+    window.AppInstance = AppFinal; // Alias de segurança para scripts legados
+    window.app = AppFinal;
+    window.autoAnalytics = AppFinal;
     
     // 🔥 EXPORTA EVENTBUS
     window.EventBus = EventBus;
@@ -2047,7 +2075,7 @@
     window.loadPremiumStatus = Credits.loadPremiumStatus;
     window.uploadWithPow = Pow.uploadWithPow;
     window.startPowAutoRefill = Pow.startAutoRefill;
-    window.stopPowAutoRefill = Pow.stopPowAutoRefill;
+    window.stopPowAutoRefill = Pow.stopAutoRefill;
     window.resetPow = Pow.reset;
     window.isPowAvailable = Pow.isAvailable;
     window.getPowStats = Pow.getStats;
@@ -2072,6 +2100,26 @@
         timeRemaining: Utils.getRateLimitTimeRemaining()
     });
 
+    // 🔥 FUNÇÕES DO AUTH EXPORTADAS (usadas no index.html)
+    window.fetchWithAuth = async (url, options) => {
+        if (AppFinal.auth && AppFinal.auth.fetchWithAuth) {
+            return AppFinal.auth.fetchWithAuth(url, options);
+        }
+        console.warn('⚠️ fetchWithAuth não disponível');
+        return null;
+    };
+
+    window.logout = () => {
+        if (AppFinal.auth && AppFinal.auth.logout) {
+            return AppFinal.auth.logout();
+        }
+        Auth.handleUnauthorized();
+    };
+
+    window.getCurrentUser = () => {
+        return AppFinal.getCurrentUser ? AppFinal.getCurrentUser() : State.user;
+    };
+
     // ==============================================
     // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
     // ==============================================
@@ -2088,10 +2136,12 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v5.2 carregado!');
-    console.log('   🔥 Correções de exportação:');
-    console.log('   - AppInstance agora é definido como alias de App');
-    console.log('   - Todas as funções auxiliares exportadas corretamente');
+    console.log('✅ app.js (Orquestrador) v5.3 carregado!');
+    console.log('   🔥 Melhorias de inicialização:');
+    console.log('   - isInitialized() para quebrar loop infinito');
+    console.log('   - State.userInitialized para tracking');
+    console.log('   - AppFinal com método isInitialized');
+    console.log('   - fetchWithAuth, logout, getCurrentUser exportados');
     console.log('   - Evento app:ready espelhado para window');
     console.log('   - auth:unauthorized com anti-loop (sessionStorage)');
     console.log('   - Sincronização de créditos via ML/Gemini');
