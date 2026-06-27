@@ -1,8 +1,8 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.5 (CORREÇÃO DE INICIALIZAÇÃO E ROTEAMENTO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.6 (BLINDAGEM TOASTR)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V5.5:
+ * 🏗️ ARQUITETURA V5.6:
  * 1. 🔥 isInitialized() unificado e robusto
  * 2. 🔥 isReady() para verificação de prontidão
  * 3. 🔥 Evento 'app:ready' com flag de segurança
@@ -13,12 +13,13 @@
  * 8. 🔥 CORREÇÃO: validação de rota SOMENTE após auth carregar
  * 9. 🔥 CORREÇÃO: PoW em modo sob demanda (SEM auto-refill)
  * 10. 🔥 CORREÇÃO: múltiplas fontes de autenticação (token + appAuth)
+ * 11. 🔥 BLINDAGEM: try/catch no showNotification para evitar crash do Toastr
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v5.5...');
+    console.log('🚀 Inicializando App (Orquestrador) v5.6...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -186,16 +187,33 @@
             return safeCredits.toString();
         },
 
+        // 🔥 BLINDAGEM: try/catch no showNotification para evitar crash do Toastr
         showNotification: (message, type = 'info') => {
+            // 1. Tenta usar appAuth primeiro
             if (window.appAuth?.showNotification) {
-                return window.appAuth.showNotification(message, type);
+                try {
+                    return window.appAuth.showNotification(message, type);
+                } catch (e) {
+                    console.warn('⚠️ appAuth.showNotification falhou:', e);
+                }
             }
             
+            // 2. Tenta usar Toastr (com try/catch para blindagem)
             if (window.toastr?.[type]) {
-                window.toastr[type](message);
-                return true;
+                try {
+                    window.toastr[type](message);
+                    return true;
+                } catch (e) {
+                    console.warn('⚠️ Toastr falhou ao renderizar. Usando fallback.', e);
+                    // Fallback: alert nativo
+                    if (type === 'error' || type === 'warning') {
+                        alert(`⚠️ ${message}`);
+                        return true;
+                    }
+                }
             }
             
+            // 3. Fallback final
             if (type === 'error' || type === 'warning') {
                 console.warn(`[${type}] ${message}`);
                 alert(`⚠️ ${message}`);
@@ -223,7 +241,6 @@
 
         isAuthenticated: () => {
             try {
-                // 🔥 CORRIGIDO: Verifica múltiplas fontes
                 const token = localStorage.getItem('access_token');
                 const hasValidToken = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
                 
@@ -354,13 +371,10 @@
             );
         },
 
-        // 🔥 CORRIGIDO: Proteger rota com verificação robusta
         protect: function() {
-            // 🔥 Verifica autenticação de forma robusta
             const token = localStorage.getItem('access_token');
             const hasValidToken = token && token !== 'undefined' && token !== 'null' && token.length > 10;
             
-            // 🔥 Verifica via appAuth se disponível
             let isAuth = hasValidToken;
             if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
                 try {
@@ -370,14 +384,12 @@
                 }
             }
             
-            // Se NÃO está autenticado E está em rota protegida → redireciona
             if (this.isProtected() && !isAuth) {
                 console.log('🔒 Rota protegida - redirecionando para login');
                 Utils.redirectTo(CONFIG.ROUTES.LOGIN);
                 return false;
             }
 
-            // Se ESTÁ autenticado E está em rota pública → redireciona para dashboard
             if (this.isPublic() && isAuth) {
                 console.log('✅ Usuário já logado - redirecionando para dashboard');
                 Utils.redirectTo(CONFIG.ROUTES.HOME);
@@ -473,14 +485,12 @@
         emit: function(event, data = {}) {
             console.log(`📢 [EventBus] ${event}`, data);
             
-            // Dispara evento DOM para compatibilidade
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
             } catch (e) {
                 // Ignora erro em ambiente seguro
             }
             
-            // Dispara handlers internos
             if (!this._handlers.has(event)) return;
             
             const handlers = this._handlers.get(event);
@@ -605,7 +615,6 @@
                     }
                 });
 
-                // 🔥 Evento reativo de créditos
                 const creditEventData = {
                     credits,
                     display: formattedDisplay,
@@ -976,17 +985,13 @@
             }
         },
 
-        // 🔥 TRATAMENTO DE UNAUTHORIZED COM ANTI-LOOP
         handleUnauthorized: function() {
             console.error('❌ [Orquestrador] Sessão inválida ou expirada.');
             
-            // Alimenta o anti-loop
             sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
             
-            // Limpa cache local
             localStorage.clear();
             
-            // Reseta estado
             State.isAuthenticated = false;
             State.user = null;
             State.userInitialized = false;
@@ -996,7 +1001,6 @@
             State.tokenValid = false;
             State.isAppReady = false;
             
-            // 🔥 Dispara evento global
             const eventData = { 
                 message: 'Sessão inválida ou expirada',
                 redirect: true 
@@ -1005,11 +1009,9 @@
             EventBus.emit('auth:unauthorized', eventData);
             window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: eventData }));
             
-            // Atualiza UI
             UI.updateNavbar();
             UI.updateRateLimitStatus();
             
-            // Redireciona para login
             setTimeout(() => {
                 window.location.replace('/login');
             }, 300);
@@ -1170,7 +1172,6 @@
             return window.powClient !== undefined && window.powClient !== null;
         },
 
-        // 🔥 CORRIGIDO: Não inicia auto-refill automaticamente
         startAutoRefill: () => {
             if (!Pow.isAvailable()) {
                 console.log('⏳ PoW não disponível, aguardando...');
@@ -1183,9 +1184,7 @@
                         clearInterval(Pow._autoRefillInterval);
                     }
                     
-                    // 🔥 CORRIGIDO: Verifica se é para iniciar auto-refill
-                    // Por padrão, NÃO inicia auto-refill (só no upload)
-                    const autoRefillEnabled = false; // 🔥 Desativado por padrão
+                    const autoRefillEnabled = false;
                     
                     if (autoRefillEnabled) {
                         window.powClient.startAutoRefill(CONFIG.POW_AUTO_REFILL_INTERVAL);
@@ -1483,19 +1482,17 @@
                     Auth.startTokenCheck();
                     Auth.startSessionTimer();
                     
-                    // 🔥 CORRIGIDO: Inicia PoW em modo sob demanda (SEM auto-refill)
                     if (isAuth && typeof window.initPowClient === 'function') {
                         console.log('🔐 Usuário autenticado, inicializando PoW (modo sob demanda)...');
                         setTimeout(() => {
                             window.initPowClient({
-                                autoRefill: false,  // 🔥 SEM auto-refill
-                                preSolve: false     // 🔥 SEM pré-solve
+                                autoRefill: false,
+                                preSolve: false
                             });
                         }, 1000);
                     } else if (isAuth && window.powClient) {
                         console.log('⚠️ initPowClient não disponível, usando powClient diretamente');
                         if (typeof window.powClient.startAutoRefill === 'function') {
-                            // 🔥 NÃO inicia auto-refill - apenas prepara para uso
                             console.log('⚡ PoW disponível, aguardando upload para ativar');
                         }
                     }
@@ -1589,8 +1586,6 @@
                     console.log('✅ PoW sincronizado com sucesso!');
                     
                     if (Utils.isAuthenticated()) {
-                        // 🔥 CORRIGIDO: NÃO inicia auto-refill automaticamente
-                        // Pow.startAutoRefill(); // REMOVIDO - só no upload
                         console.log('⚡ PoW em modo sob demanda (aguardando upload)');
                     }
                     
@@ -1625,7 +1620,6 @@
 
     const EventManager = {
         setup: () => {
-            // Password toggle
             document.querySelectorAll('.password-toggle').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const targetId = btn.getAttribute('data-target');
@@ -1649,7 +1643,6 @@
                 });
             });
 
-            // Logout
             document.querySelectorAll('#logoutBtn, .logout-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -1661,14 +1654,12 @@
                 });
             });
 
-            // Botão voltar
             document.querySelectorAll('.btn-back').forEach(el => {
                 el.addEventListener('click', () => {
                     window.history.back();
                 });
             });
 
-            // Eventos do auth.js
             window.addEventListener('authReady', (event) => {
                 console.log('📢 Evento authReady recebido');
                 if (event.detail) {
@@ -1677,9 +1668,6 @@
                     State.userInitialized = true;
                 }
                 UI.updateNavbar();
-                
-                // 🔥 CORRIGIDO: NÃO inicia auto-refill automaticamente
-                // setTimeout(() => Pow.startAutoRefill(), 1000);
                 console.log('⚡ PoW em modo sob demanda (aguardando upload)');
                 
                 EventBus.emit('auth:ready', event.detail);
@@ -1690,7 +1678,6 @@
                 Auth.handleUnauthorized();
             });
 
-            // Rate Limiter events
             window.addEventListener('rateLimitBlocked', (event) => {
                 console.log('📢 Evento rateLimitBlocked recebido', event.detail);
                 
@@ -1724,7 +1711,6 @@
                 EventBus.emit('rate_limit:unblocked', {});
             });
 
-            // Créditos
             window.addEventListener('creditsUpdated', (event) => {
                 if (event.detail) {
                     State.credits = event.detail.credits || 0;
@@ -1736,7 +1722,6 @@
                 EventBus.emit('credits:updated', event.detail);
             });
 
-            // Premium
             window.addEventListener('premiumStatusUpdated', (event) => {
                 if (event.detail) {
                     State.isPremium = event.detail.isPremium || false;
@@ -1753,7 +1738,6 @@
                 EventBus.emit('premium:status_updated', event.detail);
             });
 
-            // Daily Credit
             window.addEventListener('dailyCreditReceived', (event) => {
                 if (event.detail?.success) {
                     Utils.showNotification('🎉 Crédito diário recebido!', 'success');
@@ -1763,7 +1747,6 @@
                 }
             });
 
-            // Promoção
             window.addEventListener('promotionStatusUpdated', (event) => {
                 if (event.detail) {
                     State.hasPromotionalPrice = event.detail.hasPromotionalPrice || false;
@@ -1774,7 +1757,6 @@
                 }
             });
 
-            // PoW
             window.addEventListener('powReady', (event) => {
                 console.log('📢 Evento powReady recebido');
                 State.powReady = true;
@@ -1787,7 +1769,6 @@
                 EventBus.emit('pow:ready', event.detail);
             });
 
-            // Erros globais
             window.addEventListener('unhandledrejection', (event) => {
                 console.error('❌ Erro não tratado (Promise):', event.reason);
                 
@@ -1834,7 +1815,6 @@
                 Utils.showNotification('Erro na aplicação. Recarregue a página se persistir.', 'error');
             });
 
-            // Atividade do usuário
             ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(event => {
                 document.addEventListener(event, () => {
                     State.lastActivity = Date.now();
@@ -1842,7 +1822,6 @@
                 });
             });
 
-            // Listener para eventos de análise
             EventBus.on('analysis:started', (data) => {
                 console.log('📊 Análise iniciada:', data);
             });
@@ -1867,7 +1846,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v5.5...');
+        console.log('🚀 Inicializando App (Orquestrador) v5.6...');
 
         try {
             // 1. Resetar contador de reloads
@@ -2013,7 +1992,7 @@
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
                 isReady: true,
-                version: '5.5'
+                version: '5.6'
             };
 
             // 🔥 Dispara via EventBus
@@ -2029,7 +2008,7 @@
                 detail: appReadyData 
             }));
 
-            console.log('✅ App (Orquestrador) v5.5 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v5.6 inicializado com sucesso!');
             console.log('📢 Evento app:ready disparado via window, document e EventBus');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
@@ -2038,6 +2017,7 @@
             console.log(`📌 Créditos: ${State.creditsDisplay}`);
             console.log(`📌 userInitialized: ${State.userInitialized}`);
             console.log('⚡ PoW em modo sob demanda (ativado apenas no upload)');
+            console.log('🛡️ Toastr blindado com try/catch');
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
@@ -2057,7 +2037,7 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS - V5.5
+    // 🔥 EXPORTAÇÕES GLOBAIS - V5.6
     // ==============================================
 
     const App = {
@@ -2077,7 +2057,6 @@
         
         init: initApp,
         
-        // 🔥 MÉTODOS CORRIGIDOS E ROBUSTOS
         isInitialized: function() {
             try {
                 const appInit = !!window._appInitialized;
@@ -2085,7 +2064,6 @@
                 const appReady = State && State.isAppReady === true;
                 const flagReady = !!window._appReadyFired;
                 
-                // Log apenas se houver algum problema
                 if (!appInit || !userInit || !appReady) {
                     console.debug('📊 isInitialized:', { appInit, userInit, appReady, flagReady });
                 }
@@ -2105,7 +2083,6 @@
             }
         },
         
-        // Aliases
         auth: Auth,
         pow: Pow,
         credits: Credits,
@@ -2115,7 +2092,6 @@
         router: Router,
         events: EventBus,
         
-        // Funções auxiliares
         showNotification: Utils.showNotification,
         isAuthenticated: Utils.isAuthenticated,
         getCurrentUser: () => State ? State.user : null,
@@ -2128,12 +2104,10 @@
         getDaysLeftPremium: () => State ? State.daysLeftPremium : 0,
         isTokenValid: () => State ? State.tokenValid : false,
         
-        // Rate Limiter
         isRateLimitBlocked: Utils.isRateLimitBlocked,
         getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
         getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
         
-        // PoW (modo sob demanda)
         isPowAvailable: Pow.isAvailable,
         getPowStats: Pow.getStats,
         preparePowForUpload: Pow.prepareForUpload,
@@ -2142,14 +2116,12 @@
         stopPowAutoRefill: Pow.stopAutoRefill,
         resetPow: Pow.reset,
         
-        // Créditos
         loadCredits: Credits.load,
         loadPremiumStatus: Credits.loadPremiumStatus,
         receiveDailyCredit: Credits.receiveDailyCredit,
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
         getCreditsBalance: () => State ? State.credits : 0,
         
-        // Análise
         startAnalysis: Analysis.startAnalysis,
         updateAnalysisProgress: Analysis.updateProgress,
         completeAnalysis: Analysis.completeAnalysis,
@@ -2160,12 +2132,10 @@
         getAnalysesToday: Analysis.getAnalysesToday,
         clearAnalysisHistory: Analysis.clearHistory,
         
-        // Navegação
         navigate: Router.navigate,
         goBack: Utils.goBack,
         getQueryParam: Utils.getQueryParam,
         
-        // UI
         showLoading: UI.showLoading,
         hideLoading: UI.hideLoading,
         updateLoadingProgress: UI.updateLoadingProgress,
@@ -2173,7 +2143,6 @@
         updateNavbar: UI.updateNavbar,
         updateRateLimitStatus: UI.updateRateLimitStatus,
         
-        // Utilitários extras
         escapeHtml: Utils.escapeHtml,
         formatDate: Utils.formatDate,
         sanitizeNumber: Utils.sanitizeNumber,
@@ -2280,12 +2249,11 @@
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
-            // Pequeno delay para garantir que outros scripts carreguem
             setTimeout(initApp, 150);
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v5.5 carregado!');
+    console.log('✅ app.js (Orquestrador) v5.6 carregado!');
     console.log('   🔥 isInitialized() robusto com múltiplas verificações');
     console.log('   🔥 isReady() para verificação rápida');
     console.log('   🔥 State compartilhado via window.__APP_STATE');
@@ -2295,5 +2263,6 @@
     console.log('   🔥 CORREÇÃO: validação de rota SOMENTE após auth carregar');
     console.log('   🔥 CORREÇÃO: PoW em modo sob demanda (SEM auto-refill)');
     console.log('   🔥 CORREÇÃO: múltiplas fontes de autenticação (token + appAuth)');
+    console.log('   🔥 BLINDAGEM: try/catch no showNotification (Toastr seguro)');
 
 })();
