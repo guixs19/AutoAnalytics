@@ -9,7 +9,7 @@ AutoAnalytics - Servidor Principal
 - ✅ CORRIGIDO: Verificação de pipeline no health check
 ================================================================================
 """
-
+from sqlalchemy.orm import Session
 import sys
 import os
 import time
