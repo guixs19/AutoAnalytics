@@ -1,4 +1,4 @@
-// frontend/js/pow-client.js - VERSÃO ATUALIZADA v2.0
+// frontend/js/pow-client.js - VERSÃO CORRIGIDA v2.1
 /**
  * Cliente Proof of Work - SOLUÇÃO INSTANTÂNEA
  * 🔥 SINCRONIZADO COM:
@@ -55,12 +55,14 @@ function sanitizeNumber(value, defaultValue = 0) {
 
 /**
  * Valida se o objeto é um desafio PoW válido
+ * 🔥 CORRIGIDO: Agora aceita o formato do backend (challenge + difficulty)
  */
 function isValidChallenge(challenge) {
     if (!challenge || typeof challenge !== 'object') return false;
-    if (!challenge.prefix || typeof challenge.prefix !== 'string' || challenge.prefix.length !== 16) return false;
-    if (!challenge.complexity || typeof challenge.complexity !== 'number') return false;
-    if (challenge.complexity < 3 || challenge.complexity > 5) return false;
+    // Usa 'challenge' (string) e 'difficulty' (number) como enviado pelo backend
+    if (!challenge.challenge || typeof challenge.challenge !== 'string') return false;
+    if (!challenge.difficulty || typeof challenge.difficulty !== 'number') return false;
+    if (challenge.difficulty < 3 || challenge.difficulty > 5) return false;
     if (!challenge.expires_in || typeof challenge.expires_in !== 'number') return false;
     if (challenge.expires_in < 30 || challenge.expires_in > 120) return false;
     return true;
@@ -111,7 +113,7 @@ class PoWClient {
             sanitizedCount: 0
         };
         
-        console.log('⚡ PoW Client v2.0 inicializado');
+        console.log('⚡ PoW Client v2.1 inicializado');
         console.log(`   🔒 Sanitização ativa`);
         console.log(`   📦 Stock size: ${this.stockSize}`);
         console.log(`   🔄 Auto-refill: ${this.autoRefill}`);
@@ -256,7 +258,7 @@ class PoWClient {
             
             const data = await response.json();
             
-            // 🔥 Validação de segurança
+            // 🔥 Validação de segurança (formato corrigido)
             if (!isValidChallenge(data)) {
                 throw new Error('Desafio inválido recebido do servidor');
             }
@@ -276,6 +278,7 @@ class PoWClient {
     
     /**
      * Resolve desafio de forma segura
+     * 🔥 CORRIGIDO: Mapeia os campos para o worker
      */
     async _solveChallengeSafe(challenge) {
         // Valida entrada
@@ -293,9 +296,10 @@ class PoWClient {
                 reject(new Error('Timeout ao resolver PoW'));
             }, 60000);
             
+            // 🔥 CORRIGIDO: Mapeia os campos do backend para o worker
             worker.postMessage({
-                prefix: challenge.prefix,
-                complexity: challenge.complexity,
+                prefix: challenge.challenge,        // Mapeia challenge -> prefix
+                complexity: challenge.difficulty,   // Mapeia difficulty -> complexity
                 timestamp: challenge.timestamp,
                 expires_in: challenge.expires_in
             });
@@ -319,8 +323,8 @@ class PoWClient {
                 
                 const solution = {
                     nonce: sanitizeString(data.nonce),
-                    prefix: challenge.prefix,
-                    complexity: challenge.complexity,
+                    prefix: challenge.challenge,  // Usa challenge.challenge como prefix
+                    complexity: challenge.difficulty, // Usa challenge.difficulty como complexity
                     solvedAt: Date.now()
                 };
                 
@@ -378,6 +382,7 @@ class PoWClient {
     
     /**
      * Upload com PoW INSTANTÂNEO (sem espera)
+     * 🔥 CORRIGIDO: Headers agora usam X-PoW-Challenge (como o backend espera)
      */
     async uploadWithPow(file, endpoint = '/api/upload-auto') {
         // 🔥 Verifica autenticação
@@ -418,12 +423,12 @@ class PoWClient {
         const startTime = performance.now();
         
         try {
+            // 🔥 CORRIGIDO: Headers agora usam X-PoW-Challenge (como o backend espera)
             const response = await fetch(`${this.apiBase}${endpoint}`, {
                 method: 'POST',
                 headers: {
-                    'X-PoW-Prefix': solution.prefix,
+                    'X-PoW-Challenge': solution.prefix,  // CORRIGIDO: X-PoW-Challenge
                     'X-PoW-Nonce': solution.nonce,
-                    'X-PoW-Complexity': String(solution.complexity),
                     'Authorization': `Bearer ${token}`
                 },
                 body: formData
@@ -552,10 +557,19 @@ class PoWClient {
 // Verifica se já existe uma instância
 if (typeof window.powClient === 'undefined' || window.powClient === null) {
     window.powClient = new PoWClient();
-    console.log('✅ PoW Client v2.0 global');
+    console.log('✅ PoW Client v2.1 global');
 }
 
-// 🔥 Inicializa quando autenticado
+// ==============================================
+// 🔥 INICIALIZAÇÃO - DISPAROS SILENCIADOS
+// ==============================================
+
+// 🔥 SILENCIADO: O app.js agora controla o ciclo de vida do PoW
+// O código abaixo foi removido para evitar disparos automáticos
+// O AppState e o app.js v5.4+ gerenciam a inicialização
+
+/*
+// 🔥 REMOVIDO - Disparo automático via authReady
 document.addEventListener('authReady', (event) => {
     if (event.detail && event.detail.isAuthenticated) {
         console.log('🔐 Autenticação detectada, iniciando PoW...');
@@ -566,7 +580,7 @@ document.addEventListener('authReady', (event) => {
     }
 });
 
-// 🔥 Fallback: se já estiver autenticado
+// 🔥 REMOVIDO - Disparo automático via DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
     const token = localStorage.getItem('access_token');
     if (token && token !== 'undefined' && token !== 'null') {
@@ -580,9 +594,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 2000);
     }
 });
+*/
 
-console.log('✅ pow-client.js v2.0 carregado');
+// 🔥 NOVO: Função exposta para o app.js iniciar o PoW quando apropriado
+window.initPowClient = function(options = {}) {
+    const { autoRefill = true, refillInterval = 30000, preSolve = true } = options;
+    
+    if (window.powClient._isInitialized) {
+        console.log('⚠️ PoW Client já inicializado');
+        return;
+    }
+    
+    window.powClient._isInitialized = true;
+    
+    if (autoRefill) {
+        window.powClient.startAutoRefill(refillInterval);
+    }
+    
+    if (preSolve) {
+        setTimeout(() => window.powClient.preSolve(), 500);
+    }
+    
+    console.log('✅ PoW Client inicializado pelo app.js');
+};
+
+// 🔥 NOVO: Função exposta para o app.js parar o PoW
+window.stopPowClient = function() {
+    if (window.powClient) {
+        window.powClient.stopAutoRefill();
+        window.powClient.reset();
+        window.powClient._isInitialized = false;
+        console.log('⏹️ PoW Client parado');
+    }
+};
+
+console.log('✅ pow-client.js v2.1 carregado');
 console.log('   🔒 Sanitização ativa contra XSS');
-console.log('   🔐 Integrado com authReady');
+console.log('   🔐 Inicialização controlada pelo app.js');
 console.log(`   📦 Stock: ${window.powClient.stockSize}`);
-console.log('   🔄 Auto-refill: ativo');
+console.log('   🔄 Auto-refill: controlado pelo app.js');
+console.log('   📡 Use window.initPowClient() para iniciar');
