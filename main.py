@@ -1,12 +1,15 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v4.1 (CORREÇÃO DE IMPORTAÇÕES)
+# main.py (na raiz) - VERSÃO PRODUÇÃO v4.0 (COM SUPORTE PoW E ROTAS CORRIGIDAS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v4.1:
-- ✅ CORRIGIDO: Importação do pipeline de backend.ml.preprocessing
-- ✅ CORRIGIDO: get_db_safe() para evitar erro na rota premium-status
-- ✅ CORRIGIDO: Verificação segura do pipeline no main
-- ✅ CORRIGIDO: Fallback para todas as importações críticas
+🔥 CORREÇÕES v4.0:
+- ✅ ADICIONADO: Inicialização do PoW Service no startup
+- ✅ ADICIONADO: Verificação de rotas /pow no startup
+- ✅ ADICIONADO: Status do PoW no health check
+- ✅ CORRIGIDO: Log detalhado das rotas registradas
+- ✅ CORRIGIDO: Fallback para get_current_user no PoW
+- ✅ ADICIONADO: Rota /api/payments/premium-status (compatível com frontend)
+- ✅ MELHORADO: Diagnóstico de rotas no startup
 ================================================================================
 """
 
@@ -19,7 +22,7 @@ import string
 import traceback
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, Callable, Generator
+from typing import Optional, Dict, Any, Callable
 
 # ==============================================
 # 1. PATHS E CONFIGURAÇÃO INICIAL
@@ -34,7 +37,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v4.1 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v4.0 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -49,7 +52,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "4.1.0"
+    VERSION = "4.0.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -360,7 +363,7 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
     if not token:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            token = auth_header.replace("Bearer ", "")
+            token = auth_header.replace("Bearer " , " ,")
     
     if not token:
         return None
@@ -528,7 +531,6 @@ set_auth_cookies = None
 clear_auth_cookies = None
 AUTH_ENABLED = False
 pipeline = None
-process_file_content = None
 SessionLocal = None
 
 # 11.1 Database
@@ -655,22 +657,18 @@ except ImportError as e:
     def consume_analysis_credit(user, db, required=1): return True
     def get_credits_display(user): return "0"
 
-# 🔥 11.6 ML Pipeline - CORRIGIDO (importa de backend.ml.preprocessing)
+# 11.6 ML Pipeline
 print("   🤖 Carregando ML Pipeline...")
-
 try:
-    from backend.ml.preprocessing import pipeline as _pipeline, process_file_content as _process_file_content
+    from backend.preprocessing import pipeline as _pipeline, process_file_content
     pipeline = _pipeline
-    process_file_content = _process_file_content
-    print("   ✅ ML Pipeline carregado de backend.ml.preprocessing")
+    print("   ✅ ML Pipeline carregado")
     if hasattr(pipeline, 'model_source'):
         print(f"      📊 Modelo: {pipeline.model_source}")
     print(f"      🔤 Encoding: automático (chardet)")
     print(f"      💾 Cache: TTL 60s")
 except ImportError as e:
     print(f"   ⚠️ ML Pipeline não disponível: {e}")
-    print("   🔧 Usando fallback (ML desabilitado)")
-    
     # ===== FALLBACK: MOCK PIPELINE =====
     class MockPipeline:
         def __init__(self):
@@ -689,9 +687,8 @@ except ImportError as e:
             pass
     pipeline = MockPipeline()
     
-    async def _fallback_process_file_content(content, filename):
+    async def process_file_content(content, filename):
         return {"success": False, "error": "ML não disponível"}
-    process_file_content = _fallback_process_file_content
 
 print("   ✅ Módulos carregados com sucesso!")
 
@@ -814,13 +811,14 @@ except Exception as e:
 
 # 🔥 PoW - VERIFICAR SE ESTÁ REGISTRADO (CORRIGIDO)
 try:
-    from backend.api.pow_routes import router as pow_router
+    from backend.api.pow_routes import router as pow_router, pow_service, DEFAULT_DIFFICULTY, CHALLENGE_EXPIRY_SECONDS
     app.include_router(pow_router, prefix="/api")  # → /api/pow/challenge
     print("   ✅ PoW Routes (/api/pow/*) registradas com sucesso!")
-    print("      GET    /api/pow/challenge  ← 🔥 DESAFIO PoW")
-    print("      POST   /api/pow/verify     ← 🔥 VERIFICAÇÃO PoW")
-    print("      GET    /api/pow/health     ← 🔥 SAÚDE PoW")
-    print("      GET    /api/pow/stats      ← 📊 ESTATÍSTICAS PoW (admin)")
+    print(f"      GET    /api/pow/challenge  ← 🔥 DESAFIO PoW (difficulty: {DEFAULT_DIFFICULTY})")
+    print(f"      POST   /api/pow/verify     ← 🔥 VERIFICAÇÃO PoW")
+    print(f"      GET    /api/pow/health     ← 🔥 SAÚDE PoW")
+    print(f"      GET    /api/pow/stats      ← 📊 ESTATÍSTICAS PoW (admin)")
+    print(f"      ⏰ TTL: {CHALLENGE_EXPIRY_SECONDS}s")
     _pow_routes_loaded = True
 except ImportError as e:
     print(f"   ❌ PoW Routes não disponível: {e}")
@@ -833,28 +831,13 @@ except Exception as e:
     _pow_routes_loaded = False
 
 # ==============================================
-# 14. 🔥 ROTA DE COMPATIBILIDADE - premium-status (CORRIGIDA)
+# 14. 🔥 ROTA DE COMPATIBILIDADE - premium-status
 # ==============================================
-
-# 🔥 Função para obter db de forma segura
-def get_db_safe():
-    """Obtém a sessão do banco de dados de forma segura"""
-    try:
-        if SessionLocal is not None:
-            db = SessionLocal()
-            try:
-                yield db
-            finally:
-                db.close()
-        else:
-            yield None
-    except Exception:
-        yield None
 
 @app.get("/api/payments/premium-status", tags=["payments"])
 async def get_premium_status_compat(
     current_user = Depends(get_current_user),
-    db: Session = Depends(get_db_safe)
+    db: Session = Depends(get_db) if 'get_db' in dir() else None
 ):
     """
     🔥 ROTA DE COMPATIBILIDADE PARA O FRONTEND
@@ -1015,7 +998,7 @@ print("   ✅ Verificação de rotas concluída!")
 async def health_check():
     """Verificação de saúde do sistema"""
     ml_status = {}
-    if pipeline is not None and hasattr(pipeline, 'get_status'):
+    if hasattr(pipeline, 'get_status'):
         try:
             ml_status = pipeline.get_status()
         except Exception:
@@ -1133,8 +1116,10 @@ async def startup_event():
     
     # 🔥 18.5 PoW Service
     try:
-        from backend.api.pow_routes import pow_service
+        from backend.api.pow_routes import pow_service, DEFAULT_DIFFICULTY, CHALLENGE_EXPIRY_SECONDS
         print(f"   ✅ PoW Service inicializado")
+        print(f"      🔐 Dificuldade padrão: {DEFAULT_DIFFICULTY}")
+        print(f"      ⏰ TTL do desafio: {CHALLENGE_EXPIRY_SECONDS}s")
         print(f"      🛡️  Prevenção replay: Ativa")
     except ImportError:
         print("   ⚠️ PoW Service não disponível")
@@ -1266,14 +1251,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 Gemini: {'✅' if settings.GEMINI_API_KEY else '❌'}")
-    
-    # 🔥 CORRIGIDO: Verifica pipeline de forma segura
-    pipeline_ok = pipeline is not None and hasattr(pipeline, 'is_initialized')
-    print(f"🤖 ML: {'✅' if pipeline_ok else '⚠️'}")
-    
+    print(f"🤖 ML: {'✅' if pipeline is not None and hasattr(pipeline, 'is_initialized') else '⚠️'}")
     print(f"🔐 Auth: {'✅' if AUTH_ENABLED else '❌'}")
     print(f"🔒 PoW: {'✅' if _pow_routes_loaded else '❌'}")
-    print("hello word")
     print(f"💳 Mercado Pago: {'✅' if settings.MP_ACCESS_TOKEN else '❌'}")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
