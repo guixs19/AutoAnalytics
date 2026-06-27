@@ -1,20 +1,21 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.3 (COM MELHORIAS DE INICIALIZAÇÃO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.4 (CORREÇÃO TOTAL DE INICIALIZAÇÃO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V5.3:
- * 1. 🔥 Exportação com isInitialized() para quebrar loop infinito
- * 2. 🔥 State.userInitialized para tracking de inicialização
- * 3. 🔥 Melhorias no anti-loop com fallbacks
- * 4. 🔥 Evento 'app:ready' espelhado para window
- * 5. 🔥 Sincronização robusta com index.html
+ * 🏗️ ARQUITETURA V5.4:
+ * 1. 🔥 isInitialized() unificado e robusto
+ * 2. 🔥 isReady() para verificação de prontidão
+ * 3. 🔥 Evento 'app:ready' com flag de segurança
+ * 4. 🔥 State compartilhado via window.__APP_STATE
+ * 5. 🔥 Exportação única e consistente
  * 6. 🔥 Tratamento de unauthorized com anti-loop
+ * 7. 🔥 Fallback para inicialização tardia
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v5.3...');
+    console.log('🚀 Inicializando App (Orquestrador) v5.4...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -105,7 +106,7 @@
     };
 
     // ==============================================
-    // 🔥 ESTADO GLOBAL (REATIVO)
+    // 🔥 ESTADO GLOBAL (REATIVO) - COMPARTILHADO
     // ==============================================
 
     const State = {
@@ -116,7 +117,7 @@
         creditsDisplay: '0',
         
         initialized: false,
-        userInitialized: false, // 🔥 NOVO: tracking de inicialização do usuário
+        userInitialized: false,
         isAppReady: false,
         tokenValid: false,
         tokenExpiresAt: null,
@@ -148,6 +149,9 @@
         _listeners: [],
         _intervals: []
     };
+
+    // 🔥 EXPORTA ESTADO PARA OUTROS MÓDULOS
+    window.__APP_STATE = State;
 
     // ==============================================
     // 🔥 UTILITÁRIOS
@@ -578,7 +582,7 @@
                     }
                 });
 
-                // 🔥 Evento reativo de créditos (com espelhamento para window)
+                // 🔥 Evento reativo de créditos
                 const creditEventData = {
                     credits,
                     display: formattedDisplay,
@@ -587,8 +591,6 @@
                 };
                 
                 EventBus.emit('credits:updated', creditEventData);
-                
-                // 🔥 ESPELHAMENTO PARA WINDOW (index.html escuta)
                 window.dispatchEvent(new CustomEvent('credits:updated', { 
                     detail: creditEventData 
                 }));
@@ -825,7 +827,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE AUTENTICAÇÃO (COM ESPELHAMENTO)
+    // 🔥 GERENCIADOR DE AUTENTICAÇÃO
     // ==============================================
 
     const Auth = {
@@ -846,7 +848,6 @@
                 console.log('⏰ Sessão expirada por inatividade');
                 Utils.showNotification('⏰ Sessão expirada por inatividade. Faça login novamente.', 'warning');
                 
-                // 🔥 Evento de expiração com espelhamento
                 const eventData = { message: 'Sessão expirada por inatividade' };
                 EventBus.emit('auth:session_expired', eventData);
                 window.dispatchEvent(new CustomEvent('auth:session_expired', { detail: eventData }));
@@ -956,7 +957,7 @@
         handleUnauthorized: function() {
             console.error('❌ [Orquestrador] Sessão inválida ou expirada.');
             
-            // 🔥 Alimenta o anti-loop do index.html v5.0
+            // Alimenta o anti-loop
             sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
             
             // Limpa cache local
@@ -970,8 +971,9 @@
             State.isPremium = false;
             State.isAdmin = false;
             State.tokenValid = false;
+            State.isAppReady = false;
             
-            // 🔥 Dispara evento global para o index.html
+            // 🔥 Dispara evento global
             const eventData = { 
                 message: 'Sessão inválida ou expirada',
                 redirect: true 
@@ -980,11 +982,11 @@
             EventBus.emit('auth:unauthorized', eventData);
             window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: eventData }));
             
-            // Atualiza UI antes de redirecionar
+            // Atualiza UI
             UI.updateNavbar();
             UI.updateRateLimitStatus();
             
-            // 🔥 Redireciona para login (sem reload infinito)
+            // Redireciona para login
             setTimeout(() => {
                 window.location.replace('/login');
             }, 300);
@@ -1284,7 +1286,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE ANÁLISES (COM SINCRONIZAÇÃO)
+    // 🔥 GERENCIADOR DE ANÁLISES
     // ==============================================
 
     const Analysis = {
@@ -1330,7 +1332,6 @@
             }
         },
 
-        // 🔥 COMPLETE ANALYSIS COM SINCRONIZAÇÃO DE CRÉDITOS
         completeAnalysis: function(analysisId, result) {
             const index = State.activeAnalyses.findIndex(a => a.id === analysisId);
             if (index !== -1) {
@@ -1352,7 +1353,6 @@
                     State.recentAnalyses = State.recentAnalyses.slice(0, 50);
                 }
 
-                // 🔥 🔥 🔥 SINCRONIZA CRÉDITOS DO BACKEND (ML/GEMINI)
                 if (result && result.user_credits !== undefined) {
                     console.log(`💰 Atualizando créditos do backend: ${result.user_credits}`);
                     State.credits = result.user_credits;
@@ -1360,7 +1360,6 @@
                     const display = result.credits_display || Utils.formatCreditsDisplay(State.credits, State.isPremium);
                     State.creditsDisplay = display;
                     
-                    // 🔥 Dispara evento para window (index.html escuta)
                     const creditEventData = {
                         credits: State.credits,
                         display: State.creditsDisplay,
@@ -1371,11 +1370,9 @@
                     EventBus.emit('credits:updated', creditEventData);
                     window.dispatchEvent(new CustomEvent('credits:updated', { detail: creditEventData }));
                     
-                    // Atualiza UI
                     UI.updateCredits();
                 }
                 
-                // 🔥 Evento de análise concluída
                 const eventData = {
                     analysis,
                     result,
@@ -1448,7 +1445,7 @@
                     State.isAdmin = userData.is_admin || false;
                     State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
                     State.tokenValid = true;
-                    State.userInitialized = true; // 🔥 MARCA COMO INICIALIZADO
+                    State.userInitialized = true;
                     
                     UI.updateNavbar();
                     Credits.startPolling();
@@ -1794,7 +1791,7 @@
                 });
             });
 
-            // Listener para eventos de análise do dashboard
+            // Listener para eventos de análise
             EventBus.on('analysis:started', (data) => {
                 console.log('📊 Análise iniciada:', data);
             });
@@ -1819,7 +1816,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v5.3...');
+        console.log('🚀 Inicializando App (Orquestrador) v5.4...');
 
         try {
             // 1. Resetar contador de reloads
@@ -1866,11 +1863,13 @@
             State.isAppReady = true;
             State.userInitialized = true;
 
+            // 🔥 FLAG PARA INDICAR QUE O APP ESTÁ PRONTO
+            window._appReadyFired = true;
+
             // ==============================================
             // 🔥🔥🔥 ESPELHAMENTO DO EVENTO app:ready 🔥🔥🔥
             // ==============================================
             
-            // Dados do evento
             const appReadyData = {
                 isAuthenticated: isAuth,
                 user: State.user,
@@ -1888,27 +1887,30 @@
                 displayName: State.user?.name || 'Usuário',
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
-                version: '5.3'
+                isReady: true,
+                version: '5.4'
             };
 
-            // 🔥 Dispara via EventBus (interno)
+            // 🔥 Dispara via EventBus
             EventBus.emit('app:ready', appReadyData);
             
-            // 🔥🔥🔥 DISPARA PARA WINDOW (index.html V5.0 ESCUTA) 🔥🔥🔥
+            // 🔥 Dispara via window
             window.dispatchEvent(new CustomEvent('app:ready', { 
                 detail: appReadyData 
             }));
 
-            console.log('✅ App (Orquestrador) v5.3 inicializado com sucesso!');
-            console.log('📢 Evento app:ready disparado para window');
+            // 🔥 Dispara também via DOM (para máxima compatibilidade)
+            document.dispatchEvent(new CustomEvent('app:ready', { 
+                detail: appReadyData 
+            }));
+
+            console.log('✅ App (Orquestrador) v5.4 inicializado com sucesso!');
+            console.log('📢 Evento app:ready disparado via window, document e EventBus');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${Utils.getCurrentPath()}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
             console.log(`📌 Premium: ${State.isPremium}`);
             console.log(`📌 Créditos: ${State.creditsDisplay}`);
-            console.log(`📌 Preço Vitalício: ${State.hasPromotionalPrice ? `R$ ${State.promotionalPrice}` : 'Não'}`);
-            console.log(`📌 Rate Limit: ${State.rateLimitBlocked ? `🔴 Bloqueado (${Utils.getRateLimitTimeRemaining()}s)` : '🟢 Disponível'}`);
-            console.log(`📌 EventBus: ${EventBus._handlers.size} handlers registrados`);
             console.log(`📌 userInitialized: ${State.userInitialized}`);
 
         } catch (error) {
@@ -1924,24 +1926,18 @@
             State.initialized = false;
             State.isAppReady = false;
             State.userInitialized = false;
+            window._appReadyFired = false;
         }
     }
 
     // ==============================================
-    // 🔥 OBJETO PRINCIPAL DA APLICAÇÃO (V5.3)
+    // 🔥 EXPORTAÇÕES GLOBAIS - V5.4
     // ==============================================
 
     const App = {
-        // Configurações
         CONFIG,
-        
-        // Estado
-        State,
-        
-        // Utilitários
+        State: State,
         Utils,
-        
-        // Módulos
         Router,
         EventBus,
         UI,
@@ -1953,15 +1949,37 @@
         EventManager,
         ReloadManager,
         
-        // Métodos públicos principais
         init: initApp,
         
-        // 🔥 NOVO: Método para verificar inicialização (quebra loop infinito)
+        // 🔥 MÉTODOS CORRIGIDOS E ROBUSTOS
         isInitialized: function() {
-            return !!window._appInitialized && State.userInitialized === true;
+            try {
+                const appInit = !!window._appInitialized;
+                const userInit = State && State.userInitialized === true;
+                const appReady = State && State.isAppReady === true;
+                const flagReady = !!window._appReadyFired;
+                
+                // Log apenas se houver algum problema
+                if (!appInit || !userInit || !appReady) {
+                    console.debug('📊 isInitialized:', { appInit, userInit, appReady, flagReady });
+                }
+                
+                return appInit && userInit && appReady;
+            } catch (e) {
+                console.warn('⚠️ Erro em isInitialized:', e);
+                return false;
+            }
         },
         
-        // Aliases para compatibilidade
+        isReady: function() {
+            try {
+                return State && State.isAppReady === true;
+            } catch (e) {
+                return false;
+            }
+        },
+        
+        // Aliases
         auth: Auth,
         pow: Pow,
         credits: Credits,
@@ -1974,15 +1992,15 @@
         // Funções auxiliares
         showNotification: Utils.showNotification,
         isAuthenticated: Utils.isAuthenticated,
-        getCurrentUser: () => State.user,
-        getCredits: () => State.credits,
-        isAdmin: () => State.isAdmin,
-        isPremium: () => State.isPremium,
-        hasVitalicio: () => State.hasPromotionalPrice,
-        getPromotionalPrice: () => State.promotionalPrice,
-        canReceiveDailyCredit: () => State.canReceiveDailyCredit,
-        getDaysLeftPremium: () => State.daysLeftPremium,
-        isTokenValid: () => State.tokenValid,
+        getCurrentUser: () => State ? State.user : null,
+        getCredits: () => State ? State.credits : 0,
+        isAdmin: () => State ? State.isAdmin : false,
+        isPremium: () => State ? State.isPremium : false,
+        hasVitalicio: () => State ? State.hasPromotionalPrice : false,
+        getPromotionalPrice: () => State ? State.promotionalPrice : null,
+        canReceiveDailyCredit: () => State ? State.canReceiveDailyCredit : false,
+        getDaysLeftPremium: () => State ? State.daysLeftPremium : 0,
+        isTokenValid: () => State ? State.tokenValid : false,
         
         // Rate Limiter
         isRateLimitBlocked: Utils.isRateLimitBlocked,
@@ -2003,7 +2021,7 @@
         loadPremiumStatus: Credits.loadPremiumStatus,
         receiveDailyCredit: Credits.receiveDailyCredit,
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
-        getCreditsBalance: () => State.credits,
+        getCreditsBalance: () => State ? State.credits : 0,
         
         // Análise
         startAnalysis: Analysis.startAnalysis,
@@ -2036,29 +2054,16 @@
         formatCreditsDisplay: Utils.formatCreditsDisplay
     };
 
-    // ==============================================
-    // 🔥 EXPOR MÓDULOS PARA O ESCOPO GLOBAL (V5.3)
-    // ==============================================
-    
-    // 🔥 OBJETO FINAL COM isInitialized
-    const AppFinal = {
-        ...App,
-        // Injeta o método que o index.html está cobrando para quebrar o loop infinito
-        isInitialized: function() {
-            return !!window._appInitialized && State.userInitialized === true;
-        }
-    };
-
     // 🔥 EXPORTAÇÕES GLOBAIS
-    window.App = AppFinal;
-    window.AppInstance = AppFinal; // Alias de segurança para scripts legados
-    window.app = AppFinal;
-    window.autoAnalytics = AppFinal;
-    
-    // 🔥 EXPORTA EVENTBUS
+    window.App = App;
+    window.AppInstance = App;
+    window.app = App;
+    window.autoAnalytics = App;
     window.EventBus = EventBus;
+    window.__APP_STATE = State;
+    window.__APP_CONFIG = CONFIG;
     
-    // 🔥 FUNÇÕES AUXILIARES (BACKWARD COMPATIBILITY)
+    // 🔥 FUNÇÕES AUXILIARES
     window.showNotification = Utils.showNotification;
     window.escapeHtml = Utils.escapeHtml;
     window.isAuthenticated = Utils.isAuthenticated;
@@ -2100,24 +2105,41 @@
         timeRemaining: Utils.getRateLimitTimeRemaining()
     });
 
-    // 🔥 FUNÇÕES DO AUTH EXPORTADAS (usadas no index.html)
-    window.fetchWithAuth = async (url, options) => {
-        if (AppFinal.auth && AppFinal.auth.fetchWithAuth) {
-            return AppFinal.auth.fetchWithAuth(url, options);
+    // 🔥 FUNÇÕES DO AUTH
+    window.fetchWithAuth = async (url, options = {}) => {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                console.warn('⚠️ fetchWithAuth: sem token');
+                return null;
+            }
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                ...options.headers
+            };
+            
+            const response = await fetch(url, { ...options, headers });
+            
+            if (response.status === 401) {
+                Auth.handleUnauthorized();
+                return null;
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('fetchWithAuth error:', error);
+            return null;
         }
-        console.warn('⚠️ fetchWithAuth não disponível');
-        return null;
     };
 
     window.logout = () => {
-        if (AppFinal.auth && AppFinal.auth.logout) {
-            return AppFinal.auth.logout();
-        }
         Auth.handleUnauthorized();
     };
 
     window.getCurrentUser = () => {
-        return AppFinal.getCurrentUser ? AppFinal.getCurrentUser() : State.user;
+        return State ? State.user : null;
     };
 
     // ==============================================
@@ -2132,18 +2154,17 @@
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
-            setTimeout(initApp, 100);
+            // Pequeno delay para garantir que outros scripts carreguem
+            setTimeout(initApp, 150);
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v5.3 carregado!');
-    console.log('   🔥 Melhorias de inicialização:');
-    console.log('   - isInitialized() para quebrar loop infinito');
-    console.log('   - State.userInitialized para tracking');
-    console.log('   - AppFinal com método isInitialized');
-    console.log('   - fetchWithAuth, logout, getCurrentUser exportados');
-    console.log('   - Evento app:ready espelhado para window');
-    console.log('   - auth:unauthorized com anti-loop (sessionStorage)');
-    console.log('   - Sincronização de créditos via ML/Gemini');
+    console.log('✅ app.js (Orquestrador) v5.4 carregado!');
+    console.log('   🔥 isInitialized() robusto com múltiplas verificações');
+    console.log('   🔥 isReady() para verificação rápida');
+    console.log('   🔥 State compartilhado via window.__APP_STATE');
+    console.log('   🔥 Evento app:ready disparado em 3 canais (window, document, EventBus)');
+    console.log('   🔥 fetchWithAuth com tratamento de 401');
+    console.log('   🔥 window._appReadyFired para detecção de prontidão');
 
 })();
