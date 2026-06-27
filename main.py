@@ -1,19 +1,15 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v3.9 (AUTH ROUTES CORRIGIDAS)
+# main.py (na raiz) - VERSÃO PRODUÇÃO v4.0 (COM SUPORTE PoW E ROTAS CORRIGIDAS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v3.9:
-- ✅ CORREÇÃO CRÍTICA: Importação de auth_routes movida para o início
-- ✅ CORREÇÃO CRÍTICA: AUTH_ENABLED definido antes do health check
-- ✅ CORREÇÃO CRÍTICA: SessionLocal importado corretamente
-- ✅ CORREÇÃO CRÍTICA: pipeline importado antes do startup
-- ✅ Rotas HTML corrigidas para servir os arquivos corretamente
-- ✅ /login → login.html
-- ✅ /planos → planos.html
-- ✅ /dashboard → index.html
-- ✅ / → index.html (com verificação de token)
-- ✅ Fallback para rotas não encontradas
-- ✅ Caminhos padronizados para servir arquivos estáticos
+🔥 CORREÇÕES v4.0:
+- ✅ ADICIONADO: Inicialização do PoW Service no startup
+- ✅ ADICIONADO: Verificação de rotas /pow no startup
+- ✅ ADICIONADO: Status do PoW no health check
+- ✅ CORRIGIDO: Log detalhado das rotas registradas
+- ✅ CORRIGIDO: Fallback para get_current_user no PoW
+- ✅ ADICIONADO: Rota /api/payments/premium-status (compatível com frontend)
+- ✅ MELHORADO: Diagnóstico de rotas no startup
 ================================================================================
 """
 
@@ -41,7 +37,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v3.9 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v4.0 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -56,7 +52,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "3.9.0"
+    VERSION = "4.0.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -216,7 +212,7 @@ frontend_status = check_frontend()
 print("\n🔧 Importando FastAPI...")
 
 try:
-    from fastapi import FastAPI, Request, HTTPException
+    from fastapi import FastAPI, Request, HTTPException, Depends
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
@@ -367,7 +363,7 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
     if not token:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            token = auth_header.replace("Bearer ", "")
+            token = auth_header.replace("Bearer " , " ,")
     
     if not token:
         return None
@@ -389,12 +385,10 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
 @app.get("/login", include_in_schema=False)
 async def get_login_page(request: Request):
     """Serve a página de login"""
-    # Verifica se já está autenticado
     payload = await verify_token_from_request(request)
     if payload and frontend_status["dashboard"]:
         return RedirectResponse(url="/dashboard", status_code=302)
     
-    # Verifica se o arquivo existe
     login_path = FRONTEND_DIR / "login.html"
     if login_path.exists():
         try:
@@ -405,17 +399,14 @@ async def get_login_page(request: Request):
     
     return JSONResponse(status_code=404, content={"error": "login.html não encontrado"})
 
-
 # 2. Página de Planos
 @app.get("/planos", include_in_schema=False)
 async def get_planos_page(request: Request):
     """Serve a página de planos"""
-    # Verifica autenticação
     payload = await verify_token_from_request(request)
     if not payload:
         return RedirectResponse(url="/login", status_code=302)
     
-    # Tenta servir planos.html
     planos_path = FRONTEND_DIR / "planos.html"
     if planos_path.exists():
         try:
@@ -424,7 +415,6 @@ async def get_planos_page(request: Request):
         except Exception as e:
             print(f"   ❌ Erro ao ler planos.html: {e}")
     
-    # Fallback: index.html
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
         try:
@@ -435,12 +425,10 @@ async def get_planos_page(request: Request):
     
     return JSONResponse(status_code=404, content={"error": "Página de planos não encontrada"})
 
-
 # 3. Página de Checkout
 @app.get("/checkout", include_in_schema=False)
 async def get_checkout_page(request: Request):
     """Serve a página de checkout"""
-    # Verifica autenticação
     payload = await verify_token_from_request(request)
     if not payload:
         return RedirectResponse(url="/login", status_code=302)
@@ -455,12 +443,10 @@ async def get_checkout_page(request: Request):
     
     return JSONResponse(status_code=404, content={"error": "checkout.html não encontrado"})
 
-
 # 4. Dashboard (Raiz - /dashboard)
 @app.get("/dashboard", include_in_schema=False)
 async def get_dashboard_page(request: Request):
     """Serve a página do dashboard (index.html)"""
-    # Verifica autenticação
     payload = await verify_token_from_request(request)
     if not payload:
         return RedirectResponse(url="/login", status_code=302)
@@ -475,16 +461,13 @@ async def get_dashboard_page(request: Request):
     
     return JSONResponse(status_code=404, content={"error": "index.html não encontrado"})
 
-
 # 5. Raiz (/)
 @app.get("/", include_in_schema=False)
 async def get_root_page(request: Request):
     """Serve a página inicial"""
-    # Verifica se está autenticado
     payload = await verify_token_from_request(request)
     
     if payload and frontend_status["dashboard"]:
-        # Se autenticado, vai para o dashboard
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
             try:
@@ -493,7 +476,6 @@ async def get_root_page(request: Request):
             except Exception as e:
                 print(f"   ❌ Erro ao ler index.html: {e}")
     
-    # Se não autenticado, vai para o login
     login_path = FRONTEND_DIR / "login.html"
     if login_path.exists():
         try:
@@ -728,7 +710,6 @@ try:
     print("      GET    /api/auth/me")
     print("      GET    /api/auth/session-status")
     
-    # 🔥 Marca que as rotas de auth foram carregadas
     _auth_routes_loaded = True
     
 except ImportError as e:
@@ -793,7 +774,7 @@ except Exception as e:
     print(f"   ⚠️ Erro ao registrar auth.py: {e}")
 
 # ==============================================
-# 13. 🔥 OUTRAS ROTAS (COM FALLBACK)
+# 13. 🔥 OUTRAS ROTAS (COM FALLBACK E PoW)
 # ==============================================
 
 print("\n📦 Registrando outras rotas...")
@@ -828,39 +809,189 @@ except ImportError as e:
 except Exception as e:
     print(f"   ⚠️ Erro ao registrar Gemini: {e}")
 
-# PoW
+# 🔥 PoW - VERIFICAR SE ESTÁ REGISTRADO (CORRIGIDO)
 try:
-    from backend.api.pow_routes import router as pow_router
-    app.include_router(pow_router, prefix="/api")
-    print("   ✅ PoW Routes (/api/pow/*)")
+    from backend.api.pow_routes import router as pow_router, pow_service, DEFAULT_DIFFICULTY, CHALLENGE_EXPIRY_SECONDS
+    app.include_router(pow_router, prefix="/api")  # → /api/pow/challenge
+    print("   ✅ PoW Routes (/api/pow/*) registradas com sucesso!")
+    print(f"      GET    /api/pow/challenge  ← 🔥 DESAFIO PoW (difficulty: {DEFAULT_DIFFICULTY})")
+    print(f"      POST   /api/pow/verify     ← 🔥 VERIFICAÇÃO PoW")
+    print(f"      GET    /api/pow/health     ← 🔥 SAÚDE PoW")
+    print(f"      GET    /api/pow/stats      ← 📊 ESTATÍSTICAS PoW (admin)")
+    print(f"      ⏰ TTL: {CHALLENGE_EXPIRY_SECONDS}s")
+    _pow_routes_loaded = True
 except ImportError as e:
-    print(f"   ⚠️ PoW Routes não disponível: {e}")
+    print(f"   ❌ PoW Routes não disponível: {e}")
+    print("   💡 Verifique se backend/api/pow_routes.py existe")
+    _pow_routes_loaded = False
 except Exception as e:
-    print(f"   ⚠️ Erro ao registrar PoW: {e}")
+    print(f"   ❌ Erro ao registrar PoW: {e}")
+    import traceback
+    traceback.print_exc()
+    _pow_routes_loaded = False
 
 # ==============================================
-# 14. 🔥 VERIFICAÇÃO FINAL DAS ROTAS
+# 14. 🔥 ROTA DE COMPATIBILIDADE - premium-status
+# ==============================================
+
+@app.get("/api/payments/premium-status", tags=["payments"])
+async def get_premium_status_compat(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db) if 'get_db' in dir() else None
+):
+    """
+    🔥 ROTA DE COMPATIBILIDADE PARA O FRONTEND
+    Esta rota é chamada pelo loadPremiumStatus() no payment.js
+    """
+    try:
+        if current_user is None:
+            return JSONResponse(
+                status_code=401,
+                content={"is_premium": False, "error": "Não autenticado"}
+            )
+        
+        # Verificar se é admin
+        if hasattr(current_user, 'is_admin') and current_user.is_admin:
+            return {
+                "is_premium": True,
+                "days_left": 999,
+                "is_admin": True,
+                "credits_balance": "∞",
+                "max_credits_balance": settings.MAX_CREDITS_BALANCE,
+                "plan": "admin",
+                "can_receive_today": False,
+                "received_today": True,
+                "promotional_price_locked": False,
+                "promotional_price": None,
+                "is_vitalicio": False,
+                "next_credit_date": None,
+                "activated_at": None,
+                "expires_at": None,
+                "days_used": 0
+            }
+        
+        # Usar CRUD para verificar status premium
+        if crud is not None and db is not None:
+            premium_status = crud.check_premium_status(db, current_user.id)
+            is_premium = premium_status.get("is_premium", False)
+            days_left = premium_status.get("days_left", 0)
+            
+            # Verificar créditos
+            user = crud.get_user_by_id(db, current_user.id)
+            credits = user.credits if user else 0
+            
+            # Verificar se já recebeu crédito hoje
+            received_today = False
+            if is_premium and user:
+                today = datetime.now().date()
+                log = db.query(DailyCreditLog).filter(
+                    DailyCreditLog.user_id == user.id,
+                    DailyCreditLog.date == today,
+                    DailyCreditLog.source == "premium_daily"
+                ).first()
+                received_today = log is not None
+            
+            return {
+                "is_premium": is_premium,
+                "days_left": max(0, days_left),
+                "is_admin": False,
+                "credits_balance": credits,
+                "max_credits_balance": settings.MAX_CREDITS_BALANCE,
+                "plan": "premium_mensal" if is_premium else "free",
+                "can_receive_today": is_premium and not received_today and credits < settings.MAX_CREDITS_BALANCE,
+                "received_today": received_today,
+                "promotional_price_locked": user.promotional_price_locked if user else False,
+                "promotional_price": user.promotional_price if user else None,
+                "is_vitalicio": user.promotional_price_locked if user else False,
+                "next_credit_date": None,
+                "activated_at": premium_status.get("activated_at"),
+                "expires_at": premium_status.get("expires_at"),
+                "days_used": 0
+            }
+        else:
+            # Fallback: retorna dados básicos
+            return {
+                "is_premium": False,
+                "days_left": 0,
+                "is_admin": False,
+                "credits_balance": 0,
+                "max_credits_balance": settings.MAX_CREDITS_BALANCE,
+                "plan": "free",
+                "can_receive_today": False,
+                "received_today": False,
+                "promotional_price_locked": False,
+                "promotional_price": None,
+                "is_vitalicio": False,
+                "next_credit_date": None,
+                "activated_at": None,
+                "expires_at": None,
+                "days_used": 0
+            }
+    except Exception as e:
+        print(f"   ⚠️ Erro em /premium-status: {e}")
+        return {
+            "is_premium": False,
+            "days_left": 0,
+            "is_admin": False,
+            "credits_balance": 0,
+            "max_credits_balance": settings.MAX_CREDITS_BALANCE,
+            "plan": "free",
+            "can_receive_today": False,
+            "received_today": False,
+            "promotional_price_locked": False,
+            "promotional_price": None,
+            "is_vitalicio": False,
+            "next_credit_date": None,
+            "activated_at": None,
+            "expires_at": None,
+            "days_used": 0
+        }
+
+print("   ✅ Rota de compatibilidade /api/payments/premium-status")
+
+# ==============================================
+# 15. 🔥 VERIFICAÇÃO FINAL DAS ROTAS
 # ==============================================
 
 print("\n📋 Verificando rotas registradas...")
 auth_routes_found = []
+pow_routes_found = []
+payment_routes_found = []
+
 for route in app.routes:
-    if hasattr(route, 'path') and '/auth' in route.path:
-        auth_routes_found.append(route.path)
+    if hasattr(route, 'path'):
+        if '/auth' in route.path:
+            auth_routes_found.append(route.path)
+        if '/pow' in route.path:
+            pow_routes_found.append(route.path)
+        if '/payments' in route.path:
+            payment_routes_found.append(route.path)
 
 if auth_routes_found:
     print(f"   ✅ Rotas /auth encontradas: {len(auth_routes_found)}")
-    for r in auth_routes_found[:10]:
+    for r in auth_routes_found[:5]:
         print(f"      📍 {r}")
 else:
     print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
     print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
-    print("   🔧 Verifique se o arquivo backend/api/auth_routes.py existe e está correto.")
 
-print("   ✅ Registro de rotas concluído!")
+if pow_routes_found:
+    print(f"   ✅ Rotas /pow encontradas: {len(pow_routes_found)}")
+    for r in pow_routes_found[:5]:
+        print(f"      📍 {r}")
+else:
+    print("   ❌ NENHUMA ROTA /pow ENCONTRADA!")
+    print("   ⚠️ O PoW NÃO VAI FUNCIONAR!")
+
+if payment_routes_found:
+    print(f"   ✅ Rotas /payments encontradas: {len(payment_routes_found)}")
+    for r in payment_routes_found[:5]:
+        print(f"      📍 {r}")
+
+print("   ✅ Verificação de rotas concluída!")
 
 # ==============================================
-# 15. HEALTH CHECK
+# 16. HEALTH CHECK (ATUALIZADO COM PoW)
 # ==============================================
 
 @app.get("/api/health", tags=["system"])
@@ -873,18 +1004,24 @@ async def health_check():
         except Exception:
             ml_status = {"error": "Erro ao obter status do ML"}
     
-    # Verificar se auth está funcionando
+    # Verificar auth
     auth_status = "✅" if AUTH_ENABLED else "❌"
-    auth_routes_ok = len([r for r in app.routes if hasattr(r, 'path') and '/auth' in r.path]) > 0
+    auth_routes_ok = len(auth_routes_found) > 0
+    
+    # Verificar PoW
+    pow_routes_ok = len(pow_routes_found) > 0
+    pow_status = "✅" if pow_routes_ok else "❌"
     
     return {
-        "status": "healthy" if auth_routes_ok else "degraded",
+        "status": "healthy" if (auth_routes_ok and pow_routes_ok) else "degraded",
         "timestamp": datetime.now().isoformat(),
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "auth_enabled": AUTH_ENABLED,
         "auth_status": auth_status,
         "auth_routes_registered": auth_routes_ok,
+        "pow_status": pow_status,
+        "pow_routes_registered": pow_routes_ok,
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "frontend_available": frontend_status["available"],
         "ml_pipeline": ml_status,
@@ -894,13 +1031,12 @@ async def health_check():
     }
 
 # ==============================================
-# 16. INICIALIZAÇÃO DA PROMOÇÃO
+# 17. INICIALIZAÇÃO DA PROMOÇÃO
 # ==============================================
 
 def init_promotion(db) -> None:
     """
     Inicializa a promoção de fundador se não existir
-    🔥 CORRIGIDO: Removeu a tipagem : Session para evitar erro de importação
     """
     try:
         from backend.models import PromotionControl
@@ -925,7 +1061,7 @@ def init_promotion(db) -> None:
         print(f"   ⚠️ Erro ao inicializar promoção: {e}")
 
 # ==============================================
-# 17. STARTUP
+# 18. STARTUP (ATUALIZADO COM PoW)
 # ==============================================
 
 @app.on_event("startup")
@@ -935,7 +1071,7 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 75)
     
-    # 17.1 Sentinel
+    # 18.1 Sentinel
     try:
         from backend.observability.sentinel import startup_webhook
         await startup_webhook()
@@ -945,7 +1081,7 @@ async def startup_event():
     except Exception as e:
         print(f"   ⚠️ Erro no Sentinel: {e}")
     
-    # 17.2 Promoção
+    # 18.2 Promoção
     if SessionLocal is not None:
         try:
             db = SessionLocal()
@@ -956,7 +1092,7 @@ async def startup_event():
     else:
         print("   ⚠️ SessionLocal não disponível - pulando promoção")
     
-    # 17.3 ML Pipeline
+    # 18.3 ML Pipeline
     if pipeline is not None:
         try:
             if hasattr(pipeline, 'initialize'):
@@ -967,7 +1103,7 @@ async def startup_event():
     else:
         print("   ⚠️ Pipeline não disponível - pulando inicialização ML")
     
-    # 17.4 Redis
+    # 18.4 Redis
     if jwt_manager is not None:
         try:
             if hasattr(jwt_manager, 'init_redis'):
@@ -978,26 +1114,59 @@ async def startup_event():
     else:
         print("   ⚠️ JWT Manager não disponível - pulando Redis")
     
-    # 17.5 Verificar rotas de auth
+    # 🔥 18.5 PoW Service
+    try:
+        from backend.api.pow_routes import pow_service, DEFAULT_DIFFICULTY, CHALLENGE_EXPIRY_SECONDS
+        print(f"   ✅ PoW Service inicializado")
+        print(f"      🔐 Dificuldade padrão: {DEFAULT_DIFFICULTY}")
+        print(f"      ⏰ TTL do desafio: {CHALLENGE_EXPIRY_SECONDS}s")
+        print(f"      🛡️  Prevenção replay: Ativa")
+    except ImportError:
+        print("   ⚠️ PoW Service não disponível")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao inicializar PoW: {e}")
+    
+    # 18.6 Verificar rotas
     print("\n🔐 Verificando rotas registradas...")
     auth_routes = []
+    pow_routes = []
+    payment_routes = []
+    
     for route in app.routes:
-        if hasattr(route, 'path') and '/auth' in route.path:
-            auth_routes.append(route.path)
+        if hasattr(route, 'path'):
+            if '/auth' in route.path:
+                auth_routes.append(route.path)
+            if '/pow' in route.path:
+                pow_routes.append(route.path)
+            if '/payments' in route.path:
+                payment_routes.append(route.path)
     
     if auth_routes:
         print(f"   ✅ Rotas /auth encontradas: {len(auth_routes)}")
-        for r in auth_routes:
+        for r in auth_routes[:5]:
             print(f"      📍 {r}")
     else:
         print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
         print("   ⚠️ O LOGIN NÃO VAI FUNCIONAR!")
-        print("   🔧 Verifique se o arquivo backend/api/auth_routes.py existe.")
     
-    # 17.6 Status Final
+    if pow_routes:
+        print(f"   ✅ Rotas /pow encontradas: {len(pow_routes)}")
+        for r in pow_routes[:5]:
+            print(f"      📍 {r}")
+    else:
+        print("   ❌ NENHUMA ROTA /pow ENCONTRADA!")
+        print("   ⚠️ O PoW NÃO VAI FUNCIONAR!")
+    
+    if payment_routes:
+        print(f"   ✅ Rotas /payments encontradas: {len(payment_routes)}")
+        for r in payment_routes[:5]:
+            print(f"      📍 {r}")
+    
+    # 18.7 Status Final
     gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
     ml_status = "✅" if (pipeline is not None and hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
     auth_ok = "✅" if auth_routes else "❌"
+    pow_ok = "✅" if pow_routes else "❌"
     
     print(f"""
     ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -1005,7 +1174,8 @@ async def startup_event():
     ╠═══════════════════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<48}  ║
     ║  🤖 Gemini: {gemini_status} | 🤖 ML: {ml_status}                        ║
-    ║  🔐 Auth: {auth_ok} | 🌐 Frontend: {"✅" if frontend_status["available"] else "❌"}          ║
+    ║  🔐 Auth: {auth_ok} | 🔒 PoW: {pow_ok}                  ║
+    ║  🌐 Frontend: {"✅" if frontend_status["available"] else "❌"}          ║
     ║  📁 Upload: {settings.MAX_FILE_SIZE // 1024}KB | {settings.MAX_FILES_PER_BATCH} arquivos        ║
     ║  💰 Créditos: {settings.INITIAL_FREE_CREDITS} grátis | máx {settings.MAX_CREDITS_BALANCE}          ║
     ║  🎯 Preço Fundador: R$ {settings.PROMOTIONAL_PRICE} ({settings.TOTAL_PROMOTIONAL_SLOTS} vagas)        ║
@@ -1017,7 +1187,7 @@ async def startup_event():
     """)
 
 # ==============================================
-# 18. SHUTDOWN
+# 19. SHUTDOWN
 # ==============================================
 
 @app.on_event("shutdown")
@@ -1044,7 +1214,7 @@ async def shutdown_event():
     print("👋 Sistema desligado!")
 
 # ==============================================
-# 19. EXCEPTION HANDLERS
+# 20. EXCEPTION HANDLERS
 # ==============================================
 
 @app.exception_handler(404)
@@ -1075,7 +1245,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # ==============================================
-# 20. MAIN
+# 21. MAIN
 # ==============================================
 
 if __name__ == "__main__":
@@ -1083,6 +1253,7 @@ if __name__ == "__main__":
     print(f"🤖 Gemini: {'✅' if settings.GEMINI_API_KEY else '❌'}")
     print(f"🤖 ML: {'✅' if pipeline is not None and hasattr(pipeline, 'is_initialized') else '⚠️'}")
     print(f"🔐 Auth: {'✅' if AUTH_ENABLED else '❌'}")
+    print(f"🔒 PoW: {'✅' if _pow_routes_loaded else '❌'}")
     print(f"💳 Mercado Pago: {'✅' if settings.MP_ACCESS_TOKEN else '❌'}")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
