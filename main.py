@@ -677,7 +677,7 @@ except ImportError as e:
 print("   🤖 Carregando ML Pipeline...")
 
 try:
-    from backend.ml.preprocessing import pipeline as _pipeline, process_file_content as _process_file_content
+    from backend.preprocessing import pipeline as _pipeline, process_file_content as _process_file_content
     pipeline = _pipeline
     process_file_content = _process_file_content
     print("   ✅ ML Pipeline carregado de backend.ml.preprocessing")
