@@ -11,13 +11,10 @@
     
     <!-- Toastr para notificações -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
     <style>
         /* ===== TODOS OS ESTILOS ===== */
-        * {
-            font-family: 'Inter', sans-serif;
-        }
+        * { font-family: 'Inter', sans-serif; }
         
         body {
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
@@ -71,9 +68,7 @@
             box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
         }
         
-        .bronze-badge i {
-            margin-right: 0.5rem;
-        }
+        .bronze-badge i { margin-right: 0.5rem; }
         
         .bronze-title {
             text-align: center;
@@ -88,6 +83,20 @@
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.5rem;
         }
+        
+        .vitalicio-badge {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            text-align: center;
+            margin: 0.5rem 0;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+        
+        .vitalicio-badge i { margin-right: 0.5rem; }
+        .vitalicio-badge small { font-weight: 400; opacity: 0.8; }
         
         .price-container {
             text-align: center;
@@ -135,19 +144,9 @@
             color: white;
         }
         
-        .bronze-feature:last-child {
-            border-bottom: none;
-        }
-        
-        .bronze-feature i {
-            color: #f5a623;
-            width: 35px;
-            font-size: 1.2rem;
-        }
-        
-        .bronze-feature strong {
-            color: #f5a623;
-        }
+        .bronze-feature:last-child { border-bottom: none; }
+        .bronze-feature i { color: #f5a623; width: 35px; font-size: 1.2rem; }
+        .bronze-feature strong { color: #f5a623; }
         
         .highlight-title {
             font-size: 1.1rem;
@@ -170,13 +169,8 @@
             border-right: 1px solid rgba(205, 127, 50, 0.2);
         }
         
-        .plan-info .col-4:last-child {
-            border-right: none;
-        }
-        
-        .plan-info i {
-            color: #f5a623;
-        }
+        .plan-info .col-4:last-child { border-right: none; }
+        .plan-info i { color: #f5a623; }
         
         .limit-warning {
             background: rgba(245, 166, 35, 0.15);
@@ -188,10 +182,7 @@
             color: rgba(255, 255, 255, 0.8);
         }
         
-        .limit-warning i {
-            color: #f5a623;
-            margin-right: 0.5rem;
-        }
+        .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
         
         .btn-bronze {
             background: linear-gradient(135deg, #f5a623, #e67e22);
@@ -260,14 +251,8 @@
         }
         
         @keyframes urgent-pulse {
-            0%, 100% { 
-                background: rgba(245, 166, 35, 0.2);
-                border-color: #f5a623;
-            }
-            50% { 
-                background: rgba(245, 166, 35, 0.4);
-                border-color: #ff7e00;
-            }
+            0%, 100% { background: rgba(245, 166, 35, 0.2); border-color: #f5a623; }
+            50% { background: rgba(245, 166, 35, 0.4); border-color: #ff7e00; }
         }
         
         .security-seals {
@@ -321,7 +306,6 @@
             margin-left: 0.5rem;
         }
         
-        /* 🔥 INDICADOR DE RATE LIMIT */
         .rate-limit-indicator {
             display: none;
             margin-top: 10px;
@@ -334,19 +318,19 @@
             align-items: center;
             gap: 10px;
         }
-
+        
         .rate-limit-indicator.show {
             display: flex;
             animation: fadeIn 0.3s ease-out;
         }
-
+        
         .rate-limit-indicator .timer {
             font-weight: 700;
             font-family: monospace;
             font-size: 1.1rem;
             color: #c53030;
         }
-
+        
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -361,12 +345,9 @@
             border: 1px solid #cd7f32;
         }
         
-        .admin-message i {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            color: #f5a623;
-        }
+        .admin-message i { font-size: 4rem; margin-bottom: 1rem; color: #f5a623; }
         
+        /* ===== SEÇÃO DE SUPORTE ===== */
         .support-card {
             background: white;
             border-radius: 30px;
@@ -428,11 +409,9 @@
             border-radius: 20px;
         }
         
-        .fs-10 {
-            font-size: 0.7rem;
-            opacity: 0.8;
-        }
-
+        .fs-10 { font-size: 0.7rem; opacity: 0.8; }
+        
+        /* ===== CRÉDITOS EXPLICAÇÃO ===== */
         .credits-explanation {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 16px;
@@ -440,7 +419,7 @@
             margin-top: 1.5rem;
             border: 1px solid rgba(205, 127, 50, 0.25);
         }
-
+        
         .credits-explanation .step {
             display: flex;
             align-items: flex-start;
@@ -449,18 +428,18 @@
             color: rgba(255, 255, 255, 0.85);
             font-size: 0.9rem;
         }
-
+        
         .credits-explanation .step i {
             color: #f5a623;
             font-size: 1rem;
             margin-top: 0.15rem;
             min-width: 20px;
         }
-
+        
         .credits-explanation .step strong {
             color: #f5a623;
         }
-
+        
         .credits-explanation .highlight-box {
             background: rgba(245, 166, 35, 0.1);
             border-radius: 12px;
@@ -468,17 +447,12 @@
             margin-top: 0.75rem;
             border-left: 3px solid #f5a623;
         }
-
-        .credits-explanation .highlight-box i {
-            color: #f5a623;
-            margin-right: 0.5rem;
-        }
-
+        
         .credits-explanation .highlight-box span {
             color: rgba(255, 255, 255, 0.9);
             font-size: 0.85rem;
         }
-
+        
         .strategy-tag {
             display: inline-block;
             background: rgba(245, 166, 35, 0.15);
@@ -491,27 +465,12 @@
         }
         
         @media (max-width: 768px) {
-            .bronze-card {
-                padding: 2rem;
-                margin: 0 1rem;
-            }
-            .price-tag {
-                font-size: 3rem;
-            }
-            .bronze-title h2 {
-                font-size: 1.8rem;
-            }
-            .vagas-number {
-                font-size: 1.8rem;
-            }
-            .support-icon {
-                width: 50px;
-                height: 50px;
-                font-size: 1.2rem;
-            }
-            .credits-explanation .step {
-                font-size: 0.8rem;
-            }
+            .bronze-card { padding: 2rem; margin: 0 1rem; }
+            .price-tag { font-size: 3rem; }
+            .bronze-title h2 { font-size: 1.8rem; }
+            .vagas-number { font-size: 1.8rem; }
+            .support-icon { width: 50px; height: 50px; font-size: 1.2rem; }
+            .credits-explanation .step { font-size: 0.8rem; }
         }
     </style>
 </head>
@@ -528,12 +487,10 @@
                     <span id="creditsDisplay">0</span> créditos
                 </span>
                 <span class="admin-badge" id="adminBadge">
-                    <i class="fas fa-crown"></i>
-                    Admin
+                    <i class="fas fa-crown"></i> Admin
                 </span>
                 <a href="/dashboard" class="btn btn-outline-gradient">
-                    <i class="fas fa-arrow-left me-2"></i>
-                    Voltar
+                    <i class="fas fa-arrow-left me-2"></i> Voltar
                 </a>
             </div>
         </div>
@@ -569,17 +526,15 @@
             </div>
         </div>
         
-        <!-- 🔥 SEÇÃO DE STATUS DO PLANO (MOSTRA DATA COMPRA E EXPIRAÇÃO) -->
-        <div class="row justify-content-center mt-4" id="subscriptionStatusContainer">
-            <!-- Será preenchido dinamicamente pelo JavaScript -->
-        </div>
+        <!-- 🔥 SEÇÃO DE STATUS DO PLANO -->
+        <div class="row justify-content-center mt-4" id="subscriptionStatusContainer"></div>
         
+        <!-- FORMATOS SUPORTADOS -->
         <div class="row justify-content-center mt-4">
             <div class="col-lg-8">
                 <div class="bg-white rounded-4 p-4 shadow-sm">
                     <h5 class="fw-bold mb-4">
-                        <i class="fas fa-upload me-2 text-warning"></i>
-                        Formatos suportados
+                        <i class="fas fa-upload me-2 text-warning"></i> Formatos suportados
                     </h5>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -609,7 +564,7 @@
             </div>
         </div>
 
-        <!-- 🔥 SEÇÃO DE SUPORTE ATUALIZADA -->
+        <!-- 🔥 SEÇÃO DE SUPORTE COMPLETA -->
         <div class="row justify-content-center mt-5 pt-4">
             <div class="col-lg-10">
                 <div class="support-card bg-white rounded-4 p-4 p-md-5 shadow-sm">
@@ -677,19 +632,19 @@
                                     <div id="faqContent" style="display: none;" class="mt-3">
                                         <div class="faq-item p-3 mb-2 rounded-3">
                                             <strong><i class="fas fa-coins text-primary me-2"></i>Como funcionam os créditos?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Cada análise consome 1 crédito. Usuários gratuitos começam com 3 créditos. Premium recebe 1 crédito NOVO por dia durante 30 dias!</p>
+                                            <p class="small text-muted mt-1 mb-0">Cada análise consome 1 crédito. Gratuito começa com 3. Premium recebe 1 crédito NOVO por dia!</p>
                                         </div>
                                         <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-chart-line text-primary me-2"></i>O que acontece quando meus créditos acabam?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Você pode assinar o plano Bronze (R$ 97,00) e receber 30 créditos totais, ou aguardar o próximo mês para novos créditos.</p>
+                                            <strong><i class="fas fa-chart-line text-primary me-2"></i>O que acontece quando os créditos acabam?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Assine o plano Bronze (R$ 97,00) e receba 30 créditos totais.</p>
+                                        </div>
+                                        <div class="faq-item p-3 mb-2 rounded-3">
+                                            <strong><i class="fas fa-credit-card text-primary me-2"></i>Como comprar o plano?</strong>
+                                            <p class="small text-muted mt-1 mb-0">Clique em "Garantir Preço Fundador", informe seu CPF e finalize com PIX.</p>
                                         </div>
                                         <div class="faq-item p-3 mb-2 rounded-3">
                                             <strong><i class="fas fa-mobile-alt text-primary me-2"></i>Posso usar no celular?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Sim! O sistema é responsivo e funciona em qualquer dispositivo com acesso à internet.</p>
-                                        </div>
-                                        <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-credit-card text-primary me-2"></i>Como faço para comprar o plano?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Clique no botão "Assinar Agora" acima, escolha PIX e finalize o pagamento. O plano é ativado automaticamente!</p>
+                                            <p class="small text-muted mt-1 mb-0">Sim! O sistema é responsivo e funciona em qualquer dispositivo.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -723,8 +678,7 @@
                                                       placeholder="Sua mensagem..." required></textarea>
                                         </div>
                                         <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-envelope me-2"></i>
-                                            Enviar Mensagem
+                                            <i class="fas fa-envelope me-2"></i> Enviar Mensagem
                                         </button>
                                     </form>
                                     <div class="text-center mt-3">
@@ -772,8 +726,7 @@
             <div class="modal-content rounded-4">
                 <div class="modal-header bg-dark text-white border-0">
                     <h5 class="modal-title">
-                        <i class="fas fa-qrcode me-2"></i>
-                        Pagamento via PIX
+                        <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -782,195 +735,77 @@
         </div>
     </div>
 
+    <!-- Modal CPF -->
+    <div class="modal fade" id="cpfModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-id-card me-2"></i>Confirme seu CPF
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        O CPF é obrigatório para geração do PIX e protege sua compra.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label">CPF</label>
+                        <input type="text" class="form-control form-control-lg" id="cpfInput" 
+                               placeholder="000.000.000-00" maxlength="14" autocomplete="off">
+                    </div>
+                    <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-bronze" id="confirmCpfBtn">
+                        <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICO) -->
+    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
     <!-- ============================================== -->
     
-    <!-- 
-        ⚠️ ORDEM DE CARREGAMENTO OBRIGATÓRIA:
-        1. jQuery e Bootstrap
-        2. pow-client.js (PoW)
-        3. auth.js (Autenticação)
-        4. app.js (Orquestrador - v3.3 com Rate Limiter)
-        5. payment.js (Pagamentos)
-        6. Código customizado da página
-    -->
+    <!-- 1️⃣ JQUERY (obrigatório para Toastr) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 2️⃣ TOASTR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    
+    <!-- 3️⃣ BOOTSTRAP -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 4️⃣ AOS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     
-    <!-- 🔥 SCRIPTS DA APLICAÇÃO - CAMINHOS PADRONIZADOS -->
-    <script src="/js/pow-client.js"></script>
-    <script src="/js/auth.js"></script>
-    <script src="/js/app.js"></script>
-    <script src="/js/payment.js"></script>
-    
     <!-- ============================================== -->
-    <!-- 🔥 CÓDIGO CUSTOMIZADO DA PÁGINA -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS - CAMINHOS CORRETOS -->
     <!-- ============================================== -->
     
+    <!-- 1️⃣ POW - v3.3 -->
+    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
+    
+    <!-- 2️⃣ AUTH - v3.0 -->
+    <script src="/static/js/auth.js?ver=3.0.0"></script>
+    
+    <!-- 3️⃣ APP - v5.6 -->
+    <script src="/static/js/app.js?ver=5.6.0"></script>
+    
+    <!-- 4️⃣ PAYMENT - v2.4 -->
+    <script src="/static/js/payment.js?ver=2.4.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 INICIALIZAÇÃO COMPLETA -->
+    <!-- ============================================== -->
     <script>
-        AOS.init();
-        
         // ==============================================
-        // 🔥 INICIALIZAÇÃO DO RATE LIMITER
+        // TOGGLE FAQ
         // ==============================================
-        
-        /**
-         * Atualiza UI do Rate Limiter na página de planos
-         */
-        function updateRateLimitUI(detail) {
-            const indicator = document.getElementById('rateLimitIndicator');
-            const timer = document.getElementById('rateLimitTimer');
-            const message = document.getElementById('rateLimitMessage');
-            
-            if (indicator) {
-                indicator.classList.add('show');
-            }
-            
-            if (timer) {
-                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                timer.textContent = remaining;
-                
-                // Atualiza a cada segundo
-                if (window._rateLimitTimerInterval) {
-                    clearInterval(window._rateLimitTimerInterval);
-                }
-                window._rateLimitTimerInterval = setInterval(function() {
-                    if (window.App && window.App.isRateLimitBlocked()) {
-                        const rem = window.App.getRateLimitTimeRemaining();
-                        if (timer) timer.textContent = rem;
-                        if (rem <= 0) {
-                            clearInterval(window._rateLimitTimerInterval);
-                            hideRateLimitUI();
-                        }
-                    } else {
-                        clearInterval(window._rateLimitTimerInterval);
-                        hideRateLimitUI();
-                    }
-                }, 1000);
-            }
-            
-            if (message && detail?.message) {
-                message.textContent = detail.message;
-            }
-        }
-        
-        /**
-         * Esconde UI do Rate Limiter
-         */
-        function hideRateLimitUI() {
-            const indicator = document.getElementById('rateLimitIndicator');
-            
-            if (indicator) {
-                indicator.classList.remove('show');
-            }
-            
-            if (window._rateLimitTimerInterval) {
-                clearInterval(window._rateLimitTimerInterval);
-                window._rateLimitTimerInterval = null;
-            }
-        }
-        
-        // ==============================================
-        // 🔥 EVENTOS DE AUTENTICAÇÃO E RATE LIMIT
-        // ==============================================
-        
-        // Aguarda o App carregar
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Inicializando página de planos...');
-            
-            // Aguarda o App ficar pronto
-            const checkApp = setInterval(function() {
-                if (window.App && window.App.isRateLimitBlocked !== undefined) {
-                    clearInterval(checkApp);
-                    console.log('✅ App encontrado - ativando Rate Limiter');
-                    
-                    // Verifica se já está bloqueado
-                    if (window.App.isRateLimitBlocked()) {
-                        updateRateLimitUI();
-                    }
-                    
-                    // Escuta eventos de rate limit
-                    window.addEventListener('rateLimitBlocked', function(event) {
-                        console.log('📢 Rate Limit bloqueado na página de planos', event.detail);
-                        updateRateLimitUI(event.detail);
-                    });
-                    
-                    window.addEventListener('rateLimitUnblocked', function() {
-                        console.log('📢 Rate Limit desbloqueado na página de planos');
-                        hideRateLimitUI();
-                    });
-                }
-            }, 500);
-            
-            // Timeout de segurança
-            setTimeout(function() {
-                clearInterval(checkApp);
-            }, 10000);
-        });
-        
-        // ==============================================
-        // 🔥 EVENTO authReady (disparado pelo app.js)
-        // ==============================================
-        
-        window.addEventListener('authReady', function(event) {
-            console.log('📢 authReady recebido na página de planos', event.detail);
-            
-            const isAuth = event.detail?.isAuthenticated || false;
-            
-            if (!isAuth) {
-                window.location.href = '/login';
-                return;
-            }
-            
-            // Atualiza créditos
-            if (event.detail.user) {
-                const creditsSpan = document.getElementById('creditsDisplay');
-                if (creditsSpan) {
-                    creditsSpan.textContent = event.detail.user.is_admin ? '∞' : (event.detail.user.credits || 0);
-                }
-                
-                const adminBadge = document.getElementById('adminBadge');
-                if (adminBadge) {
-                    adminBadge.style.display = event.detail.user.is_admin ? 'inline-block' : 'none';
-                }
-            }
-        });
-        
-        // ==============================================
-        // 🔥 EVENTO appReady (disparado pelo app.js)
-        // ==============================================
-        
-        window.addEventListener('appReady', function(event) {
-            console.log('📢 appReady recebido na página de planos', event.detail);
-            
-            if (event.detail) {
-                // Atualiza créditos
-                const creditsSpan = document.getElementById('creditsDisplay');
-                if (creditsSpan) {
-                    creditsSpan.textContent = event.detail.isAdmin ? '∞' : (event.detail.credits || 0);
-                }
-                
-                const adminBadge = document.getElementById('adminBadge');
-                if (adminBadge) {
-                    adminBadge.style.display = event.detail.isAdmin ? 'inline-block' : 'none';
-                }
-                
-                // Verifica rate limit
-                if (event.detail.rateLimitBlocked) {
-                    updateRateLimitUI({
-                        retryAfter: event.detail.rateLimitTimeRemaining || 60,
-                        message: 'Muitas requisições. Aguarde um momento.'
-                    });
-                }
-            }
-        });
-        
-        // ==============================================
-        // 🔥 TOGGLE FAQ
-        // ==============================================
-        
         window.toggleFaq = function() {
             const faqContent = document.getElementById('faqContent');
             const faqIcon = document.getElementById('faqIcon');
@@ -985,108 +820,127 @@
                 faqIcon.classList.add('fa-chevron-down');
             }
         };
-        
+
         // ==============================================
-        // 🔥 FORMULÁRIO DE CONTATO RÁPIDO
+        // FORMULÁRIO DE CONTATO
         // ==============================================
-        
-        document.getElementById('quickSupportForm')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const name = document.getElementById('supportName').value;
-            const email = document.getElementById('supportEmail').value;
-            const subject = document.getElementById('supportSubject').value;
-            const message = document.getElementById('supportMessage').value;
-            
-            const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
-                `Nome: ${name}\n` +
-                `Email: ${email}\n` +
-                `Assunto: ${subject}\n\n` +
-                `Mensagem:\n${message}\n\n` +
-                `---\nEnviado via AutoAnalytics Planos`
-            )}`;
-            
-            toastr.success('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!');
-            
-            document.getElementById('supportName').value = '';
-            document.getElementById('supportEmail').value = '';
-            document.getElementById('supportMessage').value = '';
-            
-            window.location.href = mailtoLink;
-        });
-        
-        // ==============================================
-        // 🔥 CARREGAR DADOS DO USUÁRIO
-        // ==============================================
-        
-        document.addEventListener('DOMContentLoaded', async () => {
-            const token = localStorage.getItem('access_token');
-            if (!token) {
-                window.location.href = '/login';
-                return;
+        document.addEventListener('DOMContentLoaded', function() {
+            // AOS
+            if (typeof AOS !== 'undefined') {
+                AOS.init();
             }
             
-            try {
-                const response = await fetch('/api/auth/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
+            // Toastr
+            if (typeof toastr !== 'undefined') {
+                toastr.options = {
+                    closeButton: true,
+                    progressBar: true,
+                    positionClass: "toast-top-right",
+                    timeOut: 5000,
+                    extendedTimeOut: 1000,
+                    escapeHtml: true
+                };
+            }
+
+            // Formulário de contato
+            const form = document.getElementById('quickSupportForm');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    const name = document.getElementById('supportName').value;
+                    const email = document.getElementById('supportEmail').value;
+                    const subject = document.getElementById('supportSubject').value;
+                    const message = document.getElementById('supportMessage').value;
+                    
+                    const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
+                        `Nome: ${name}\n` +
+                        `Email: ${email}\n` +
+                        `Assunto: ${subject}\n\n` +
+                        `Mensagem:\n${message}\n\n` +
+                        `---\nEnviado via AutoAnalytics Planos`
+                    )}`;
+                    
+                    if (typeof toastr !== 'undefined') {
+                        toastr.success('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!');
                     }
+                    
+                    document.getElementById('supportName').value = '';
+                    document.getElementById('supportEmail').value = '';
+                    document.getElementById('supportMessage').value = '';
+                    
+                    window.location.href = mailtoLink;
                 });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const user = data.data || data;
-                    
-                    const adminBadge = document.getElementById('adminBadge');
-                    if (adminBadge) {
-                        adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
-                    }
-                    
-                    const creditsSpan = document.getElementById('creditsDisplay');
-                    if (creditsSpan) {
-                        creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
-                    }
-                    
-                    const nameInput = document.getElementById('supportName');
-                    if (nameInput && user.name) {
-                        nameInput.value = user.name;
-                    }
-                    
-                    const emailInput = document.getElementById('supportEmail');
-                    if (emailInput && user.email) {
-                        emailInput.value = user.email;
-                    }
-                    
-                    if (window.loadSubscriptionStatus) {
-                        await window.loadSubscriptionStatus();
-                    }
-                    
-                    if (window.checkAndNotifyRenewal) {
-                        await window.checkAndNotifyRenewal();
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao carregar usuário:', error);
             }
-        });
-        
-        // ==============================================
-        // 🔥 VERIFICAR PAGAMENTO BEM-SUCEDIDO
-        // ==============================================
-        
-        if (window.location.search.includes('payment=success')) {
-            setTimeout(() => {
-                if (window.loadSubscriptionStatus) {
-                    window.loadSubscriptionStatus();
+
+            // ==============================================
+            // CARREGAR DADOS DO USUÁRIO
+            // ==============================================
+            (async function loadUserData() {
+                const token = localStorage.getItem('access_token');
+                if (!token) {
+                    window.location.href = '/login';
+                    return;
                 }
-                toastr.success('✅ Pagamento confirmado! Seu plano foi ativado.');
-            }, 500);
-        }
-        
-        console.log('✅ planos.html carregado com sucesso!');
-        console.log('   🔥 Rate Limiter integrado com app.js');
-        console.log('   🔥 Caminhos padronizados: /js/');
-        console.log('   🔥 Ordem de scripts: pow-client.js → auth.js → app.js → payment.js');
+                
+                try {
+                    const response = await fetch('/api/auth/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const user = data.data || data;
+                        
+                        const adminBadge = document.getElementById('adminBadge');
+                        if (adminBadge) {
+                            adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
+                        }
+                        
+                        const creditsSpan = document.getElementById('creditsDisplay');
+                        if (creditsSpan) {
+                            creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
+                        }
+                        
+                        const nameInput = document.getElementById('supportName');
+                        if (nameInput && user.name) {
+                            nameInput.value = user.name;
+                        }
+                        
+                        const emailInput = document.getElementById('supportEmail');
+                        if (emailInput && user.email) {
+                            emailInput.value = user.email;
+                        }
+                        
+                        if (window.loadSubscriptionStatus) {
+                            await window.loadSubscriptionStatus();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao carregar usuário:', error);
+                }
+            })();
+
+            // ==============================================
+            // VERIFICAR PAGAMENTO BEM-SUCEDIDO
+            // ==============================================
+            if (window.location.search.includes('payment=success')) {
+                setTimeout(() => {
+                    if (window.loadSubscriptionStatus) {
+                        window.loadSubscriptionStatus();
+                    }
+                    if (typeof toastr !== 'undefined') {
+                        toastr.success('✅ Pagamento confirmado! Seu plano foi ativado.');
+                    }
+                }, 500);
+            }
+
+            console.log('✅ planos.html carregado com sucesso!');
+            console.log('   🔥 Caminhos corrigidos: /static/js/');
+            console.log('   📞 Suporte completo restaurado');
+            console.log('   💰 Preço Fundador: R$ 97,00');
+            console.log('   🎯 Escassez ativa: 100 vagas');
+        });
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.0 (PERSONALIZADA PARA MECÂNICOS) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.2 (UPLOAD DESTAQUE E VISÍVEL) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -27,7 +27,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - SPA Mecânicos v7.0');
+            console.log('✅ AutoAnalytics - SPA Mecânicos v7.2');
         })();
     </script>
     
@@ -40,17 +40,9 @@
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
-    <!-- ============================================== -->
-    <!-- 🔥 ESTILOS PERSONALIZADOS -->
-    <!-- ============================================== -->
     <style>
         /* ===== RESET E BASE ===== */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
@@ -71,7 +63,6 @@
             z-index: 1000;
             border-bottom: 3px solid rgba(255, 107, 53, 0.3);
         }
-
         .brand-text {
             font-size: 1.5rem;
             font-weight: 900;
@@ -79,20 +70,10 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             text-decoration: none;
-            letter-spacing: -0.5px;
         }
+        .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
+        .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
 
-        .brand-text i {
-            -webkit-text-fill-color: initial;
-            color: #ff6b35;
-        }
-
-        .brand-text span {
-            -webkit-text-fill-color: initial;
-            color: #2d3748;
-        }
-
-        /* ===== COMPONENTES DA NAVBAR ===== */
         .credits-badge {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             padding: 0.4rem 1.2rem;
@@ -105,22 +86,16 @@
             border: none;
             font-size: 0.85rem;
         }
-
         .credits-badge:hover {
             transform: translateY(-2px) scale(1.05);
             box-shadow: 0 8px 30px rgba(255, 107, 53, 0.6);
         }
-
         .user-name-display {
             font-weight: 600;
             color: #2d3748;
             font-size: 0.9rem;
         }
-
-        .user-name-display i {
-            color: #ff6b35;
-        }
-
+        .user-name-display i { color: #ff6b35; }
         .btn-planos {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
@@ -132,13 +107,11 @@
             transition: all 0.3s;
             text-decoration: none;
         }
-
         .btn-planos:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
             color: white;
         }
-
         .btn-sair {
             background: transparent;
             border: 2px solid #e53e3e;
@@ -150,14 +123,12 @@
             transition: all 0.3s;
             text-decoration: none;
         }
-
         .btn-sair:hover {
             background: #e53e3e;
             color: white;
             transform: translateY(-2px);
         }
 
-        /* ===== STATUS POW ===== */
         .pow-status {
             display: inline-flex;
             align-items: center;
@@ -171,32 +142,25 @@
             color: #48bb78;
             cursor: default;
         }
-
         .pow-status.loading {
             background: rgba(245, 166, 35, 0.15);
             border-color: rgba(245, 166, 35, 0.3);
             color: #f5a623;
             animation: pulse 1.5s ease-in-out infinite;
         }
-
         .pow-status.error {
             background: rgba(220, 53, 69, 0.15);
             border-color: rgba(220, 53, 69, 0.3);
             color: #dc3545;
         }
-
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
 
-        /* ===== HERO SECTION ===== */
-        .hero-section {
-            padding: 100px 0 40px;
-            min-height: 100vh;
-        }
+        /* ===== CONTEÚDO ===== */
+        .hero-section { padding: 100px 0 40px; min-height: 100vh; }
 
-        /* ===== CARDS GERAIS ===== */
         .glass-card {
             background: rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(20px);
@@ -206,96 +170,125 @@
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             color: white;
         }
-
         .glass-card:hover {
             transform: translateY(-6px);
             background: rgba(255, 255, 255, 0.1);
             border-color: rgba(255, 107, 53, 0.3);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
-
         .glass-card .card-title {
             color: white;
             font-weight: 700;
             font-size: 1.1rem;
         }
-
         .glass-card .card-title i {
             color: #ff6b35;
             margin-right: 0.5rem;
         }
 
-        /* ===== ÁREA DE UPLOAD (DESTAQUE) ===== */
+        /* 🔥 ÁREA DE UPLOAD - DESTAQUE E VISÍVEL */
         .upload-area {
-            border: 3px dashed rgba(255, 107, 53, 0.3);
+            border: 3px dashed rgba(255, 107, 53, 0.4);
             border-radius: 20px;
-            padding: 3rem 2rem;
+            padding: 3.5rem 2rem;
             text-align: center;
             cursor: pointer;
-            transition: all 0.4s;
-            background: rgba(255, 107, 53, 0.05);
+            transition: all 0.4s ease;
+            background: rgba(255, 107, 53, 0.06);
             position: relative;
+            min-height: 250px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
-
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: radial-gradient(circle at center, rgba(255,107,53,0.05) 0%, transparent 70%);
+            pointer-events: none;
+        }
         .upload-area:hover {
-            border-color: rgba(255, 107, 53, 0.7);
-            background: rgba(255, 107, 53, 0.1);
+            border-color: rgba(255, 107, 53, 0.8);
+            background: rgba(255, 107, 53, 0.12);
             transform: scale(1.01);
         }
-
         .upload-area.dragover {
             border-color: #48bb78;
             background: rgba(72, 187, 120, 0.15);
             transform: scale(1.02);
-            box-shadow: 0 0 40px rgba(72, 187, 120, 0.1);
+            box-shadow: 0 0 60px rgba(72, 187, 120, 0.15);
         }
-
         .upload-area .upload-icon {
-            font-size: 4rem;
+            font-size: 4.5rem;
             color: #ff6b35;
             margin-bottom: 1rem;
             display: block;
+            position: relative;
+            z-index: 1;
         }
-
         .upload-area .upload-icon i {
             animation: float 3s ease-in-out infinite;
         }
-
         @keyframes float {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+            50% { transform: translateY(-12px); }
         }
-
         .upload-area h4 {
             color: white;
             font-weight: 700;
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             margin-bottom: 0.3rem;
+            position: relative;
+            z-index: 1;
         }
-
         .upload-area p {
             color: rgba(255, 255, 255, 0.5);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
+            margin-bottom: 1.2rem;
+            position: relative;
+            z-index: 1;
         }
-
         .upload-area .btn-select {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.7rem 2rem;
+            padding: 0.8rem 2.2rem;
             border-radius: 50px;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 1rem;
             transition: all 0.3s;
+            position: relative;
+            z-index: 1;
+            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
         }
-
         .upload-area .btn-select:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.5);
             color: white;
         }
+        .upload-area .file-hint {
+            margin-top: 1rem;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.25);
+            position: relative;
+            z-index: 1;
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .upload-area .file-hint span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .upload-area .file-hint i {
+            color: #ff6b35;
+        }
 
-        /* ===== BOTÃO GRADIENTE ===== */
         .btn-gradient {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
@@ -305,20 +298,17 @@
             font-weight: 700;
             transition: all 0.3s;
         }
-
         .btn-gradient:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
             color: white;
         }
-
         .btn-gradient:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
 
-        /* ===== MÉTRICAS ===== */
         .metric-card {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 16px;
@@ -327,18 +317,15 @@
             text-align: center;
             transition: all 0.3s;
         }
-
         .metric-card:hover {
             background: rgba(255, 107, 53, 0.1);
             border-color: rgba(255, 107, 53, 0.2);
         }
-
         .metric-value {
             font-size: 2rem;
             font-weight: 800;
             color: #ff6b35;
         }
-
         .metric-label {
             font-size: 0.7rem;
             color: rgba(255, 255, 255, 0.5);
@@ -346,7 +333,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* ===== SEÇÃO "COMO FUNCIONA" ===== */
         .feature-card {
             background: rgba(255, 255, 255, 0.04);
             border-radius: 20px;
@@ -356,34 +342,29 @@
             transition: all 0.4s;
             height: 100%;
         }
-
         .feature-card:hover {
             transform: translateY(-8px);
             background: rgba(255, 107, 53, 0.08);
             border-color: rgba(255, 107, 53, 0.3);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
         }
-
         .feature-card .feature-icon {
             font-size: 3rem;
             color: #ff6b35;
             margin-bottom: 1rem;
             display: block;
         }
-
         .feature-card h5 {
             color: white;
             font-weight: 700;
             margin-bottom: 0.5rem;
         }
-
         .feature-card p {
             color: rgba(255, 255, 255, 0.6);
             font-size: 0.9rem;
             line-height: 1.6;
         }
 
-        /* ===== BENEFÍCIOS ===== */
         .benefit-item {
             display: flex;
             align-items: flex-start;
@@ -394,33 +375,28 @@
             transition: all 0.3s;
             border-left: 3px solid transparent;
         }
-
         .benefit-item:hover {
             background: rgba(255, 107, 53, 0.08);
             border-left-color: #ff6b35;
         }
-
         .benefit-item .benefit-icon {
             font-size: 1.5rem;
             color: #ff6b35;
             min-width: 2rem;
             margin-top: 0.1rem;
         }
-
         .benefit-item .benefit-text h6 {
             color: white;
             font-weight: 600;
             font-size: 0.95rem;
             margin-bottom: 0.2rem;
         }
-
         .benefit-item .benefit-text p {
             color: rgba(255, 255, 255, 0.5);
             font-size: 0.8rem;
             margin: 0;
         }
 
-        /* ===== LIMITES INFO ===== */
         .limit-info {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 12px;
@@ -431,7 +407,6 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
             color: rgba(255, 255, 255, 0.7);
         }
-
         .limit-info .limit-value {
             font-weight: 700;
             color: #ff6b35;
@@ -444,21 +419,9 @@
             max-height: 350px;
             overflow-y: auto;
         }
-
-        .timeline::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .timeline::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 4px;
-        }
-
-        .timeline::-webkit-scrollbar-thumb {
-            background: rgba(255, 107, 53, 0.4);
-            border-radius: 4px;
-        }
-
+        .timeline::-webkit-scrollbar { width: 4px; }
+        .timeline::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
+        .timeline::-webkit-scrollbar-thumb { background: rgba(255, 107, 53, 0.4); border-radius: 4px; }
         .timeline::before {
             content: '';
             position: absolute;
@@ -469,16 +432,11 @@
             background: linear-gradient(180deg, #ff6b35 0%, #f7931e 100%);
             border-radius: 2px;
         }
-
         .timeline-item {
             position: relative;
             padding-bottom: 1.2rem;
         }
-
-        .timeline-item:last-child {
-            padding-bottom: 0;
-        }
-
+        .timeline-item:last-child { padding-bottom: 0; }
         .timeline-marker {
             position: absolute;
             left: -1.5rem;
@@ -490,49 +448,34 @@
             border: 2px solid white;
             box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.3);
         }
-
         .timeline-marker.bg-success {
             background: #48bb78;
             box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.3);
         }
-
         .timeline-content {
             padding-left: 0.5rem;
             color: rgba(255, 255, 255, 0.85);
         }
+        .timeline-content strong { color: #ff6b35; }
 
-        .timeline-content strong {
-            color: #ff6b35;
-        }
-
-        /* ===== MODAL ===== */
         .modal-content {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
             border: 1px solid rgba(255, 107, 53, 0.3) !important;
             color: white;
         }
-
-        .modal-content .btn-close {
-            filter: brightness(0) invert(1);
-        }
-
+        .modal-content .btn-close { filter: brightness(0) invert(1); }
         .modal-content .alert-info {
             background: rgba(255, 107, 53, 0.1) !important;
             border-color: rgba(255, 107, 53, 0.2) !important;
             color: rgba(255, 255, 255, 0.9) !important;
         }
+        .modal-content .alert-info strong { color: #ff6b35 !important; }
 
-        .modal-content .alert-info strong {
-            color: #ff6b35 !important;
-        }
-
-        /* ===== TOASTR ===== */
         .toast-success { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important; }
         .toast-error { background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important; }
         .toast-info { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important; }
         .toast-warning { background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important; }
 
-        /* ===== BADGE DE DESTAQUE ===== */
         .highlight-badge {
             display: inline-block;
             background: linear-gradient(135deg, #ff6b35, #f7931e);
@@ -545,62 +488,54 @@
             letter-spacing: 0.5px;
         }
 
-        /* ===== RESPONSIVIDADE ===== */
+        /* ===== FILE PREVIEW ===== */
+        .file-preview-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0.8rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .file-preview-item:hover {
+            background: rgba(255,255,255,0.03);
+        }
+        .file-preview-item .file-name {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.85rem;
+        }
+        .file-preview-item .file-name i {
+            color: #48bb78;
+            margin-right: 0.5rem;
+        }
+        .file-preview-item .file-size {
+            color: rgba(255,255,255,0.3);
+            font-size: 0.7rem;
+        }
+
         @media (max-width: 992px) {
-            .hero-section {
-                padding: 90px 0 30px;
-            }
-            .upload-area {
-                padding: 2rem 1.5rem;
-            }
-            .feature-card {
-                padding: 1.5rem 1rem;
-            }
+            .hero-section { padding: 90px 0 30px; }
+            .upload-area { padding: 2rem 1.5rem; }
+            .feature-card { padding: 1.5rem 1rem; }
         }
-
         @media (max-width: 768px) {
-            .navbar-modern .container {
-                flex-wrap: wrap;
-                gap: 0.5rem;
-            }
-            .brand-text {
-                font-size: 1.1rem;
-            }
-            .credits-badge {
-                padding: 0.25rem 0.8rem;
-                font-size: 0.7rem;
-            }
-            .user-name-display {
-                font-size: 0.75rem;
-            }
-            .upload-area .upload-icon {
-                font-size: 2.5rem;
-            }
-            .upload-area h4 {
-                font-size: 1rem;
-            }
-            .btn-planos, .btn-sair {
-                font-size: 0.65rem;
-                padding: 0.25rem 0.7rem;
-            }
-            .metric-value {
-                font-size: 1.5rem;
-            }
-            .feature-card .feature-icon {
-                font-size: 2.2rem;
-            }
+            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
+            .brand-text { font-size: 1.1rem; }
+            .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
+            .user-name-display { font-size: 0.75rem; }
+            .upload-area .upload-icon { font-size: 3rem; }
+            .upload-area h4 { font-size: 1rem; }
+            .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
+            .metric-value { font-size: 1.5rem; }
+            .feature-card .feature-icon { font-size: 2.2rem; }
+            .upload-area { min-height: 180px; padding: 1.5rem; }
         }
-
         @media (max-width: 480px) {
-            .hero-section {
-                padding: 80px 0 20px;
-            }
-            .glass-card {
-                padding: 1rem;
-            }
-            .upload-area {
-                padding: 1.5rem 1rem;
-            }
+            .hero-section { padding: 80px 0 20px; }
+            .glass-card { padding: 1rem; }
+            .upload-area { padding: 1rem; min-height: 150px; }
+            .upload-area .upload-icon { font-size: 2.5rem; }
         }
     </style>
 </head>
@@ -628,12 +563,12 @@
                         <span id="creditsCount">0</span>
                     </div>
                     
-                    <span class="pow-status loading" id="powStatus" title="Proof of Work - Proteção anti-bot">
+                    <span class="pow-status loading" id="powStatus" title="Proof of Work">
                         <i class="fas fa-shield-alt"></i>
-                        <span id="powStatusText">Carregando...</span>
+                        <span id="powStatusText">⚡ Pronto</span>
                     </span>
                     
-                    <a href="/planos" class="btn-planos">
+                    <a href="/planos" class="btn-planos" id="planosLink">
                         <i class="fas fa-crown me-1"></i> Planos
                     </a>
                     
@@ -703,9 +638,8 @@
 
             <div class="row g-4">
                 
-                <!-- ===== COLUNA ESQUERDA - MÉTRICAS E COMO FUNCIONA ===== -->
+                <!-- ===== COLUNA ESQUERDA - MÉTRICAS ===== -->
                 <div class="col-lg-4">
-                    <!-- MÉTRICAS -->
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="glass-card" data-aos="fade-right" data-aos-duration="800">
@@ -752,7 +686,7 @@
                 <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- UPLOAD -->
+                        <!-- 🔥 UPLOAD - DIV VISÍVEL E FUNCIONAL -->
                         <div class="col-12">
                             <div class="glass-card" data-aos="fade-left" data-aos-duration="800">
                                 <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
@@ -774,20 +708,27 @@
                                 </div>
                                 
                                 <form id="uploadForm">
+                                    <!-- 🔥 ÁREA DE DRAG & DROP - VISÍVEL E DESTACADA -->
                                     <div class="upload-area mb-3" id="dropArea">
                                         <span class="upload-icon">
                                             <i class="fas fa-file-excel"></i>
                                         </span>
-                                        <h4>Arraste seus arquivos aqui</h4>
-                                        <p class="small">CSV · Excel · Até 3 arquivos</p>
+                                        <h4>📁 Arraste seus arquivos aqui</h4>
+                                        <p class="small">Suporte para arquivos <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
                                         <div>
                                             <label for="fileInput" class="btn-select">
-                                                <i class="fas fa-folder-open me-2"></i> Selecionar
+                                                <i class="fas fa-folder-open me-2"></i> Selecionar Arquivos
                                             </label>
                                             <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
                                         </div>
+                                        <div class="file-hint">
+                                            <span><i class="fas fa-check-circle"></i> Até 3 arquivos</span>
+                                            <span><i class="fas fa-weight-scale"></i> Máx. 200 KB cada</span>
+                                            <span><i class="fas fa-coins"></i> 1 crédito por arquivo</span>
+                                        </div>
                                     </div>
                                     
+                                    <!-- PREVIEW DOS ARQUIVOS -->
                                     <div id="filePreviewContainer" class="mt-2"></div>
                                     
                                     <div class="d-grid">
@@ -823,7 +764,7 @@
                 
             </div>
 
-            <!-- ===== SEÇÃO "COMO FUNCIONA" (PERSONALIZADA PARA MECÂNICOS) ===== -->
+            <!-- ===== SEÇÃO "COMO FUNCIONA" ===== -->
             <div class="row mt-5 g-4">
                 <div class="col-12 text-center mb-3" data-aos="fade-up">
                     <h2 class="fw-bold" style="color: white;">
@@ -835,7 +776,6 @@
                     </p>
                 </div>
 
-                <!-- Card 1 -->
                 <div class="col-md-4" data-aos="fade-up" data-aos-delay="100">
                     <div class="feature-card">
                         <span class="feature-icon">📊</span>
@@ -847,7 +787,6 @@
                     </div>
                 </div>
 
-                <!-- Card 2 -->
                 <div class="col-md-4" data-aos="fade-up" data-aos-delay="200">
                     <div class="feature-card">
                         <span class="feature-icon">🔧</span>
@@ -859,7 +798,6 @@
                     </div>
                 </div>
 
-                <!-- Card 3 -->
                 <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">
                     <div class="feature-card">
                         <span class="feature-icon">📈</span>
@@ -872,7 +810,7 @@
                 </div>
             </div>
 
-            <!-- ===== BENEFÍCIOS PARA MECÂNICOS ===== -->
+            <!-- ===== BENEFÍCIOS ===== -->
             <div class="row mt-4 g-3">
                 <div class="col-12" data-aos="fade-up" data-aos-delay="100">
                     <div class="glass-card">
@@ -970,7 +908,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.15); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.0 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.2 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1049,32 +987,45 @@
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-<!-- 1️⃣ JQUERY - PRIMEIRO (OBRIGATÓRIO PARA TOASTR E BOOTSTRAP) -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- 1️⃣ JQUERY - PRIMEIRO (OBRIGATÓRIO PARA TOASTR E BOOTSTRAP) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- 2️⃣ TOASTR - DEPOIS DO JQUERY -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    
+    <!-- 3️⃣ BOOTSTRAP -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 4️⃣ DEMAIS BIBLIOTECAS -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<!-- 2️⃣ TOASTR - DEPOIS DO JQUERY -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS - VERSÕES CORRETAS -->
+    <!-- ============================================== -->
+    
+    <!-- 1️⃣ POW - v3.3 -->
+    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
+    
+    <!-- 2️⃣ AUTH - v3.0 -->
+    <script src="/static/js/auth.js?ver=3.0.0"></script>
+    
+    <!-- 3️⃣ APP - v5.6 -->
+    <script src="/static/js/app.js?ver=5.6.0"></script>
+    
+    <!-- 4️⃣ DASHBOARD - v6.2 -->
+    <script src="/static/js/dashboard.js?ver=6.2.0"></script>
+    
+    <!-- 5️⃣ PAYMENT - v2.4 -->
+    <script src="/static/js/payment.js?ver=2.4.0"></script>
 
-<!-- 3️⃣ BOOTSTRAP - DEPOIS DO JQUERY -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- 4️⃣ DEMAIS BIBLIOTECAS -->
-<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-<!-- 5️⃣ SCRIPTS PRÓPRIOS -->
-<script src="/static/js/pow-client.js?ver=3.3.0"></script>
-<script src="/static/js/auth.js?ver=3.0.0"></script>
-<script src="/static/js/app.js?ver=5.5.0"></script>
-<script src="/static/js/dashboard.js?ver=6.2.0"></script>
-<script src="/static/js/payment.js?ver=2.4.0"></script>
     <!-- ============================================== -->
     <!-- 🔥 INICIALIZAÇÃO -->
     <!-- ============================================== -->
@@ -1082,11 +1033,8 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.0');
+            console.log('🚀 AutoAnalytics Mecânicos v7.2');
 
-            // ==============================================
-            // TOASTR CONFIG
-            // ==============================================
             if (typeof toastr !== 'undefined') {
                 toastr.options = {
                     closeButton: true,
@@ -1098,9 +1046,6 @@
                 };
             }
 
-            // ==============================================
-            // AOS
-            // ==============================================
             if (typeof AOS !== 'undefined') {
                 AOS.init({
                     once: true,
@@ -1110,9 +1055,6 @@
                 });
             }
 
-            // ==============================================
-            // GSAP
-            // ==============================================
             if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
                 gsap.registerPlugin(ScrollTrigger);
                 gsap.from('.glass-card', {
@@ -1140,11 +1082,20 @@
                     stagger: 0.15,
                     ease: 'power3.out'
                 });
+
+                gsap.from('.upload-area', {
+                    scrollTrigger: {
+                        trigger: '.upload-area',
+                        start: 'top 95%',
+                        toggleActions: 'play none none reverse'
+                    },
+                    duration: 0.8,
+                    scale: 0.95,
+                    opacity: 0,
+                    ease: 'back.out(1.7)'
+                });
             }
 
-            // ==============================================
-            // VERIFICA SE O APP ESTÁ PRONTO
-            // ==============================================
             function isAppReady() {
                 if (typeof window.App === 'undefined' || window.App === null) return false;
                 if (typeof window.App.isReady === 'function') return window.App.isReady();
@@ -1152,9 +1103,6 @@
                 return !!window._appReadyFired;
             }
 
-            // ==============================================
-            // INICIALIZAÇÃO
-            // ==============================================
             function initializeApp() {
                 if (window._appInitialized) {
                     console.log('⚠️ App já inicializado');
@@ -1164,13 +1112,11 @@
                 console.log('🚀 Inicializando App...');
                 window._appInitialized = true;
 
-                // Aguarda o app.js estar pronto
                 if (isAppReady()) {
                     console.log('✅ App já está pronto');
                     return;
                 }
 
-                // Escuta o evento app:ready
                 document.addEventListener('app:ready', function(event) {
                     console.log('📢 Evento app:ready recebido');
                     if (!window._dashboardInitialized) {
@@ -1178,7 +1124,6 @@
                     }
                 });
 
-                // Fallback: se o app não estiver pronto em 5 segundos
                 setTimeout(function() {
                     if (!window._appReadyFired && !window._dashboardInitialized) {
                         console.warn('⚠️ Fallback: App não respondeu, verificando novamente...');
@@ -1191,17 +1136,13 @@
                     }
                 }, 5000);
 
-                console.log('✅ AutoAnalytics Mecânicos v7.0 pronto!');
+                console.log('✅ AutoAnalytics Mecânicos v7.2 pronto!');
             }
 
-            // ==============================================
-            // DOM CONTENT LOADED
-            // ==============================================
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('📄 DOM carregado');
                 initializeApp();
 
-                // Atualiza o status PoW periodicamente (mas sem loop infinito)
                 function updatePowStatusOnce() {
                     try {
                         const powStatusEl = document.getElementById('powStatus');
@@ -1224,7 +1165,7 @@
                                 powTextEl.textContent = `${solutionsReady}/${maxStock} PoW`;
                             } else {
                                 powStatusEl.className = 'pow-status loading';
-                                powTextEl.textContent = 'Preparando...';
+                                powTextEl.textContent = '⚡ Pronto';
                             }
                         } else {
                             powStatusEl.className = 'pow-status error';
@@ -1235,17 +1176,13 @@
                     }
                 }
 
-                // Atualiza uma vez após 1s
                 setTimeout(updatePowStatusOnce, 1500);
             });
 
-            // ==============================================
-            // EXPOSIÇÃO GLOBAL
-            // ==============================================
             window.isAppReady = isAppReady;
             window.initializeApp = initializeApp;
 
-            console.log('✅ AutoAnalytics v7.0 - Mecânicos carregado!');
+            console.log('✅ AutoAnalytics v7.2 - Mecânicos carregado!');
             console.log('🔧 IA para otimizar sua oficina');
             console.log('📊 Arraste arquivos e veja a mágica acontecer!');
 
