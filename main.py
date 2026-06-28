@@ -1,12 +1,12 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v4.2 (CAMINHO ML CORRIGIDO)
+# main.py (na raiz) - VERSÃO PRODUÇÃO v4.3 (CORREÇÃO ROTA PLANOS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v4.2:
-- ✅ CORRIGIDO: Caminho do ML Pipeline (backend.ml.preprocessing)
-- ✅ CORRIGIDO: Importação do process_file_content
-- ✅ ADICIONADO: Fallback seguro para ML
-- ✅ CORRIGIDO: Verificação de pipeline no health check
+🔥 CORREÇÕES v4.3:
+- ✅ CORRIGIDO: Rota /planos sem fallback mascarado para index.html
+- ✅ CORRIGIDO: Logs detalhados para identificar problemas de autenticação
+- ✅ CORRIGIDO: Redirecionamento 302 com logs claros
+- ✅ MELHORADO: Tratamento de erro 404/500 na rota planos
 ================================================================================
 """
 from sqlalchemy.orm import Session
@@ -34,7 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
 print("=" * 75)
-print("🚀 AUTOANALYTICS v4.2 - PRODUÇÃO")
+print("🚀 AUTOANALYTICS v4.3 - PRODUÇÃO")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -49,7 +49,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "4.2.0"
+    VERSION = "4.3.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -363,12 +363,15 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
             token = auth_header.replace("Bearer ", "")
     
     if not token:
+        # 🔥 Log para debug
+        print(f"   ⚠️ Token não encontrado em cookies nem headers")
         return None
     
     try:
         from backend.security import jwt_manager
         return await jwt_manager.verify_token(token, "access")
     except ImportError:
+        print(f"   ⚠️ jwt_manager não disponível")
         return None
     except Exception as e:
         print(f"   ⚠️ Erro ao verificar token: {e}")
@@ -396,31 +399,46 @@ async def get_login_page(request: Request):
     
     return JSONResponse(status_code=404, content={"error": "login.html não encontrado"})
 
-# 2. Página de Planos
+# ==============================================
+# 2. 🔥 Página de Planos - CORRIGIDA (SEM FALLBACK MASCARADO)
+# ==============================================
+
 @app.get("/planos", include_in_schema=False)
 async def get_planos_page(request: Request):
-    """Serve a página de planos"""
+    """
+    Serve a página de planos
+    🔥 CORRIGIDO: Sem fallback mascarado para index.html
+    🔥 Logs detalhados para identificar problemas de autenticação
+    """
+    # 1. Verificar autenticação
     payload = await verify_token_from_request(request)
+    
     if not payload:
+        print("⚠️ [Auth] Token não encontrado na requisição para /planos. Redirecionando para login.")
         return RedirectResponse(url="/login", status_code=302)
     
+    print(f"✅ [Auth] Token validado para /planos. Usuário: {payload.get('email', 'desconhecido')}")
+    
+    # 2. Tentar servir planos.html
     planos_path = FRONTEND_DIR / "planos.html"
     if planos_path.exists():
         try:
             content = planos_path.read_text(encoding="utf-8")
+            print(f"✅ [Planos] planos.html servido com sucesso ({len(content)} bytes)")
             return HTMLResponse(content=content)
         except Exception as e:
-            print(f"   ❌ Erro ao ler planos.html: {e}")
+            print(f"❌ [Planos] Erro ao ler planos.html: {e}")
+            return JSONResponse(
+                status_code=500, 
+                content={"error": f"Erro ao ler página de planos: {str(e)}"}
+            )
     
-    index_path = FRONTEND_DIR / "index.html"
-    if index_path.exists():
-        try:
-            content = index_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler index.html: {e}")
-    
-    return JSONResponse(status_code=404, content={"error": "Página de planos não encontrada"})
+    # 3. Arquivo não encontrado
+    print(f"❌ [Planos] Ficheiro não encontrado: {planos_path.absolute()}")
+    return JSONResponse(
+        status_code=404, 
+        content={"error": "Página de planos (planos.html) não encontrada"}
+    )
 
 # 3. Página de Checkout
 @app.get("/checkout", include_in_schema=False)

@@ -1,16 +1,15 @@
-// frontend/js/auth.js - VERSÃO CORRIGIDA COM RATE LIMITER
+// frontend/js/auth.js - VERSÃO CORRIGIDA V3.1 (COM COOKIE SYNC)
 /**
  * Módulo de Autenticação - AutoAnalytics
  * FLUXO: login → dashboard | register → login
  * 🔥 Token expira em 15 minutos (conforme security.py)
  * 🔥 Sincronizado com auth_routes.py, auth.py e security.py
  * ✅ CAPTCHA REMOVIDO COMPLETAMENTE
- * 🔥 CORREÇÕES RATE LIMITER:
+ * 🔥 CORREÇÕES:
+ *   - Cookie sync para permitir links HTML puros (ex: /planos)
  *   - Tratamento de HTTP 429 (Too Many Requests)
  *   - Feedback visual para usuário bloqueado
- *   - Contagem de tentativas restantes
  *   - Delay progressivo entre tentativas
- *   - fetchWithAuth não tenta refresh em 429
  */
 
 // ==============================================
@@ -20,18 +19,17 @@ const MAX_CREDITS_BALANCE = 3;
 const TOKEN_EXPIRY_MINUTES = 15;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
-// 🔥 CONSTANTES DO RATE LIMITER (sincronizadas com backend)
+// 🔥 CONSTANTES DO RATE LIMITER
 const RATE_LIMIT = {
-    LOGIN_MAX_ATTEMPTS: 5,      // 5 tentativas por 15 minutos
-    LOGIN_WINDOW_SECONDS: 900,   // 15 minutos
-    REGISTER_MAX_ATTEMPTS: 5,    // 5 tentativas por 1 hora
-    REGISTER_WINDOW_SECONDS: 3600 // 1 hora
+    LOGIN_MAX_ATTEMPTS: 5,
+    LOGIN_WINDOW_SECONDS: 900,
+    REGISTER_MAX_ATTEMPTS: 5,
+    REGISTER_WINDOW_SECONDS: 3600
 };
 
 class Auth {
     constructor() {
         this.apiBase = '/api';
-        
         this.currentUser = null;
         this._isAuthenticated = false;
         this.userData = null;
@@ -42,7 +40,6 @@ class Auth {
         this._uiUpdateTimeout = null;
         this._initializing = false;
         
-        // 🔥 TIMERS PARA LIMPEZA AUTOMÁTICA
         this._tokenExpiryTimer = null;
         this._tokenCheckInterval = null;
         this.pendingRequests = [];
@@ -50,13 +47,44 @@ class Auth {
         this._loginAttempts = 0;
         this._maxLoginAttempts = 5;
         
-        // 🔥 CONTROLE DE RATE LIMIT
+        // 🔥 RATE LIMIT
         this._rateLimitBlocked = false;
         this._rateLimitBlockedUntil = 0;
         this._rateLimitRemainingAttempts = 5;
         this._lastRateLimitError = null;
         
+        // 🔥 INICIALIZA
         this.init();
+    }
+    
+    // ==============================================
+    // 🔥 COOKIE HELPERS (NOVO)
+    // ==============================================
+    
+    _setCookie(name, value, maxAgeSeconds = 900) {
+        // 900 segundos = 15 minutos (TOKEN_EXPIRY_MINUTES)
+        document.cookie = `${name}=${value}; path=/; max-age=${maxAgeSeconds}; SameSite=Strict; Secure`;
+    }
+    
+    _getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
+    
+    _deleteCookie(name) {
+        document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
+    }
+    
+    _syncTokenToCookie(token) {
+        if (token) {
+            // 🔥 Sincroniza token com cookie (15 minutos = 900 segundos)
+            this._setCookie('access_token', token, TOKEN_EXPIRY_MINUTES * 60);
+            console.log('🍪 Token sincronizado com cookie (15min)');
+        } else {
+            this._deleteCookie('access_token');
+        }
     }
     
     // ==============================================
@@ -108,7 +136,6 @@ class Auth {
     }
     
     _handleRateLimitError(response, data) {
-        // 🔥 Extrai informações do rate limit do header/body
         const retryAfter = response.headers.get('Retry-After') || data.retry_after || 60;
         const remaining = data.remaining_attempts || 0;
         const resetTime = data.reset_time || 0;
@@ -125,7 +152,6 @@ class Auth {
         
         console.warn(`⚠️ Rate Limit bloqueado: ${remaining} tentativas restantes, aguarde ${retryAfter}s`);
         
-        // 🔥 Dispara evento de rate limit
         window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
             detail: {
                 retryAfter: parseInt(retryAfter),
@@ -159,12 +185,10 @@ class Auth {
             alert(`Muitas tentativas em curto período. Por favor, aguarde ${timeMsg} e tente novamente.`);
         }
         
-        // 🔥 Atualiza UI do botão de login
         const loginBtn = document.getElementById('loginBtn');
         if (loginBtn) {
             loginBtn.disabled = true;
             loginBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${timeMsg}`;
-            
             setTimeout(() => {
                 loginBtn.disabled = false;
                 loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Entrar';
@@ -175,7 +199,6 @@ class Auth {
         if (registerBtn) {
             registerBtn.disabled = true;
             registerBtn.innerHTML = `<i class="fas fa-hourglass-half me-2"></i> Aguarde ${timeMsg}`;
-            
             setTimeout(() => {
                 registerBtn.disabled = false;
                 registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i> Criar Conta';
@@ -184,13 +207,12 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 LOGIN - POST /api/auth/login (COM RATE LIMITER)
+    // 🔥 LOGIN (COM COOKIE SYNC)
     // ==============================================
     
     async handleLogin(e) {
         e.preventDefault();
         
-        // 🔥 Verifica se está bloqueado pelo rate limit
         if (this._isRateLimitBlocked()) {
             const remaining = this._getRateLimitTimeRemaining();
             this._showRateLimitWarning(remaining);
@@ -204,9 +226,7 @@ class Auth {
         const password = passwordInput?.value;
         
         if (!email || !password) {
-            if (window.toastr) {
-                toastr.error('Por favor, preencha todos os campos.');
-            }
+            if (window.toastr) toastr.error('Por favor, preencha todos os campos.');
             return;
         }
         
@@ -226,20 +246,15 @@ class Auth {
             
             const response = await fetch(`${this.apiBase}/auth/login`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             
             const data = await response.json();
             
-            // 🔥 VERIFICA RATE LIMIT (HTTP 429)
             if (response.status === 429) {
                 const rateInfo = this._handleRateLimitError(response, data);
                 this._showRateLimitWarning(rateInfo.retryAfter);
-                
-                // 🔥 Mostra tentativas restantes se disponível
                 if (rateInfo.remaining !== undefined) {
                     console.log(`📊 Tentativas restantes: ${rateInfo.remaining}`);
                     if (window.toastr) {
@@ -252,14 +267,16 @@ class Auth {
             if (response.ok && (data.success || data.access_token)) {
                 console.log('✅ Login bem-sucedido!');
                 
-                // 🔥 Reseta rate limit
                 this._rateLimitBlocked = false;
                 this._rateLimitBlockedUntil = 0;
                 this._rateLimitRemainingAttempts = RATE_LIMIT.LOGIN_MAX_ATTEMPTS;
                 this._loginAttempts = 0;
                 
+                // 🔥 GUARDA TOKEN NO LOCALSTORAGE E COOKIE
                 if (data.access_token) {
                     localStorage.setItem('access_token', data.access_token);
+                    // 🔥 NOVO: Sincroniza com cookie para links HTML
+                    this._syncTokenToCookie(data.access_token);
                 }
                 if (data.refresh_token) {
                     localStorage.setItem('refresh_token', data.refresh_token);
@@ -285,9 +302,7 @@ class Auth {
                 
                 this.startTokenMonitoring();
                 
-                if (window.toastr) {
-                    toastr.success('Login realizado com sucesso!');
-                }
+                if (window.toastr) toastr.success('Login realizado com sucesso!');
                 
                 setTimeout(() => {
                     window.location.href = '/dashboard';
@@ -316,13 +331,10 @@ class Auth {
                 
                 this._loginAttempts++;
                 
-                // 🔥 Verifica se excedeu tentativas (fallback local)
                 if (this._loginAttempts >= this._maxLoginAttempts) {
                     this._rateLimitBlocked = true;
-                    this._rateLimitBlockedUntil = Date.now() + (5 * 60 * 1000); // 5 minutos
-                    if (window.toastr) {
-                        toastr.warning('⏳ Muitas tentativas falhas. Aguarde 5 minutos.');
-                    }
+                    this._rateLimitBlockedUntil = Date.now() + (5 * 60 * 1000);
+                    if (window.toastr) toastr.warning('⏳ Muitas tentativas falhas. Aguarde 5 minutos.');
                     if (submitBtn) {
                         submitBtn.disabled = true;
                         submitBtn.innerHTML = '<i class="fas fa-hourglass-half me-2"></i> Aguarde 5 min';
@@ -342,9 +354,7 @@ class Auth {
             
         } catch (error) {
             console.error('❌ Erro na requisição de login:', error);
-            if (window.toastr) {
-                toastr.error('Erro de comunicação com o servidor.');
-            }
+            if (window.toastr) toastr.error('Erro de comunicação com o servidor.');
             return false;
             
         } finally {
@@ -356,13 +366,12 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 REGISTER - POST /api/auth/register (COM RATE LIMITER)
+    // 🔥 REGISTER
     // ==============================================
     
     async handleRegister(e) {
         e.preventDefault();
         
-        // 🔥 Verifica rate limit para registro
         if (this._isRateLimitBlocked()) {
             const remaining = this._getRateLimitTimeRemaining();
             this._showRateLimitWarning(remaining);
@@ -383,58 +392,40 @@ class Auth {
         const workshopName = workshopInput?.value?.trim();
         const phone = phoneInput?.value?.trim();
         
-        // ==============================================
-        // 🔥 VALIDAÇÕES
-        // ==============================================
-        
         if (!name || !email || !password || !workshopName) {
-            if (window.toastr) {
-                toastr.error('Preencha todos os campos obrigatórios.');
-            }
+            if (window.toastr) toastr.error('Preencha todos os campos obrigatórios.');
             return;
         }
         
         if (name.length < 3) {
-            if (window.toastr) {
-                toastr.error('Nome deve ter pelo menos 3 caracteres.');
-            }
+            if (window.toastr) toastr.error('Nome deve ter pelo menos 3 caracteres.');
             return;
         }
         
         if (workshopName.length < 2) {
-            if (window.toastr) {
-                toastr.error('Nome da oficina deve ter pelo menos 2 caracteres.');
-            }
+            if (window.toastr) toastr.error('Nome da oficina deve ter pelo menos 2 caracteres.');
             return;
         }
         
         if (phone) {
             const phoneClean = phone.replace(/\D/g, '');
             if (phoneClean.length > 0 && phoneClean.length < 10) {
-                if (window.toastr) {
-                    toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
-                }
+                if (window.toastr) toastr.warning('Telefone deve ter pelo menos 10 dígitos (incluindo DDD).');
                 return;
             }
             if (phoneClean.length > 11) {
-                if (window.toastr) {
-                    toastr.warning('Telefone deve ter no máximo 11 dígitos.');
-                }
+                if (window.toastr) toastr.warning('Telefone deve ter no máximo 11 dígitos.');
                 return;
             }
         }
         
         if (password.length < 6) {
-            if (window.toastr) {
-                toastr.error('Senha deve ter no mínimo 6 caracteres.');
-            }
+            if (window.toastr) toastr.error('Senha deve ter no mínimo 6 caracteres.');
             return;
         }
         
         if (password !== confirmPassword) {
-            if (window.toastr) {
-                toastr.error('As senhas não coincidem.');
-            }
+            if (window.toastr) toastr.error('As senhas não coincidem.');
             return;
         }
         
@@ -457,22 +448,16 @@ class Auth {
             
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
             
-            // 🔥 VERIFICA RATE LIMIT (HTTP 429)
             if (response.status === 429) {
                 const rateInfo = this._handleRateLimitError(response, data);
                 this._showRateLimitWarning(rateInfo.retryAfter);
-                
-                if (window.toastr) {
-                    toastr.warning(`⏳ ${rateInfo.message}`);
-                }
+                if (window.toastr) toastr.warning(`⏳ ${rateInfo.message}`);
                 return false;
             }
             
@@ -493,18 +478,13 @@ class Auth {
                     errorMsg = data.detail || 'Dados inválidos. Verifique os campos.';
                 }
                 
-                if (window.toastr) {
-                    toastr.error(errorMsg);
-                }
+                if (window.toastr) toastr.error(errorMsg);
                 return false;
             }
             
             if (data.success) {
-                if (window.toastr) {
-                    toastr.success('✅ Conta criada! Faça login para continuar.');
-                }
+                if (window.toastr) toastr.success('✅ Conta criada! Faça login para continuar.');
                 
-                // 🔥 Limpa o formulário
                 if (nameInput) nameInput.value = '';
                 if (emailInput) emailInput.value = '';
                 if (passwordInput) passwordInput.value = '';
@@ -523,9 +503,7 @@ class Auth {
             
         } catch (error) {
             console.error('❌ Erro no registro:', error);
-            if (window.toastr) {
-                toastr.error(error.message || 'Erro ao criar conta. Tente novamente.');
-            }
+            if (window.toastr) toastr.error(error.message || 'Erro ao criar conta. Tente novamente.');
             return false;
         } finally {
             if (submitBtn) {
@@ -536,76 +514,7 @@ class Auth {
     }
     
     // ==============================================
-    // 🔥 FETCH WITH AUTH (CORRIGIDO - NÃO TENTA REFRESH EM 429)
-    // ==============================================
-    
-    async fetchWithAuth(url, options = {}) {
-        let token = localStorage.getItem('access_token');
-        
-        if (!token) {
-            return null;
-        }
-        
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers
-        };
-        
-        headers['Authorization'] = `Bearer ${token}`;
-        
-        try {
-            let response = await fetch(url, { ...options, headers });
-            
-            // 🔥 CORRIGIDO: 429 - Rate Limit - NÃO tenta refresh
-            if (response.status === 429) {
-                const data = await response.json().catch(() => ({}));
-                const rateInfo = this._handleRateLimitError(response, data);
-                
-                console.warn(`⚠️ Rate Limit bloqueado para ${url}: ${rateInfo.message}`);
-                
-                // 🔥 Dispara evento para UI
-                window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
-                    detail: {
-                        url: url,
-                        retryAfter: rateInfo.retryAfter,
-                        remaining: rateInfo.remaining
-                    }
-                }));
-                
-                return response;
-            }
-            
-            // 🔥 401 - Token expirado - Tenta refresh
-            if (response.status === 401) {
-                const refreshed = await this.refreshToken();
-                
-                if (refreshed) {
-                    const newToken = localStorage.getItem('access_token');
-                    headers['Authorization'] = `Bearer ${newToken}`;
-                    response = await fetch(url, { ...options, headers });
-                } else {
-                    this.clearTokens();
-                    this.isAuthenticated = false;
-                    this.currentUser = null;
-                    this.userData = null;
-                    
-                    if (!window.location.pathname.includes('/login')) {
-                        window.location.href = '/login';
-                    }
-                    return null;
-                }
-            }
-            
-            return response;
-            
-        } catch (error) {
-            console.error('Erro na requisição:', error);
-            return null;
-        }
-    }
-    
-    // ==============================================
-    // 🔥 REFRESH TOKEN (COM RATE LIMITER PROTECTION)
+    // 🔥 REFRESH TOKEN (COM COOKIE SYNC)
     // ==============================================
     
     async refreshTokenSafely() {
@@ -615,7 +524,6 @@ class Auth {
             });
         }
         
-        // 🔥 Verifica se está bloqueado
         if (this._isRateLimitBlocked()) {
             console.warn('⚠️ Rate Limit bloqueado - não pode fazer refresh');
             return false;
@@ -638,7 +546,6 @@ class Auth {
                 })
             });
             
-            // 🔥 Trata 429 no refresh
             if (response.status === 429) {
                 const data = await response.json().catch(() => ({}));
                 this._handleRateLimitError(response, data);
@@ -653,7 +560,11 @@ class Auth {
             
             if (response.ok) {
                 const data = await response.json();
+                
+                // 🔥 GUARDA TOKEN NO LOCALSTORAGE E COOKIE
                 localStorage.setItem('access_token', data.access_token);
+                this._syncTokenToCookie(data.access_token);
+                
                 if (data.refresh_token) {
                     localStorage.setItem('refresh_token', data.refresh_token);
                 }
@@ -693,22 +604,19 @@ class Auth {
         }
     }
     
-    // Alias para compatibilidade
     async refreshToken() {
         return this.refreshTokenSafely();
     }
     
     // ==============================================
-    // CHECK TOKEN (COM RATE LIMITER PROTECTION)
+    // 🔥 CHECK TOKEN
     // ==============================================
     
     async checkTokenHealth() {
-        // Evita verificações muito frequentes
         const now = Date.now();
         if (now - this._lastTokenCheck < 5000) return;
         this._lastTokenCheck = now;
         
-        // 🔥 Se está bloqueado, não faz check
         if (this._isRateLimitBlocked()) {
             console.log('⏳ Rate Limit bloqueado - pulando health check');
             return;
@@ -725,7 +633,6 @@ class Auth {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
-            // 🔥 Trata 429 no health check
             if (response.status === 429) {
                 const data = await response.json().catch(() => ({}));
                 this._handleRateLimitError(response, data);
@@ -750,6 +657,7 @@ class Auth {
                 if (data.status === 'refreshed' && data.access_token) {
                     console.log('🔄 Token renovado via check-token');
                     localStorage.setItem('access_token', data.access_token);
+                    this._syncTokenToCookie(data.access_token);
                     if (data.refresh_token) {
                         localStorage.setItem('refresh_token', data.refresh_token);
                     }
@@ -777,46 +685,76 @@ class Auth {
     }
     
     // ==============================================
-    // INICIALIZAÇÃO (COM RATE LIMITER RESET)
+    // 🔥 FETCH WITH AUTH
     // ==============================================
     
-    async init() {
-        console.log('🚀 Inicializando Auth...');
+    async fetchWithAuth(url, options = {}) {
+        let token = localStorage.getItem('access_token');
         
-        this._initializing = true;
-        this.initialized = true;
+        if (!token) {
+            return null;
+        }
         
-        // 🔥 Reseta rate limit na inicialização
-        this._rateLimitBlocked = false;
-        this._rateLimitBlockedUntil = 0;
-        this._rateLimitRemainingAttempts = RATE_LIMIT.LOGIN_MAX_ATTEMPTS;
-        this._loginAttempts = 0;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
         
-        await this.checkToken();
-        this.setupAuthPageListeners();
+        headers['Authorization'] = `Bearer ${token}`;
         
-        this._initializing = false;
-        this.updateUI();
-        
-        console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
-        
-        window.dispatchEvent(new CustomEvent('authReady', {
-            detail: {
-                isAuthenticated: this.isAuthenticated,
-                user: this.userData
+        try {
+            let response = await fetch(url, { ...options, headers });
+            
+            if (response.status === 429) {
+                const data = await response.json().catch(() => ({}));
+                const rateInfo = this._handleRateLimitError(response, data);
+                console.warn(`⚠️ Rate Limit bloqueado para ${url}: ${rateInfo.message}`);
+                window.dispatchEvent(new CustomEvent('rateLimitBlocked', {
+                    detail: {
+                        url: url,
+                        retryAfter: rateInfo.retryAfter,
+                        remaining: rateInfo.remaining
+                    }
+                }));
+                return response;
             }
-        }));
+            
+            if (response.status === 401) {
+                const refreshed = await this.refreshToken();
+                
+                if (refreshed) {
+                    const newToken = localStorage.getItem('access_token');
+                    headers['Authorization'] = `Bearer ${newToken}`;
+                    response = await fetch(url, { ...options, headers });
+                } else {
+                    this.clearTokens();
+                    this.isAuthenticated = false;
+                    this.currentUser = null;
+                    this.userData = null;
+                    
+                    if (!window.location.pathname.includes('/login')) {
+                        window.location.href = '/login';
+                    }
+                    return null;
+                }
+            }
+            
+            return response;
+            
+        } catch (error) {
+            console.error('Erro na requisição:', error);
+            return null;
+        }
     }
     
     // ==============================================
-    // LOGOUT
+    // 🔥 LOGOUT (COM LIMPEZA DE COOKIE)
     // ==============================================
     
     async logout() {
         const refreshToken = localStorage.getItem('refresh_token');
         const accessToken = localStorage.getItem('access_token');
         
-        // 🔥 Reseta rate limit no logout
         this._rateLimitBlocked = false;
         this._rateLimitBlockedUntil = 0;
         this._rateLimitRemainingAttempts = RATE_LIMIT.LOGIN_MAX_ATTEMPTS;
@@ -851,40 +789,136 @@ class Auth {
     }
     
     // ==============================================
-    // ... (demais métodos permanecem iguais)
+    // 🔥 CLEAR TOKENS (COM LIMPEZA DE COOKIE)
     // ==============================================
     
     clearTokens() {
+        // 🔥 Limpa localStorage
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_data');
+        
+        // 🔥 Limpa cookie
+        this._deleteCookie('access_token');
+        
+        console.log('🧹 Tokens e cookies limpos');
     }
     
+    // ==============================================
+    // 🔥 TOKEN MONITORING
+    // ==============================================
+    
     startTokenMonitoring() {
-        // ... (mesmo código anterior)
+        this.stopTokenMonitoring();
+        
+        this._tokenCheckInterval = setInterval(() => {
+            this.checkTokenHealth();
+        }, 30000);
+        
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                const expiresIn = (payload.exp * 1000) - Date.now();
+                if (expiresIn > 0) {
+                    this._tokenExpiryTimer = setTimeout(() => {
+                        console.log('⏰ Token expirou, tentando refresh...');
+                        this.refreshToken();
+                    }, expiresIn - 60000);
+                }
+            } catch (e) {
+                // Ignora
+            }
+        }
+        
+        console.log('⏰ Monitoramento de token iniciado');
     }
     
     stopTokenMonitoring() {
-        // ... (mesmo código anterior)
+        if (this._tokenCheckInterval) {
+            clearInterval(this._tokenCheckInterval);
+            this._tokenCheckInterval = null;
+        }
+        if (this._tokenExpiryTimer) {
+            clearTimeout(this._tokenExpiryTimer);
+            this._tokenExpiryTimer = null;
+        }
     }
     
+    // ==============================================
+    // 🔥 HELPERS
+    // ==============================================
+    
     _parseJwt(token) {
-        // ... (mesmo código anterior)
+        try {
+            return JSON.parse(atob(token.split('.')[1]));
+        } catch {
+            return null;
+        }
     }
     
     handleTokenExpired() {
-        // ... (mesmo código anterior)
+        console.log('⏰ Token expirado');
+        this.clearTokens();
+        this.isAuthenticated = false;
+        this.currentUser = null;
+        this.userData = null;
+        
+        if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login?session=expired';
+        }
     }
     
-    setupAuthPageListeners() {
-        // ... (mesmo código anterior)
+    // ==============================================
+    // 🔥 UI E CRÉDITOS
+    // ==============================================
+    
+    updateUI() {
+        const isAuth = this.isAuthenticated;
+        
+        document.querySelectorAll('.auth-required').forEach(el => {
+            el.style.display = isAuth ? 'block' : 'none';
+        });
+        
+        document.querySelectorAll('.guest-only').forEach(el => {
+            el.style.display = isAuth ? 'none' : 'block';
+        });
+        
+        if (isAuth && this.userData) {
+            document.querySelectorAll('.user-name').forEach(el => {
+                el.textContent = this.userData.name || 'Usuário';
+            });
+            document.querySelectorAll('.workshop-name').forEach(el => {
+                el.textContent = this.userData.workshop_name || 'Oficina';
+            });
+            
+            this.updateCreditsDisplay();
+            this.updateAdminBadge();
+            this.updatePremiumBadge();
+        }
     }
     
-    async checkToken() {
-        // ... (mesmo código anterior)
+    updateCreditsDisplay() {
+        const display = this.getCreditsDisplay();
+        document.querySelectorAll('.credits-display, .user-credits, #creditsDisplay, #creditsCount, #uploadCredits, .credits-badge span').forEach(el => {
+            if (el) el.textContent = display;
+        });
     }
     
-    async loadUserCredits() {
-        // ... (mesmo código anterior)
+    updateAdminBadge() {
+        const isAdmin = this.isAdmin();
+        document.querySelectorAll('.admin-badge, .admin-only').forEach(el => {
+            el.style.display = isAdmin ? 'inline-block' : 'none';
+        });
+        document.body.classList.toggle('is-admin', isAdmin);
+    }
+    
+    updatePremiumBadge() {
+        const isPremium = this.isPremium();
+        document.querySelectorAll('.premium-badge, .premium-only').forEach(el => {
+            el.style.display = isPremium ? 'inline-block' : 'none';
+        });
+        document.body.classList.toggle('is-premium', isPremium);
     }
     
     getCredits() {
@@ -898,10 +932,6 @@ class Auth {
             return `${credits}/${MAX_CREDITS_BALANCE}`;
         }
         return String(this.getCredits());
-    }
-    
-    updateCreditsDisplay() {
-        // ... (mesmo código anterior)
     }
     
     isAdmin() {
@@ -924,8 +954,135 @@ class Auth {
         return this.userData || {};
     }
     
-    updateUI() {
-        // ... (mesmo código anterior)
+    async loadUserCredits() {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+            
+            const response = await fetch(`${this.apiBase}/payments/balance`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.credits !== undefined) {
+                    this.userData = {
+                        ...this.userData,
+                        credits: data.credits,
+                        credits_display: data.credits_display || String(data.credits),
+                        is_admin: data.is_admin || false,
+                        plan: data.plan?.type || this.userData?.plan
+                    };
+                    this.currentUser = this.userData;
+                    this.updateCreditsDisplay();
+                }
+            }
+        } catch (error) {
+            console.warn('Erro ao carregar créditos:', error);
+        }
+    }
+    
+    setupAuthPageListeners() {
+        document.getElementById('loginForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin(e);
+        });
+        
+        document.getElementById('registerForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleRegister(e);
+        });
+    }
+    
+    async checkToken() {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            this.isAuthenticated = false;
+            return false;
+        }
+        
+        try {
+            const response = await fetch(`${this.apiBase}/auth/check-token`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.status === 429) {
+                const data = await response.json().catch(() => ({}));
+                this._handleRateLimitError(response, data);
+                console.warn('⚠️ Rate Limit no check inicial');
+                return false;
+            }
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status === 'valid') {
+                    this.isAuthenticated = true;
+                    if (data.user) {
+                        this.userData = {
+                            ...this.userData,
+                            email: data.user,
+                            name: data.name,
+                            is_admin: data.is_admin || false,
+                            credits: data.credits || 0,
+                            credits_display: data.credits_display || String(data.credits || 0)
+                        };
+                        this.currentUser = this.userData;
+                        this.updateCreditsDisplay();
+                    }
+                    return true;
+                }
+            }
+            
+            if (response.status === 401) {
+                const refreshed = await this.refreshToken();
+                if (refreshed) {
+                    this.isAuthenticated = true;
+                    return true;
+                }
+            }
+            
+            this.isAuthenticated = false;
+            return false;
+            
+        } catch (error) {
+            console.warn('Erro ao verificar token:', error);
+            this.isAuthenticated = false;
+            return false;
+        }
+    }
+    
+    async init() {
+        console.log('🚀 Inicializando Auth...');
+        
+        this._initializing = true;
+        this.initialized = true;
+        
+        this._rateLimitBlocked = false;
+        this._rateLimitBlockedUntil = 0;
+        this._rateLimitRemainingAttempts = RATE_LIMIT.LOGIN_MAX_ATTEMPTS;
+        this._loginAttempts = 0;
+        
+        // 🔥 Verifica se há token no localStorage e sincroniza com cookie
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            this._syncTokenToCookie(token);
+            console.log('🍪 Token sincronizado com cookie na inicialização');
+        }
+        
+        await this.checkToken();
+        this.setupAuthPageListeners();
+        
+        this._initializing = false;
+        this.updateUI();
+        
+        console.log(`✅ Auth inicializado. Autenticado: ${this.isAuthenticated}`);
+        
+        window.dispatchEvent(new CustomEvent('authReady', {
+            detail: {
+                isAuthenticated: this.isAuthenticated,
+                user: this.userData
+            }
+        }));
     }
 }
 
@@ -935,9 +1092,10 @@ class Auth {
 
 window.appAuth = new Auth();
 
-console.log('✅ Auth carregado (v3.0 - com Rate Limiter)');
+console.log('✅ Auth carregado (v3.1 - com Cookie Sync)');
 console.log('   ✅ Use window.appAuth para acessar');
 console.log('   ✅ CAPTCHA REMOVIDO');
 console.log(`   ✅ MAX_CREDITS_BALANCE: ${MAX_CREDITS_BALANCE}`);
 console.log(`   ✅ TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES}`);
 console.log(`   ✅ RATE LIMITER: ${RATE_LIMIT.LOGIN_MAX_ATTEMPTS} tentativas/${RATE_LIMIT.LOGIN_WINDOW_SECONDS}s`);
+console.log('   🍪 COOKIE SYNC: Token sincronizado com cookie para links HTML');

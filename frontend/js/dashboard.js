@@ -1,10 +1,10 @@
-// frontend/js/dashboard.js - VERSÃO CORRIGIDA V6.2 (COM FALLBACK INTELIGENTE)
-// 🔥 CORREÇÃO: Adicionada trava no startFallback para evitar loop infinito
+// frontend/js/dashboard.js - VERSÃO CORRIGIDA V6.3 (LINK PLANOS CORRIGIDO)
+// 🔥 CORREÇÃO: Link "Fazer upgrade" agora aponta para planos.html
 
 (function() {
     'use strict';
 
-    console.log('📦 [Dashboard V6.2] Módulo carregado (PoW sob demanda).');
+    console.log('📦 [Dashboard V6.3] Módulo carregado (PoW sob demanda).');
 
     // ============================================================================
     // 🔥 CONFIGURAÇÕES
@@ -160,6 +160,7 @@
             return String(State.credits || 0);
         },
         
+        // 🔥 CORRIGIDO: Link "Fazer upgrade" agora aponta para planos.html
         updatePremiumStatusUI() {
             const container = DOM.get('#premiumStatusContainer');
             if (!container) return;
@@ -189,6 +190,7 @@
                     </div>
                 `;
             } else {
+                // 🔥 CORRIGIDO: Link para planos.html
                 html = `
                     <div class="text-center py-2">
                         <span class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); padding: 0.4rem 1.5rem; font-size: 0.8rem;">
@@ -196,7 +198,7 @@
                         </span>
                         <p class="mt-1 small" style="color: rgba(255,255,255,0.5);">
                             <i class="fas fa-coins me-1"></i> ${State.credits} créditos
-                            <a href="/planos" class="text-warning text-decoration-none ms-1" style="font-size: 0.7rem;">Fazer upgrade</a>
+                            <a href="planos.html" class="text-warning text-decoration-none ms-1" style="font-size: 0.7rem;">Fazer upgrade</a>
                         </p>
                     </div>
                 `;
@@ -1227,7 +1229,7 @@
     function initialize() {
         if (State._initialized) return;
         
-        console.log('🚀 [Dashboard V6.2] Inicializando...');
+        console.log('🚀 [Dashboard V6.3] Inicializando...');
         
         AppState.sync();
         setupDragAndDrop();
@@ -1259,7 +1261,7 @@
         setInterval(() => AppState.sync(), CONFIG.CREDITS_CHECK_INTERVAL);
         
         State._initialized = true;
-        console.log('✅ [Dashboard V6.2] Inicializado com sucesso (PoW sob demanda)!');
+        console.log('✅ [Dashboard V6.3] Inicializado com sucesso (PoW sob demanda)!');
     }
     
     function showFilePreview(files) {
@@ -1406,10 +1408,10 @@
     // ============================================================================
     
     (function injectStyles() {
-        if (document.getElementById('dashboardV62Styles')) return;
+        if (document.getElementById('dashboardV63Styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'dashboardV62Styles';
+        style.id = 'dashboardV63Styles';
         style.textContent = `
             .analysis-card { animation: fadeInUp 0.5s ease-out; }
             @keyframes fadeInUp {
@@ -1483,6 +1485,7 @@
         document.head.appendChild(style);
     })();
 
-    console.log('✅ [Dashboard V6.2] Módulo carregado (PoW apenas no upload, fallback inteligente).');
+    console.log('✅ [Dashboard V6.3] Módulo carregado (PoW apenas no upload, fallback inteligente).');
+    console.log('🔗 Link "Fazer upgrade" corrigido: planos.html');
 
 })();
