@@ -3,44 +3,271 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoAnalytics Pro - Plano Bronze</title>
+    <title>AutoAnalytics - Planos e Suporte</title>
     
+    <!-- ============================================== -->
+    <!-- 🔥 SEGURANÇA E BLOQUEIO -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+            
+            const token = localStorage.getItem('access_token');
+            const isTokenValid = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
+            
+            if (!isTokenValid) {
+                window.location.replace('/login');
+                return;
+            }
+            
+            if (window._security_initialized) {
+                return;
+            }
+            window._security_initialized = true;
+            window._isAuthenticated = true;
+            
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.0');
+        })();
+    </script>
+    
+    <!-- ============================================== -->
+    <!-- 🔥 BIBLIOTECAS -->
+    <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Toastr para notificações -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
     <style>
-        /* ===== TODOS OS ESTILOS ===== */
-        * { font-family: 'Inter', sans-serif; }
-        
+        /* ===== RESET E BASE ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
             min-height: 100vh;
+            color: #ffffff;
+            overflow-x: hidden;
         }
-        
+
+        /* ===== NAVBAR ===== */
         .navbar-modern {
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            padding: 1rem 0;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            padding: 0.6rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
         }
-        
         .brand-text {
-            font-size: 1.8rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-size: 1.5rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            text-decoration: none;
         }
-        
+        .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
+        .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
+
+        .credits-badge {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            color: white;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+            font-size: 0.85rem;
+        }
+        .credits-badge:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.6);
+        }
+        .user-name-display {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 0.9rem;
+        }
+        .user-name-display i { color: #ff6b35; }
+        .btn-planos {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-planos:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
+        .btn-sair {
+            background: transparent;
+            border: 2px solid #e53e3e;
+            color: #e53e3e;
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-sair:hover {
+            background: #e53e3e;
+            color: white;
+            transform: translateY(-2px);
+        }
+        .btn-voltar {
+            background: transparent;
+            border: 2px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.7);
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-voltar:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .pow-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            background: rgba(72, 187, 120, 0.15);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+            cursor: default;
+        }
+        .pow-status.loading {
+            background: rgba(245, 166, 35, 0.15);
+            border-color: rgba(245, 166, 35, 0.3);
+            color: #f5a623;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .pow-status.error {
+            background: rgba(220, 53, 69, 0.15);
+            border-color: rgba(220, 53, 69, 0.3);
+            color: #dc3545;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ===== CONTEÚDO ===== */
+        .hero-section { padding: 100px 0 40px; min-height: 100vh; }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            color: white;
+        }
+        .glass-card:hover {
+            transform: translateY(-6px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 107, 53, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .glass-card .card-title {
+            color: white;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        .glass-card .card-title i {
+            color: #ff6b35;
+            margin-right: 0.5rem;
+        }
+
+        /* ===== NAVEGAÇÃO POR ABAS ===== */
+        .tab-navigation {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 0.5rem;
+            border: 1px solid rgba(255,255,255,0.06);
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .tab-btn {
+            padding: 0.7rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            background: transparent;
+            color: rgba(255,255,255,0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex: 1;
+            justify-content: center;
+            min-width: 140px;
+        }
+        .tab-btn:hover {
+            color: rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.05);
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
+            transform: translateY(-2px);
+        }
+        .tab-btn i { font-size: 1.1rem; }
+
+        /* ===== CONTEÚDO DAS ABAS ===== */
+        .tab-content {
+            display: none;
+            animation: tabFadeIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes tabFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* ===== PLANO BRONZE ===== */
         .bronze-card {
-            background: linear-gradient(145deg, #2c1a0a 0%, #3d2614 100%);
+            background: linear-gradient(145deg, rgba(44, 26, 10, 0.95) 0%, rgba(61, 38, 20, 0.95) 100%);
             border-radius: 40px;
             padding: 3rem;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(205, 127, 50, 0.3);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(205, 127, 50, 0.3);
             position: relative;
             overflow: hidden;
             max-width: 650px;
@@ -48,12 +275,10 @@
             transition: all 0.3s ease;
             border: 1px solid #cd7f32;
         }
-        
         .bronze-card:hover {
             transform: translateY(-8px);
-            box-shadow: 0 40px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(205, 127, 50, 0.5);
+            box-shadow: 0 40px 70px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
         }
-        
         .bronze-badge {
             position: absolute;
             top: 20px;
@@ -67,14 +292,8 @@
             z-index: 10;
             box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
         }
-        
         .bronze-badge i { margin-right: 0.5rem; }
-        
-        .bronze-title {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        
+        .bronze-title { text-align: center; margin-bottom: 1.5rem; }
         .bronze-title h2 {
             font-size: 2.5rem;
             font-weight: 800;
@@ -83,7 +302,11 @@
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.5rem;
         }
-        
+        .bronze-title .subtitle {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.95rem;
+        }
+
         .vitalicio-badge {
             background: linear-gradient(135deg, #28a745, #20c997);
             color: white;
@@ -94,22 +317,16 @@
             font-weight: 700;
             font-size: 0.9rem;
         }
-        
         .vitalicio-badge i { margin-right: 0.5rem; }
         .vitalicio-badge small { font-weight: 400; opacity: 0.8; }
-        
-        .price-container {
-            text-align: center;
-            margin: 1rem 0;
-        }
-        
+
+        .price-container { text-align: center; margin: 1rem 0; }
         .old-price {
             text-decoration: line-through;
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.4);
             font-size: 1.3rem;
             display: block;
         }
-        
         .price-tag {
             font-size: 4rem;
             font-weight: 800;
@@ -118,13 +335,11 @@
             margin: 0.5rem 0;
             text-shadow: 0 0 20px rgba(245, 166, 35, 0.3);
         }
-        
         .price-tag small {
             font-size: 1rem;
             font-weight: 400;
             color: rgba(255, 255, 255, 0.6);
         }
-        
         .economy-badge {
             background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
@@ -135,7 +350,7 @@
             display: inline-block;
             margin-top: 0.5rem;
         }
-        
+
         .bronze-feature {
             display: flex;
             align-items: center;
@@ -143,11 +358,10 @@
             border-bottom: 1px solid rgba(205, 127, 50, 0.2);
             color: white;
         }
-        
         .bronze-feature:last-child { border-bottom: none; }
         .bronze-feature i { color: #f5a623; width: 35px; font-size: 1.2rem; }
         .bronze-feature strong { color: #f5a623; }
-        
+
         .highlight-title {
             font-size: 1.1rem;
             color: #f5a623;
@@ -156,7 +370,7 @@
             padding-bottom: 0.3rem;
             margin-bottom: 1rem;
         }
-        
+
         .plan-info {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 20px;
@@ -164,26 +378,12 @@
             margin: 1.5rem 0;
             border: 1px solid rgba(205, 127, 50, 0.3);
         }
-        
         .plan-info .col-4 {
             border-right: 1px solid rgba(205, 127, 50, 0.2);
         }
-        
         .plan-info .col-4:last-child { border-right: none; }
         .plan-info i { color: #f5a623; }
-        
-        .limit-warning {
-            background: rgba(245, 166, 35, 0.15);
-            border-left: 4px solid #f5a623;
-            padding: 0.75rem;
-            border-radius: 12px;
-            margin-top: 1rem;
-            font-size: 0.85rem;
-            color: rgba(255, 255, 255, 0.8);
-        }
-        
-        .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
-        
+
         .btn-bronze {
             background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
@@ -196,19 +396,17 @@
             box-shadow: 0 10px 30px rgba(245, 166, 35, 0.4);
             width: 100%;
         }
-        
         .btn-bronze:hover {
             transform: translateY(-3px);
             box-shadow: 0 15px 40px rgba(245, 166, 35, 0.6);
             color: white;
         }
-        
         .btn-bronze:disabled {
             opacity: 0.6;
             transform: none;
             cursor: not-allowed;
         }
-        
+
         .vagas-counter {
             background: rgba(0, 0, 0, 0.4);
             border-radius: 60px;
@@ -217,7 +415,6 @@
             text-align: center;
             border: 1px solid rgba(205, 127, 50, 0.5);
         }
-        
         .vagas-number {
             font-size: 2.5rem;
             font-weight: 800;
@@ -225,12 +422,10 @@
             display: inline-block;
             margin: 0 0.5rem;
         }
-        
         .vagas-label {
             font-size: 0.9rem;
             color: rgba(255, 255, 255, 0.7);
         }
-        
         .vagas-progress {
             height: 8px;
             background: rgba(255, 255, 255, 0.2);
@@ -238,180 +433,31 @@
             margin-top: 0.8rem;
             overflow: hidden;
         }
-        
         .vagas-progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #f5a623, #e67e22);
             border-radius: 10px;
             transition: width 0.5s ease;
         }
-        
         .vagas-urgent {
             animation: urgent-pulse 1s ease-in-out infinite;
         }
-        
         @keyframes urgent-pulse {
             0%, 100% { background: rgba(245, 166, 35, 0.2); border-color: #f5a623; }
             50% { background: rgba(245, 166, 35, 0.4); border-color: #ff7e00; }
         }
-        
-        .security-seals {
-            margin-top: 1.5rem;
-            text-align: center;
-        }
-        
-        .security-seals .badge {
-            background: rgba(0, 0, 0, 0.4);
-            color: rgba(255, 255, 255, 0.8);
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.7rem;
-            border: 1px solid rgba(205, 127, 50, 0.3);
-        }
-        
-        .btn-outline-gradient {
-            background: transparent;
-            border: 2px solid #cd7f32;
-            color: #cd7f32;
-            padding: 0.75rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .btn-outline-gradient:hover {
-            background: linear-gradient(135deg, #cd7f32, #b8681e);
-            color: white;
-            border-color: transparent;
-        }
-        
-        .credits-badge {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
-            padding: 0.5rem 1.5rem;
-            border-radius: 50px;
-            color: white;
-            font-weight: 600;
-            box-shadow: 0 4px 15px rgba(245, 166, 35, 0.3);
-            cursor: pointer;
-        }
-        
-        .admin-badge {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: none;
-            margin-left: 0.5rem;
-        }
-        
-        .rate-limit-indicator {
-            display: none;
-            margin-top: 10px;
-            padding: 10px 12px;
-            border-radius: 8px;
+
+        .limit-warning {
+            background: rgba(245, 166, 35, 0.1);
+            border-left: 4px solid #f5a623;
+            padding: 0.75rem;
+            border-radius: 12px;
+            margin-top: 1rem;
             font-size: 0.85rem;
-            background: #fff5f5;
-            color: #c53030;
-            border: 1px solid #feb2b2;
-            align-items: center;
-            gap: 10px;
+            color: rgba(255, 255, 255, 0.8);
         }
-        
-        .rate-limit-indicator.show {
-            display: flex;
-            animation: fadeIn 0.3s ease-out;
-        }
-        
-        .rate-limit-indicator .timer {
-            font-weight: 700;
-            font-family: monospace;
-            font-size: 1.1rem;
-            color: #c53030;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .admin-message {
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
-            color: white;
-            padding: 2rem;
-            border-radius: 30px;
-            text-align: center;
-            border: 1px solid #cd7f32;
-        }
-        
-        .admin-message i { font-size: 4rem; margin-bottom: 1rem; color: #f5a623; }
-        
-        /* ===== SEÇÃO DE SUPORTE ===== */
-        .support-card {
-            background: white;
-            border-radius: 30px;
-            transition: all 0.3s ease;
-        }
-        
-        .support-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-        }
-        
-        .support-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.5rem;
-        }
-        
-        .support-email-link {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 1.2rem;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .support-email-link:hover {
-            color: #764ba2;
-            text-decoration: underline;
-        }
-        
-        .faq-item {
-            border-left: 3px solid #e0e0e0;
-            transition: all 0.3s;
-        }
-        
-        .faq-item:hover {
-            border-left-color: #f5a623;
-            background: #f8f9fa;
-        }
-        
-        .faq-question {
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .faq-question:hover {
-            color: #f5a623;
-        }
-        
-        .quick-contact-form {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 20px;
-        }
-        
-        .fs-10 { font-size: 0.7rem; opacity: 0.8; }
-        
-        /* ===== CRÉDITOS EXPLICAÇÃO ===== */
+        .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
+
         .credits-explanation {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 16px;
@@ -419,7 +465,6 @@
             margin-top: 1.5rem;
             border: 1px solid rgba(205, 127, 50, 0.25);
         }
-        
         .credits-explanation .step {
             display: flex;
             align-items: flex-start;
@@ -428,18 +473,13 @@
             color: rgba(255, 255, 255, 0.85);
             font-size: 0.9rem;
         }
-        
         .credits-explanation .step i {
             color: #f5a623;
             font-size: 1rem;
             margin-top: 0.15rem;
             min-width: 20px;
         }
-        
-        .credits-explanation .step strong {
-            color: #f5a623;
-        }
-        
+        .credits-explanation .step strong { color: #f5a623; }
         .credits-explanation .highlight-box {
             background: rgba(245, 166, 35, 0.1);
             border-radius: 12px;
@@ -447,320 +487,614 @@
             margin-top: 0.75rem;
             border-left: 3px solid #f5a623;
         }
-        
         .credits-explanation .highlight-box span {
             color: rgba(255, 255, 255, 0.9);
             font-size: 0.85rem;
         }
-        
-        .strategy-tag {
+
+        /* ===== SUPORTE ===== */
+        .support-card {
+            background: rgba(255,255,255,0.06);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            color: white;
+        }
+        .support-card:hover {
+            transform: translateY(-4px);
+            background: rgba(255,255,255,0.09);
+            border-color: rgba(255, 107, 53, 0.2);
+        }
+        .support-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+        }
+        .support-email-link {
+            color: #f5a623;
+            text-decoration: none;
+            font-size: 1.2rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .support-email-link:hover {
+            color: #ff6b35;
+            text-decoration: underline;
+        }
+
+        .faq-item {
+            border-left: 3px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+            padding: 1rem;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.03);
+            margin-bottom: 0.75rem;
+        }
+        .faq-item:hover {
+            border-left-color: #f5a623;
+            background: rgba(255,107,53,0.06);
+        }
+        .faq-question {
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .faq-question:hover { color: #f5a623; }
+        .faq-answer {
+            display: none;
+            margin-top: 0.5rem;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .faq-answer.open { display: block; }
+
+        .quick-contact-form {
+            background: rgba(255,255,255,0.04);
+            border-radius: 20px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .quick-contact-form .form-control,
+        .quick-contact-form .form-select {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: white;
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+        }
+        .quick-contact-form .form-control:focus,
+        .quick-contact-form .form-select:focus {
+            background: rgba(255,255,255,0.1);
+            border-color: #f5a623;
+            box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.15);
+            color: white;
+        }
+        .quick-contact-form .form-control::placeholder {
+            color: rgba(255,255,255,0.3);
+        }
+        .quick-contact-form .form-select option {
+            background: #1a1a2e;
+            color: white;
+        }
+        .btn-support {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 12px;
+            font-weight: 700;
+            transition: all 0.3s;
+        }
+        .btn-support:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
+            color: white;
+        }
+
+        .format-badge {
             display: inline-block;
-            background: rgba(245, 166, 35, 0.15);
-            padding: 0.2rem 0.8rem;
+            background: rgba(255,255,255,0.06);
+            padding: 0.5rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.7);
+        }
+        .format-badge i { color: #48bb78; margin-right: 0.5rem; }
+
+        .admin-badge {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            color: white;
+            padding: 0.3rem 0.8rem;
             border-radius: 50px;
             font-size: 0.7rem;
-            color: #f5a623;
-            border: 1px solid rgba(205, 127, 50, 0.3);
-            margin-right: 0.3rem;
+            font-weight: 600;
+            display: none;
         }
-        
+
+        .rate-limit-indicator {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            background: rgba(229, 62, 62, 0.15);
+            color: #fc8181;
+            border: 1px solid rgba(229, 62, 62, 0.2);
+            align-items: center;
+            gap: 10px;
+        }
+        .rate-limit-indicator.show { display: flex; }
+        .rate-limit-indicator .timer {
+            font-weight: 700;
+            font-family: monospace;
+            font-size: 1.1rem;
+            color: #fc8181;
+        }
+
+        .security-seals {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        .security-seals .badge {
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.6);
+            padding: 0.4rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.65rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* ===== RESPONSIVIDADE ===== */
+        @media (max-width: 992px) {
+            .hero-section { padding: 90px 0 30px; }
+            .bronze-card { padding: 2rem; }
+        }
         @media (max-width: 768px) {
-            .bronze-card { padding: 2rem; margin: 0 1rem; }
+            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
+            .brand-text { font-size: 1.1rem; }
+            .tab-btn { padding: 0.5rem 1rem; font-size: 0.8rem; min-width: 100px; }
+            .bronze-card { padding: 1.5rem; margin: 0 1rem; }
             .price-tag { font-size: 3rem; }
             .bronze-title h2 { font-size: 1.8rem; }
             .vagas-number { font-size: 1.8rem; }
             .support-icon { width: 50px; height: 50px; font-size: 1.2rem; }
-            .credits-explanation .step { font-size: 0.8rem; }
+        }
+        @media (max-width: 480px) {
+            .hero-section { padding: 80px 0 20px; }
+            .glass-card { padding: 1rem; }
+            .tab-btn { padding: 0.4rem 0.8rem; font-size: 0.7rem; min-width: 80px; gap: 0.3rem; }
+            .tab-btn i { font-size: 0.8rem; }
+            .bronze-card { padding: 1rem; }
         }
     </style>
 </head>
 <body>
-    <nav class="navbar-modern">
+
+    <!-- ============================================== -->
+    <!-- 🔥 NAVBAR -->
+    <!-- ============================================== -->
+    <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
-            <a class="brand-text text-decoration-none" href="/dashboard">
-                <i class="fas fa-robot me-2"></i>
-                AutoAnalytics<span class="text-primary">Pro</span>
-            </a>
-            <div class="d-flex align-items-center gap-3">
-                <span class="credits-badge" id="navbarCredits">
-                    <i class="fas fa-coins me-2"></i>
-                    <span id="creditsDisplay">0</span> créditos
-                </span>
-                <span class="admin-badge" id="adminBadge">
-                    <i class="fas fa-crown"></i> Admin
-                </span>
-                <a href="/dashboard" class="btn btn-outline-gradient">
-                    <i class="fas fa-arrow-left me-2"></i> Voltar
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap">
+                <a class="brand-text text-decoration-none" href="/dashboard">
+                    <i class="fas fa-wrench me-2"></i>
+                    Auto<span>Analytics</span>
                 </a>
+                
+                <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
+                    <span class="user-name-display">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="userName">Carregando...</span>
+                    </span>
+                    
+                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                        <i class="fas fa-coins me-1"></i>
+                        <span id="creditsCount">0</span>
+                    </div>
+                    
+                    <span class="pow-status loading" id="powStatus" title="Proof of Work">
+                        <i class="fas fa-shield-alt"></i>
+                        <span id="powStatusText">⚡ Pronto</span>
+                    </span>
+                    
+                    <a href="/dashboard" class="btn-voltar">
+                        <i class="fas fa-arrow-left me-1"></i> Voltar
+                    </a>
+                    
+                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
+                        <i class="fas fa-sign-out-alt me-1"></i> Sair
+                    </a>
+                </div>
             </div>
         </div>
     </nav>
 
-    <div class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-8 text-center mb-4">
-                <h1 class="display-4 fw-bold mb-3">
-                    <span style="background: linear-gradient(135deg, #cd7f32, #f5a623); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">🔥 Plano Bronze 🔥</span>
-                </h1>
-                <p class="lead text-muted">A escolha inteligente para sua oficina mecânica</p>
-            </div>
-        </div>
-        
-        <!-- CONTAINER ONDE O payment.js VAI RENDERIZAR -->
-        <div class="row justify-content-center" id="plansContainer">
-            <div class="text-center py-5">
-                <div class="spinner-border text-warning" role="status">
-                    <span class="visually-hidden">Carregando...</span>
-                </div>
-                <p class="mt-2 text-muted">Carregando plano Bronze...</p>
-            </div>
-        </div>
-        
-        <!-- 🔥 INDICADOR DE RATE LIMIT -->
-        <div class="row justify-content-center mt-3" id="rateLimitContainer">
-            <div class="col-lg-8">
-                <div class="rate-limit-indicator" id="rateLimitIndicator">
-                    <span class="icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
-                    <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
+    <!-- ============================================== -->
+    <!-- 🔥 CONTEÚDO PRINCIPAL -->
+    <!-- ============================================== -->
+    <section class="hero-section">
+        <div class="container">
+            
+            <!-- ===== HEADER ===== -->
+            <div class="row mb-4">
+                <div class="col-12 text-center" data-aos="fade-down">
+                    <span class="highlight-badge" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                        <i class="fas fa-crown me-1"></i> Planos e Suporte
+                    </span>
+                    <h1 class="display-4 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                        Escolha o melhor para sua oficina
+                    </h1>
+                    <p class="lead" style="color: rgba(255,255,255,0.6); max-width: 600px; margin: 0 auto;">
+                        Planos acessíveis e suporte especializado para você
+                    </p>
                 </div>
             </div>
-        </div>
-        
-        <!-- 🔥 SEÇÃO DE STATUS DO PLANO -->
-        <div class="row justify-content-center mt-4" id="subscriptionStatusContainer"></div>
-        
-        <!-- FORMATOS SUPORTADOS -->
-        <div class="row justify-content-center mt-4">
-            <div class="col-lg-8">
-                <div class="bg-white rounded-4 p-4 shadow-sm">
-                    <h5 class="fw-bold mb-4">
-                        <i class="fas fa-upload me-2 text-warning"></i> Formatos suportados
-                    </h5>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="d-flex align-items-center p-3 border rounded-3">
-                                <i class="fas fa-file-csv fa-2x text-success me-3"></i>
-                                <div>
-                                    <h6 class="fw-bold mb-1">Arquivos CSV</h6>
-                                    <p class="text-muted small mb-0">Delimitados por vírgula, ponto e vírgula</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="d-flex align-items-center p-3 border rounded-3">
-                                <i class="fas fa-file-excel fa-2x text-success me-3"></i>
-                                <div>
-                                    <h6 class="fw-bold mb-1">Arquivos Excel</h6>
-                                    <p class="text-muted small mb-0">Formatos .xlsx e .xls</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mt-3 text-center text-muted small">
-                        <i class="fas fa-layer-group me-1"></i>
-                        Máximo de 3 arquivos por vez | <strong class="text-success">Limite de 200KB por arquivo</strong>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- 🔥 SEÇÃO DE SUPORTE COMPLETA -->
-        <div class="row justify-content-center mt-5 pt-4">
-            <div class="col-lg-10">
-                <div class="support-card bg-white rounded-4 p-4 p-md-5 shadow-sm">
-                    <div class="text-center mb-4">
-                        <div class="support-icon mx-auto mb-3">
-                            <i class="fas fa-headset"></i>
-                        </div>
-                        <h3 class="fw-bold mb-2">Precisa de Ajuda?</h3>
-                        <p class="text-muted">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
+            <!-- ===== NAVEGAÇÃO POR ABAS ===== -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="tab-navigation" data-aos="fade-up" data-aos-duration="600">
+                        <button class="tab-btn active" data-tab="planos" onclick="switchTab('planos')">
+                            <i class="fas fa-gem"></i> Planos
+                        </button>
+                        <button class="tab-btn" data-tab="suporte" onclick="switchTab('suporte')">
+                            <i class="fas fa-headset"></i> Atendimento
+                        </button>
                     </div>
-                    
-                    <div class="row g-4">
-                        <!-- Coluna do Email -->
-                        <div class="col-md-6">
-                            <div class="h-100 p-4 rounded-4" style="background: #f8f9fa;">
-                                <div class="d-flex align-items-start mb-3">
-                                    <i class="fas fa-envelope fa-2x text-primary me-3"></i>
-                                    <div>
-                                        <h5 class="fw-bold mb-1">Email de Suporte</h5>
-                                        <a href="mailto:autonalytics@gmail.com" class="support-email-link">
-                                            autonalytics@gmail.com
-                                        </a>
-                                        <p class="text-muted small mt-2 mb-0">
-                                            <i class="fas fa-clock me-1"></i>
-                                            Respondemos em até 24h úteis
-                                        </p>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- 🔥 ABA 1: PLANOS -->
+            <!-- ============================================== -->
+            <div class="tab-content active" id="tab-planos">
+                <div class="row justify-content-center">
+                    <div class="col-lg-8 text-center mb-4" data-aos="fade-up">
+                        <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px;">
+                            <i class="fas fa-fire me-1"></i> Oferta Especial
+                        </span>
+                    </div>
+                </div>
+
+                <!-- CONTAINER ONDE O payment.js VAI RENDERIZAR -->
+                <div class="row justify-content-center" id="plansContainer" data-aos="fade-up" data-aos-duration="800">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-warning" role="status" style="color: #f5a623 !important;">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                        <p class="mt-2" style="color: rgba(255,255,255,0.4);">Carregando plano Bronze...</p>
+                    </div>
+                </div>
+
+                <!-- INDICADOR DE RATE LIMIT -->
+                <div class="row justify-content-center mt-3" id="rateLimitContainer">
+                    <div class="col-lg-8">
+                        <div class="rate-limit-indicator" id="rateLimitIndicator">
+                            <span><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
+                            <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STATUS DO PLANO -->
+                <div class="row justify-content-center mt-4" id="subscriptionStatusContainer" data-aos="fade-up" data-aos-delay="100"></div>
+
+                <!-- FORMATOS SUPORTADOS -->
+                <div class="row justify-content-center mt-4" data-aos="fade-up" data-aos-delay="200">
+                    <div class="col-lg-8">
+                        <div class="glass-card">
+                            <h5 class="card-title mb-3">
+                                <i class="fas fa-upload"></i> Formatos suportados
+                            </h5>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="format-badge d-flex align-items-center">
+                                        <i class="fas fa-file-csv fa-2x me-3"></i>
+                                        <div>
+                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos CSV</h6>
+                                            <small style="color:rgba(255,255,255,0.4);">Delimitados por vírgula</small>
+                                        </div>
                                     </div>
                                 </div>
-                                
-                                <div class="mt-4 pt-2">
-                                    <div class="d-flex align-items-center mb-2">
-                                        <i class="fas fa-check-circle text-success me-2"></i>
-                                        <span class="small">Dúvidas sobre o plano Bronze</span>
-                                    </div>
-                                    <div class="d-flex align-items-center mb-2">
-                                        <i class="fas fa-check-circle text-success me-2"></i>
-                                        <span class="small">Problemas com pagamento</span>
-                                    </div>
-                                    <div class="d-flex align-items-center mb-2">
-                                        <i class="fas fa-check-circle text-success me-2"></i>
-                                        <span class="small">Suporte técnico para análises</span>
-                                    </div>
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-check-circle text-success me-2"></i>
-                                        <span class="small">Sugestões e feedbacks</span>
+                                <div class="col-md-6">
+                                    <div class="format-badge d-flex align-items-center">
+                                        <i class="fas fa-file-excel fa-2x me-3"></i>
+                                        <div>
+                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos Excel</h6>
+                                            <small style="color:rgba(255,255,255,0.4);">.xlsx e .xls</small>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                            <div class="mt-3 text-center small" style="color:rgba(255,255,255,0.3);">
+                                <i class="fas fa-layer-group me-1"></i>
+                                Máximo de 3 arquivos por vez | <strong style="color:#48bb78;">Limite de 200KB por arquivo</strong>
+                            </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- 🔥 ABA 2: ATENDIMENTO AO CLIENTE -->
+            <!-- ============================================== -->
+            <div class="tab-content" id="tab-suporte">
+                <div class="row justify-content-center">
+                    <div class="col-lg-10" data-aos="fade-up" data-aos-duration="800">
                         
-                        <!-- Coluna do FAQ e Contato Rápido -->
-                        <div class="col-md-6">
-                            <div class="h-100">
-                                <!-- FAQ Toggle -->
-                                <div class="mb-4">
-                                    <div class="d-flex align-items-center justify-content-between cursor-pointer faq-question" 
-                                         onclick="toggleFaq()" style="cursor: pointer;">
-                                        <h5 class="fw-bold mb-0">
-                                            <i class="fas fa-question-circle text-warning me-2"></i>
-                                            Perguntas Frequentes
-                                        </h5>
-                                        <i class="fas fa-chevron-down" id="faqIcon"></i>
+                        <!-- Cabeçalho do Suporte -->
+                        <div class="text-center mb-4">
+                            <div class="support-icon mx-auto mb-3" style="width:70px; height:70px; font-size:2rem;">
+                                <i class="fas fa-headset"></i>
+                            </div>
+                            <h2 class="fw-bold" style="color:white;">Precisa de Ajuda?</h2>
+                            <p style="color:rgba(255,255,255,0.5);">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
+                        </div>
+
+                        <div class="row g-4">
+                            <!-- Coluna do Email -->
+                            <div class="col-md-6">
+                                <div class="support-card h-100">
+                                    <div class="d-flex align-items-start mb-3">
+                                        <i class="fas fa-envelope fa-2x me-3" style="color:#f5a623;"></i>
+                                        <div>
+                                            <h5 class="fw-bold mb-1" style="color:white;">Email de Suporte</h5>
+                                            <a href="mailto:autonalytics@gmail.com" class="support-email-link">
+                                                autonalytics@gmail.com
+                                            </a>
+                                            <p class="mt-2 small" style="color:rgba(255,255,255,0.4);">
+                                                <i class="fas fa-clock me-1"></i>
+                                                Respondemos em até 24h úteis
+                                            </p>
+                                        </div>
                                     </div>
                                     
-                                    <div id="faqContent" style="display: none;" class="mt-3">
-                                        <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-coins text-primary me-2"></i>Como funcionam os créditos?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Cada análise consome 1 crédito. Gratuito começa com 3. Premium recebe 1 crédito NOVO por dia!</p>
+                                    <div class="mt-3 pt-2">
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
+                                            <i class="fas fa-check-circle text-success me-2"></i> Dúvidas sobre o plano Bronze
                                         </div>
-                                        <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-chart-line text-primary me-2"></i>O que acontece quando os créditos acabam?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Assine o plano Bronze (R$ 97,00) e receba 30 créditos totais.</p>
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
+                                            <i class="fas fa-check-circle text-success me-2"></i> Problemas com pagamento
                                         </div>
-                                        <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-credit-card text-primary me-2"></i>Como comprar o plano?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Clique em "Garantir Preço Fundador", informe seu CPF e finalize com PIX.</p>
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
+                                            <i class="fas fa-check-circle text-success me-2"></i> Suporte técnico para análises
                                         </div>
-                                        <div class="faq-item p-3 mb-2 rounded-3">
-                                            <strong><i class="fas fa-mobile-alt text-primary me-2"></i>Posso usar no celular?</strong>
-                                            <p class="small text-muted mt-1 mb-0">Sim! O sistema é responsivo e funciona em qualquer dispositivo.</p>
+                                        <div class="d-flex align-items-center" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
+                                            <i class="fas fa-check-circle text-success me-2"></i> Sugestões e feedbacks
+                                        </div>
+                                    </div>
+
+                                    <!-- Horário de Atendimento -->
+                                    <div class="mt-4 pt-3 border-top" style="border-color:rgba(255,255,255,0.06);">
+                                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
+                                                <i class="fas fa-calendar-alt me-1" style="color:#f5a623;"></i>
+                                                Segunda a Sexta
+                                            </span>
+                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
+                                                <i class="fas fa-clock me-1" style="color:#f5a623;"></i>
+                                                9h às 18h
+                                            </span>
+                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
+                                                <i class="fas fa-tachometer-alt me-1" style="color:#f5a623;"></i>
+                                                Resposta em até 24h
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
-                                
-                                <!-- Contato Rápido -->
-                                <div class="quick-contact-form p-4 rounded-4">
-                                    <h5 class="fw-bold mb-3">
-                                        <i class="fas fa-paper-plane me-2 text-primary"></i>
-                                        Mensagem Rápida
+                            </div>
+
+                            <!-- Coluna do FAQ e Contato -->
+                            <div class="col-md-6">
+                                <div class="support-card h-100">
+                                    <!-- FAQ -->
+                                    <h5 class="fw-bold mb-3" style="color:white;">
+                                        <i class="fas fa-question-circle me-2" style="color:#f5a623;"></i>
+                                        Perguntas Frequentes
                                     </h5>
-                                    <form id="quickSupportForm">
-                                        <div class="mb-3">
-                                            <input type="text" class="form-control" id="supportName" 
-                                                   placeholder="Seu nome" required>
+                                    
+                                    <div class="faq-item" onclick="toggleFaq(this)">
+                                        <div class="faq-question">
+                                            <span><i class="fas fa-coins me-2" style="color:#f5a623;"></i>Como funcionam os créditos?</span>
+                                            <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
-                                        <div class="mb-3">
-                                            <input type="email" class="form-control" id="supportEmail" 
-                                                   placeholder="Seu email" required>
+                                        <div class="faq-answer">
+                                            Cada análise consome 1 crédito. Gratuito começa com 3 créditos. Premium recebe <strong style="color:#f5a623;">1 crédito NOVO por dia</strong>!
                                         </div>
-                                        <div class="mb-3">
-                                            <select class="form-select" id="supportSubject">
-                                                <option value="Dúvida sobre o plano">Dúvida sobre o plano</option>
-                                                <option value="Problema no pagamento">Problema no pagamento</option>
-                                                <option value="Suporte técnico">Suporte técnico</option>
-                                                <option value="Sugestão">Sugestão</option>
-                                                <option value="Outro">Outro</option>
-                                            </select>
+                                    </div>
+
+                                    <div class="faq-item" onclick="toggleFaq(this)">
+                                        <div class="faq-question">
+                                            <span><i class="fas fa-chart-line me-2" style="color:#f5a623;"></i>O que acontece quando os créditos acabam?</span>
+                                            <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
-                                        <div class="mb-3">
-                                            <textarea class="form-control" rows="3" id="supportMessage" 
-                                                      placeholder="Sua mensagem..." required></textarea>
+                                        <div class="faq-answer">
+                                            Assine o plano Bronze (R$ 97,00) e receba <strong style="color:#f5a623;">30 créditos totais</strong> para usar quando quiser!
                                         </div>
-                                        <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-envelope me-2"></i> Enviar Mensagem
-                                        </button>
-                                    </form>
-                                    <div class="text-center mt-3">
-                                        <small class="text-muted">
-                                            <i class="fas fa-lock me-1"></i>
-                                            Suas informações são seguras
-                                        </small>
+                                    </div>
+
+                                    <div class="faq-item" onclick="toggleFaq(this)">
+                                        <div class="faq-question">
+                                            <span><i class="fas fa-credit-card me-2" style="color:#f5a623;"></i>Como comprar o plano?</span>
+                                            <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
+                                        </div>
+                                        <div class="faq-answer">
+                                            Clique em <strong style="color:#f5a623;">"Garantir Preço Fundador"</strong>, informe seu CPF e finalize com PIX. Fácil e seguro!
+                                        </div>
+                                    </div>
+
+                                    <div class="faq-item" onclick="toggleFaq(this)">
+                                        <div class="faq-question">
+                                            <span><i class="fas fa-mobile-alt me-2" style="color:#f5a623;"></i>Posso usar no celular?</span>
+                                            <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
+                                        </div>
+                                        <div class="faq-answer">
+                                            Sim! O sistema é <strong style="color:#f5a623;">100% responsivo</strong> e funciona perfeitamente em qualquer dispositivo.
+                                        </div>
+                                    </div>
+
+                                    <!-- Contato Rápido -->
+                                    <div class="quick-contact-form mt-4">
+                                        <h6 class="fw-bold mb-3" style="color:white;">
+                                            <i class="fas fa-paper-plane me-2" style="color:#f5a623;"></i>
+                                            Mensagem Rápida
+                                        </h6>
+                                        <form id="quickSupportForm">
+                                            <div class="mb-3">
+                                                <input type="text" class="form-control" id="supportName" 
+                                                       placeholder="Seu nome" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <input type="email" class="form-control" id="supportEmail" 
+                                                       placeholder="Seu email" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <select class="form-select" id="supportSubject">
+                                                    <option value="Dúvida sobre o plano">Dúvida sobre o plano</option>
+                                                    <option value="Problema no pagamento">Problema no pagamento</option>
+                                                    <option value="Suporte técnico">Suporte técnico</option>
+                                                    <option value="Sugestão">Sugestão</option>
+                                                    <option value="Outro">Outro</option>
+                                                </select>
+                                            </div>
+                                            <div class="mb-3">
+                                                <textarea class="form-control" rows="3" id="supportMessage" 
+                                                          placeholder="Sua mensagem..." required></textarea>
+                                            </div>
+                                            <button type="submit" class="btn-support w-100">
+                                                <i class="fas fa-envelope me-2"></i> Enviar Mensagem
+                                            </button>
+                                        </form>
+                                        <div class="text-center mt-3">
+                                            <small style="color:rgba(255,255,255,0.3);">
+                                                <i class="fas fa-lock me-1"></i>
+                                                Suas informações são seguras
+                                            </small>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- Horário de Atendimento -->
-                    <div class="text-center mt-4 pt-3 border-top">
-                        <div class="row justify-content-center">
-                            <div class="col-auto">
-                                <span class="badge bg-light text-dark p-2 me-2">
-                                    <i class="fas fa-calendar-alt text-primary me-1"></i>
-                                    Segunda a Sexta
-                                </span>
-                            </div>
-                            <div class="col-auto">
-                                <span class="badge bg-light text-dark p-2 me-2">
-                                    <i class="fas fa-clock text-primary me-1"></i>
-                                    9h às 18h
-                                </span>
-                            </div>
-                            <div class="col-auto">
-                                <span class="badge bg-light text-dark p-2">
-                                    <i class="fas fa-tachometer-alt text-primary me-1"></i>
-                                    Resposta em até 24h
-                                </span>
-                            </div>
-                        </div>
+                </div>
+            </div>
+
+            <!-- ===== RODAPÉ ===== -->
+            <div class="row mt-5">
+                <div class="col-12 text-center">
+                    <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
+                        <i class="fas fa-wrench me-1"></i>
+                        AutoAnalytics v2.0 - Planos e Suporte
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-shield-alt me-1"></i>
+                        Protegido por PoW
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-database me-1"></i>
+                        Dados criptografados
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL DE CRÉDITOS -->
+    <!-- ============================================== -->
+    <div class="modal fade" id="creditsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title">
+                        <i class="fas fa-coins me-2" style="color: #ff6b35;"></i>
+                        Meus Créditos
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
+                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
+                    <p class="mb-3" style="color: rgba(255,255,255,0.5);">créditos disponíveis</p>
+                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.15) !important; color:rgba(255,255,255,0.85) !important;">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong style="color: #ff6b35;">Como funcionam:</strong><br>
+                        • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
+                        • ⭐ Premium ganha 1 crédito por dia<br>
+                        • Cada análise consome 1 crédito<br>
+                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
+                        • 🔥 Limite máximo de 3 créditos acumulados
                     </div>
+                </div>
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.1);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.75rem; border-radius: 50px; font-weight: 700;">
+                        <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
+                    </a>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modal PIX -->
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL PIX -->
+    <!-- ============================================== -->
     <div class="modal fade" id="pixModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content rounded-4">
-                <div class="modal-header bg-dark text-white border-0">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(205,127,50,0.3) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <h5 class="modal-title">
-                        <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
+                        <i class="fas fa-qrcode me-2" style="color:#f5a623;"></i> Pagamento via PIX
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body text-center py-4" id="pixContent"></div>
             </div>
         </div>
     </div>
 
-    <!-- Modal CPF -->
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL CPF -->
+    <!-- ============================================== -->
     <div class="modal fade" id="cpfModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color: #f5a623;">
-                        <i class="fas fa-id-card me-2"></i>Confirme seu CPF
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(205,127,50,0.3) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title" style="color:#f5a623;">
+                        <i class="fas fa-id-card me-2"></i> Confirme seu CPF
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted mb-3">
-                        <i class="fas fa-shield-alt me-2"></i>
+                    <p style="color:rgba(255,255,255,0.6); margin-bottom: 1rem;">
+                        <i class="fas fa-shield-alt me-2" style="color:#f5a623;"></i>
                         O CPF é obrigatório para geração do PIX e protege sua compra.
                     </p>
                     <div class="mb-3">
-                        <label class="form-label">CPF</label>
+                        <label class="form-label" style="color:rgba(255,255,255,0.7);">CPF</label>
                         <input type="text" class="form-control form-control-lg" id="cpfInput" 
-                               placeholder="000.000.000-00" maxlength="14" autocomplete="off">
+                               placeholder="000.000.000-00" maxlength="14" autocomplete="off"
+                               style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); color:white; border-radius:12px;">
                     </div>
                     <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
                 </div>
-                <div class="modal-footer border-0">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <div class="modal-footer border-0" style="border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn btn-bronze" id="confirmCpfBtn">
-                        <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                        <i class="fas fa-arrow-right me-2"></i> Continuar para PIX
                     </button>
                 </div>
             </div>
@@ -768,10 +1102,10 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ JQUERY (obrigatório para Toastr) -->
+    <!-- 1️⃣ JQUERY -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <!-- 2️⃣ TOASTR -->
@@ -782,9 +1116,9 @@
     
     <!-- 4️⃣ AOS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-    
+
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS - CAMINHOS CORRETOS -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ POW - v3.3 -->
@@ -800,37 +1134,15 @@
     <script src="/static/js/payment.js?ver=2.4.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO COMPLETA -->
+    <!-- 🔥 INICIALIZAÇÃO -->
     <!-- ============================================== -->
     <script>
-        // ==============================================
-        // TOGGLE FAQ
-        // ==============================================
-        window.toggleFaq = function() {
-            const faqContent = document.getElementById('faqContent');
-            const faqIcon = document.getElementById('faqIcon');
-            
-            if (faqContent.style.display === 'none') {
-                faqContent.style.display = 'block';
-                faqIcon.classList.remove('fa-chevron-down');
-                faqIcon.classList.add('fa-chevron-up');
-            } else {
-                faqContent.style.display = 'none';
-                faqIcon.classList.remove('fa-chevron-up');
-                faqIcon.classList.add('fa-chevron-down');
-            }
-        };
+        (function() {
+            'use strict';
 
-        // ==============================================
-        // FORMULÁRIO DE CONTATO
-        // ==============================================
-        document.addEventListener('DOMContentLoaded', function() {
-            // AOS
-            if (typeof AOS !== 'undefined') {
-                AOS.init();
-            }
-            
-            // Toastr
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.0');
+
+            // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
                 toastr.options = {
                     closeButton: true,
@@ -842,105 +1154,223 @@
                 };
             }
 
-            // Formulário de contato
-            const form = document.getElementById('quickSupportForm');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    const name = document.getElementById('supportName').value;
-                    const email = document.getElementById('supportEmail').value;
-                    const subject = document.getElementById('supportSubject').value;
-                    const message = document.getElementById('supportMessage').value;
-                    
-                    const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
-                        `Nome: ${name}\n` +
-                        `Email: ${email}\n` +
-                        `Assunto: ${subject}\n\n` +
-                        `Mensagem:\n${message}\n\n` +
-                        `---\nEnviado via AutoAnalytics Planos`
-                    )}`;
-                    
-                    if (typeof toastr !== 'undefined') {
-                        toastr.success('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!');
-                    }
-                    
-                    document.getElementById('supportName').value = '';
-                    document.getElementById('supportEmail').value = '';
-                    document.getElementById('supportMessage').value = '';
-                    
-                    window.location.href = mailtoLink;
+            // ===== AOS =====
+            if (typeof AOS !== 'undefined') {
+                AOS.init({
+                    once: true,
+                    duration: 800,
+                    offset: 50,
+                    easing: 'ease-in-out'
                 });
             }
 
             // ==============================================
-            // CARREGAR DADOS DO USUÁRIO
+            // 🔥 FUNÇÃO PARA TROCAR ABAS
             // ==============================================
-            (async function loadUserData() {
-                const token = localStorage.getItem('access_token');
-                if (!token) {
-                    window.location.href = '/login';
-                    return;
-                }
+            window.switchTab = function(tabId) {
+                // Remove active de todas as abas
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+
+                // Ativa a aba selecionada
+                const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+                if (btn) btn.classList.add('active');
+
+                const content = document.getElementById(`tab-${tabId}`);
+                if (content) content.classList.add('active');
+
+                // Re-trigger AOS para a nova aba
+                setTimeout(() => {
+                    if (typeof AOS !== 'undefined') {
+                        AOS.refresh();
+                    }
+                }, 100);
+            };
+
+            // ==============================================
+            // 🔥 FUNÇÃO PARA TOGGLE FAQ
+            // ==============================================
+            window.toggleFaq = function(element) {
+                const answer = element.querySelector('.faq-answer');
+                const icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
                 
-                try {
-                    const response = await fetch('/api/auth/me', {
-                        headers: { 'Authorization': `Bearer ${token}` }
+                if (answer) {
+                    const isOpen = answer.classList.contains('open');
+                    
+                    // Fecha todos os outros
+                    document.querySelectorAll('.faq-answer').forEach(a => {
+                        if (a !== answer) {
+                            a.classList.remove('open');
+                            const parentIcon = a.closest('.faq-item')?.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
+                            if (parentIcon) {
+                                parentIcon.className = 'fas fa-chevron-down';
+                                parentIcon.style.color = 'rgba(255,255,255,0.3)';
+                            }
+                        }
                     });
                     
-                    if (response.ok) {
-                        const data = await response.json();
-                        const user = data.data || data;
-                        
-                        const adminBadge = document.getElementById('adminBadge');
-                        if (adminBadge) {
-                            adminBadge.style.display = user.is_admin ? 'inline-block' : 'none';
+                    if (isOpen) {
+                        answer.classList.remove('open');
+                        if (icon) {
+                            icon.className = 'fas fa-chevron-down';
+                            icon.style.color = 'rgba(255,255,255,0.3)';
                         }
-                        
-                        const creditsSpan = document.getElementById('creditsDisplay');
-                        if (creditsSpan) {
-                            creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
-                        }
-                        
-                        const nameInput = document.getElementById('supportName');
-                        if (nameInput && user.name) {
-                            nameInput.value = user.name;
-                        }
-                        
-                        const emailInput = document.getElementById('supportEmail');
-                        if (emailInput && user.email) {
-                            emailInput.value = user.email;
-                        }
-                        
-                        if (window.loadSubscriptionStatus) {
-                            await window.loadSubscriptionStatus();
+                    } else {
+                        answer.classList.add('open');
+                        if (icon) {
+                            icon.className = 'fas fa-chevron-up';
+                            icon.style.color = '#f5a623';
                         }
                     }
-                } catch (error) {
-                    console.error('Erro ao carregar usuário:', error);
                 }
-            })();
+            };
 
             // ==============================================
-            // VERIFICAR PAGAMENTO BEM-SUCEDIDO
+            // 🔥 FORMULÁRIO DE CONTATO
             // ==============================================
-            if (window.location.search.includes('payment=success')) {
-                setTimeout(() => {
-                    if (window.loadSubscriptionStatus) {
-                        window.loadSubscriptionStatus();
-                    }
-                    if (typeof toastr !== 'undefined') {
-                        toastr.success('✅ Pagamento confirmado! Seu plano foi ativado.');
-                    }
-                }, 500);
-            }
+            document.addEventListener('DOMContentLoaded', function() {
+                const form = document.getElementById('quickSupportForm');
+                if (form) {
+                    form.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        
+                        const name = document.getElementById('supportName').value;
+                        const email = document.getElementById('supportEmail').value;
+                        const subject = document.getElementById('supportSubject').value;
+                        const message = document.getElementById('supportMessage').value;
+                        
+                        const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
+                            `Nome: ${name}\n` +
+                            `Email: ${email}\n` +
+                            `Assunto: ${subject}\n\n` +
+                            `Mensagem:\n${message}\n\n` +
+                            `---\nEnviado via AutoAnalytics Planos e Suporte`
+                        )}`;
+                        
+                        if (typeof toastr !== 'undefined') {
+                            toastr.success('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!');
+                        }
+                        
+                        document.getElementById('supportName').value = '';
+                        document.getElementById('supportEmail').value = '';
+                        document.getElementById('supportMessage').value = '';
+                        
+                        window.location.href = mailtoLink;
+                    });
+                }
 
-            console.log('✅ planos.html carregado com sucesso!');
-            console.log('   🔥 Caminhos corrigidos: /static/js/');
-            console.log('   📞 Suporte completo restaurado');
-            console.log('   💰 Preço Fundador: R$ 97,00');
-            console.log('   🎯 Escassez ativa: 100 vagas');
-        });
+                // ==============================================
+                // 🔥 CARREGAR DADOS DO USUÁRIO
+                // ==============================================
+                (async function loadUserData() {
+                    const token = localStorage.getItem('access_token');
+                    if (!token) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/auth/me', {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            const user = data.data || data;
+                            
+                            const nameEl = document.getElementById('userName');
+                            if (nameEl && user.name) {
+                                nameEl.textContent = user.name;
+                            }
+                            
+                            const creditsSpan = document.getElementById('creditsCount');
+                            if (creditsSpan) {
+                                creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
+                            }
+                            
+                            const nameInput = document.getElementById('supportName');
+                            if (nameInput && user.name) {
+                                nameInput.value = user.name;
+                            }
+                            
+                            const emailInput = document.getElementById('supportEmail');
+                            if (emailInput && user.email) {
+                                emailInput.value = user.email;
+                            }
+                            
+                            // Carregar status da assinatura via payment.js
+                            if (window.loadSubscriptionStatus) {
+                                await window.loadSubscriptionStatus();
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Erro ao carregar usuário:', error);
+                    }
+                })();
+
+                // ==============================================
+                // 🔥 VERIFICAR PAGAMENTO BEM-SUCEDIDO
+                // ==============================================
+                if (window.location.search.includes('payment=success')) {
+                    setTimeout(() => {
+                        if (window.loadSubscriptionStatus) {
+                            window.loadSubscriptionStatus();
+                        }
+                        if (typeof toastr !== 'undefined') {
+                            toastr.success('✅ Pagamento confirmado! Seu plano foi ativado.');
+                        }
+                    }, 500);
+                }
+
+                // ==============================================
+                // 🔥 INICIALIZAR POW STATUS
+                // ==============================================
+                function updatePowStatus() {
+                    try {
+                        const powStatusEl = document.getElementById('powStatus');
+                        const powTextEl = document.getElementById('powStatusText');
+                        if (!powStatusEl || !powTextEl) return;
+                        
+                        let stats = null;
+                        if (window.App && typeof window.App.getPowStats === 'function') {
+                            stats = window.App.getPowStats();
+                        } else if (window.powClient && typeof window.powClient.getStats === 'function') {
+                            stats = window.powClient.getStats();
+                        }
+                        
+                        if (stats && stats.available !== false) {
+                            const solutionsReady = stats.solutionsReady || 0;
+                            if (solutionsReady > 0) {
+                                powStatusEl.className = 'pow-status';
+                                powTextEl.textContent = `${solutionsReady} PoW`;
+                            } else {
+                                powStatusEl.className = 'pow-status loading';
+                                powTextEl.textContent = '⚡ Pronto';
+                            }
+                        } else {
+                            powStatusEl.className = 'pow-status error';
+                            powTextEl.textContent = 'Indisponível';
+                        }
+                    } catch (e) {
+                        // Ignora
+                    }
+                }
+
+                setTimeout(updatePowStatus, 1500);
+                setInterval(updatePowStatus, 30000);
+
+                console.log('✅ planos.html v2.0 carregado com sucesso!');
+                console.log('   🔥 Abas: Planos | Atendimento');
+                console.log('   💰 Plano Bronze: R$ 97,00');
+                console.log('   🎯 Escassez ativa: 100 vagas');
+                console.log('   📞 Suporte: autonalytics@gmail.com');
+            });
+
+        })();
     </script>
 </body>
 </html>
