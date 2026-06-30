@@ -1,241 +1,409 @@
+<!-- frontend/index.html - VERSÃO COMPLETA V7.3 (UPLOAD OTIMIZADO E SINCRONIZADO) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>AutoAnalytics - Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoAnalytics - IA para Mecânicos</title>
     
     <!-- ============================================== -->
-    <!-- 🔥 PRELOAD E OTIMIZAÇÕES DE PERFORMANCE -->
-    <!-- ============================================== -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net">
-    
-    <!-- ============================================== -->
-    <!-- 🔥 VERIFICAÇÃO DE SESSÃO - CORRIGIDA V4.2     -->
-    <!-- 🔥 REDIRECIONA PARA / (RAIZ) → NÃO LOOP      -->
+    <!-- 🔥 SEGURANÇA E BLOQUEIO -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
             
-            console.log('🔐 [INIT] Verificando sessão existente...');
-            
             const token = localStorage.getItem('access_token');
+            const isTokenValid = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
             
-            // Se NÃO tiver token, fica na página de login
-            if (!token || token === '' || token === 'undefined' || token === 'null') {
-                console.log('📝 Nenhum token encontrado. Página de login carregada.');
+            if (!isTokenValid) {
+                window.location.replace('/login');
                 return;
             }
             
-            console.log('🔄 Token encontrado. Verificando validade...');
+            if (window._security_initialized) {
+                return;
+            }
+            window._security_initialized = true;
+            window._isAuthenticated = true;
             
-            // 🔥 Verifica se o token é válido ANTES de redirecionar
-            fetch('/api/auth/check-token', {
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include'
-            })
-            .then(res => {
-                if (res.ok) {
-                    console.log('✅ Token válido - redirecionando para o dashboard');
-                    // 🔥🔥🔥 CORREÇÃO FINAL: Redireciona para / (RAIZ) 
-                    // O index.html cuida do redirecionamento para /dashboard
-                    window.location.replace('/');
-                } else if (res.status === 429) {
-                    console.log('⚠️ Rate limit atingido. Permanecendo na página.');
-                    // Não remove o token, apenas aguarda
-                } else {
-                    console.log('❌ Token inválido - removendo e permanecendo na página');
-                    localStorage.removeItem('access_token');
-                    localStorage.removeItem('refresh_token');
-                    localStorage.removeItem('user_email');
-                    localStorage.removeItem('user_name');
-                    
-                    // Limpa cookies também
-                    document.cookie.split(";").forEach(function(c) { 
-                        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-                    });
-                    
-                    console.log('✅ Token removido. Página de login pronta para uso.');
-                }
-            })
-            .catch(() => {
-                console.log('⚠️ Erro ao verificar token - removendo e permanecendo na página');
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user_email');
-                localStorage.removeItem('user_name');
-            });
+            console.log('✅ AutoAnalytics - SPA Mecânicos v7.3');
         })();
     </script>
     
     <!-- ============================================== -->
-    <!-- 🔥 CDN - COM CONFIGURAÇÕES CORRETAS E OTIMIZADAS -->
+    <!-- 🔥 BIBLIOTECAS -->
     <!-- ============================================== -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
-    <!-- Font Awesome 6 (gratuito) -->
-    <link rel="stylesheet" 
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-          integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer">
-    
-    <!-- Google Fonts: Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" 
-          rel="stylesheet">
-    
-    <!-- jQuery (otimizado) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
-            integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
-            crossorigin="anonymous"
-            referrerpolicy="no-referrer">
-    </script>
-    
-    <!-- Toastr (notificações) -->
-    <link rel="stylesheet" 
-          href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
-          integrity="sha512-vKMx8UnXk60zUwyUnUPM3HbQo8QfmNx7+ltw8Pm5zLusl1XIfwcxo8DbWCqMgKaQy83WpG5Ig6ua6rH+y2KDkQ=="
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"
-            integrity="sha512-VEd+nq25CkR676O+pLBnDW09R7VQX9Mdiij052gVCp5yVH3jGtH70Ho/UUv4mJDsEdTvqRCFZg0NKGiojGnUCw=="
-            crossorigin="anonymous"
-            referrerpolicy="no-referrer">
-    </script>
-    
-    <!-- Bootstrap 5.3.2 (otimizado) -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" 
-          rel="stylesheet"
-          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
-          crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-            crossorigin="anonymous" defer>
-    </script>
-    
-    <!-- ============================================== -->
-    <!-- 🔥 ESTILOS COMPLETOS E OTIMIZADOS -->
-    <!-- ============================================== -->
     <style>
-        /* ==============================================
-                   RESET E CONFIGURAÇÕES GLOBAIS
-                   ============================================== */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        :root {
-            --primary-start: #667eea;
-            --primary-end: #764ba2;
-            --primary-gradient: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
-            --text-dark: #1a1a2e;
-            --text-muted: #718096;
-            --text-light: #a0aec0;
-            --border-light: #e2e8f0;
-            --bg-light: #f7fafc;
-            --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.2);
-            --radius-card: 24px;
-            --radius-input: 12px;
-            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
+        /* ===== RESET E BASE ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--primary-gradient);
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            position: relative;
+            color: #ffffff;
             overflow-x: hidden;
         }
 
-        /* ==============================================
-                   BOLHAS DECORATIVAS
-                   ============================================== */
-        .bubble {
+        /* ===== NAVBAR ===== */
+        .navbar-modern {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            padding: 0.6rem 0;
             position: fixed;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            pointer-events: none;
-            animation: floatBubble 10s infinite ease-in-out;
-            will-change: transform;
-        }
-
-        .bubble:nth-child(1) {
-            width: 120px;
-            height: 120px;
-            bottom: -40px;
-            left: -40px;
-            animation-duration: 14s;
-        }
-
-        .bubble:nth-child(2) {
-            width: 80px;
-            height: 80px;
-            top: 10%;
-            right: -20px;
-            animation-duration: 12s;
-            animation-delay: 2s;
-        }
-
-        .bubble:nth-child(3) {
-            width: 160px;
-            height: 160px;
-            bottom: 5%;
-            right: 5%;
-            animation-duration: 18s;
-            animation-delay: 1s;
-        }
-
-        .bubble:nth-child(4) {
-            width: 60px;
-            height: 60px;
-            top: 20%;
-            left: 10%;
-            animation-duration: 8s;
-            animation-delay: 3s;
-        }
-
-        @keyframes floatBubble {
-            0%, 100% { 
-                transform: translate(0, 0) scale(1); 
-            }
-            25% { 
-                transform: translate(20px, -30px) scale(1.05); 
-            }
-            50% { 
-                transform: translate(-10px, -50px) scale(0.95); 
-            }
-            75% { 
-                transform: translate(15px, -20px) scale(1.02); 
-            }
-        }
-
-        /* ==============================================
-                   CARD PRINCIPAL
-                   ============================================== */
-        .login-container {
             width: 100%;
-            max-width: 440px;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+        }
+        .brand-text {
+            font-size: 1.5rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+        .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
+        .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
+
+        .credits-badge {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            color: white;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+            font-size: 0.85rem;
+        }
+        .credits-badge:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.6);
+        }
+        .user-name-display {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 0.9rem;
+        }
+        .user-name-display i { color: #ff6b35; }
+        .btn-planos {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-planos:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
+        .btn-sair {
+            background: transparent;
+            border: 2px solid #e53e3e;
+            color: #e53e3e;
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-sair:hover {
+            background: #e53e3e;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .pow-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            background: rgba(72, 187, 120, 0.15);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+            cursor: default;
+        }
+        .pow-status.loading {
+            background: rgba(245, 166, 35, 0.15);
+            border-color: rgba(245, 166, 35, 0.3);
+            color: #f5a623;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .pow-status.error {
+            background: rgba(220, 53, 69, 0.15);
+            border-color: rgba(220, 53, 69, 0.3);
+            color: #dc3545;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ===== CONTEÚDO ===== */
+        .hero-section { padding: 100px 0 40px; min-height: 100vh; }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            color: white;
+        }
+        .glass-card:hover {
+            transform: translateY(-6px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 107, 53, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .glass-card .card-title {
+            color: white;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        .glass-card .card-title i {
+            color: #ff6b35;
+            margin-right: 0.5rem;
+        }
+
+        /* 🔥 ÁREA DE UPLOAD - OTIMIZADA E VISÍVEL */
+        .upload-area {
+            border: 2px dashed rgba(255, 107, 53, 0.35);
+            border-radius: 20px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: rgba(255, 107, 53, 0.04);
+            position: relative;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: radial-gradient(circle at center, rgba(255,107,53,0.04) 0%, transparent 70%);
+            pointer-events: none;
+            transition: opacity 0.4s;
+        }
+        .upload-area:hover {
+            border-color: rgba(255, 107, 53, 0.7);
+            background: rgba(255, 107, 53, 0.08);
+            transform: scale(1.01);
+        }
+        .upload-area.dragover {
+            border-color: #48bb78;
+            background: rgba(72, 187, 120, 0.12);
+            transform: scale(1.02);
+            box-shadow: 0 0 50px rgba(72, 187, 120, 0.1);
+        }
+        .upload-area .upload-icon {
+            font-size: 3.8rem;
+            color: #ff6b35;
+            margin-bottom: 0.8rem;
+            display: block;
             position: relative;
             z-index: 1;
-            animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) both;
+            transition: transform 0.4s;
+        }
+        .upload-area:hover .upload-icon {
+            transform: scale(1.05) rotate(-2deg);
+        }
+        .upload-area .upload-icon i {
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .upload-area h4 {
+            color: white;
+            font-weight: 700;
+            font-size: 1.2rem;
+            margin-bottom: 0.2rem;
+            position: relative;
+            z-index: 1;
+        }
+        .upload-area p {
+            color: rgba(255, 255, 255, 0.45);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 1;
+        }
+        .upload-area .btn-select {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 0.7rem 2rem;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+            position: relative;
+            z-index: 1;
+            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.25);
+        }
+        .upload-area .btn-select:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
+        .upload-area .file-hint {
+            margin-top: 0.8rem;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.2);
+            position: relative;
+            z-index: 1;
+            display: flex;
+            gap: 1.2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .upload-area .file-hint span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .upload-area .file-hint i {
+            color: #ff6b35;
         }
 
-        @keyframes slideUp {
+        .btn-gradient {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 700;
+            transition: all 0.3s;
+        }
+        .btn-gradient:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
+        .btn-gradient:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 🔥 FILE PREVIEW - ANIMADO */
+        .file-preview-container {
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0.5rem 0 1rem;
+        }
+        .file-preview-container::-webkit-scrollbar { width: 4px; }
+        .file-preview-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+        .file-preview-container::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 4px; }
+
+        .file-preview-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.6rem 1rem;
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            margin-bottom: 0.4rem;
+            animation: slideIn 0.3s ease-out;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.3s;
+        }
+        .file-preview-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .file-preview-item .file-info {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            flex: 1;
+            min-width: 0;
+        }
+        .file-preview-item .file-info i {
+            font-size: 1.4rem;
+            color: #48bb78;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-info .file-name {
+            color: rgba(255,255,255,0.85);
+            font-size: 0.85rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-preview-item .file-info .file-size {
+            color: rgba(255,255,255,0.3);
+            font-size: 0.7rem;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-remove {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.25);
+            cursor: pointer;
+            padding: 0.3rem 0.6rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+        .file-preview-item .file-remove:hover {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.15);
+        }
+
+        .file-preview-item .file-status {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-status.ready {
+            color: #48bb78;
+            background: rgba(72, 187, 120, 0.15);
+        }
+        .file-preview-item .file-status.error {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.15);
+        }
+        .file-preview-item .file-status.loading {
+            color: #f5a623;
+            background: rgba(245, 166, 35, 0.15);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(40px) scale(0.96);
+                transform: translateY(-10px) scale(0.95);
             }
             to {
                 opacity: 1;
@@ -243,1636 +411,796 @@
             }
         }
 
-        .login-card {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: var(--radius-card);
-            padding: 36px 32px 28px;
-            box-shadow: var(--shadow-card), 
-                        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: var(--transition);
-        }
-
-        .login-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 24px 72px rgba(0, 0, 0, 0.25);
-        }
-
-        /* ==============================================
-                   HEADER
-                   ============================================== */
-        .login-header {
+        .metric-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 1rem;
             text-align: center;
-            margin-bottom: 28px;
+            transition: all 0.3s;
         }
-
-        .login-logo {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 72px;
-            height: 72px;
-            background: var(--primary-gradient);
-            border-radius: 20px;
-            margin-bottom: 16px;
-            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.35);
-            transition: var(--transition);
+        .metric-card:hover {
+            background: rgba(255, 107, 53, 0.1);
+            border-color: rgba(255, 107, 53, 0.2);
         }
-
-        .login-logo:hover {
-            transform: scale(1.05) rotate(-2deg);
-            box-shadow: 0 12px 40px rgba(102, 126, 234, 0.45);
-        }
-
-        .login-logo i {
-            font-size: 32px;
-            color: white;
-        }
-
-        .login-header h1 {
-            font-size: 28px;
+        .metric-value {
+            font-size: 2rem;
             font-weight: 800;
-            color: var(--text-dark);
-            letter-spacing: -0.5px;
+            color: #ff6b35;
+        }
+        .metric-label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .login-header h1 span {
-            color: #f5a623;
-        }
-
-        .login-header .subtitle {
-            font-size: 14px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        .login-header .subtitle i {
-            color: var(--primary-start);
-        }
-
-        /* ==============================================
-                   TABS
-                   ============================================== */
-        .auth-tabs {
-            display: flex;
-            background: var(--bg-light);
-            border-radius: 12px;
-            padding: 4px;
-            margin-bottom: 24px;
-            gap: 4px;
-        }
-
-        .auth-tab {
-            flex: 1;
-            padding: 10px 8px;
-            border: none;
-            background: transparent;
-            color: var(--text-muted);
-            font-weight: 600;
-            font-size: 14px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: var(--transition);
-            position: relative;
-            font-family: inherit;
-        }
-
-        .auth-tab:hover:not(.active) {
-            color: var(--text-dark);
-            background: rgba(102, 126, 234, 0.05);
-        }
-
-        .auth-tab.active {
-            background: white;
-            color: var(--primary-start);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-        }
-
-        .auth-tab i {
-            margin-right: 8px;
-        }
-
-        .auth-tab-content {
+        /* ===== LOADING OVERLAY ===== */
+        .loading-overlay {
             display: none;
-            animation: fadeContent 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .auth-tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeContent {
-            from {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* ==============================================
-                   FORMULÁRIO
-                   ============================================== */
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-label {
-            display: block;
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text-dark);
-            margin-bottom: 6px;
-        }
-
-        .form-label i {
-            color: var(--primary-start);
-            width: 18px;
-            margin-right: 4px;
-        }
-
-        .input-wrapper {
-            position: relative;
-        }
-
-        .input-icon {
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-light);
-            font-size: 15px;
-            pointer-events: none;
-            transition: var(--transition);
-        }
-
-        .form-control {
-            width: 100%;
-            padding: 12px 12px 12px 44px;
-            border: 2px solid var(--border-light);
-            border-radius: var(--radius-input);
-            font-size: 15px;
-            font-family: inherit;
-            background: var(--bg-light);
-            color: var(--text-dark);
-            transition: var(--transition);
-            height: 50px;
-        }
-
-        .form-control:focus {
-            outline: none;
-            border-color: var(--primary-start);
-            background: white;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-control:focus ~ .input-icon {
-            color: var(--primary-start);
-        }
-
-        .form-control::placeholder {
-            color: var(--text-light);
-            font-size: 14px;
-        }
-
-        .form-control:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .form-control.is-invalid {
-            border-color: #fc8181;
-            background: #fff5f5;
-        }
-
-        .form-control.is-invalid:focus {
-            box-shadow: 0 0 0 4px rgba(252, 129, 129, 0.15);
-        }
-
-        .form-control.is-valid {
-            border-color: #68d391;
-            background: #f0fff4;
-        }
-
-        .form-control.is-valid:focus {
-            box-shadow: 0 0 0 4px rgba(104, 211, 145, 0.15);
-        }
-
-        .invalid-feedback {
-            display: none;
-            font-size: 12px;
-            color: #fc8181;
-            margin-top: 4px;
-        }
-
-        .invalid-feedback.show {
-            display: block;
-        }
-
-        /* Password toggle */
-        .password-wrapper .form-control {
-            padding-right: 48px;
-        }
-
-        .password-toggle {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: var(--text-light);
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 50%;
-            transition: var(--transition);
-            font-size: 16px;
-            z-index: 2;
-        }
-
-        .password-toggle:hover {
-            color: var(--primary-start);
-            background: rgba(102, 126, 234, 0.08);
-        }
-
-        /* Forgot password */
-        .forgot-password {
-            display: inline-block;
-            font-size: 13px;
-            color: var(--primary-start);
-            text-decoration: none;
-            font-weight: 500;
-            margin-top: 4px;
-            transition: var(--transition);
-        }
-
-        .forgot-password:hover {
-            color: var(--primary-end);
-            text-decoration: underline;
-        }
-
-        /* Checkbox */
-        .form-check {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 4px;
-            margin-bottom: 16px;
-        }
-
-        .form-check-input {
-            width: 18px;
-            height: 18px;
-            accent-color: var(--primary-start);
-            cursor: pointer;
-            flex-shrink: 0;
-            margin: 0;
-        }
-
-        .form-check-label {
-            font-size: 13px;
-            color: var(--text-muted);
-            cursor: pointer;
-        }
-
-        .form-check-label a {
-            color: var(--primary-start);
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .form-check-label a:hover {
-            text-decoration: underline;
-        }
-
-        /* ==============================================
-                   BOTÕES
-                   ============================================== */
-        .btn-submit {
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: var(--radius-input);
-            font-size: 16px;
-            font-weight: 700;
-            font-family: inherit;
-            color: white;
-            background: var(--primary-gradient);
-            cursor: pointer;
-            transition: var(--transition);
-            position: relative;
-            overflow: hidden;
-            height: 52px;
-            display: flex;
-            align-items: center;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 12, 41, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 9999;
             justify-content: center;
-            gap: 10px;
-        }
-
-        .btn-submit::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-            transition: left 0.6s ease;
-        }
-
-        .btn-submit:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-submit:hover:not(:disabled)::before {
-            left: 100%;
-        }
-
-        .btn-submit:active:not(:disabled) {
-            transform: scale(0.98);
-        }
-
-        .btn-submit:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-
-        .btn-submit .spinner {
-            display: none;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-
-        .btn-submit.loading .spinner {
-            display: inline-block;
-        }
-
-        .btn-submit.loading .btn-text {
-            display: none;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .btn-submit-success {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-        }
-
-        .btn-submit-success:hover:not(:disabled) {
-            box-shadow: 0 8px 32px rgba(72, 187, 120, 0.4);
-        }
-
-        /* ==============================================
-                   FORÇA DA SENHA
-                   ============================================== */
-        .password-strength {
-            display: none;
-            gap: 6px;
             align-items: center;
-            margin-top: 6px;
+            flex-direction: column;
         }
-
-        .password-strength.show {
+        .loading-overlay.show {
             display: flex;
         }
-
-        .strength-bar {
-            flex: 1;
-            height: 4px;
-            background: #e2e8f0;
-            border-radius: 4px;
-            transition: var(--transition);
-        }
-
-        .strength-bar.active {
-            background: var(--primary-gradient);
-        }
-
-        .strength-text {
-            font-size: 11px;
-            font-weight: 600;
-            min-width: 60px;
-            text-align: right;
-        }
-
-        .strength-text.weak { color: #fc8181; }
-        .strength-text.medium { color: #f6ad55; }
-        .strength-text.strong { color: #68d391; }
-        .strength-text.very-strong { color: #38a169; }
-
-        .password-match-hint {
-            font-size: 12px;
-            margin-top: 4px;
-            min-height: 20px;
-        }
-
-        .password-match-hint .text-success { color: #48bb78; }
-        .password-match-hint .text-danger { color: #fc8181; }
-
-        /* ==============================================
-                   MENSAGENS E ALERTAS
-                   ============================================== */
-        .auth-message {
-            display: none;
-            padding: 12px 16px;
-            border-radius: 10px;
-            font-size: 14px;
-            margin-top: 12px;
-            animation: fadeContent 0.3s ease;
-        }
-
-        .auth-message.show {
-            display: block;
-        }
-
-        .auth-message.error {
-            background: #fff5f5;
-            color: #c53030;
-            border: 1px solid #feb2b2;
-        }
-
-        .auth-message.success {
-            background: #f0fff4;
-            color: #276749;
-            border: 1px solid #9ae6b4;
-        }
-
-        .auth-message.info {
-            background: #ebf8ff;
-            color: #2b6cb0;
-            border: 1px solid #90cdf4;
-        }
-
-        /* ==============================================
-                   RATE LIMIT INDICATOR
-                   ============================================== */
-        .rate-limit-indicator {
-            display: none;
-            margin-top: 12px;
-            padding: 12px 16px;
-            border-radius: 10px;
-            background: #fff5f5;
-            color: #c53030;
-            border: 1px solid #feb2b2;
-            align-items: center;
-            gap: 12px;
-            font-size: 14px;
-        }
-
-        .rate-limit-indicator.show {
-            display: flex;
-            animation: fadeContent 0.3s ease;
-        }
-
-        .rate-limit-indicator .icon {
-            font-size: 20px;
-            flex-shrink: 0;
-        }
-
-        .rate-limit-indicator .timer {
-            font-weight: 700;
-            font-family: 'Inter', monospace;
-            font-size: 16px;
-            color: #c53030;
-        }
-
-        /* ==============================================
-                   FOOTER
-                   ============================================== */
-        .login-footer {
+        .loading-overlay .loading-container {
             text-align: center;
-            margin-top: 24px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border-light);
+            padding: 2rem;
+            max-width: 500px;
+        }
+        .loading-overlay .loading-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .loading-overlay .loading-title {
+            color: #ff6b35;
+            font-weight: 800;
+            font-size: 1.5rem;
+        }
+        .loading-overlay .loading-subtitle {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.95rem;
+        }
+        .loading-overlay .loading-progress {
+            margin-top: 1.5rem;
+        }
+        .loading-overlay .progress {
+            height: 4px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .loading-overlay .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        .loading-overlay .loading-percent {
+            color: rgba(255,255,255,0.3);
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
         }
 
-        .login-footer .links {
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 8px;
+        @media (max-width: 992px) {
+            .hero-section { padding: 90px 0 30px; }
+            .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
         }
-
-        .login-footer .links a {
-            font-size: 12px;
-            color: var(--text-light);
-            text-decoration: none;
-            transition: var(--transition);
+        @media (max-width: 768px) {
+            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
+            .brand-text { font-size: 1.1rem; }
+            .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
+            .user-name-display { font-size: 0.75rem; }
+            .upload-area .upload-icon { font-size: 2.8rem; }
+            .upload-area h4 { font-size: 1rem; }
+            .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
+            .metric-value { font-size: 1.5rem; }
+            .upload-area { min-height: 160px; padding: 1.5rem; }
         }
-
-        .login-footer .links a:hover {
-            color: var(--primary-start);
-        }
-
-        .login-footer .copyright {
-            font-size: 11px;
-            color: #cbd5e0;
-        }
-
-        .login-footer .emergency-clear {
-            background: none;
-            border: none;
-            color: #fc8181;
-            font-size: 12px;
-            cursor: pointer;
-            text-decoration: underline;
-            transition: var(--transition);
-            font-family: inherit;
-            margin-top: 8px;
-        }
-
-        .login-footer .emergency-clear:hover {
-            color: #c53030;
-        }
-
-        /* ==============================================
-                   RESPONSIVIDADE
-                   ============================================== */
         @media (max-width: 480px) {
-            .login-card {
-                padding: 24px 16px 20px;
-                border-radius: 20px;
-            }
-
-            .login-header h1 {
-                font-size: 24px;
-            }
-
-            .login-logo {
-                width: 60px;
-                height: 60px;
-            }
-
-            .login-logo i {
-                font-size: 26px;
-            }
-
-            .auth-tab {
-                font-size: 13px;
-                padding: 8px 6px;
-            }
-
-            .form-control {
-                font-size: 14px;
-                height: 46px;
-                padding: 10px 10px 10px 40px;
-            }
-
-            .btn-submit {
-                font-size: 15px;
-                height: 48px;
-            }
-
-            .login-footer .links {
-                gap: 10px;
-            }
-
-            .login-footer .links a {
-                font-size: 11px;
-            }
-        }
-
-        @media (max-width: 360px) {
-            .login-card {
-                padding: 16px 12px 16px;
-            }
-
-            .login-header h1 {
-                font-size: 20px;
-            }
-
-            .auth-tab {
-                font-size: 12px;
-                padding: 6px 4px;
-            }
-
-            .form-control {
-                font-size: 13px;
-                height: 42px;
-                padding: 8px 8px 8px 36px;
-            }
-
-            .btn-submit {
-                font-size: 14px;
-                height: 44px;
-            }
-        }
-
-        /* ==============================================
-                   DARK MODE (opcional - ativado pelo sistema)
-                   ============================================== */
-        @media (prefers-color-scheme: dark) {
-            .login-card {
-                background: rgba(26, 26, 46, 0.95);
-            }
-
-            .login-header h1 {
-                color: #f7fafc;
-            }
-
-            .form-label {
-                color: #e2e8f0;
-            }
-
-            .form-control {
-                background: rgba(255,255,255,0.06);
-                color: #f7fafc;
-                border-color: rgba(255,255,255,0.12);
-            }
-
-            .form-control:focus {
-                background: rgba(255,255,255,0.1);
-            }
-
-            .form-control::placeholder {
-                color: rgba(255,255,255,0.3);
-            }
-
-            .auth-tabs {
-                background: rgba(255,255,255,0.06);
-            }
-
-            .auth-tab {
-                color: rgba(255,255,255,0.5);
-            }
-
-            .auth-tab.active {
-                background: rgba(255,255,255,0.1);
-                color: #667eea;
-            }
-
-            .login-footer {
-                border-top-color: rgba(255,255,255,0.08);
-            }
-
-            .login-footer .links a {
-                color: rgba(255,255,255,0.3);
-            }
-
-            .login-footer .copyright {
-                color: rgba(255,255,255,0.2);
-            }
-
-            .form-check-label {
-                color: rgba(255,255,255,0.6);
-            }
-
-            .password-toggle {
-                color: rgba(255,255,255,0.4);
-            }
-
-            .password-toggle:hover {
-                color: #667eea;
-                background: rgba(102, 126, 234, 0.15);
-            }
-
-            .login-header .subtitle {
-                color: rgba(255,255,255,0.5);
-            }
-
-            .input-icon {
-                color: rgba(255,255,255,0.3);
-            }
+            .hero-section { padding: 80px 0 20px; }
+            .glass-card { padding: 1rem; }
+            .upload-area { padding: 1rem; min-height: 140px; }
+            .upload-area .upload-icon { font-size: 2.2rem; }
+            .upload-area h4 { font-size: 0.9rem; }
+            .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
         }
     </style>
 </head>
 <body>
 
     <!-- ============================================== -->
-    <!-- BOLHAS DECORATIVAS -->
+    <!-- 🔥 NAVBAR -->
     <!-- ============================================== -->
-    <div class="bubble"></div>
-    <div class="bubble"></div>
-    <div class="bubble"></div>
-    <div class="bubble"></div>
-
-    <!-- ============================================== -->
-    <!-- CARD DE LOGIN -->
-    <!-- ============================================== -->
-    <div class="login-container">
-        <div class="login-card">
-
-            <!-- HEADER -->
-            <div class="login-header">
-                <div class="login-logo">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-                <h1>Auto<span>Analytics</span></h1>
-                <div class="subtitle">
-                    <i class="fas fa-robot me-1"></i>
-                    IA para Oficinas Mecânicas
-                </div>
-            </div>
-
-            <!-- TABS -->
-            <div class="auth-tabs" role="tablist">
-                <button class="auth-tab active" 
-                        data-target="#login-form-wrapper" 
-                        data-tab="login" 
-                        role="tab" 
-                        aria-selected="true" 
-                        id="tab-login-btn">
-                    <i class="fas fa-sign-in-alt"></i> Entrar
-                </button>
-                <button class="auth-tab" 
-                        data-target="#register-form-wrapper" 
-                        data-tab="register" 
-                        role="tab" 
-                        aria-selected="false" 
-                        id="tab-register-btn">
-                    <i class="fas fa-user-plus"></i> Criar Conta
-                </button>
-            </div>
-
-            <!-- ========================================== -->
-            <!-- 🔥 TAB LOGIN -->
-            <!-- ========================================== -->
-            <div class="auth-tab-content active" id="login-form-wrapper" role="tabpanel">
-                <form id="loginForm" novalidate>
+    <nav class="navbar-modern" id="mainNavbar">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap">
+                <a class="brand-text text-decoration-none" href="/dashboard">
+                    <i class="fas fa-wrench me-2"></i>
+                    Auto<span>Analytics</span>
+                </a>
+                
+                <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
+                    <span class="user-name-display">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="userName">Carregando...</span>
+                    </span>
                     
-                    <!-- Email -->
-                    <div class="form-group">
-                        <label for="loginEmail" class="form-label">
-                            <i class="fas fa-envelope"></i> E-mail
-                        </label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fas fa-envelope"></i></span>
-                            <input type="email" 
-                                   id="loginEmail" 
-                                   name="email" 
-                                   class="form-control" 
-                                   placeholder="seu@email.com" 
-                                   required 
-                                   autocomplete="email" 
-                                   tabindex="1"
-                                   autofocus>
-                            <div class="invalid-feedback" id="loginEmailFeedback">
-                                Por favor, insira um email válido.
-                            </div>
-                        </div>
+                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                        <i class="fas fa-coins me-1"></i>
+                        <span id="creditsCount">0</span>
                     </div>
-
-                    <!-- Senha -->
-                    <div class="form-group">
-                        <label for="loginPassword" class="form-label">
-                            <i class="fas fa-lock"></i> Senha
-                        </label>
-                        <div class="input-wrapper password-wrapper">
-                            <span class="input-icon"><i class="fas fa-lock"></i></span>
-                            <input type="password" 
-                                   id="loginPassword" 
-                                   name="password" 
-                                   class="form-control" 
-                                   placeholder="Sua senha" 
-                                   required 
-                                   autocomplete="current-password" 
-                                   tabindex="2">
-                            <button type="button" 
-                                    class="password-toggle" 
-                                    data-target="loginPassword" 
-                                    aria-label="Mostrar/ocultar senha" 
-                                    tabindex="-1">
-                                <i class="fas fa-eye-slash" aria-hidden="true"></i>
-                            </button>
-                            <div class="invalid-feedback" id="loginPasswordFeedback">
-                                A senha deve ter pelo menos 6 caracteres.
-                            </div>
-                        </div>
-                        <a href="#" class="forgot-password" tabindex="3">
-                            <i class="fas fa-question-circle me-1"></i> Esqueceu a senha?
-                        </a>
-                    </div>
-
-                    <!-- Remember me -->
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input" id="rememberMe" tabindex="4">
-                        <label class="form-check-label" for="rememberMe">
-                            <i class="fas fa-check-circle me-1"></i> Manter conectado por 30 dias
-                        </label>
-                    </div>
-
-                    <!-- Rate Limit Indicator -->
-                    <div class="rate-limit-indicator" id="rateLimitIndicatorLogin">
-                        <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
-                        <span id="rateLimitMessageLogin">
-                            Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerLogin">60</span>s
-                        </span>
-                    </div>
-
-                    <!-- Botão -->
-                    <button type="submit" class="btn-submit" id="loginBtn" tabindex="5">
-                        <span class="spinner"></span>
-                        <span class="btn-text">
-                            <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
-                        </span>
-                    </button>
-
-                </form>
-            </div>
-
-            <!-- ========================================== -->
-            <!-- 🔥 TAB REGISTER -->
-            <!-- ========================================== -->
-            <div class="auth-tab-content" id="register-form-wrapper" role="tabpanel">
-                <form id="registerForm" novalidate>
                     
-                    <!-- Nome -->
-                    <div class="form-group">
-                        <label for="registerName" class="form-label">
-                            <i class="fas fa-user"></i> Nome Completo
-                        </label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fas fa-user"></i></span>
-                            <input type="text" 
-                                   id="registerName" 
-                                   name="name" 
-                                   class="form-control" 
-                                   placeholder="Ex: João Silva" 
-                                   required 
-                                   autocomplete="name"
-                                   minlength="3">
-                            <div class="invalid-feedback" id="registerNameFeedback">
-                                Nome deve ter pelo menos 3 caracteres.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Email -->
-                    <div class="form-group">
-                        <label for="registerEmail" class="form-label">
-                            <i class="fas fa-envelope"></i> E-mail
-                        </label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fas fa-envelope"></i></span>
-                            <input type="email" 
-                                   id="registerEmail" 
-                                   name="email" 
-                                   class="form-control" 
-                                   placeholder="seu@email.com" 
-                                   required 
-                                   autocomplete="email">
-                            <div class="invalid-feedback" id="registerEmailFeedback">
-                                Por favor, insira um email válido.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Senha e Confirmação -->
-                    <div class="row g-2" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <div class="form-group" style="flex: 1; min-width: 140px;">
-                            <label for="registerPassword" class="form-label">
-                                <i class="fas fa-lock"></i> Senha
-                            </label>
-                            <div class="input-wrapper password-wrapper">
-                                <span class="input-icon"><i class="fas fa-lock"></i></span>
-                                <input type="password" 
-                                       id="registerPassword" 
-                                       name="password" 
-                                       class="form-control" 
-                                       placeholder="Mínimo 6 caracteres" 
-                                       minlength="6" 
-                                       required 
-                                       autocomplete="new-password">
-                                <button type="button" 
-                                        class="password-toggle" 
-                                        data-target="registerPassword" 
-                                        aria-label="Mostrar/ocultar senha" 
-                                        tabindex="-1">
-                                    <i class="fas fa-eye-slash"></i>
-                                </button>
-                                <div class="invalid-feedback" id="registerPasswordFeedback">
-                                    A senha deve ter pelo menos 6 caracteres.
-                                </div>
-                            </div>
-                            <!-- Força da senha -->
-                            <div class="password-strength" id="passwordStrengthContainer">
-                                <div class="strength-bar" id="strengthBar1"></div>
-                                <div class="strength-bar" id="strengthBar2"></div>
-                                <div class="strength-bar" id="strengthBar3"></div>
-                                <div class="strength-bar" id="strengthBar4"></div>
-                                <span class="strength-text" id="strengthText">Fraca</span>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="flex: 1; min-width: 140px;">
-                            <label for="registerConfirmPassword" class="form-label">
-                                <i class="fas fa-lock"></i> Confirmar
-                            </label>
-                            <div class="input-wrapper password-wrapper">
-                                <span class="input-icon"><i class="fas fa-lock"></i></span>
-                                <input type="password" 
-                                       id="registerConfirmPassword" 
-                                       name="confirm_password" 
-                                       class="form-control" 
-                                       placeholder="Digite novamente" 
-                                       required 
-                                       autocomplete="new-password">
-                                <button type="button" 
-                                        class="password-toggle" 
-                                        data-target="registerConfirmPassword" 
-                                        aria-label="Mostrar/ocultar senha" 
-                                        tabindex="-1">
-                                    <i class="fas fa-eye-slash"></i>
-                                </button>
-                            </div>
-                            <div class="password-match-hint" id="passwordMatchHint"></div>
-                        </div>
-                    </div>
-
-                    <!-- Nome da Oficina -->
-                    <div class="form-group">
-                        <label for="registerWorkshop" class="form-label">
-                            <i class="fas fa-wrench"></i> Nome da Oficina
-                        </label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fas fa-wrench"></i></span>
-                            <input type="text" 
-                                   id="registerWorkshop" 
-                                   name="workshop" 
-                                   class="form-control" 
-                                   placeholder="Ex: Oficina Central" 
-                                   required
-                                   minlength="2">
-                            <div class="invalid-feedback" id="registerWorkshopFeedback">
-                                Nome da oficina deve ter pelo menos 2 caracteres.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Telefone (opcional) -->
-                    <div class="form-group">
-                        <label for="registerPhone" class="form-label">
-                            <i class="fas fa-phone"></i> Telefone <small style="color: var(--text-light); font-weight: 400;">(opcional)</small>
-                        </label>
-                        <div class="input-wrapper">
-                            <span class="input-icon"><i class="fas fa-phone"></i></span>
-                            <input type="tel" 
-                                   id="registerPhone" 
-                                   name="phone" 
-                                   class="form-control" 
-                                   placeholder="(00) 00000-0000" 
-                                   autocomplete="tel">
-                        </div>
-                        <small style="color: var(--text-light); font-size: 11px;">
-                            <i class="fas fa-info-circle me-1"></i>
-                            Opcional - usado apenas para contato
-                        </small>
-                    </div>
-
-                    <!-- Termos -->
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input" id="terms" required>
-                        <label class="form-check-label" for="terms">
-                            <i class="fas fa-check-circle me-1"></i> 
-                            Aceito os <a href="#" target="_blank">Termos de Uso</a> e 
-                            <a href="#" target="_blank">Política de Privacidade</a>
-                        </label>
-                        <div class="invalid-feedback" id="termsFeedback" style="display: none;">
-                            Você precisa aceitar os termos para continuar.
-                        </div>
-                    </div>
-
-                    <!-- Rate Limit Indicator -->
-                    <div class="rate-limit-indicator" id="rateLimitIndicatorRegister">
-                        <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
-                        <span id="rateLimitMessageRegister">
-                            Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimerRegister">60</span>s
-                        </span>
-                    </div>
-
-                    <!-- Botão -->
-                    <button type="submit" class="btn-submit btn-submit-success" id="registerBtn">
-                        <span class="spinner"></span>
-                        <span class="btn-text">
-                            <i class="fas fa-user-plus"></i> Criar Minha Conta
-                        </span>
-                    </button>
-
-                    <!-- Créditos grátis -->
-                    <div style="text-align: center; margin-top: 12px;">
-                        <small style="color: var(--text-muted);">
-                            <i class="fas fa-gift" style="color: #f5a623;"></i>
-                            Ao criar sua conta, você ganha <strong style="color: #f5a623;">3 créditos grátis</strong>!
-                        </small>
-                    </div>
-
-                </form>
-            </div>
-
-            <!-- MENSAGEM -->
-            <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
-
-            <!-- FOOTER -->
-            <div class="login-footer">
-                <div class="links">
-                    <a href="#"><i class="fas fa-question-circle me-1"></i> Suporte</a>
-                    <a href="#"><i class="fas fa-shield-alt me-1"></i> Privacidade</a>
-                    <a href="#"><i class="fas fa-file-alt me-1"></i> Termos</a>
-                    <a href="#"><i class="fas fa-envelope me-1"></i> Contato</a>
+                    <span class="pow-status loading" id="powStatus" title="Proof of Work">
+                        <i class="fas fa-shield-alt"></i>
+                        <span id="powStatusText">⚡ Pronto</span>
+                    </span>
+                    
+                    <a href="/planos" class="btn-planos" id="planosLink">
+                        <i class="fas fa-crown me-1"></i> Planos
+                    </a>
+                    
+                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
+                        <i class="fas fa-sign-out-alt me-1"></i> Sair
+                    </a>
                 </div>
-                <div class="copyright">© 2026 AutoAnalytics. Todos os direitos reservados.</div>
-                <button class="emergency-clear" onclick="emergencyClear()">
-                    <i class="fas fa-exclamation-triangle me-1"></i>
-                    Problemas? Limpar dados da sessão
-                </button>
             </div>
+        </div>
+    </nav>
 
+    <!-- ============================================== -->
+    <!-- 🔥 LOADING OVERLAY -->
+    <!-- ============================================== -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-container text-center">
+            <div class="loading-icon">
+                <i class="fas fa-robot"></i>
+            </div>
+            <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
+            <p class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</p>
+            <div class="loading-progress">
+                <div class="progress">
+                    <div class="progress-bar" id="loadingProgressBar" style="width: 0%;"></div>
+                </div>
+                <div class="loading-percent" id="loadingPercent">0%</div>
+            </div>
         </div>
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM DE CARREGAMENTO OTIMIZADA -->
-    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
+    <!-- 🔥 CONTEÚDO PRINCIPAL -->
+    <!-- ============================================== -->
+    <section class="hero-section">
+        <div class="container">
+            
+            <!-- ===== INTRO ===== -->
+            <div class="row mb-4">
+                <div class="col-12 text-center" data-aos="fade-down">
+                    <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                        <i class="fas fa-robot me-1"></i> Inteligência Artificial para Mecânicos
+                    </span>
+                    <h1 class="display-4 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                        Transforme dados em resultados
+                    </h1>
+                    <p class="lead" style="color: rgba(255,255,255,0.6); max-width: 700px; margin: 0 auto;">
+                        Analise dados da sua oficina, preveja problemas e otimize seus lucros com IA
+                    </p>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                
+                <!-- ===== COLUNA ESQUERDA - MÉTRICAS ===== -->
+                <div class="col-lg-4">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="glass-card" data-aos="fade-right" data-aos-duration="800">
+                                <h5 class="card-title mb-3">
+                                    <i class="fas fa-chart-simple"></i> Seu Painel
+                                </h5>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="totalAnalises">0</div>
+                                            <div class="metric-label">Análises</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="analisesHoje">0</div>
+                                            <div class="metric-label">Hoje</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="metric-card">
+                                            <div class="metric-value" id="creditsDisplay">0</div>
+                                            <div class="metric-label">Créditos Disponíveis</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- STATUS PREMIUM -->
+                        <div class="col-12">
+                            <div class="glass-card" id="premiumStatusContainer" data-aos="fade-right" data-aos-delay="100">
+                                <div class="text-center py-3">
+                                    <div class="spinner-border text-warning" role="status" style="width: 1.5rem; height: 1.5rem; color: #ff6b35 !important;">
+                                        <span class="visually-hidden">Carregando...</span>
+                                    </div>
+                                    <p class="mt-2 small" style="color: rgba(255,255,255,0.4);">Carregando status...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
+                <div class="col-lg-8">
+                    <div class="row g-3">
+                        <!-- 🔥 UPLOAD - ÁREA PRINCIPAL -->
+                        <div class="col-12">
+                            <div class="glass-card" data-aos="fade-left" data-aos-duration="800">
+                                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-cloud-upload-alt"></i> Envie seus arquivos
+                                    </h5>
+                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding: 0.3rem 0.8rem;">
+                                        <i class="fas fa-coins me-1"></i>
+                                        <span id="uploadCredits">0</span> créditos
+                                    </span>
+                                </div>
+                                
+                                <div class="limit-info" style="background:rgba(0,0,0,0.2); border-radius:12px; padding:0.5rem 1rem; margin-bottom:1rem; text-align:center; font-size:0.75rem; border:1px solid rgba(255,255,255,0.05); color:rgba(255,255,255,0.6);">
+                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
+                                        <span><i class="fas fa-hard-drive"></i> <strong style="color:#ff6b35;">200 KB</strong>/arquivo</span>
+                                        <span><i class="fas fa-layer-group"></i> <strong style="color:#ff6b35;">3</strong> arquivos/vez</span>
+                                        <span><i class="fas fa-coins"></i> <strong style="color:#ff6b35;">1</strong> crédito/arquivo</span>
+                                    </div>
+                                </div>
+                                
+                                <form id="uploadForm">
+                                    <!-- 🔥 ÁREA DE DRAG & DROP -->
+                                    <div class="upload-area" id="dropArea">
+                                        <span class="upload-icon">
+                                            <i class="fas fa-file-excel"></i>
+                                        </span>
+                                        <h4>📁 Arraste seus arquivos aqui</h4>
+                                        <p class="small">Suporte para <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
+                                        <div>
+                                            <label for="fileInput" class="btn-select">
+                                                <i class="fas fa-folder-open me-2"></i> Selecionar Arquivos
+                                            </label>
+                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
+                                        </div>
+                                        <div class="file-hint">
+                                            <span><i class="fas fa-check-circle"></i> Até 3 arquivos</span>
+                                            <span><i class="fas fa-weight-scale"></i> Máx. 200 KB cada</span>
+                                            <span><i class="fas fa-coins"></i> 1 crédito por arquivo</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- PREVIEW DOS ARQUIVOS -->
+                                    <div class="file-preview-container" id="filePreviewContainer"></div>
+                                    
+                                    <div class="d-grid">
+                                        <button type="submit" id="uploadButton" class="btn-gradient w-100" disabled>
+                                            <i class="fas fa-play-circle me-2"></i>
+                                            Iniciar Análise
+                                            <span class="badge ms-2" style="background: rgba(255,255,255,0.15); color: white; font-size:0.6rem;">1 crédito/arquivo</span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- ANÁLISES EM ANDAMENTO -->
+                        <div class="col-12">
+                            <div class="glass-card" data-aos="fade-left" data-aos-delay="100">
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-spinner fa-pulse"></i> Análises em andamento
+                                    </h5>
+                                    <span class="badge" style="background: #ff6b35; color: white;" id="activeAnalysesCount">0</span>
+                                </div>
+                                <div id="activeAnalysesContainer">
+                                    <div class="text-center py-4" style="color: rgba(255,255,255,0.3);">
+                                        <i class="fas fa-cloud-upload-alt fa-2x mb-2 opacity-50"></i>
+                                        <p class="small mb-0">Nenhuma análise em andamento</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+
+            <!-- ===== HISTÓRICO ===== -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="glass-card" data-aos="fade-up" data-aos-delay="200">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-history me-2" style="color: #ff6b35;"></i>
+                            <h5 class="card-title mb-0">Seu histórico de análises</h5>
+                        </div>
+                        <div class="timeline" id="recentAnalyses" style="position:relative; padding-left:1.5rem; max-height:250px; overflow-y:auto;">
+                            <div class="timeline-item" style="position:relative; padding-bottom:1.2rem;">
+                                <div class="timeline-marker" style="position:absolute; left:-1.5rem; top:0.25rem; width:12px; height:12px; border-radius:50%; background:#ff6b35; border:2px solid white; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
+                                <div class="timeline-content" style="padding-left:0.5rem; color:rgba(255,255,255,0.85);">
+                                    <p class="mb-1 small">Carregando histórico...</p>
+                                    <small style="color: rgba(255,255,255,0.3);">Aguarde</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: #ff6b35;">
+                                <i class="fas fa-eye me-1"></i> Ver todas
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== RODAPÉ ===== -->
+            <div class="row mt-5">
+                <div class="col-12 text-center">
+                    <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
+                        <i class="fas fa-wrench me-1"></i>
+                        AutoAnalytics v7.3 - Inteligência Artificial para Mecânicos
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-shield-alt me-1"></i>
+                        Protegido por PoW
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-database me-1"></i>
+                        Dados criptografados
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL DE CRÉDITOS -->
+    <!-- ============================================== -->
+    <div class="modal fade" id="creditsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title">
+                        <i class="fas fa-coins me-2" style="color: #ff6b35;"></i>
+                        Meus Créditos
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
+                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
+                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.5);">créditos disponíveis</p>
+                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.15) !important; color:rgba(255,255,255,0.85) !important;">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong style="color: #ff6b35;">Como funcionam:</strong><br>
+                        • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
+                        • ⭐ Premium ganha 1 crédito por dia<br>
+                        • Cada análise consome 1 crédito<br>
+                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
+                        • 🔥 Limite máximo de 3 créditos acumulados
+                    </div>
+                </div>
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.1);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.75rem; border-radius: 50px; font-weight: 700;">
+                        <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 🔥 MODAL GPSA -->
+    <!-- ============================================== -->
+    <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title">
+                        <i class="fas fa-chart-line me-2" style="color: #ff6b35;"></i>
+                        GPSA - Impacto no Negócio
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
+                </div>
+                <div class="modal-body" id="gpsaModalBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-warning" role="status" style="color: #ff6b35;">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                        <p class="mt-3" style="color: rgba(255,255,255,0.4);">Carregando análise...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1. CONFIGURAÇÃO TOASTR -->
-    <script>
-        toastr.options = {
-            closeButton: true,
-            progressBar: true,
-            positionClass: "toast-top-right",
-            timeOut: 5000,
-            extendedTimeOut: 1000,
-            escapeHtml: true,
-            preventDuplicates: true,
-            showMethod: 'fadeIn',
-            hideMethod: 'fadeOut'
-        };
-    </script>
+    <!-- 1️⃣ JQUERY - PRIMEIRO -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- 2️⃣ TOASTR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    
+    <!-- 3️⃣ BOOTSTRAP -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 4️⃣ DEMAIS BIBLIOTECAS -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- 2. FUNÇÃO DE EMERGÊNCIA -->
+    <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS -->
+    <!-- ============================================== -->
+    
+    <!-- 1️⃣ POW - v3.3 -->
+    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
+    
+    <!-- 2️⃣ AUTH - v3.0 -->
+    <script src="/static/js/auth.js?ver=3.0.0"></script>
+    
+    <!-- 3️⃣ APP - v5.6 -->
+    <script src="/static/js/app.js?ver=5.6.0"></script>
+    
+    <!-- 4️⃣ DASHBOARD - v6.2 -->
+    <script src="/static/js/dashboard.js?ver=6.2.0"></script>
+    
+    <!-- 5️⃣ PAYMENT - v2.4 -->
+    <script src="/static/js/payment.js?ver=2.4.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 INICIALIZAÇÃO E CONTROLE DO UPLOAD -->
+    <!-- ============================================== -->
     <script>
-        function emergencyClear() {
-            if (confirm('⚠️ Isso vai limpar todos os seus dados de sessão. Você será redirecionado para a página de login. Continuar?')) {
-                localStorage.clear();
-                sessionStorage.clear();
-                document.cookie.split(";").forEach(function(c) { 
-                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-                });
-                toastr.success('Dados de sessão limpos com sucesso!');
-                setTimeout(function() {
-                    window.location.href = '/login';
-                }, 500);
+        (function() {
+            'use strict';
+
+            console.log('🚀 AutoAnalytics Mecânicos v7.3');
+
+            // ===== CONFIG =====
+            const MAX_FILES = 3;
+            const MAX_FILE_SIZE_KB = 200;
+            const CREDITS_PER_FILE = 1;
+
+            // ===== ESTADO LOCAL =====
+            let selectedFiles = [];
+
+            // ===== ELEMENTOS DOM =====
+            const dropArea = document.getElementById('dropArea');
+            const fileInput = document.getElementById('fileInput');
+            const filePreview = document.getElementById('filePreviewContainer');
+            const uploadBtn = document.getElementById('uploadButton');
+            const uploadForm = document.getElementById('uploadForm');
+
+            // ===== FUNÇÃO PARA FORMATAR TAMANHO =====
+            function formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+                return (bytes / 1048576).toFixed(1) + ' MB';
             }
-        }
-    </script>
 
-    <!-- 3. GERENCIADOR DE TABS -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 [TABS] Inicializando...');
-            
-            document.querySelectorAll('.auth-tab').forEach(function(tabBtn) {
-                tabBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    
-                    const tabName = this.getAttribute('data-tab');
-                    console.log(`📝 [TABS] Alternando para: ${tabName}`);
-                    
-                    // Atualiza tabs
-                    document.querySelectorAll('.auth-tab').forEach(function(b) {
-                        b.classList.remove('active');
-                        b.setAttribute('aria-selected', 'false');
-                    });
-                    
-                    this.classList.add('active');
-                    this.setAttribute('aria-selected', 'true');
-                    
-                    // Atualiza conteúdo
-                    document.querySelectorAll('.auth-tab-content').forEach(function(c) {
-                        c.classList.remove('active');
-                    });
-                    
-                    const targetId = this.getAttribute('data-target');
-                    if (targetId) {
-                        const targetContent = document.querySelector(targetId);
-                        if (targetContent) {
-                            targetContent.classList.add('active');
-                        }
-                    }
-                });
-            });
-            
-            console.log('✅ [TABS] Inicializado com sucesso!');
-        });
-    </script>
-
-    <!-- 4. PASSWORD TOGGLE -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.password-toggle').forEach(function(button) {
-                button.addEventListener('click', function() {
-                    const targetId = this.getAttribute('data-target');
-                    const input = document.getElementById(targetId);
-                    const icon = this.querySelector('i');
-                    
-                    if (input) {
-                        const isPassword = input.type === 'password';
-                        input.type = isPassword ? 'text' : 'password';
-                        icon.className = isPassword ? 'fas fa-eye' : 'fas fa-eye-slash';
-                    }
-                });
-            });
-        });
-    </script>
-
-    <!-- 5. FORÇA DA SENHA -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const passwordInput = document.getElementById('registerPassword');
-            const container = document.getElementById('passwordStrengthContainer');
-            const bars = [
-                document.getElementById('strengthBar1'),
-                document.getElementById('strengthBar2'),
-                document.getElementById('strengthBar3'),
-                document.getElementById('strengthBar4')
-            ];
-            const text = document.getElementById('strengthText');
-            
-            if (passwordInput) {
-                passwordInput.addEventListener('input', function() {
-                    const password = this.value;
-                    
-                    if (password.length === 0) {
-                        container.classList.remove('show');
-                        return;
-                    }
-                    
-                    container.classList.add('show');
-                    
-                    // Calcula força
-                    let score = 0;
-                    if (password.length >= 6) score++;
-                    if (password.length >= 10) score++;
-                    if (/[A-Z]/.test(password)) score++;
-                    if (/[0-9]/.test(password)) score++;
-                    if (/[^A-Za-z0-9]/.test(password)) score++;
-                    
-                    score = Math.min(4, Math.max(0, Math.floor(score / 1.5)));
-                    
-                    const levels = ['Fraca', 'Fraca', 'Média', 'Forte', 'Muito Forte'];
-                    const classes = ['weak', 'weak', 'medium', 'strong', 'very-strong'];
-                    
-                    bars.forEach(function(bar, index) {
-                        bar.classList.toggle('active', index < score);
-                    });
-                    
-                    text.textContent = levels[score] || 'Fraca';
-                    text.className = 'strength-text ' + (classes[score] || 'weak');
-                });
-            }
-        });
-    </script>
-
-    <!-- 6. CONFIRMAÇÃO DE SENHA -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const passwordInput = document.getElementById('registerPassword');
-            const confirmInput = document.getElementById('registerConfirmPassword');
-            const hint = document.getElementById('passwordMatchHint');
-            
-            if (passwordInput && confirmInput) {
-                function checkMatch() {
-                    const pwd = passwordInput.value;
-                    const confirm = confirmInput.value;
-                    
-                    if (confirm.length === 0) {
-                        hint.innerHTML = '';
-                        return;
-                    }
-                    
-                    const isMatch = pwd === confirm;
-                    hint.innerHTML = isMatch 
-                        ? '<i class="fas fa-check-circle me-1" style="color: #48bb78;"></i> <span class="text-success">Senhas coincidem!</span>'
-                        : '<i class="fas fa-times-circle me-1" style="color: #fc8181;"></i> <span class="text-danger">As senhas não coincidem!</span>';
+            // ===== FUNÇÃO PARA VALIDAR ARQUIVO =====
+            function validateFile(file) {
+                const errors = [];
+                
+                // Extensão permitida
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+                    errors.push('Formato não suportado. Use CSV, XLSX ou XLS.');
                 }
                 
-                passwordInput.addEventListener('input', checkMatch);
-                confirmInput.addEventListener('input', checkMatch);
-            }
-        });
-    </script>
-
-    <!-- 7. VALIDAÇÃO EM TEMPO REAL DOS CAMPOS -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Login: validação de email
-            const loginEmail = document.getElementById('loginEmail');
-            const loginEmailFeedback = document.getElementById('loginEmailFeedback');
-            
-            if (loginEmail) {
-                loginEmail.addEventListener('blur', function() {
-                    const isValid = this.value.includes('@') && this.value.length > 3;
-                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
-                    loginEmailFeedback.classList.toggle('show', !isValid && this.value.length > 0);
-                });
+                // Tamanho máximo
+                if (file.size > MAX_FILE_SIZE_KB * 1024) {
+                    errors.push(`Arquivo excede ${MAX_FILE_SIZE_KB} KB.`);
+                }
                 
-                loginEmail.addEventListener('input', function() {
-                    if (this.classList.contains('is-invalid') && this.value.includes('@')) {
-                        this.classList.remove('is-invalid');
-                        loginEmailFeedback.classList.remove('show');
-                    }
-                });
-            }
-            
-            // Login: validação de senha
-            const loginPassword = document.getElementById('loginPassword');
-            const loginPasswordFeedback = document.getElementById('loginPasswordFeedback');
-            
-            if (loginPassword) {
-                loginPassword.addEventListener('blur', function() {
-                    const isValid = this.value.length >= 6;
-                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
-                    loginPasswordFeedback.classList.toggle('show', !isValid && this.value.length > 0);
-                });
-                
-                loginPassword.addEventListener('input', function() {
-                    if (this.classList.contains('is-invalid') && this.value.length >= 6) {
-                        this.classList.remove('is-invalid');
-                        loginPasswordFeedback.classList.remove('show');
-                    }
-                });
-            }
-            
-            // Register: validação de nome
-            const registerName = document.getElementById('registerName');
-            const registerNameFeedback = document.getElementById('registerNameFeedback');
-            
-            if (registerName) {
-                registerName.addEventListener('blur', function() {
-                    const isValid = this.value.length >= 3;
-                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
-                    registerNameFeedback.classList.toggle('show', !isValid && this.value.length > 0);
-                });
-                
-                registerName.addEventListener('input', function() {
-                    if (this.classList.contains('is-invalid') && this.value.length >= 3) {
-                        this.classList.remove('is-invalid');
-                        registerNameFeedback.classList.remove('show');
-                    }
-                });
-            }
-            
-            // Register: validação de email
-            const registerEmail = document.getElementById('registerEmail');
-            const registerEmailFeedback = document.getElementById('registerEmailFeedback');
-            
-            if (registerEmail) {
-                registerEmail.addEventListener('blur', function() {
-                    const isValid = this.value.includes('@') && this.value.length > 3;
-                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
-                    registerEmailFeedback.classList.toggle('show', !isValid && this.value.length > 0);
-                });
-                
-                registerEmail.addEventListener('input', function() {
-                    if (this.classList.contains('is-invalid') && this.value.includes('@')) {
-                        this.classList.remove('is-invalid');
-                        registerEmailFeedback.classList.remove('show');
-                    }
-                });
-            }
-            
-            // Register: validação de oficina
-            const registerWorkshop = document.getElementById('registerWorkshop');
-            const registerWorkshopFeedback = document.getElementById('registerWorkshopFeedback');
-            
-            if (registerWorkshop) {
-                registerWorkshop.addEventListener('blur', function() {
-                    const isValid = this.value.length >= 2;
-                    this.classList.toggle('is-invalid', !isValid && this.value.length > 0);
-                    registerWorkshopFeedback.classList.toggle('show', !isValid && this.value.length > 0);
-                });
-                
-                registerWorkshop.addEventListener('input', function() {
-                    if (this.classList.contains('is-invalid') && this.value.length >= 2) {
-                        this.classList.remove('is-invalid');
-                        registerWorkshopFeedback.classList.remove('show');
-                    }
-                });
-            }
-        });
-    </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS DA APLICAÇÃO - ORDEM CORRETA        -->
-    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
-    <!-- ============================================== -->
-    
-    <!-- 1️⃣ POW - PRIMEIRO (Proteção anti-bot) -->
-    <script src="/static/js/pow-client.js" defer></script>
-    
-    <!-- 2️⃣ AUTH - SEGUNDO (Motor de autenticação) -->
-    <script src="/static/js/auth.js" defer></script>
-    
-    <!-- 3️⃣ APP - TERCEIRO (Orquestrador - depende do auth.js) -->
-    <script src="/static/js/app.js" defer></script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 HANDLER DO FORMULÁRIO COM FALLBACK INTELIGENTE -->
-    <!-- ============================================== -->
-    <script>
-        /**
-         * 🔥 Handler do submit do login com fallback inteligente
-         */
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 [LOGIN] Configurando handler...');
-            
-            const loginForm = document.getElementById('loginForm');
-            
-            if (!loginForm) {
-                console.warn('⚠️ [LOGIN] Formulário não encontrado!');
-                return;
+                return { valid: errors.length === 0, errors };
             }
 
-            loginForm.removeEventListener('submit', handleLoginSubmit);
-            loginForm.addEventListener('submit', handleLoginSubmit);
-            
-            console.log('✅ [LOGIN] Handler configurado com sucesso!');
-        });
-
-        async function handleLoginSubmit(e) {
-            e.preventDefault();
-            
-            console.log('📤 [LOGIN] Submit interceptado!');
-            
-            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
-            
-            if (!authModule) {
-                console.warn('⏳ [LOGIN] Auth não disponível. Aguardando...');
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
-                
-                if (!authModuleRetry) {
-                    console.error('❌ [LOGIN] Auth não encontrado!');
-                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
-                    
-                    const btn = document.getElementById('loginBtn');
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
-                    }
+            // ===== FUNÇÃO PARA ATUALIZAR PREVIEW =====
+            function updateFilePreview() {
+                if (selectedFiles.length === 0) {
+                    filePreview.innerHTML = '';
+                    uploadBtn.disabled = true;
                     return;
                 }
-                
-                try {
-                    await authModuleRetry.handleLogin(e);
-                } catch (error) {
-                    console.error('❌ [LOGIN] Erro:', error);
-                    toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
-                }
-                return;
-            }
 
-            try {
-                await authModule.handleLogin(e);
-            } catch (error) {
-                console.error('❌ [LOGIN] Erro:', error);
-                toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
-                
-                const btn = document.getElementById('loginBtn');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('loading');
-                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
-                }
-            }
-        }
-
-        /**
-         * 🔥 Handler do submit do registro com fallback inteligente
-         */
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 [REGISTER] Configurando handler...');
-            
-            const registerForm = document.getElementById('registerForm');
-            
-            if (!registerForm) {
-                console.warn('⚠️ [REGISTER] Formulário não encontrado!');
-                return;
-            }
-
-            registerForm.removeEventListener('submit', handleRegisterSubmit);
-            registerForm.addEventListener('submit', handleRegisterSubmit);
-            
-            console.log('✅ [REGISTER] Handler configurado com sucesso!');
-        });
-
-        async function handleRegisterSubmit(e) {
-            e.preventDefault();
-            
-            console.log('📤 [REGISTER] Submit interceptado!');
-            
-            const termsCheckbox = document.getElementById('terms');
-            const termsFeedback = document.getElementById('termsFeedback');
-            
-            if (termsCheckbox && !termsCheckbox.checked) {
-                termsFeedback.style.display = 'block';
-                toastr.warning('Você precisa aceitar os termos para continuar.', 'Atenção');
-                return;
-            } else if (termsFeedback) {
-                termsFeedback.style.display = 'none';
-            }
-            
-            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
-            
-            if (!authModule) {
-                console.warn('⏳ [REGISTER] Auth não disponível. Aguardando...');
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
-                
-                if (!authModuleRetry) {
-                    console.error('❌ [REGISTER] Auth não encontrado!');
-                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
+                let html = '';
+                selectedFiles.forEach((file, index) => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    let icon = 'fa-file-excel';
+                    if (ext === 'csv') icon = 'fa-file-csv';
                     
-                    const btn = document.getElementById('registerBtn');
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
+                    html += `
+                        <div class="file-preview-item" data-index="${index}">
+                            <div class="file-info">
+                                <i class="fas ${icon}"></i>
+                                <span class="file-name" title="${file.name}">${file.name}</span>
+                                <span class="file-size">${formatFileSize(file.size)}</span>
+                            </div>
+                            <button type="button" class="file-remove" data-index="${index}" title="Remover arquivo">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+                
+                filePreview.innerHTML = html;
+                uploadBtn.disabled = false;
+
+                // Eventos de remoção
+                document.querySelectorAll('.file-remove').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const idx = parseInt(this.dataset.index);
+                        removeFile(idx);
+                    });
+                });
+            }
+
+            // ===== FUNÇÃO PARA ADICIONAR ARQUIVOS =====
+            function addFiles(files) {
+                let added = 0;
+                let errors = [];
+
+                for (const file of files) {
+                    if (selectedFiles.length >= MAX_FILES) {
+                        errors.push(`Limite de ${MAX_FILES} arquivos atingido.`);
+                        break;
                     }
+
+                    const validation = validateFile(file);
+                    if (!validation.valid) {
+                        errors.push(`${file.name}: ${validation.errors.join(' ')}`);
+                        continue;
+                    }
+
+                    selectedFiles.push(file);
+                    added++;
+                }
+
+                updateFilePreview();
+
+                if (added > 0) {
+                    window.App?.showNotification?.(`${added} arquivo(s) adicionado(s)`, 'info');
+                }
+
+                if (errors.length > 0) {
+                    window.App?.showNotification?.(errors.join(' | '), 'warning');
+                }
+
+                // Atualiza créditos
+                updateCreditsDisplay();
+            }
+
+            // ===== FUNÇÃO PARA REMOVER ARQUIVO =====
+            function removeFile(index) {
+                if (index >= 0 && index < selectedFiles.length) {
+                    selectedFiles.splice(index, 1);
+                    updateFilePreview();
+                    updateCreditsDisplay();
+                    
+                    if (selectedFiles.length === 0) {
+                        window.App?.showNotification?.('Todos os arquivos removidos', 'info');
+                    }
+                }
+            }
+
+            // ===== FUNÇÃO PARA ATUALIZAR EXIBIÇÃO DE CRÉDITOS =====
+            function updateCreditsDisplay() {
+                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                const creditEls = document.querySelectorAll('#uploadCredits, #creditsCount');
+                const creditsAvailable = window.App?.getCredits?.() || 0;
+                
+                creditEls.forEach(el => {
+                    if (el) el.textContent = creditsAvailable;
+                });
+
+                // Atualiza badge de créditos no botão
+                const badge = uploadBtn.querySelector('.badge');
+                if (badge) {
+                    badge.textContent = `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''}`;
+                }
+
+                // Verifica se tem créditos suficientes
+                const hasCredits = creditsNeeded > 0 && creditsAvailable >= creditsNeeded;
+                uploadBtn.disabled = !hasCredits || selectedFiles.length === 0;
+            }
+
+            // ===== EVENTOS DE DRAG & DROP =====
+            dropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropArea.classList.add('dragover');
+            });
+
+            dropArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    addFiles(files);
+                }
+            });
+
+            // Clique na área abre o seletor
+            dropArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // Seletor de arquivos
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    addFiles(e.target.files);
+                }
+                fileInput.value = '';
+            });
+
+            // ===== SUBMISSÃO DO FORMULÁRIO =====
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (selectedFiles.length === 0) {
+                    window.App?.showNotification?.('Nenhum arquivo selecionado.', 'warning');
                     return;
                 }
+
+                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                const creditsAvailable = window.App?.getCredits?.() || 0;
+
+                if (creditsAvailable < creditsNeeded) {
+                    window.App?.showNotification?.(
+                        `Créditos insuficientes. Você tem ${creditsAvailable}, precisa de ${creditsNeeded}.`,
+                        'error'
+                    );
+                    return;
+                }
+
+                // Prepara os arquivos para upload
+                const filesToUpload = [...selectedFiles];
+                const formData = new FormData();
+                filesToUpload.forEach(file => formData.append('files', file));
+
+                // Mostra loading
+                window.App?.showLoading?.('Enviando arquivos...', 'A IA está processando seus dados');
                 
                 try {
-                    await authModuleRetry.handleRegister(e);
-                } catch (error) {
-                    console.error('❌ [REGISTER] Erro:', error);
-                    toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
-                }
-                return;
-            }
-
-            try {
-                await authModule.handleRegister(e);
-            } catch (error) {
-                console.error('❌ [REGISTER] Erro:', error);
-                toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
-                
-                const btn = document.getElementById('registerBtn');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('loading');
-                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
-                }
-            }
-        }
-    </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 RATE LIMITER DINÂMICO -->
-    <!-- ============================================== -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 [RATE LIMIT] Inicializando...');
-            
-            let appCheckCount = 0;
-            const maxChecks = 20;
-            
-            const checkApp = setInterval(function() {
-                appCheckCount++;
-                
-                if (window.App && typeof window.App.isRateLimitBlocked === 'function') {
-                    clearInterval(checkApp);
-                    console.log('✅ [RATE LIMIT] App encontrado!');
+                    // Usa o método de upload com PoW do app.js
+                    const result = await window.App?.uploadWithPow?.(filesToUpload, '/api/upload-auto');
                     
-                    if (window.App.isRateLimitBlocked()) {
-                        updateRateLimitUI('login');
-                        updateRateLimitUI('register');
-                    }
-                    
-                    window.addEventListener('rateLimitBlocked', function(event) {
-                        console.log('📢 [RATE LIMIT] Bloqueado:', event.detail);
-                        updateRateLimitUI('login', event.detail);
-                        updateRateLimitUI('register', event.detail);
-                    });
-                    
-                    window.addEventListener('rateLimitUnblocked', function() {
-                        console.log('📢 [RATE LIMIT] Desbloqueado');
-                        hideRateLimitUI('login');
-                        hideRateLimitUI('register');
-                    });
-                    
-                    setInterval(function() {
-                        if (window.App && window.App.isRateLimitBlocked()) {
-                            updateRateLimitUI('login');
-                            updateRateLimitUI('register');
-                        }
-                    }, 1000);
-                } else if (appCheckCount >= maxChecks) {
-                    clearInterval(checkApp);
-                    console.warn('⚠️ [RATE LIMIT] Timeout - App não encontrado');
-                }
-            }, 500);
-        });
-
-        function updateRateLimitUI(type, detail) {
-            const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
-            const timerId = type === 'login' ? 'rateLimitTimerLogin' : 'rateLimitTimerRegister';
-            const messageId = type === 'login' ? 'rateLimitMessageLogin' : 'rateLimitMessageRegister';
-            const btnId = type === 'login' ? 'loginBtn' : 'registerBtn';
-            
-            const indicator = document.getElementById(indicatorId);
-            const timer = document.getElementById(timerId);
-            const message = document.getElementById(messageId);
-            const button = document.getElementById(btnId);
-            
-            if (indicator) indicator.classList.add('show');
-            
-            if (timer) {
-                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                timer.textContent = remaining;
-                
-                const intervalKey = '_rateLimitTimer_' + type;
-                if (window[intervalKey]) clearInterval(window[intervalKey]);
-                
-                window[intervalKey] = setInterval(function() {
-                    if (window.App && window.App.isRateLimitBlocked()) {
-                        const rem = window.App.getRateLimitTimeRemaining();
-                        if (timer) timer.textContent = rem;
-                        if (rem <= 0) {
-                            clearInterval(window[intervalKey]);
-                            hideRateLimitUI(type);
-                        }
+                    if (result) {
+                        window.App?.showNotification?.('✅ Arquivos enviados com sucesso!', 'success');
+                        
+                        // Limpa a lista
+                        selectedFiles = [];
+                        updateFilePreview();
+                        updateCreditsDisplay();
+                        
+                        // Dispara evento para dashboard.js atualizar
+                        window.dispatchEvent(new CustomEvent('analysis:uploaded', { detail: { result } }));
                     } else {
-                        clearInterval(window[intervalKey]);
-                        hideRateLimitUI(type);
+                        window.App?.showNotification?.('Erro ao enviar arquivos.', 'error');
                     }
-                }, 1000);
-            }
-            
-            if (message && detail?.message) {
-                message.textContent = detail.message;
-            }
-            
-            if (button) {
-                button.disabled = true;
-                const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                const icon = 'fa-hourglass-half';
-                button.innerHTML = `<span class="spinner"></span><span class="btn-text"><i class="fas ${icon}"></i> Aguarde ${remaining}s</span>`;
-                button.classList.add('loading');
-            }
-        }
+                } catch (error) {
+                    console.error('Erro no upload:', error);
+                    window.App?.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
+                } finally {
+                    window.App?.hideLoading?.();
+                }
+            });
 
-        function hideRateLimitUI(type) {
-            const indicatorId = type === 'login' ? 'rateLimitIndicatorLogin' : 'rateLimitIndicatorRegister';
-            const btnId = type === 'login' ? 'loginBtn' : 'registerBtn';
-            
-            const indicator = document.getElementById(indicatorId);
-            const button = document.getElementById(btnId);
-            
-            if (indicator) indicator.classList.remove('show');
-            
-            if (button) {
-                button.disabled = false;
-                button.classList.remove('loading');
-                const originalText = type === 'login' ? 'Entrar no Sistema' : 'Criar Minha Conta';
-                const icon = type === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus';
-                button.querySelector('.btn-text').innerHTML = `<i class="fas ${icon}"></i> ${originalText}`;
+            // ===== ATUALIZA CRÉDITOS PERIODICAMENTE =====
+            function refreshCredits() {
+                updateCreditsDisplay();
             }
-            
-            const intervalKey = '_rateLimitTimer_' + type;
-            if (window[intervalKey]) {
-                clearInterval(window[intervalKey]);
-                window[intervalKey] = null;
+
+            // Escuta eventos de créditos
+            document.addEventListener('credits:updated', () => {
+                updateCreditsDisplay();
+            });
+
+            document.addEventListener('credits:loaded', () => {
+                updateCreditsDisplay();
+            });
+
+            // ===== INICIALIZAÇÃO =====
+            function init() {
+                // Configura Toastr
+                if (typeof toastr !== 'undefined') {
+                    toastr.options = {
+                        closeButton: true,
+                        progressBar: true,
+                        positionClass: "toast-top-right",
+                        timeOut: 5000,
+                        extendedTimeOut: 1000,
+                        escapeHtml: true
+                    };
+                }
+
+                // AOS
+                if (typeof AOS !== 'undefined') {
+                    AOS.init({
+                        once: true,
+                        duration: 800,
+                        offset: 50,
+                        easing: 'ease-in-out'
+                    });
+                }
+
+                // Atualiza créditos
+                setTimeout(updateCreditsDisplay, 500);
+                setInterval(refreshCredits, 30000);
+
+                console.log('✅ Upload area inicializada com sucesso!');
+                console.log(`📁 Máximo: ${MAX_FILES} arquivos, ${MAX_FILE_SIZE_KB} KB cada`);
             }
-        }
+
+            // Aguarda app.js estar pronto
+            document.addEventListener('app:ready', () => {
+                console.log('📢 app:ready recebido - inicializando upload');
+                setTimeout(init, 200);
+            });
+
+            // Fallback: se app:ready já tiver ocorrido
+            if (window._appReadyFired || (window.App?.isReady?.() === true)) {
+                console.log('✅ App já está pronto - inicializando upload');
+                setTimeout(init, 300);
+            }
+
+            // Inicializa com DOMContentLoaded
+            document.addEventListener('DOMContentLoaded', () => {
+                if (window._appReadyFired || window.App?.isReady?.()) {
+                    init();
+                }
+            });
+
+            // EXPÕE FUNÇÕES GLOBAIS
+            window.uploadFiles = {
+                addFiles,
+                removeFile,
+                clearFiles: () => { selectedFiles = []; updateFilePreview(); updateCreditsDisplay(); },
+                getFiles: () => [...selectedFiles],
+                getCount: () => selectedFiles.length,
+                MAX_FILES,
+                MAX_FILE_SIZE_KB,
+                CREDITS_PER_FILE
+            };
+
+            console.log('✅ upload-control.js carregado v7.3');
+            console.log('   📁 Arraste e solte arquivos CSV ou Excel');
+            console.log('   🔗 Sincronizado com app.js');
+
+        })();
     </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 LOG DE INICIALIZAÇÃO -->
-    <!-- ============================================== -->
-    <script>
-        console.log('✅ Login page v4.2 carregada com sucesso!');
-        console.log('   🔥 CORREÇÃO FINAL:');
-        console.log('   ✅ Redirecionamento para / (RAIZ) - FIM DO LOOP!');
-        console.log('   ✅ O index.html cuida do redirecionamento para /dashboard');
-        console.log('   ✅ Rate limit com UI dinâmica');
-        console.log('   ✅ Validação em tempo real dos campos');
-        console.log('   ✅ Força da senha com feedback visual');
-        console.log('   ✅ Confirmação de senha com validação');
-        console.log('   ✅ Dark mode (automático)');
-        console.log('   ✅ Performance otimizada (preconnect)');
-        console.log('   ✅ UI responsiva e acessível');
-        console.log('   ✅ Fallback inteligente para auth');
-        console.log('   ✅ Ordem correta: pow-client.js → auth.js → app.js');
-    </script>
-
 </body>
 </html>

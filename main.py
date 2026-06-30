@@ -680,7 +680,7 @@ try:
     from backend.preprocessing import pipeline as _pipeline, process_file_content as _process_file_content
     pipeline = _pipeline
     process_file_content = _process_file_content
-    print("   ✅ ML Pipeline carregado de backend.ml.preprocessing")
+    print("   ✅ ML Pipeline carregado de backend.preprocessing")
     if hasattr(pipeline, 'model_source'):
         print(f"      📊 Modelo: {pipeline.model_source}")
     print(f"      🔤 Encoding: automático (chardet)")
