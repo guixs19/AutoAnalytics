@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.2 (UPLOAD DESTAQUE E VISÍVEL) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.3 (UPLOAD OTIMIZADO E SINCRONIZADO) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -27,7 +27,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - SPA Mecânicos v7.2');
+            console.log('✅ AutoAnalytics - SPA Mecânicos v7.3');
         })();
     </script>
     
@@ -186,17 +186,17 @@
             margin-right: 0.5rem;
         }
 
-        /* 🔥 ÁREA DE UPLOAD - DESTAQUE E VISÍVEL */
+        /* 🔥 ÁREA DE UPLOAD - OTIMIZADA E VISÍVEL */
         .upload-area {
-            border: 3px dashed rgba(255, 107, 53, 0.4);
+            border: 2px dashed rgba(255, 107, 53, 0.35);
             border-radius: 20px;
-            padding: 3.5rem 2rem;
+            padding: 3rem 2rem;
             text-align: center;
             cursor: pointer;
-            transition: all 0.4s ease;
-            background: rgba(255, 107, 53, 0.06);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: rgba(255, 107, 53, 0.04);
             position: relative;
-            min-height: 250px;
+            min-height: 220px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -207,47 +207,52 @@
             position: absolute;
             inset: 0;
             border-radius: 20px;
-            background: radial-gradient(circle at center, rgba(255,107,53,0.05) 0%, transparent 70%);
+            background: radial-gradient(circle at center, rgba(255,107,53,0.04) 0%, transparent 70%);
             pointer-events: none;
+            transition: opacity 0.4s;
         }
         .upload-area:hover {
-            border-color: rgba(255, 107, 53, 0.8);
-            background: rgba(255, 107, 53, 0.12);
+            border-color: rgba(255, 107, 53, 0.7);
+            background: rgba(255, 107, 53, 0.08);
             transform: scale(1.01);
         }
         .upload-area.dragover {
             border-color: #48bb78;
-            background: rgba(72, 187, 120, 0.15);
+            background: rgba(72, 187, 120, 0.12);
             transform: scale(1.02);
-            box-shadow: 0 0 60px rgba(72, 187, 120, 0.15);
+            box-shadow: 0 0 50px rgba(72, 187, 120, 0.1);
         }
         .upload-area .upload-icon {
-            font-size: 4.5rem;
+            font-size: 3.8rem;
             color: #ff6b35;
-            margin-bottom: 1rem;
+            margin-bottom: 0.8rem;
             display: block;
             position: relative;
             z-index: 1;
+            transition: transform 0.4s;
+        }
+        .upload-area:hover .upload-icon {
+            transform: scale(1.05) rotate(-2deg);
         }
         .upload-area .upload-icon i {
             animation: float 3s ease-in-out infinite;
         }
         @keyframes float {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-12px); }
+            50% { transform: translateY(-10px); }
         }
         .upload-area h4 {
             color: white;
             font-weight: 700;
-            font-size: 1.4rem;
-            margin-bottom: 0.3rem;
+            font-size: 1.2rem;
+            margin-bottom: 0.2rem;
             position: relative;
             z-index: 1;
         }
         .upload-area p {
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 0.95rem;
-            margin-bottom: 1.2rem;
+            color: rgba(255, 255, 255, 0.45);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
             position: relative;
             z-index: 1;
         }
@@ -255,28 +260,28 @@
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.8rem 2.2rem;
+            padding: 0.7rem 2rem;
             border-radius: 50px;
             font-weight: 700;
-            font-size: 1rem;
+            font-size: 0.95rem;
             transition: all 0.3s;
             position: relative;
             z-index: 1;
-            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
+            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.25);
         }
         .upload-area .btn-select:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.5);
+            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.4);
             color: white;
         }
         .upload-area .file-hint {
-            margin-top: 1rem;
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.25);
+            margin-top: 0.8rem;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.2);
             position: relative;
             z-index: 1;
             display: flex;
-            gap: 1.5rem;
+            gap: 1.2rem;
             justify-content: center;
             flex-wrap: wrap;
         }
@@ -304,9 +309,106 @@
             color: white;
         }
         .btn-gradient:disabled {
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
             transform: none;
+        }
+
+        /* 🔥 FILE PREVIEW - ANIMADO */
+        .file-preview-container {
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0.5rem 0 1rem;
+        }
+        .file-preview-container::-webkit-scrollbar { width: 4px; }
+        .file-preview-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+        .file-preview-container::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 4px; }
+
+        .file-preview-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.6rem 1rem;
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            margin-bottom: 0.4rem;
+            animation: slideIn 0.3s ease-out;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.3s;
+        }
+        .file-preview-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .file-preview-item .file-info {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            flex: 1;
+            min-width: 0;
+        }
+        .file-preview-item .file-info i {
+            font-size: 1.4rem;
+            color: #48bb78;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-info .file-name {
+            color: rgba(255,255,255,0.85);
+            font-size: 0.85rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-preview-item .file-info .file-size {
+            color: rgba(255,255,255,0.3);
+            font-size: 0.7rem;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-remove {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.25);
+            cursor: pointer;
+            padding: 0.3rem 0.6rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+        .file-preview-item .file-remove:hover {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.15);
+        }
+
+        .file-preview-item .file-status {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            flex-shrink: 0;
+        }
+        .file-preview-item .file-status.ready {
+            color: #48bb78;
+            background: rgba(72, 187, 120, 0.15);
+        }
+        .file-preview-item .file-status.error {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.15);
+        }
+        .file-preview-item .file-status.loading {
+            color: #f5a623;
+            background: rgba(245, 166, 35, 0.15);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
         }
 
         .metric-card {
@@ -333,209 +435,83 @@
             letter-spacing: 0.5px;
         }
 
-        .feature-card {
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: 20px;
-            padding: 2rem 1.5rem;
-            text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: all 0.4s;
-            height: 100%;
-        }
-        .feature-card:hover {
-            transform: translateY(-8px);
-            background: rgba(255, 107, 53, 0.08);
-            border-color: rgba(255, 107, 53, 0.3);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-        }
-        .feature-card .feature-icon {
-            font-size: 3rem;
-            color: #ff6b35;
-            margin-bottom: 1rem;
-            display: block;
-        }
-        .feature-card h5 {
-            color: white;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        .feature-card p {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 0.9rem;
-            line-height: 1.6;
-        }
-
-        .benefit-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 1rem;
-            padding: 0.8rem;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.03);
-            transition: all 0.3s;
-            border-left: 3px solid transparent;
-        }
-        .benefit-item:hover {
-            background: rgba(255, 107, 53, 0.08);
-            border-left-color: #ff6b35;
-        }
-        .benefit-item .benefit-icon {
-            font-size: 1.5rem;
-            color: #ff6b35;
-            min-width: 2rem;
-            margin-top: 0.1rem;
-        }
-        .benefit-item .benefit-text h6 {
-            color: white;
-            font-weight: 600;
-            font-size: 0.95rem;
-            margin-bottom: 0.2rem;
-        }
-        .benefit-item .benefit-text p {
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 0.8rem;
-            margin: 0;
-        }
-
-        .limit-info {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            padding: 0.6rem 1rem;
-            margin-bottom: 1rem;
-            text-align: center;
-            font-size: 0.8rem;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            color: rgba(255, 255, 255, 0.7);
-        }
-        .limit-info .limit-value {
-            font-weight: 700;
-            color: #ff6b35;
-        }
-
-        /* ===== TIMELINE ===== */
-        .timeline {
-            position: relative;
-            padding-left: 1.5rem;
-            max-height: 350px;
-            overflow-y: auto;
-        }
-        .timeline::-webkit-scrollbar { width: 4px; }
-        .timeline::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
-        .timeline::-webkit-scrollbar-thumb { background: rgba(255, 107, 53, 0.4); border-radius: 4px; }
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: linear-gradient(180deg, #ff6b35 0%, #f7931e 100%);
-            border-radius: 2px;
-        }
-        .timeline-item {
-            position: relative;
-            padding-bottom: 1.2rem;
-        }
-        .timeline-item:last-child { padding-bottom: 0; }
-        .timeline-marker {
-            position: absolute;
-            left: -1.5rem;
-            top: 0.25rem;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #ff6b35;
-            border: 2px solid white;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.3);
-        }
-        .timeline-marker.bg-success {
-            background: #48bb78;
-            box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.3);
-        }
-        .timeline-content {
-            padding-left: 0.5rem;
-            color: rgba(255, 255, 255, 0.85);
-        }
-        .timeline-content strong { color: #ff6b35; }
-
-        .modal-content {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
-            border: 1px solid rgba(255, 107, 53, 0.3) !important;
-            color: white;
-        }
-        .modal-content .btn-close { filter: brightness(0) invert(1); }
-        .modal-content .alert-info {
-            background: rgba(255, 107, 53, 0.1) !important;
-            border-color: rgba(255, 107, 53, 0.2) !important;
-            color: rgba(255, 255, 255, 0.9) !important;
-        }
-        .modal-content .alert-info strong { color: #ff6b35 !important; }
-
-        .toast-success { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important; }
-        .toast-error { background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important; }
-        .toast-info { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important; }
-        .toast-warning { background: linear-gradient(135deg, #f5a623 0%, #cd7f32 100%) !important; }
-
-        .highlight-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-            padding: 0.2rem 0.8rem;
-            border-radius: 50px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* ===== FILE PREVIEW ===== */
-        .file-preview-item {
-            display: flex;
-            justify-content: space-between;
+        /* ===== LOADING OVERLAY ===== */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 12, 41, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 9999;
+            justify-content: center;
             align-items: center;
-            padding: 0.5rem 0.8rem;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            border-radius: 8px;
-            transition: background 0.2s;
+            flex-direction: column;
         }
-        .file-preview-item:hover {
-            background: rgba(255,255,255,0.03);
+        .loading-overlay.show {
+            display: flex;
         }
-        .file-preview-item .file-name {
-            color: rgba(255,255,255,0.8);
-            font-size: 0.85rem;
+        .loading-overlay .loading-container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 500px;
         }
-        .file-preview-item .file-name i {
-            color: #48bb78;
-            margin-right: 0.5rem;
+        .loading-overlay .loading-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: pulse 1.5s ease-in-out infinite;
         }
-        .file-preview-item .file-size {
+        .loading-overlay .loading-title {
+            color: #ff6b35;
+            font-weight: 800;
+            font-size: 1.5rem;
+        }
+        .loading-overlay .loading-subtitle {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.95rem;
+        }
+        .loading-overlay .loading-progress {
+            margin-top: 1.5rem;
+        }
+        .loading-overlay .progress {
+            height: 4px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .loading-overlay .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        .loading-overlay .loading-percent {
             color: rgba(255,255,255,0.3);
-            font-size: 0.7rem;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
         }
 
         @media (max-width: 992px) {
             .hero-section { padding: 90px 0 30px; }
-            .upload-area { padding: 2rem 1.5rem; }
-            .feature-card { padding: 1.5rem 1rem; }
+            .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
         }
         @media (max-width: 768px) {
             .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
             .brand-text { font-size: 1.1rem; }
             .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
             .user-name-display { font-size: 0.75rem; }
-            .upload-area .upload-icon { font-size: 3rem; }
+            .upload-area .upload-icon { font-size: 2.8rem; }
             .upload-area h4 { font-size: 1rem; }
             .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
             .metric-value { font-size: 1.5rem; }
-            .feature-card .feature-icon { font-size: 2.2rem; }
-            .upload-area { min-height: 180px; padding: 1.5rem; }
+            .upload-area { min-height: 160px; padding: 1.5rem; }
         }
         @media (max-width: 480px) {
             .hero-section { padding: 80px 0 20px; }
             .glass-card { padding: 1rem; }
-            .upload-area { padding: 1rem; min-height: 150px; }
-            .upload-area .upload-icon { font-size: 2.5rem; }
+            .upload-area { padding: 1rem; min-height: 140px; }
+            .upload-area .upload-icon { font-size: 2.2rem; }
+            .upload-area h4 { font-size: 0.9rem; }
+            .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
         }
     </style>
 </head>
@@ -583,34 +559,18 @@
     <!-- ============================================== -->
     <!-- 🔥 LOADING OVERLAY -->
     <!-- ============================================== -->
-    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+    <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-container text-center">
             <div class="loading-icon">
-                <i class="fas fa-robot" style="color: #ff6b35; font-size: 4rem; animation: pulse 1.5s ease-in-out infinite;"></i>
+                <i class="fas fa-robot"></i>
             </div>
-            <h3 class="loading-title" id="loadingTitle" style="color: #ff6b35; font-weight: 800;">Preparando sua análise</h3>
-            <p class="loading-subtitle" id="loadingSubtitle" style="color: rgba(255,255,255,0.6);">A IA está analisando seus dados</p>
-            
-            <div class="loading-steps d-flex justify-content-center gap-4 my-4">
-                <div class="loading-step active" data-step="0">
-                    <span class="step-icon" style="font-size: 1.8rem;">📊</span>
-                    <span class="step-label" style="font-size: 0.7rem; color: rgba(255,255,255,0.5);">ML</span>
-                </div>
-                <div class="loading-step" data-step="1">
-                    <span class="step-icon" style="font-size: 1.8rem;">🤖</span>
-                    <span class="step-label" style="font-size: 0.7rem; color: rgba(255,255,255,0.5);">IA</span>
-                </div>
-                <div class="loading-step" data-step="2">
-                    <span class="step-icon" style="font-size: 1.8rem;">📈</span>
-                    <span class="step-label" style="font-size: 0.7rem; color: rgba(255,255,255,0.5);">Dashboard</span>
-                </div>
-            </div>
-            
+            <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
+            <p class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</p>
             <div class="loading-progress">
-                <div class="progress" style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 10px;">
-                    <div class="progress-bar" id="loadingProgressBar" style="width: 0%; background: linear-gradient(90deg, #ff6b35, #f7931e);"></div>
+                <div class="progress">
+                    <div class="progress-bar" id="loadingProgressBar" style="width: 0%;"></div>
                 </div>
-                <div class="loading-percent" id="loadingPercent" style="color: rgba(255,255,255,0.4); font-size: 0.8rem; margin-top: 0.5rem;">0%</div>
+                <div class="loading-percent" id="loadingPercent">0%</div>
             </div>
         </div>
     </div>
@@ -624,7 +584,7 @@
             <!-- ===== INTRO ===== -->
             <div class="row mb-4">
                 <div class="col-12 text-center" data-aos="fade-down">
-                    <span class="highlight-badge mb-2">
+                    <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
                         <i class="fas fa-robot me-1"></i> Inteligência Artificial para Mecânicos
                     </span>
                     <h1 class="display-4 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
@@ -686,7 +646,7 @@
                 <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- 🔥 UPLOAD - DIV VISÍVEL E FUNCIONAL -->
+                        <!-- 🔥 UPLOAD - ÁREA PRINCIPAL -->
                         <div class="col-12">
                             <div class="glass-card" data-aos="fade-left" data-aos-duration="800">
                                 <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
@@ -699,22 +659,22 @@
                                     </span>
                                 </div>
                                 
-                                <div class="limit-info">
+                                <div class="limit-info" style="background:rgba(0,0,0,0.2); border-radius:12px; padding:0.5rem 1rem; margin-bottom:1rem; text-align:center; font-size:0.75rem; border:1px solid rgba(255,255,255,0.05); color:rgba(255,255,255,0.6);">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
-                                        <span><i class="fas fa-hard-drive"></i> <strong class="limit-value">200 KB</strong>/arquivo</span>
-                                        <span><i class="fas fa-layer-group"></i> <strong class="limit-value">3</strong> arquivos/vez</span>
-                                        <span><i class="fas fa-coins"></i> <strong class="limit-value">1</strong> crédito/arquivo</span>
+                                        <span><i class="fas fa-hard-drive"></i> <strong style="color:#ff6b35;">200 KB</strong>/arquivo</span>
+                                        <span><i class="fas fa-layer-group"></i> <strong style="color:#ff6b35;">3</strong> arquivos/vez</span>
+                                        <span><i class="fas fa-coins"></i> <strong style="color:#ff6b35;">1</strong> crédito/arquivo</span>
                                     </div>
                                 </div>
                                 
                                 <form id="uploadForm">
-                                    <!-- 🔥 ÁREA DE DRAG & DROP - VISÍVEL E DESTACADA -->
-                                    <div class="upload-area mb-3" id="dropArea">
+                                    <!-- 🔥 ÁREA DE DRAG & DROP -->
+                                    <div class="upload-area" id="dropArea">
                                         <span class="upload-icon">
                                             <i class="fas fa-file-excel"></i>
                                         </span>
                                         <h4>📁 Arraste seus arquivos aqui</h4>
-                                        <p class="small">Suporte para arquivos <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
+                                        <p class="small">Suporte para <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
                                         <div>
                                             <label for="fileInput" class="btn-select">
                                                 <i class="fas fa-folder-open me-2"></i> Selecionar Arquivos
@@ -729,13 +689,13 @@
                                     </div>
                                     
                                     <!-- PREVIEW DOS ARQUIVOS -->
-                                    <div id="filePreviewContainer" class="mt-2"></div>
+                                    <div class="file-preview-container" id="filePreviewContainer"></div>
                                     
                                     <div class="d-grid">
                                         <button type="submit" id="uploadButton" class="btn-gradient w-100" disabled>
                                             <i class="fas fa-play-circle me-2"></i>
                                             Iniciar Análise
-                                            <span class="badge ms-2" style="background: rgba(255,255,255,0.2); color: white;">1 crédito/arquivo</span>
+                                            <span class="badge ms-2" style="background: rgba(255,255,255,0.15); color: white; font-size:0.6rem;">1 crédito/arquivo</span>
                                         </button>
                                     </div>
                                 </form>
@@ -764,119 +724,6 @@
                 
             </div>
 
-            <!-- ===== SEÇÃO "COMO FUNCIONA" ===== -->
-            <div class="row mt-5 g-4">
-                <div class="col-12 text-center mb-3" data-aos="fade-up">
-                    <h2 class="fw-bold" style="color: white;">
-                        <i class="fas fa-gem me-2" style="color: #ff6b35;"></i>
-                        Como a AutoAnalytics transforma sua oficina
-                    </h2>
-                    <p style="color: rgba(255,255,255,0.4); max-width: 600px; margin: 0 auto;">
-                        Descubra como a Inteligência Artificial pode revolucionar seu negócio
-                    </p>
-                </div>
-
-                <div class="col-md-4" data-aos="fade-up" data-aos-delay="100">
-                    <div class="feature-card">
-                        <span class="feature-icon">📊</span>
-                        <h5>Análise de Dados</h5>
-                        <p>Envie seus arquivos CSV ou Excel e nossa IA analisa padrões, identifica tendências e gera insights valiosos para sua oficina.</p>
-                        <div class="mt-2">
-                            <span class="badge" style="background: rgba(255,107,53,0.2); color: #ff6b35;">ML + IA</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-md-4" data-aos="fade-up" data-aos-delay="200">
-                    <div class="feature-card">
-                        <span class="feature-icon">🔧</span>
-                        <h5>Diagnóstico Inteligente</h5>
-                        <p>Preveja falhas, otimize estoque e identifique oportunidades de economia com nossa IA treinada especificamente para o setor automotivo.</p>
-                        <div class="mt-2">
-                            <span class="badge" style="background: rgba(72,187,120,0.2); color: #48bb78;">✅ Precisão</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">
-                    <div class="feature-card">
-                        <span class="feature-icon">📈</span>
-                        <h5>Relatórios Automáticos</h5>
-                        <p>Receba relatórios completos em PDF com métricas, gráficos e recomendações para tomar decisões estratégicas baseadas em dados.</p>
-                        <div class="mt-2">
-                            <span class="badge" style="background: rgba(255,107,53,0.2); color: #ff6b35;">📄 PDF</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ===== BENEFÍCIOS ===== -->
-            <div class="row mt-4 g-3">
-                <div class="col-12" data-aos="fade-up" data-aos-delay="100">
-                    <div class="glass-card">
-                        <h5 class="card-title mb-3">
-                            <i class="fas fa-medal"></i> O que você ganha usando AutoAnalytics
-                        </h5>
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">💰</span>
-                                    <div class="benefit-text">
-                                        <h6>Mais lucro</h6>
-                                        <p>Identifique gargalos e oportunidades de faturamento</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">⏱️</span>
-                                    <div class="benefit-text">
-                                        <h6>Economia de tempo</h6>
-                                        <p>Análises automáticas em segundos, não horas</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">🎯</span>
-                                    <div class="benefit-text">
-                                        <h6>Decisões precisas</h6>
-                                        <p>Dados concretos para embasar suas escolhas</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">📊</span>
-                                    <div class="benefit-text">
-                                        <h6>Visão estratégica</h6>
-                                        <p>Enxergue tendências antes da concorrência</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">🤖</span>
-                                    <div class="benefit-text">
-                                        <h6>IA especializada</h6>
-                                        <p>Modelo treinado para o setor automotivo</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="benefit-item">
-                                    <span class="benefit-icon">🔒</span>
-                                    <div class="benefit-text">
-                                        <h6>Segurança total</h6>
-                                        <p>Seus dados protegidos com criptografia avançada</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- ===== HISTÓRICO ===== -->
             <div class="row mt-4">
                 <div class="col-12">
@@ -885,10 +732,10 @@
                             <i class="fas fa-history me-2" style="color: #ff6b35;"></i>
                             <h5 class="card-title mb-0">Seu histórico de análises</h5>
                         </div>
-                        <div class="timeline" id="recentAnalyses">
-                            <div class="timeline-item">
-                                <div class="timeline-marker"></div>
-                                <div class="timeline-content">
+                        <div class="timeline" id="recentAnalyses" style="position:relative; padding-left:1.5rem; max-height:250px; overflow-y:auto;">
+                            <div class="timeline-item" style="position:relative; padding-bottom:1.2rem;">
+                                <div class="timeline-marker" style="position:absolute; left:-1.5rem; top:0.25rem; width:12px; height:12px; border-radius:50%; background:#ff6b35; border:2px solid white; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
+                                <div class="timeline-content" style="padding-left:0.5rem; color:rgba(255,255,255,0.85);">
                                     <p class="mb-1 small">Carregando histórico...</p>
                                     <small style="color: rgba(255,255,255,0.3);">Aguarde</small>
                                 </div>
@@ -906,9 +753,9 @@
             <!-- ===== RODAPÉ ===== -->
             <div class="row mt-5">
                 <div class="col-12 text-center">
-                    <p style="color: rgba(255,255,255,0.15); font-size: 0.7rem;">
+                    <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.2 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.3 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -927,19 +774,19 @@
     <!-- ============================================== -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
                 <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <h5 class="modal-title">
                         <i class="fas fa-coins me-2" style="color: #ff6b35;"></i>
                         Meus Créditos
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body text-center py-4">
                     <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
                     <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
                     <p class="text-muted mb-3" style="color: rgba(255,255,255,0.5);">créditos disponíveis</p>
-                    <div class="alert alert-info small">
+                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.15) !important; color:rgba(255,255,255,0.85) !important;">
                         <i class="fas fa-info-circle me-2"></i>
                         <strong style="color: #ff6b35;">Como funcionam:</strong><br>
                         • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
@@ -963,13 +810,13 @@
     <!-- ============================================== -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
                 <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <h5 class="modal-title">
                         <i class="fas fa-chart-line me-2" style="color: #ff6b35;"></i>
                         GPSA - Impacto no Negócio
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body" id="gpsaModalBody">
                     <div class="text-center py-5">
@@ -987,10 +834,10 @@
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ JQUERY - PRIMEIRO (OBRIGATÓRIO PARA TOASTR E BOOTSTRAP) -->
+    <!-- 1️⃣ JQUERY - PRIMEIRO -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
-    <!-- 2️⃣ TOASTR - DEPOIS DO JQUERY -->
+    <!-- 2️⃣ TOASTR -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
     <!-- 3️⃣ BOOTSTRAP -->
@@ -1008,7 +855,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS - VERSÕES CORRETAS -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ POW - v3.3 -->
@@ -1027,164 +874,331 @@
     <script src="/static/js/payment.js?ver=2.4.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO -->
+    <!-- 🔥 INICIALIZAÇÃO E CONTROLE DO UPLOAD -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.2');
+            console.log('🚀 AutoAnalytics Mecânicos v7.3');
 
-            if (typeof toastr !== 'undefined') {
-                toastr.options = {
-                    closeButton: true,
-                    progressBar: true,
-                    positionClass: "toast-top-right",
-                    timeOut: 5000,
-                    extendedTimeOut: 1000,
-                    escapeHtml: true
-                };
+            // ===== CONFIG =====
+            const MAX_FILES = 3;
+            const MAX_FILE_SIZE_KB = 200;
+            const CREDITS_PER_FILE = 1;
+
+            // ===== ESTADO LOCAL =====
+            let selectedFiles = [];
+
+            // ===== ELEMENTOS DOM =====
+            const dropArea = document.getElementById('dropArea');
+            const fileInput = document.getElementById('fileInput');
+            const filePreview = document.getElementById('filePreviewContainer');
+            const uploadBtn = document.getElementById('uploadButton');
+            const uploadForm = document.getElementById('uploadForm');
+
+            // ===== FUNÇÃO PARA FORMATAR TAMANHO =====
+            function formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+                return (bytes / 1048576).toFixed(1) + ' MB';
             }
 
-            if (typeof AOS !== 'undefined') {
-                AOS.init({
-                    once: true,
-                    duration: 800,
-                    offset: 50,
-                    easing: 'ease-in-out'
-                });
+            // ===== FUNÇÃO PARA VALIDAR ARQUIVO =====
+            function validateFile(file) {
+                const errors = [];
+                
+                // Extensão permitida
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+                    errors.push('Formato não suportado. Use CSV, XLSX ou XLS.');
+                }
+                
+                // Tamanho máximo
+                if (file.size > MAX_FILE_SIZE_KB * 1024) {
+                    errors.push(`Arquivo excede ${MAX_FILE_SIZE_KB} KB.`);
+                }
+                
+                return { valid: errors.length === 0, errors };
             }
 
-            if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                gsap.registerPlugin(ScrollTrigger);
-                gsap.from('.glass-card', {
-                    scrollTrigger: {
-                        trigger: '.glass-card',
-                        start: 'top 95%',
-                        toggleActions: 'play none none reverse'
-                    },
-                    duration: 0.8,
-                    y: 40,
-                    opacity: 0,
-                    stagger: 0.1,
-                    ease: 'power3.out'
-                });
-
-                gsap.from('.feature-card', {
-                    scrollTrigger: {
-                        trigger: '.feature-card',
-                        start: 'top 95%',
-                        toggleActions: 'play none none reverse'
-                    },
-                    duration: 0.8,
-                    y: 30,
-                    opacity: 0,
-                    stagger: 0.15,
-                    ease: 'power3.out'
-                });
-
-                gsap.from('.upload-area', {
-                    scrollTrigger: {
-                        trigger: '.upload-area',
-                        start: 'top 95%',
-                        toggleActions: 'play none none reverse'
-                    },
-                    duration: 0.8,
-                    scale: 0.95,
-                    opacity: 0,
-                    ease: 'back.out(1.7)'
-                });
-            }
-
-            function isAppReady() {
-                if (typeof window.App === 'undefined' || window.App === null) return false;
-                if (typeof window.App.isReady === 'function') return window.App.isReady();
-                if (typeof window.App.isInitialized === 'function') return window.App.isInitialized();
-                return !!window._appReadyFired;
-            }
-
-            function initializeApp() {
-                if (window._appInitialized) {
-                    console.log('⚠️ App já inicializado');
+            // ===== FUNÇÃO PARA ATUALIZAR PREVIEW =====
+            function updateFilePreview() {
+                if (selectedFiles.length === 0) {
+                    filePreview.innerHTML = '';
+                    uploadBtn.disabled = true;
                     return;
                 }
 
-                console.log('🚀 Inicializando App...');
-                window._appInitialized = true;
-
-                if (isAppReady()) {
-                    console.log('✅ App já está pronto');
-                    return;
-                }
-
-                document.addEventListener('app:ready', function(event) {
-                    console.log('📢 Evento app:ready recebido');
-                    if (!window._dashboardInitialized) {
-                        console.log('🚀 Dashboard será inicializado pelo dashboard.js');
-                    }
+                let html = '';
+                selectedFiles.forEach((file, index) => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    let icon = 'fa-file-excel';
+                    if (ext === 'csv') icon = 'fa-file-csv';
+                    
+                    html += `
+                        <div class="file-preview-item" data-index="${index}">
+                            <div class="file-info">
+                                <i class="fas ${icon}"></i>
+                                <span class="file-name" title="${file.name}">${file.name}</span>
+                                <span class="file-size">${formatFileSize(file.size)}</span>
+                            </div>
+                            <button type="button" class="file-remove" data-index="${index}" title="Remover arquivo">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
                 });
+                
+                filePreview.innerHTML = html;
+                uploadBtn.disabled = false;
 
-                setTimeout(function() {
-                    if (!window._appReadyFired && !window._dashboardInitialized) {
-                        console.warn('⚠️ Fallback: App não respondeu, verificando novamente...');
-                        if (isAppReady()) {
-                            console.log('✅ App detectado como pronto (fallback)');
-                            window.dispatchEvent(new CustomEvent('app:ready', {
-                                detail: { isReady: true, fromFallback: true }
-                            }));
-                        }
-                    }
-                }, 5000);
-
-                console.log('✅ AutoAnalytics Mecânicos v7.2 pronto!');
+                // Eventos de remoção
+                document.querySelectorAll('.file-remove').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const idx = parseInt(this.dataset.index);
+                        removeFile(idx);
+                    });
+                });
             }
 
-            document.addEventListener('DOMContentLoaded', function() {
-                console.log('📄 DOM carregado');
-                initializeApp();
+            // ===== FUNÇÃO PARA ADICIONAR ARQUIVOS =====
+            function addFiles(files) {
+                let added = 0;
+                let errors = [];
 
-                function updatePowStatusOnce() {
-                    try {
-                        const powStatusEl = document.getElementById('powStatus');
-                        const powTextEl = document.getElementById('powStatusText');
-                        if (!powStatusEl || !powTextEl) return;
-                        
-                        let stats = null;
-                        if (window.App && typeof window.App.getPowStats === 'function') {
-                            stats = window.App.getPowStats();
-                        } else if (window.powClient && typeof window.powClient.getStats === 'function') {
-                            stats = window.powClient.getStats();
-                        }
-                        
-                        if (stats && stats.available !== false) {
-                            const solutionsReady = stats.solutionsReady || 0;
-                            const maxStock = stats.maxStock || 2;
-                            
-                            if (solutionsReady > 0) {
-                                powStatusEl.className = 'pow-status';
-                                powTextEl.textContent = `${solutionsReady}/${maxStock} PoW`;
-                            } else {
-                                powStatusEl.className = 'pow-status loading';
-                                powTextEl.textContent = '⚡ Pronto';
-                            }
-                        } else {
-                            powStatusEl.className = 'pow-status error';
-                            powTextEl.textContent = 'Indisponível';
-                        }
-                    } catch (e) {
-                        // Ignora
+                for (const file of files) {
+                    if (selectedFiles.length >= MAX_FILES) {
+                        errors.push(`Limite de ${MAX_FILES} arquivos atingido.`);
+                        break;
                     }
+
+                    const validation = validateFile(file);
+                    if (!validation.valid) {
+                        errors.push(`${file.name}: ${validation.errors.join(' ')}`);
+                        continue;
+                    }
+
+                    selectedFiles.push(file);
+                    added++;
                 }
 
-                setTimeout(updatePowStatusOnce, 1500);
+                updateFilePreview();
+
+                if (added > 0) {
+                    window.App?.showNotification?.(`${added} arquivo(s) adicionado(s)`, 'info');
+                }
+
+                if (errors.length > 0) {
+                    window.App?.showNotification?.(errors.join(' | '), 'warning');
+                }
+
+                // Atualiza créditos
+                updateCreditsDisplay();
+            }
+
+            // ===== FUNÇÃO PARA REMOVER ARQUIVO =====
+            function removeFile(index) {
+                if (index >= 0 && index < selectedFiles.length) {
+                    selectedFiles.splice(index, 1);
+                    updateFilePreview();
+                    updateCreditsDisplay();
+                    
+                    if (selectedFiles.length === 0) {
+                        window.App?.showNotification?.('Todos os arquivos removidos', 'info');
+                    }
+                }
+            }
+
+            // ===== FUNÇÃO PARA ATUALIZAR EXIBIÇÃO DE CRÉDITOS =====
+            function updateCreditsDisplay() {
+                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                const creditEls = document.querySelectorAll('#uploadCredits, #creditsCount');
+                const creditsAvailable = window.App?.getCredits?.() || 0;
+                
+                creditEls.forEach(el => {
+                    if (el) el.textContent = creditsAvailable;
+                });
+
+                // Atualiza badge de créditos no botão
+                const badge = uploadBtn.querySelector('.badge');
+                if (badge) {
+                    badge.textContent = `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''}`;
+                }
+
+                // Verifica se tem créditos suficientes
+                const hasCredits = creditsNeeded > 0 && creditsAvailable >= creditsNeeded;
+                uploadBtn.disabled = !hasCredits || selectedFiles.length === 0;
+            }
+
+            // ===== EVENTOS DE DRAG & DROP =====
+            dropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropArea.classList.add('dragover');
             });
 
-            window.isAppReady = isAppReady;
-            window.initializeApp = initializeApp;
+            dropArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+            });
 
-            console.log('✅ AutoAnalytics v7.2 - Mecânicos carregado!');
-            console.log('🔧 IA para otimizar sua oficina');
-            console.log('📊 Arraste arquivos e veja a mágica acontecer!');
+            dropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    addFiles(files);
+                }
+            });
+
+            // Clique na área abre o seletor
+            dropArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // Seletor de arquivos
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    addFiles(e.target.files);
+                }
+                fileInput.value = '';
+            });
+
+            // ===== SUBMISSÃO DO FORMULÁRIO =====
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (selectedFiles.length === 0) {
+                    window.App?.showNotification?.('Nenhum arquivo selecionado.', 'warning');
+                    return;
+                }
+
+                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                const creditsAvailable = window.App?.getCredits?.() || 0;
+
+                if (creditsAvailable < creditsNeeded) {
+                    window.App?.showNotification?.(
+                        `Créditos insuficientes. Você tem ${creditsAvailable}, precisa de ${creditsNeeded}.`,
+                        'error'
+                    );
+                    return;
+                }
+
+                // Prepara os arquivos para upload
+                const filesToUpload = [...selectedFiles];
+                const formData = new FormData();
+                filesToUpload.forEach(file => formData.append('files', file));
+
+                // Mostra loading
+                window.App?.showLoading?.('Enviando arquivos...', 'A IA está processando seus dados');
+                
+                try {
+                    // Usa o método de upload com PoW do app.js
+                    const result = await window.App?.uploadWithPow?.(filesToUpload, '/api/upload-auto');
+                    
+                    if (result) {
+                        window.App?.showNotification?.('✅ Arquivos enviados com sucesso!', 'success');
+                        
+                        // Limpa a lista
+                        selectedFiles = [];
+                        updateFilePreview();
+                        updateCreditsDisplay();
+                        
+                        // Dispara evento para dashboard.js atualizar
+                        window.dispatchEvent(new CustomEvent('analysis:uploaded', { detail: { result } }));
+                    } else {
+                        window.App?.showNotification?.('Erro ao enviar arquivos.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Erro no upload:', error);
+                    window.App?.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
+                } finally {
+                    window.App?.hideLoading?.();
+                }
+            });
+
+            // ===== ATUALIZA CRÉDITOS PERIODICAMENTE =====
+            function refreshCredits() {
+                updateCreditsDisplay();
+            }
+
+            // Escuta eventos de créditos
+            document.addEventListener('credits:updated', () => {
+                updateCreditsDisplay();
+            });
+
+            document.addEventListener('credits:loaded', () => {
+                updateCreditsDisplay();
+            });
+
+            // ===== INICIALIZAÇÃO =====
+            function init() {
+                // Configura Toastr
+                if (typeof toastr !== 'undefined') {
+                    toastr.options = {
+                        closeButton: true,
+                        progressBar: true,
+                        positionClass: "toast-top-right",
+                        timeOut: 5000,
+                        extendedTimeOut: 1000,
+                        escapeHtml: true
+                    };
+                }
+
+                // AOS
+                if (typeof AOS !== 'undefined') {
+                    AOS.init({
+                        once: true,
+                        duration: 800,
+                        offset: 50,
+                        easing: 'ease-in-out'
+                    });
+                }
+
+                // Atualiza créditos
+                setTimeout(updateCreditsDisplay, 500);
+                setInterval(refreshCredits, 30000);
+
+                console.log('✅ Upload area inicializada com sucesso!');
+                console.log(`📁 Máximo: ${MAX_FILES} arquivos, ${MAX_FILE_SIZE_KB} KB cada`);
+            }
+
+            // Aguarda app.js estar pronto
+            document.addEventListener('app:ready', () => {
+                console.log('📢 app:ready recebido - inicializando upload');
+                setTimeout(init, 200);
+            });
+
+            // Fallback: se app:ready já tiver ocorrido
+            if (window._appReadyFired || (window.App?.isReady?.() === true)) {
+                console.log('✅ App já está pronto - inicializando upload');
+                setTimeout(init, 300);
+            }
+
+            // Inicializa com DOMContentLoaded
+            document.addEventListener('DOMContentLoaded', () => {
+                if (window._appReadyFired || window.App?.isReady?.()) {
+                    init();
+                }
+            });
+
+            // EXPÕE FUNÇÕES GLOBAIS
+            window.uploadFiles = {
+                addFiles,
+                removeFile,
+                clearFiles: () => { selectedFiles = []; updateFilePreview(); updateCreditsDisplay(); },
+                getFiles: () => [...selectedFiles],
+                getCount: () => selectedFiles.length,
+                MAX_FILES,
+                MAX_FILE_SIZE_KB,
+                CREDITS_PER_FILE
+            };
+
+            console.log('✅ upload-control.js carregado v7.3');
+            console.log('   📁 Arraste e solte arquivos CSV ou Excel');
+            console.log('   🔗 Sincronizado com app.js');
 
         })();
     </script>
