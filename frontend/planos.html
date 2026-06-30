@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.2');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.3');
         })();
     </script>
     
@@ -250,7 +250,6 @@
         /* 🔥 ESTILOS DO PLANO - RENDERIZADO PELO payment.js */
         /* ============================================== */
         
-        /* O payment.js renderiza com classes específicas */
         .bronze-card {
             background: linear-gradient(145deg, rgba(44, 26, 10, 0.95) 0%, rgba(61, 38, 20, 0.95) 100%);
             border-radius: 40px;
@@ -1134,7 +1133,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.2 - Planos e Suporte
+                        AutoAnalytics v2.3 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1149,7 +1148,7 @@
     </section>
 
     <!-- ============================================== -->
-    <!-- 🔥 MODAL DE CRÉDITOS -->
+    <!-- 🔥 MODAL DE CRÉDITOS (APENAS ESTE PERMANECE) -->
     <!-- ============================================== -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
@@ -1185,58 +1184,6 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 MODAL PIX -->
-    <!-- ============================================== -->
-    <div class="modal fade" id="pixModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(205,127,50,0.3) !important; color:white;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h5 class="modal-title">
-                        <i class="fas fa-qrcode me-2" style="color:#f5a623;"></i> Pagamento via PIX
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
-                </div>
-                <div class="modal-body text-center py-4" id="pixContent"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============================================== -->
-    <!-- 🔥 MODAL CPF -->
-    <!-- ============================================== -->
-    <div class="modal fade" id="cpfModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(205,127,50,0.3) !important; color:white;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h5 class="modal-title" style="color:#f5a623;">
-                        <i class="fas fa-id-card me-2"></i> Confirme seu CPF
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
-                </div>
-                <div class="modal-body">
-                    <p style="color:rgba(255,255,255,0.6); margin-bottom: 1rem;">
-                        <i class="fas fa-shield-alt me-2" style="color:#f5a623;"></i>
-                        O CPF é obrigatório para geração do PIX e protege sua compra.
-                    </p>
-                    <div class="mb-3">
-                        <label class="form-label" style="color:rgba(255,255,255,0.7);">CPF</label>
-                        <input type="text" class="form-control form-control-lg" id="cpfInput" 
-                               placeholder="000.000.000-00" maxlength="14" autocomplete="off"
-                               style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); color:white; border-radius:12px;">
-                    </div>
-                    <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
-                </div>
-                <div class="modal-footer border-0" style="border-top:1px solid rgba(255,255,255,0.06);">
-                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-bronze" id="confirmCpfBtn">
-                        <i class="fas fa-arrow-right me-2"></i> Continuar para PIX
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============================================== -->
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
@@ -1265,7 +1212,7 @@
     <!-- 3️⃣ APP - v5.6 -->
     <script src="/static/js/app.js?ver=5.6.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.4 -->
+    <!-- 4️⃣ PAYMENT - v2.4 (GERENCIA CPF E PIX DINAMICAMENTE) -->
     <script src="/static/js/payment.js?ver=2.4.0"></script>
 
     <!-- ============================================== -->
@@ -1275,7 +1222,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.2');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.3');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1441,17 +1388,12 @@
                 // ==============================================
                 // 🔥 CARREGAR PLANO VIA payment.js
                 // ==============================================
-                // O payment.js já tem um listener para DOMContentLoaded
-                // que chama loadPlans() se estiver na página de planos
-                
-                // Mas garantimos que o plano seja carregado
                 setTimeout(() => {
                     if (typeof window.loadPlans === 'function') {
                         console.log('📦 Carregando plano via payment.js...');
                         window.loadPlans();
                     } else {
                         console.warn('⚠️ window.loadPlans não disponível - aguardando payment.js');
-                        // Tenta novamente após 2 segundos
                         setTimeout(() => {
                             if (typeof window.loadPlans === 'function') {
                                 window.loadPlans();
@@ -1473,78 +1415,6 @@
                         window.loadPremiumStatus();
                     }
                 }, 500);
-
-                // ==============================================
-                // 🔥 MÁSCARA DE CPF
-                // ==============================================
-                const cpfInput = document.getElementById('cpfInput');
-                if (cpfInput) {
-                    cpfInput.addEventListener('input', function() {
-                        let value = this.value.replace(/\D/g, '');
-                        if (value.length > 11) value = value.slice(0, 11);
-                        
-                        let formatted = '';
-                        if (value.length <= 3) {
-                            formatted = value;
-                        } else if (value.length <= 6) {
-                            formatted = value.slice(0, 3) + '.' + value.slice(3);
-                        } else if (value.length <= 9) {
-                            formatted = value.slice(0, 3) + '.' + value.slice(3, 6) + '.' + value.slice(6);
-                        } else {
-                            formatted = value.slice(0, 3) + '.' + value.slice(3, 6) + '.' + value.slice(6, 9) + '-' + value.slice(9, 11);
-                        }
-                        this.value = formatted;
-                    });
-                }
-
-                // ==============================================
-                // 🔥 CONFIRMAR CPF
-                // ==============================================
-                const confirmCpfBtn = document.getElementById('confirmCpfBtn');
-                if (confirmCpfBtn) {
-                    confirmCpfBtn.addEventListener('click', function() {
-                        const cpfInput = document.getElementById('cpfInput');
-                        const cpf = cpfInput.value.replace(/\D/g, '');
-                        const errorEl = document.getElementById('cpfError');
-                        
-                        if (cpf.length !== 11) {
-                            errorEl.classList.remove('d-none');
-                            errorEl.textContent = 'CPF inválido. Digite 11 números.';
-                            return;
-                        }
-                        
-                        errorEl.classList.add('d-none');
-                        
-                        // Fechar modal CPF
-                        const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
-                        if (cpfModal) cpfModal.hide();
-                        
-                        // Abrir modal PIX
-                        if (typeof window.payment !== 'undefined' && window.payment.showPix) {
-                            window.payment.showPix(cpf);
-                        } else if (typeof window.showPixModalSecure === 'function') {
-                            // Fallback usando função do payment.js
-                            const paymentId = document.getElementById('pixPaymentId')?.value || 'pending';
-                            window.showPixModalSecure(paymentId, { amount: 97.00 });
-                        } else {
-                            // Fallback manual
-                            const pixModal = new bootstrap.Modal(document.getElementById('pixModal'));
-                            const pixContent = document.getElementById('pixContent');
-                            pixContent.innerHTML = `
-                                <div class="text-center py-4">
-                                    <i class="fas fa-qrcode fa-5x mb-3" style="color:#f5a623;"></i>
-                                    <h5 class="fw-bold" style="color:white;">PIX Gerado!</h5>
-                                    <p style="color:rgba(255,255,255,0.6);">Chave: <strong style="color:#f5a623;">autonalytics@gmail.com</strong></p>
-                                    <p style="color:rgba(255,255,255,0.4); font-size:0.8rem;">Valor: <strong style="color:#f5a623;">R$ 97,00</strong></p>
-                                    <button class="btn btn-bronze mt-3" onclick="navigator.clipboard.writeText('autonalytics@gmail.com')">
-                                        <i class="fas fa-copy me-2"></i> Copiar Chave PIX
-                                    </button>
-                                </div>
-                            `;
-                            pixModal.show();
-                        }
-                    });
-                }
 
                 // ==============================================
                 // 🔥 INICIALIZAR POW STATUS
@@ -1583,11 +1453,12 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.2 carregado com sucesso!');
+                console.log('✅ planos.html v2.3 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
                 console.log('   📦 Plano renderizado pelo payment.js');
                 console.log('   🔄 Sincronizado com app.js e auth.js');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
+                console.log('   🗑️ Modais CPF e PIX removidos (gerenciados pelo payment.js)');
             });
 
         })();
