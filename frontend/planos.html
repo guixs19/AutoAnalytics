@@ -26,14 +26,14 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.3');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.4');
         })();
     </script>
     
     <!-- ============================================== -->
     <!-- 🔥 BIBLIOTECAS -->
     <!-- ============================================== -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
@@ -1133,7 +1133,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.3 - Planos e Suporte
+                        AutoAnalytics v2.4 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1184,16 +1184,16 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS -->
+    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ JQUERY -->
+    <!-- 1️⃣ JQUERY (obrigatório para Toastr) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <!-- 2️⃣ TOASTR -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
-    <!-- 3️⃣ BOOTSTRAP -->
+    <!-- 3️⃣ BOOTSTRAP - versão 5.3.2 consistente -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- 4️⃣ AOS -->
@@ -1209,11 +1209,11 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v5.6 -->
+    <!-- 3️⃣ APP - v5.6 (ORQUESTRADOR CENTRAL) -->
     <script src="/static/js/app.js?ver=5.6.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.4 (GERENCIA CPF E PIX DINAMICAMENTE) -->
-    <script src="/static/js/payment.js?ver=2.4.0"></script>
+    <!-- 4️⃣ PAYMENT - v2.5 (GERENCIA CPF E PIX DINAMICAMENTE) -->
+    <script src="/static/js/payment.js?ver=2.5.0"></script>
 
     <!-- ============================================== -->
     <!-- 🔥 INICIALIZAÇÃO -->
@@ -1222,7 +1222,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.3');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.4');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1388,21 +1388,38 @@
                 // ==============================================
                 // 🔥 CARREGAR PLANO VIA payment.js
                 // ==============================================
-                setTimeout(() => {
-                    if (typeof window.loadPlans === 'function') {
-                        console.log('📦 Carregando plano via payment.js...');
-                        window.loadPlans();
-                    } else {
-                        console.warn('⚠️ window.loadPlans não disponível - aguardando payment.js');
-                        setTimeout(() => {
-                            if (typeof window.loadPlans === 'function') {
-                                window.loadPlans();
-                            } else {
-                                console.error('❌ payment.js não carregou corretamente');
-                            }
-                        }, 2000);
+                // Aguarda o app.js inicializar completamente
+                function waitForAppAndLoadPlans() {
+                    if (window.App && window.App.isReady && window.App.isReady()) {
+                        console.log('✅ App pronto, carregando planos...');
+                        if (typeof window.loadPlans === 'function') {
+                            window.loadPlans();
+                        } else {
+                            console.warn('⚠️ window.loadPlans não disponível');
+                        }
+                        return true;
                     }
-                }, 300);
+                    return false;
+                }
+
+                // Tenta carregar imediatamente
+                if (!waitForAppAndLoadPlans()) {
+                    // Se não estiver pronto, escuta o evento app:ready
+                    document.addEventListener('app:ready', function() {
+                        console.log('📢 app:ready recebido - carregando planos');
+                        if (typeof window.loadPlans === 'function') {
+                            window.loadPlans();
+                        }
+                    });
+                    
+                    // Fallback: tenta novamente após 2 segundos
+                    setTimeout(function() {
+                        if (typeof window.loadPlans === 'function') {
+                            console.log('⏰ Fallback: carregando planos após timeout');
+                            window.loadPlans();
+                        }
+                    }, 2000);
+                }
 
                 // ==============================================
                 // 🔥 ATUALIZAR STATUS PREMIUM
@@ -1414,7 +1431,7 @@
                     if (typeof window.loadPremiumStatus === 'function') {
                         window.loadPremiumStatus();
                     }
-                }, 500);
+                }, 800);
 
                 // ==============================================
                 // 🔥 INICIALIZAR POW STATUS
@@ -1453,7 +1470,7 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.3 carregado com sucesso!');
+                console.log('✅ planos.html v2.4 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
                 console.log('   📦 Plano renderizado pelo payment.js');
                 console.log('   🔄 Sincronizado com app.js e auth.js');
