@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.0');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.2');
         })();
     </script>
     
@@ -95,21 +95,21 @@
             font-size: 0.9rem;
         }
         .user-name-display i { color: #ff6b35; }
-        .btn-planos {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            color: white;
-            border: none;
-            padding: 0.4rem 1.2rem;
+        .btn-voltar {
+            background: transparent;
+            border: 2px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.7);
+            padding: 0.3rem 1rem;
             border-radius: 50px;
-            font-weight: 700;
+            font-weight: 600;
             font-size: 0.8rem;
             transition: all 0.3s;
             text-decoration: none;
         }
-        .btn-planos:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+        .btn-voltar:hover {
+            background: rgba(255,255,255,0.1);
             color: white;
+            transform: translateY(-2px);
         }
         .btn-sair {
             background: transparent;
@@ -124,22 +124,6 @@
         }
         .btn-sair:hover {
             background: #e53e3e;
-            color: white;
-            transform: translateY(-2px);
-        }
-        .btn-voltar {
-            background: transparent;
-            border: 2px solid rgba(255,255,255,0.2);
-            color: rgba(255,255,255,0.7);
-            padding: 0.3rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-            text-decoration: none;
-        }
-        .btn-voltar:hover {
-            background: rgba(255,255,255,0.1);
             color: white;
             transform: translateY(-2px);
         }
@@ -262,7 +246,11 @@
             }
         }
 
-        /* ===== PLANO BRONZE ===== */
+        /* ============================================== */
+        /* 🔥 ESTILOS DO PLANO - RENDERIZADO PELO payment.js */
+        /* ============================================== */
+        
+        /* O payment.js renderiza com classes específicas */
         .bronze-card {
             background: linear-gradient(145deg, rgba(44, 26, 10, 0.95) 0%, rgba(61, 38, 20, 0.95) 100%);
             border-radius: 40px;
@@ -270,15 +258,36 @@
             box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(205, 127, 50, 0.3);
             position: relative;
             overflow: hidden;
-            max-width: 650px;
+            max-width: 680px;
             margin: 0 auto;
-            transition: all 0.3s ease;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             border: 1px solid #cd7f32;
         }
-        .bronze-card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 40px 70px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
+        .bronze-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(205, 127, 50, 0.08) 0%, transparent 70%);
+            pointer-events: none;
         }
+        .bronze-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #cd7f32, #f5a623, #cd7f32, transparent);
+            opacity: 0.5;
+        }
+        .bronze-card:hover {
+            transform: translateY(-8px) scale(1.01);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
+        }
+
         .bronze-badge {
             position: absolute;
             top: 20px;
@@ -287,191 +296,289 @@
             color: white;
             padding: 0.5rem 1.2rem;
             border-radius: 50px;
-            font-weight: bold;
-            font-size: 0.9rem;
+            font-weight: 700;
+            font-size: 0.85rem;
             z-index: 10;
-            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
+            box-shadow: 0 4px 20px rgba(205, 127, 50, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            animation: badgePulse 2s ease-in-out infinite;
         }
-        .bronze-badge i { margin-right: 0.5rem; }
-        .bronze-title { text-align: center; margin-bottom: 1.5rem; }
-        .bronze-title h2 {
-            font-size: 2.5rem;
-            font-weight: 800;
+        @keyframes badgePulse {
+            0%, 100% { box-shadow: 0 4px 20px rgba(205, 127, 50, 0.4); }
+            50% { box-shadow: 0 4px 40px rgba(205, 127, 50, 0.7); }
+        }
+
+        .bronze-title {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+        .bronze-title .icon-big {
+            font-size: 3.5rem;
+            display: block;
+            margin-bottom: 0.5rem;
             background: linear-gradient(135deg, #f5a623, #cd7f32);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
+        }
+        .bronze-title h2 {
+            font-size: 2.8rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #f5a623, #cd7f32);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.3rem;
+            letter-spacing: -1px;
         }
         .bronze-title .subtitle {
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.4);
             font-size: 0.95rem;
+            font-weight: 400;
         }
 
         .vitalicio-badge {
             background: linear-gradient(135deg, #28a745, #20c997);
             color: white;
-            padding: 0.5rem 1rem;
+            padding: 0.5rem 1.2rem;
             border-radius: 50px;
             text-align: center;
-            margin: 0.5rem 0;
+            margin: 0.5rem auto 1rem;
             font-weight: 700;
             font-size: 0.9rem;
+            display: inline-block;
+            box-shadow: 0 4px 20px rgba(40, 167, 69, 0.3);
+            position: relative;
+            z-index: 1;
         }
         .vitalicio-badge i { margin-right: 0.5rem; }
         .vitalicio-badge small { font-weight: 400; opacity: 0.8; }
 
-        .price-container { text-align: center; margin: 1rem 0; }
+        .price-container {
+            text-align: center;
+            margin: 1rem 0 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
         .old-price {
             text-decoration: line-through;
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 1.3rem;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 1.4rem;
             display: block;
+            font-weight: 400;
         }
         .price-tag {
-            font-size: 4rem;
-            font-weight: 800;
+            font-size: 4.5rem;
+            font-weight: 900;
             color: #f5a623;
             line-height: 1;
-            margin: 0.5rem 0;
-            text-shadow: 0 0 20px rgba(245, 166, 35, 0.3);
+            margin: 0.2rem 0;
+            text-shadow: 0 0 40px rgba(245, 166, 35, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+        }
+        .price-tag .currency {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #cd7f32;
+        }
+        .price-tag .cents {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #cd7f32;
         }
         .price-tag small {
             font-size: 1rem;
             font-weight: 400;
-            color: rgba(255, 255, 255, 0.6);
+            color: rgba(255, 255, 255, 0.4);
         }
         .economy-badge {
             background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
-            padding: 0.3rem 1rem;
+            padding: 0.3rem 1.2rem;
             border-radius: 50px;
             font-size: 0.8rem;
-            font-weight: bold;
+            font-weight: 700;
             display: inline-block;
             margin-top: 0.5rem;
+            box-shadow: 0 4px 15px rgba(245, 166, 35, 0.3);
         }
 
+        .bronze-features {
+            position: relative;
+            z-index: 1;
+            margin: 1.5rem 0;
+        }
         .bronze-feature {
             display: flex;
             align-items: center;
-            padding: 0.8rem 0;
-            border-bottom: 1px solid rgba(205, 127, 50, 0.2);
-            color: white;
+            padding: 0.7rem 0;
+            border-bottom: 1px solid rgba(205, 127, 50, 0.12);
+            color: rgba(255, 255, 255, 0.85);
+            transition: all 0.3s;
+        }
+        .bronze-feature:hover {
+            padding-left: 0.5rem;
+            border-bottom-color: rgba(205, 127, 50, 0.3);
         }
         .bronze-feature:last-child { border-bottom: none; }
-        .bronze-feature i { color: #f5a623; width: 35px; font-size: 1.2rem; }
-        .bronze-feature strong { color: #f5a623; }
-
-        .highlight-title {
+        .bronze-feature i { 
+            color: #f5a623; 
+            width: 32px; 
             font-size: 1.1rem;
-            color: #f5a623;
-            border-bottom: 2px solid #cd7f32;
-            display: inline-block;
-            padding-bottom: 0.3rem;
-            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .bronze-feature strong { color: #f5a623; }
+        .bronze-feature .check {
+            color: #48bb78;
+            margin-right: 0.5rem;
         }
 
         .plan-info {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 20px;
-            padding: 1rem;
+            padding: 1.2rem;
             margin: 1.5rem 0;
-            border: 1px solid rgba(205, 127, 50, 0.3);
+            border: 1px solid rgba(205, 127, 50, 0.2);
+            position: relative;
+            z-index: 1;
+        }
+        .plan-info .row {
+            text-align: center;
         }
         .plan-info .col-4 {
-            border-right: 1px solid rgba(205, 127, 50, 0.2);
+            border-right: 1px solid rgba(205, 127, 50, 0.15);
+            padding: 0.3rem 0;
         }
         .plan-info .col-4:last-child { border-right: none; }
+        .plan-info .number {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #f5a623;
+            display: block;
+            line-height: 1.2;
+        }
+        .plan-info .label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
         .plan-info i { color: #f5a623; }
-
-        .btn-bronze {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
-            color: white;
-            border: none;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            font-weight: 700;
-            font-size: 1.2rem;
-            transition: all 0.3s;
-            box-shadow: 0 10px 30px rgba(245, 166, 35, 0.4);
-            width: 100%;
-        }
-        .btn-bronze:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 40px rgba(245, 166, 35, 0.6);
-            color: white;
-        }
-        .btn-bronze:disabled {
-            opacity: 0.6;
-            transform: none;
-            cursor: not-allowed;
-        }
 
         .vagas-counter {
             background: rgba(0, 0, 0, 0.4);
             border-radius: 60px;
-            padding: 1rem;
+            padding: 1rem 1.5rem;
             margin: 1.5rem 0;
             text-align: center;
-            border: 1px solid rgba(205, 127, 50, 0.5);
+            border: 1px solid rgba(205, 127, 50, 0.3);
+            position: relative;
+            z-index: 1;
         }
         .vagas-number {
-            font-size: 2.5rem;
-            font-weight: 800;
+            font-size: 2.8rem;
+            font-weight: 900;
             color: #f5a623;
             display: inline-block;
-            margin: 0 0.5rem;
+            margin: 0 0.3rem;
+            line-height: 1;
         }
         .vagas-label {
             font-size: 0.9rem;
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(255, 255, 255, 0.6);
         }
         .vagas-progress {
-            height: 8px;
-            background: rgba(255, 255, 255, 0.2);
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             margin-top: 0.8rem;
             overflow: hidden;
         }
         .vagas-progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, #f5a623, #e67e22);
+            background: linear-gradient(90deg, #cd7f32, #f5a623);
             border-radius: 10px;
-            transition: width 0.5s ease;
+            transition: width 0.8s ease;
         }
         .vagas-urgent {
-            animation: urgent-pulse 1s ease-in-out infinite;
+            animation: urgent-pulse 1.2s ease-in-out infinite;
+            border-color: #f5a623;
         }
         @keyframes urgent-pulse {
-            0%, 100% { background: rgba(245, 166, 35, 0.2); border-color: #f5a623; }
-            50% { background: rgba(245, 166, 35, 0.4); border-color: #ff7e00; }
+            0%, 100% { border-color: rgba(245, 166, 35, 0.3); box-shadow: 0 0 20px rgba(245, 166, 35, 0.05); }
+            50% { border-color: rgba(245, 166, 35, 0.8); box-shadow: 0 0 40px rgba(245, 166, 35, 0.15); }
+        }
+
+        .btn-bronze {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
+            color: white;
+            border: none;
+            padding: 1.2rem 2rem;
+            border-radius: 60px;
+            font-weight: 800;
+            font-size: 1.2rem;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 40px rgba(245, 166, 35, 0.4);
+            width: 100%;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+        }
+        .btn-bronze:hover {
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: 0 15px 50px rgba(245, 166, 35, 0.6);
+            color: white;
+        }
+        .btn-bronze:disabled {
+            opacity: 0.5;
+            transform: none;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .btn-bronze .arrow {
+            transition: transform 0.3s;
+        }
+        .btn-bronze:hover .arrow {
+            transform: translateX(5px);
         }
 
         .limit-warning {
-            background: rgba(245, 166, 35, 0.1);
+            background: rgba(245, 166, 35, 0.08);
             border-left: 4px solid #f5a623;
-            padding: 0.75rem;
+            padding: 0.75rem 1rem;
             border-radius: 12px;
             margin-top: 1rem;
             font-size: 0.85rem;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.7);
+            position: relative;
+            z-index: 1;
         }
         .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
 
         .credits-explanation {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.04);
             border-radius: 16px;
             padding: 1.25rem;
             margin-top: 1.5rem;
-            border: 1px solid rgba(205, 127, 50, 0.25);
+            border: 1px solid rgba(205, 127, 50, 0.15);
+            position: relative;
+            z-index: 1;
         }
         .credits-explanation .step {
             display: flex;
             align-items: flex-start;
             gap: 0.75rem;
-            padding: 0.5rem 0;
-            color: rgba(255, 255, 255, 0.85);
-            font-size: 0.9rem;
+            padding: 0.4rem 0;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.85rem;
         }
         .credits-explanation .step i {
             color: #f5a623;
@@ -481,16 +588,38 @@
         }
         .credits-explanation .step strong { color: #f5a623; }
         .credits-explanation .highlight-box {
-            background: rgba(245, 166, 35, 0.1);
+            background: rgba(245, 166, 35, 0.08);
             border-radius: 12px;
             padding: 0.75rem 1rem;
             margin-top: 0.75rem;
             border-left: 3px solid #f5a623;
         }
         .credits-explanation .highlight-box span {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.85);
             font-size: 0.85rem;
         }
+
+        .security-seals {
+            display: flex;
+            gap: 0.8rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+            position: relative;
+            z-index: 1;
+        }
+        .security-seals .seal {
+            background: rgba(255,255,255,0.04);
+            color: rgba(255,255,255,0.4);
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.6rem;
+            border: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .security-seals .seal i { color: #48bb78; }
 
         /* ===== SUPORTE ===== */
         .support-card {
@@ -500,6 +629,7 @@
             padding: 2rem;
             border: 1px solid rgba(255,255,255,0.08);
             color: white;
+            transition: all 0.4s;
         }
         .support-card:hover {
             transform: translateY(-4px);
@@ -531,30 +661,31 @@
         }
 
         .faq-item {
-            border-left: 3px solid rgba(255,255,255,0.1);
+            border-left: 3px solid rgba(255,255,255,0.08);
             transition: all 0.3s;
-            padding: 1rem;
+            padding: 0.8rem 1rem;
             border-radius: 12px;
-            background: rgba(255,255,255,0.03);
-            margin-bottom: 0.75rem;
+            background: rgba(255,255,255,0.02);
+            margin-bottom: 0.5rem;
+            cursor: pointer;
         }
         .faq-item:hover {
             border-left-color: #f5a623;
-            background: rgba(255,107,53,0.06);
+            background: rgba(255,107,53,0.05);
         }
         .faq-question {
-            cursor: pointer;
             font-weight: 600;
             transition: all 0.3s;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            color: rgba(255,255,255,0.85);
         }
         .faq-question:hover { color: #f5a623; }
         .faq-answer {
             display: none;
             margin-top: 0.5rem;
-            color: rgba(255,255,255,0.7);
+            color: rgba(255,255,255,0.6);
             font-size: 0.9rem;
             line-height: 1.6;
         }
@@ -562,7 +693,7 @@
 
         .quick-contact-form {
             background: rgba(255,255,255,0.04);
-            border-radius: 20px;
+            border-radius: 16px;
             padding: 1.5rem;
             border: 1px solid rgba(255,255,255,0.06);
         }
@@ -643,43 +774,47 @@
             color: #fc8181;
         }
 
-        .security-seals {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 1rem;
-        }
-        .security-seals .badge {
-            background: rgba(255,255,255,0.05);
-            color: rgba(255,255,255,0.6);
-            padding: 0.4rem 0.8rem;
-            border-radius: 50px;
-            font-size: 0.65rem;
-            border: 1px solid rgba(255,255,255,0.05);
+        /* ===== PREMIUM STATUS CARD (para dashboard) ===== */
+        .premium-status-card {
+            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
+            border-radius: 20px;
+            padding: 1.5rem;
+            border: 1px solid #cd7f32;
         }
 
         /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 992px) {
             .hero-section { padding: 90px 0 30px; }
             .bronze-card { padding: 2rem; }
+            .price-tag { font-size: 3.5rem; }
         }
         @media (max-width: 768px) {
             .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
             .brand-text { font-size: 1.1rem; }
             .tab-btn { padding: 0.5rem 1rem; font-size: 0.8rem; min-width: 100px; }
-            .bronze-card { padding: 1.5rem; margin: 0 1rem; }
+            .bronze-card { padding: 1.5rem; margin: 0 0.5rem; }
+            .bronze-title h2 { font-size: 2rem; }
             .price-tag { font-size: 3rem; }
-            .bronze-title h2 { font-size: 1.8rem; }
-            .vagas-number { font-size: 1.8rem; }
+            .vagas-number { font-size: 2rem; }
+            .plan-info .number { font-size: 1.4rem; }
             .support-icon { width: 50px; height: 50px; font-size: 1.2rem; }
+            .bronze-badge { font-size: 0.7rem; padding: 0.3rem 0.8rem; top: 12px; right: 12px; }
         }
         @media (max-width: 480px) {
             .hero-section { padding: 80px 0 20px; }
             .glass-card { padding: 1rem; }
-            .tab-btn { padding: 0.4rem 0.8rem; font-size: 0.7rem; min-width: 80px; gap: 0.3rem; }
+            .tab-btn { padding: 0.4rem 0.6rem; font-size: 0.7rem; min-width: 70px; gap: 0.3rem; }
             .tab-btn i { font-size: 0.8rem; }
-            .bronze-card { padding: 1rem; }
+            .bronze-card { padding: 1rem; border-radius: 28px; }
+            .bronze-title h2 { font-size: 1.6rem; }
+            .price-tag { font-size: 2.4rem; }
+            .price-tag .currency { font-size: 1.2rem; }
+            .price-tag .cents { font-size: 1.2rem; }
+            .vagas-number { font-size: 1.6rem; }
+            .btn-bronze { font-size: 1rem; padding: 0.8rem 1.2rem; }
+            .plan-info .number { font-size: 1.2rem; }
+            .bronze-feature { font-size: 0.85rem; padding: 0.5rem 0; }
+            .bronze-badge { font-size: 0.6rem; padding: 0.2rem 0.6rem; top: 10px; right: 10px; }
         }
     </style>
 </head>
@@ -760,22 +895,22 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 1: PLANOS -->
+            <!-- 🔥 ABA 1: PLANOS - RENDERIZADO PELO payment.js -->
             <!-- ============================================== -->
             <div class="tab-content active" id="tab-planos">
                 <div class="row justify-content-center">
-                    <div class="col-lg-8 text-center mb-4" data-aos="fade-up">
-                        <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px;">
-                            <i class="fas fa-fire me-1"></i> Oferta Especial
+                    <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
+                        <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
+                            <i class="fas fa-fire me-1"></i> Oferta Especial - Edição Limitada
                         </span>
                     </div>
                 </div>
 
-                <!-- CONTAINER ONDE O payment.js VAI RENDERIZAR -->
+                <!-- 🔥 CONTAINER ONDE O payment.js VAI RENDERIZAR O PLANO -->
                 <div class="row justify-content-center" id="plansContainer" data-aos="fade-up" data-aos-duration="800">
-                    <div class="text-center py-5">
+                    <div class="col-lg-8 text-center py-5">
                         <div class="spinner-border text-warning" role="status" style="color: #f5a623 !important;">
-                            <span class="visually-hidden">Carregando...</span>
+                            <span class="visually-hidden">Carregando plano...</span>
                         </div>
                         <p class="mt-2" style="color: rgba(255,255,255,0.4);">Carregando plano Bronze...</p>
                     </div>
@@ -999,7 +1134,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.0 - Planos e Suporte
+                        AutoAnalytics v2.2 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1140,7 +1275,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.0');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.2');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1168,7 +1303,6 @@
             // 🔥 FUNÇÃO PARA TROCAR ABAS
             // ==============================================
             window.switchTab = function(tabId) {
-                // Remove active de todas as abas
                 document.querySelectorAll('.tab-btn').forEach(btn => {
                     btn.classList.remove('active');
                 });
@@ -1176,14 +1310,12 @@
                     content.classList.remove('active');
                 });
 
-                // Ativa a aba selecionada
                 const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
                 if (btn) btn.classList.add('active');
 
                 const content = document.getElementById(`tab-${tabId}`);
                 if (content) content.classList.add('active');
 
-                // Re-trigger AOS para a nova aba
                 setTimeout(() => {
                     if (typeof AOS !== 'undefined') {
                         AOS.refresh();
@@ -1201,7 +1333,6 @@
                 if (answer) {
                     const isOpen = answer.classList.contains('open');
                     
-                    // Fecha todos os outros
                     document.querySelectorAll('.faq-answer').forEach(a => {
                         if (a !== answer) {
                             a.classList.remove('open');
@@ -1301,11 +1432,6 @@
                             if (emailInput && user.email) {
                                 emailInput.value = user.email;
                             }
-                            
-                            // Carregar status da assinatura via payment.js
-                            if (window.loadSubscriptionStatus) {
-                                await window.loadSubscriptionStatus();
-                            }
                         }
                     } catch (error) {
                         console.error('Erro ao carregar usuário:', error);
@@ -1313,17 +1439,111 @@
                 })();
 
                 // ==============================================
-                // 🔥 VERIFICAR PAGAMENTO BEM-SUCEDIDO
+                // 🔥 CARREGAR PLANO VIA payment.js
                 // ==============================================
-                if (window.location.search.includes('payment=success')) {
-                    setTimeout(() => {
-                        if (window.loadSubscriptionStatus) {
-                            window.loadSubscriptionStatus();
+                // O payment.js já tem um listener para DOMContentLoaded
+                // que chama loadPlans() se estiver na página de planos
+                
+                // Mas garantimos que o plano seja carregado
+                setTimeout(() => {
+                    if (typeof window.loadPlans === 'function') {
+                        console.log('📦 Carregando plano via payment.js...');
+                        window.loadPlans();
+                    } else {
+                        console.warn('⚠️ window.loadPlans não disponível - aguardando payment.js');
+                        // Tenta novamente após 2 segundos
+                        setTimeout(() => {
+                            if (typeof window.loadPlans === 'function') {
+                                window.loadPlans();
+                            } else {
+                                console.error('❌ payment.js não carregou corretamente');
+                            }
+                        }, 2000);
+                    }
+                }, 300);
+
+                // ==============================================
+                // 🔥 ATUALIZAR STATUS PREMIUM
+                // ==============================================
+                setTimeout(() => {
+                    if (typeof window.loadSubscriptionStatus === 'function') {
+                        window.loadSubscriptionStatus();
+                    }
+                    if (typeof window.loadPremiumStatus === 'function') {
+                        window.loadPremiumStatus();
+                    }
+                }, 500);
+
+                // ==============================================
+                // 🔥 MÁSCARA DE CPF
+                // ==============================================
+                const cpfInput = document.getElementById('cpfInput');
+                if (cpfInput) {
+                    cpfInput.addEventListener('input', function() {
+                        let value = this.value.replace(/\D/g, '');
+                        if (value.length > 11) value = value.slice(0, 11);
+                        
+                        let formatted = '';
+                        if (value.length <= 3) {
+                            formatted = value;
+                        } else if (value.length <= 6) {
+                            formatted = value.slice(0, 3) + '.' + value.slice(3);
+                        } else if (value.length <= 9) {
+                            formatted = value.slice(0, 3) + '.' + value.slice(3, 6) + '.' + value.slice(6);
+                        } else {
+                            formatted = value.slice(0, 3) + '.' + value.slice(3, 6) + '.' + value.slice(6, 9) + '-' + value.slice(9, 11);
                         }
-                        if (typeof toastr !== 'undefined') {
-                            toastr.success('✅ Pagamento confirmado! Seu plano foi ativado.');
+                        this.value = formatted;
+                    });
+                }
+
+                // ==============================================
+                // 🔥 CONFIRMAR CPF
+                // ==============================================
+                const confirmCpfBtn = document.getElementById('confirmCpfBtn');
+                if (confirmCpfBtn) {
+                    confirmCpfBtn.addEventListener('click', function() {
+                        const cpfInput = document.getElementById('cpfInput');
+                        const cpf = cpfInput.value.replace(/\D/g, '');
+                        const errorEl = document.getElementById('cpfError');
+                        
+                        if (cpf.length !== 11) {
+                            errorEl.classList.remove('d-none');
+                            errorEl.textContent = 'CPF inválido. Digite 11 números.';
+                            return;
                         }
-                    }, 500);
+                        
+                        errorEl.classList.add('d-none');
+                        
+                        // Fechar modal CPF
+                        const cpfModal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
+                        if (cpfModal) cpfModal.hide();
+                        
+                        // Abrir modal PIX
+                        if (typeof window.payment !== 'undefined' && window.payment.showPix) {
+                            window.payment.showPix(cpf);
+                        } else if (typeof window.showPixModalSecure === 'function') {
+                            // Fallback usando função do payment.js
+                            const paymentId = document.getElementById('pixPaymentId')?.value || 'pending';
+                            window.showPixModalSecure(paymentId, { amount: 97.00 });
+                        } else {
+                            // Fallback manual
+                            const pixModal = new bootstrap.Modal(document.getElementById('pixModal'));
+                            const pixContent = document.getElementById('pixContent');
+                            pixContent.innerHTML = `
+                                <div class="text-center py-4">
+                                    <i class="fas fa-qrcode fa-5x mb-3" style="color:#f5a623;"></i>
+                                    <h5 class="fw-bold" style="color:white;">PIX Gerado!</h5>
+                                    <p style="color:rgba(255,255,255,0.6);">Chave: <strong style="color:#f5a623;">autonalytics@gmail.com</strong></p>
+                                    <p style="color:rgba(255,255,255,0.4); font-size:0.8rem;">Valor: <strong style="color:#f5a623;">R$ 97,00</strong></p>
+                                    <button class="btn btn-bronze mt-3" onclick="navigator.clipboard.writeText('autonalytics@gmail.com')">
+                                        <i class="fas fa-copy me-2"></i> Copiar Chave PIX
+                                    </button>
+                                </div>
+                            `;
+                            pixModal.show();
+                        }
+                    });
                 }
 
                 // ==============================================
@@ -1363,10 +1583,10 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.0 carregado com sucesso!');
+                console.log('✅ planos.html v2.2 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
-                console.log('   💰 Plano Bronze: R$ 97,00');
-                console.log('   🎯 Escassez ativa: 100 vagas');
+                console.log('   📦 Plano renderizado pelo payment.js');
+                console.log('   🔄 Sincronizado com app.js e auth.js');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
             });
 
