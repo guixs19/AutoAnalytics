@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.3 (UPLOAD OTIMIZADO E SINCRONIZADO) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.4 (SINCRONIZADA COM APP.JS V6.0) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,7 +7,7 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <!-- ============================================== -->
-    <!-- 🔥 SEGURANÇA E BLOQUEIO -->
+    <!-- 🔥 SEGURANÇA E BLOQUEIO (MANTIDO) -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -27,12 +27,12 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - SPA Mecânicos v7.3');
+            console.log('✅ AutoAnalytics - SPA Mecânicos v7.4');
         })();
     </script>
     
     <!-- ============================================== -->
-    <!-- 🔥 BIBLIOTECAS -->
+    <!-- 🔥 BIBLIOTECAS (MANTIDAS) -->
     <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -548,7 +548,7 @@
                         <i class="fas fa-crown me-1"></i> Planos
                     </a>
                     
-                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
+                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.App?.logout?.();">
                         <i class="fas fa-sign-out-alt me-1"></i> Sair
                     </a>
                 </div>
@@ -755,7 +755,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.3 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.4 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -855,7 +855,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CORRETA) -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ POW - v3.3 -->
@@ -864,23 +864,23 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v5.6 -->
-    <script src="/static/js/app.js?ver=5.6.0"></script>
+    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL) -->
+    <script src="/static/js/app.js?ver=6.0.0"></script>
     
-    <!-- 4️⃣ DASHBOARD - v6.2 -->
-    <script src="/static/js/dashboard.js?ver=6.2.0"></script>
+    <!-- 4️⃣ PAYMENT - v2.5 (SINCRONIZADO COM APP.JS V6.0) -->
+    <script src="/static/js/payment.js?ver=2.5.0"></script>
     
-    <!-- 5️⃣ PAYMENT - v2.4 -->
-    <script src="/static/js/payment.js?ver=2.4.0"></script>
+    <!-- 5️⃣ DASHBOARD - v6.3 (SINCRONIZADO COM APP.JS V6.0) -->
+    <script src="/static/js/dashboard.js?ver=6.3.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO E CONTROLE DO UPLOAD -->
+    <!-- 🔥 INICIALIZAÇÃO E CONTROLE DO UPLOAD (SINCRONIZADO) -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.3');
+            console.log('🚀 AutoAnalytics Mecânicos v7.4 (Sincronizado com app.js v6.0)');
 
             // ===== CONFIG =====
             const MAX_FILES = 3;
@@ -889,6 +889,7 @@
 
             // ===== ESTADO LOCAL =====
             let selectedFiles = [];
+            let isInitialized = false;
 
             // ===== ELEMENTOS DOM =====
             const dropArea = document.getElementById('dropArea');
@@ -896,6 +897,11 @@
             const filePreview = document.getElementById('filePreviewContainer');
             const uploadBtn = document.getElementById('uploadButton');
             const uploadForm = document.getElementById('uploadForm');
+
+            // ===== REFERÊNCIA AO APP (ORQUESTRADOR) =====
+            function getApp() {
+                return window.App || window.app || window.autoAnalytics;
+            }
 
             // ===== FUNÇÃO PARA FORMATAR TAMANHO =====
             function formatFileSize(bytes) {
@@ -987,14 +993,15 @@
                 updateFilePreview();
 
                 if (added > 0) {
-                    window.App?.showNotification?.(`${added} arquivo(s) adicionado(s)`, 'info');
+                    const app = getApp();
+                    app?.showNotification?.(`${added} arquivo(s) adicionado(s)`, 'info');
                 }
 
                 if (errors.length > 0) {
-                    window.App?.showNotification?.(errors.join(' | '), 'warning');
+                    const app = getApp();
+                    app?.showNotification?.(errors.join(' | '), 'warning');
                 }
 
-                // Atualiza créditos
                 updateCreditsDisplay();
             }
 
@@ -1006,7 +1013,8 @@
                     updateCreditsDisplay();
                     
                     if (selectedFiles.length === 0) {
-                        window.App?.showNotification?.('Todos os arquivos removidos', 'info');
+                        const app = getApp();
+                        app?.showNotification?.('Todos os arquivos removidos', 'info');
                     }
                 }
             }
@@ -1014,22 +1022,72 @@
             // ===== FUNÇÃO PARA ATUALIZAR EXIBIÇÃO DE CRÉDITOS =====
             function updateCreditsDisplay() {
                 const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                const creditEls = document.querySelectorAll('#uploadCredits, #creditsCount');
-                const creditsAvailable = window.App?.getCredits?.() || 0;
+                const app = getApp();
+                const creditsAvailable = app?.getCredits?.() || 0;
                 
-                creditEls.forEach(el => {
-                    if (el) el.textContent = creditsAvailable;
+                // Atualiza elementos de créditos
+                document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(el => {
+                    if (el) {
+                        if (el.id === 'creditsDisplay') {
+                            el.textContent = app?.State?.creditsDisplay || creditsAvailable;
+                        } else {
+                            el.textContent = creditsAvailable;
+                        }
+                    }
                 });
 
                 // Atualiza badge de créditos no botão
                 const badge = uploadBtn.querySelector('.badge');
                 if (badge) {
-                    badge.textContent = `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''}`;
+                    if (selectedFiles.length > 0) {
+                        badge.textContent = `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''}`;
+                    } else {
+                        badge.textContent = '1 crédito/arquivo';
+                    }
                 }
 
                 // Verifica se tem créditos suficientes
-                const hasCredits = creditsNeeded > 0 && creditsAvailable >= creditsNeeded;
+                const hasCredits = creditsNeeded > 0 ? creditsAvailable >= creditsNeeded : true;
                 uploadBtn.disabled = !hasCredits || selectedFiles.length === 0;
+            }
+
+            // ===== FUNÇÃO DE UPLOAD USANDO APP.JS =====
+            async function performUpload(files) {
+                const app = getApp();
+                
+                if (!app) {
+                    console.error('❌ App não disponível para upload');
+                    app?.showNotification?.('Erro: aplicação não inicializada.', 'error');
+                    return false;
+                }
+
+                try {
+                    // Usa o método de upload com PoW do app.js
+                    const result = await app.uploadWithPow?.(files, '/api/upload-auto');
+                    
+                    if (result) {
+                        app.showNotification?.('✅ Arquivos enviados com sucesso!', 'success');
+                        
+                        // Limpa a lista
+                        selectedFiles = [];
+                        updateFilePreview();
+                        updateCreditsDisplay();
+                        
+                        // Dispara evento para dashboard.js atualizar
+                        window.dispatchEvent(new CustomEvent('analysis:uploaded', { 
+                            detail: { result, files } 
+                        }));
+                        
+                        return true;
+                    } else {
+                        app.showNotification?.('Erro ao enviar arquivos.', 'error');
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('❌ Erro no upload:', error);
+                    app.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
+                    return false;
+                }
             }
 
             // ===== EVENTOS DE DRAG & DROP =====
@@ -1071,15 +1129,17 @@
                 e.preventDefault();
 
                 if (selectedFiles.length === 0) {
-                    window.App?.showNotification?.('Nenhum arquivo selecionado.', 'warning');
+                    const app = getApp();
+                    app?.showNotification?.('Nenhum arquivo selecionado.', 'warning');
                     return;
                 }
 
+                const app = getApp();
                 const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                const creditsAvailable = window.App?.getCredits?.() || 0;
+                const creditsAvailable = app?.getCredits?.() || 0;
 
                 if (creditsAvailable < creditsNeeded) {
-                    window.App?.showNotification?.(
+                    app?.showNotification?.(
                         `Créditos insuficientes. Você tem ${creditsAvailable}, precisa de ${creditsNeeded}.`,
                         'error'
                     );
@@ -1088,53 +1148,47 @@
 
                 // Prepara os arquivos para upload
                 const filesToUpload = [...selectedFiles];
-                const formData = new FormData();
-                filesToUpload.forEach(file => formData.append('files', file));
-
-                // Mostra loading
-                window.App?.showLoading?.('Enviando arquivos...', 'A IA está processando seus dados');
+                
+                // Mostra loading via app.js
+                app?.showLoading?.('Enviando arquivos...', 'A IA está processando seus dados');
                 
                 try {
-                    // Usa o método de upload com PoW do app.js
-                    const result = await window.App?.uploadWithPow?.(filesToUpload, '/api/upload-auto');
-                    
-                    if (result) {
-                        window.App?.showNotification?.('✅ Arquivos enviados com sucesso!', 'success');
-                        
-                        // Limpa a lista
-                        selectedFiles = [];
-                        updateFilePreview();
-                        updateCreditsDisplay();
-                        
-                        // Dispara evento para dashboard.js atualizar
-                        window.dispatchEvent(new CustomEvent('analysis:uploaded', { detail: { result } }));
-                    } else {
-                        window.App?.showNotification?.('Erro ao enviar arquivos.', 'error');
+                    const success = await performUpload(filesToUpload);
+                    if (!success) {
+                        app?.hideLoading?.();
                     }
                 } catch (error) {
-                    console.error('Erro no upload:', error);
-                    window.App?.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
-                } finally {
-                    window.App?.hideLoading?.();
+                    console.error('❌ Erro no upload:', error);
+                    app?.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
+                    app?.hideLoading?.();
                 }
             });
 
-            // ===== ATUALIZA CRÉDITOS PERIODICAMENTE =====
-            function refreshCredits() {
+            // ===== ESCUTA EVENTOS DE CRÉDITOS =====
+            function onCreditsUpdated() {
                 updateCreditsDisplay();
             }
 
-            // Escuta eventos de créditos
-            document.addEventListener('credits:updated', () => {
-                updateCreditsDisplay();
-            });
-
-            document.addEventListener('credits:loaded', () => {
-                updateCreditsDisplay();
+            // Eventos do app.js (com dois pontos)
+            document.addEventListener('credits:updated', onCreditsUpdated);
+            document.addEventListener('credits:loaded', onCreditsUpdated);
+            
+            // Eventos do payment.js (sem dois pontos)
+            document.addEventListener('creditsUpdated', onCreditsUpdated);
+            document.addEventListener('premiumStatusUpdated', onCreditsUpdated);
+            
+            // Estado mudou
+            document.addEventListener('app:state_changed', (e) => {
+                const detail = e.detail || {};
+                if (detail.changes?.credits !== undefined || detail.changes?.isPremium !== undefined) {
+                    updateCreditsDisplay();
+                }
             });
 
             // ===== INICIALIZAÇÃO =====
             function init() {
+                if (isInitialized) return;
+                
                 // Configura Toastr
                 if (typeof toastr !== 'undefined') {
                     toastr.options = {
@@ -1158,47 +1212,92 @@
                 }
 
                 // Atualiza créditos
-                setTimeout(updateCreditsDisplay, 500);
-                setInterval(refreshCredits, 30000);
+                setTimeout(updateCreditsDisplay, 300);
+                
+                // Atualização periódica
+                setInterval(updateCreditsDisplay, 30000);
 
+                isInitialized = true;
                 console.log('✅ Upload area inicializada com sucesso!');
                 console.log(`📁 Máximo: ${MAX_FILES} arquivos, ${MAX_FILE_SIZE_KB} KB cada`);
+                console.log(`🔗 Sincronizado com app.js v6.0`);
             }
 
-            // Aguarda app.js estar pronto
-            document.addEventListener('app:ready', () => {
+            // ===== ESCUTA app:ready =====
+            document.addEventListener('app:ready', function(e) {
                 console.log('📢 app:ready recebido - inicializando upload');
+                const detail = e.detail || {};
+                console.log(`📌 Estado recebido: ${detail.isAuthenticated ? 'Autenticado' : 'Não autenticado'}`);
+                console.log(`📌 Créditos: ${detail.credits || 0}`);
+                
+                // Atualiza créditos imediatamente com os dados do payload
+                if (detail.credits !== undefined) {
+                    const creditsEls = document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay');
+                    creditsEls.forEach(el => {
+                        if (el) {
+                            if (el.id === 'creditsDisplay') {
+                                el.textContent = detail.creditsDisplay || detail.credits;
+                            } else {
+                                el.textContent = detail.credits;
+                            }
+                        }
+                    });
+                }
+                
                 setTimeout(init, 200);
             });
 
-            // Fallback: se app:ready já tiver ocorrido
-            if (window._appReadyFired || (window.App?.isReady?.() === true)) {
+            // ===== FALLBACK: se app:ready já tiver ocorrido =====
+            if (window._appReadyFired || window.App?.isReady?.() === true) {
                 console.log('✅ App já está pronto - inicializando upload');
+                const state = window.__APP_STATE || {};
+                if (state.credits !== undefined) {
+                    document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(el => {
+                        if (el) {
+                            if (el.id === 'creditsDisplay') {
+                                el.textContent = state.creditsDisplay || state.credits;
+                            } else {
+                                el.textContent = state.credits;
+                            }
+                        }
+                    });
+                }
                 setTimeout(init, 300);
             }
 
-            // Inicializa com DOMContentLoaded
+            // ===== DOMContentLoaded =====
             document.addEventListener('DOMContentLoaded', () => {
                 if (window._appReadyFired || window.App?.isReady?.()) {
                     init();
                 }
             });
 
-            // EXPÕE FUNÇÕES GLOBAIS
+            // ===== EXPÕE FUNÇÕES GLOBAIS =====
             window.uploadFiles = {
                 addFiles,
                 removeFile,
-                clearFiles: () => { selectedFiles = []; updateFilePreview(); updateCreditsDisplay(); },
+                clearFiles: () => { 
+                    selectedFiles = []; 
+                    updateFilePreview(); 
+                    updateCreditsDisplay(); 
+                },
                 getFiles: () => [...selectedFiles],
                 getCount: () => selectedFiles.length,
                 MAX_FILES,
                 MAX_FILE_SIZE_KB,
-                CREDITS_PER_FILE
+                CREDITS_PER_FILE,
+                updateCreditsDisplay
             };
 
-            console.log('✅ upload-control.js carregado v7.3');
+            // ===== EXPÕE PARA O APP =====
+            if (window.App) {
+                window.App.upload = window.uploadFiles;
+            }
+
+            console.log('✅ upload-control.js carregado v7.4');
             console.log('   📁 Arraste e solte arquivos CSV ou Excel');
-            console.log('   🔗 Sincronizado com app.js');
+            console.log('   🔗 Sincronizado com app.js v6.0 (orquestrador)');
+            console.log('   🔄 Atualização reativa de créditos via eventos');
 
         })();
     </script>

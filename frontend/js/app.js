@@ -1,23 +1,22 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V5.7 (CORREÇÕES DE SINTAXE E SINCRONIA)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V6.0 (SINCRONIA TOTAL)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V5.7:
- * 1. 🔥 CORREÇÃO: EventBus.emit com parênteses fechados
- * 2. 🔥 CORREÇÃO: syncPromotion com tratamento robusto
- * 3. 🔥 CORREÇÃO: Eventos premium:promotion_updated com listeners
- * 4. 🔥 CORREÇÃO: Evitar conflito com payment.js
- * 5. 🔥 isInitialized() unificado e robusto
- * 6. 🔥 isReady() para verificação de prontidão
- * 7. 🔥 Evento 'app:ready' com flag de segurança
- * 8. 🔥 State compartilhado via window.__APP_STATE
- * 9. 🔥 BLINDAGEM: try/catch no showNotification para evitar crash do Toastr
+ * 🏗️ ARQUITETURA V6.0:
+ * 1. 🔥 CENTRALIZAÇÃO: window.appAuth criado nativamente pelo app.js
+ * 2. 🔥 ESTADO REATIVO: StateManager com atualização por eventos
+ * 3. 🔥 UTILITÁRIOS GLOBAIS: AppUtils exposto para todos os módulos
+ * 4. 🔥 FETCH UNIFICADO: fetchWithAuth centralizado com tratamento 401
+ * 5. 🔥 EVENTO app:ready com payload completo do estado
+ * 6. 🔥 ELIMINAÇÃO DE REDUNDÂNCIA: dashboard.js e payment.js usam AppUtils
+ * 7. 🔥 SINCRONIA REATIVA: substitui polling por eventos
+ * 8. 🔥 FALLBACK INTELIGENTE: coordenado pelo app.js
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v5.7...');
+    console.log('🚀 Inicializando App (Orquestrador) v6.0...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -152,11 +151,99 @@
         _intervals: []
     };
 
-    // 🔥 EXPORTA ESTADO PARA OUTROS MÓDULOS
+    // ==============================================
+    // 🔥 GERENCIADOR DE ESTADO REATIVO (NOVO)
+    // ==============================================
+
+    const StateManager = {
+        /**
+         * Atualiza o estado e notifica todos os módulos via EventBus
+         */
+        updateState: function(newState) {
+            const previousState = { ...State };
+            Object.assign(State, newState);
+            
+            // Atualiza o display de créditos se necessário
+            if (newState.credits !== undefined || newState.isPremium !== undefined || newState.isAdmin !== undefined) {
+                State.creditsDisplay = Utils.formatCreditsDisplay(State.credits, State.isPremium);
+            }
+            
+            console.log('📊 [StateManager] Estado atualizado:', {
+                credits: State.credits,
+                isPremium: State.isPremium,
+                isAdmin: State.isAdmin,
+                creditsDisplay: State.creditsDisplay
+            });
+            
+            // Notifica todos os módulos sobre a mudança
+            const eventData = {
+                state: State,
+                changes: newState,
+                previous: previousState,
+                timestamp: Date.now()
+            };
+            
+            // Dispara via EventBus (app.js interno)
+            EventBus.emit('app:state_changed', eventData);
+            
+            // Dispara via DOM (para payment.js e dashboard.js)
+            window.dispatchEvent(new CustomEvent('app:state_changed', { 
+                detail: eventData,
+                bubbles: true 
+            }));
+            document.dispatchEvent(new CustomEvent('app:state_changed', { 
+                detail: eventData,
+                bubbles: true 
+            }));
+            
+            // Atualiza UI imediatamente
+            UI.updateNavbar();
+            UI.updateCredits();
+            UI.updatePremiumBadge();
+            UI.updateVitalicioBadge();
+            UI.updateAdminBadge();
+            
+            return State;
+        },
+        
+        /**
+         * Atualiza apenas os créditos
+         */
+        updateCredits: function(credits, isPremium = null) {
+            const updates = { credits: credits };
+            if (isPremium !== null) updates.isPremium = isPremium;
+            return this.updateState(updates);
+        },
+        
+        /**
+         * Atualiza apenas o status premium
+         */
+        updatePremiumStatus: function(status) {
+            return this.updateState({
+                isPremium: status.is_premium || false,
+                daysLeftPremium: status.days_left || 0,
+                hasPromotionalPrice: status.promotional_price_locked || false,
+                promotionalPrice: status.promotional_price || null,
+                canReceiveDailyCredit: status.can_receive_today || false,
+                receivedDailyCreditToday: status.received_today || false,
+                credits: status.credits_balance || State.credits
+            });
+        },
+        
+        /**
+         * Obtém o estado atual (read-only)
+         */
+        getState: function() {
+            return { ...State };
+        }
+    };
+
+    // 🔥 EXPORTA ESTADO E GERENCIADOR PARA OUTROS MÓDULOS
     window.__APP_STATE = State;
+    window.__APP_STATE_MANAGER = StateManager;
 
     // ==============================================
-    // 🔥 UTILITÁRIOS
+    // 🔥 UTILITÁRIOS (AGORA GLOBAIS)
     // ==============================================
 
     const Utils = {
@@ -318,7 +405,218 @@
     };
 
     // ==============================================
-    // 🔥 ROTEADOR (CORRIGIDO)
+    // 🔥 EXPORTA UTILITÁRIOS GLOBAIS (NOVO)
+    // ==============================================
+
+    /**
+     * 🔥 AppUtils - Utilitários globais para todos os módulos
+     * Elimina redundância entre payment.js e dashboard.js
+     */
+    window.AppUtils = {
+        sanitizeNumber: Utils.sanitizeNumber,
+        formatCreditsDisplay: Utils.formatCreditsDisplay,
+        escapeHtml: Utils.escapeHtml,
+        formatDate: Utils.formatDate,
+        showNotification: Utils.showNotification,
+        isAuthenticated: Utils.isAuthenticated,
+        getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
+        getConfig: () => CONFIG
+    };
+
+    // ==============================================
+    // 🔥 FETCH UNIFICADO (NOVO)
+    // ==============================================
+
+    /**
+     * 🔥 fetchWithAuth - Função centralizada para todas as requisições
+     * Todos os módulos (payment.js, dashboard.js) devem usar esta função
+     */
+    async function fetchWithAuth(url, options = {}) {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                console.warn('⚠️ fetchWithAuth: sem token');
+                // Dispara evento de não autenticado
+                EventBus.emit('auth:unauthorized', { message: 'Token não encontrado' });
+                return null;
+            }
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                ...options.headers
+            };
+            
+            // Se for FormData, remove Content-Type para o browser definir
+            if (options.body instanceof FormData) {
+                delete headers['Content-Type'];
+            }
+            
+            const response = await fetch(url, { ...options, headers });
+            
+            // 🔥 Tratamento de 401 - Token expirado
+            if (response.status === 401) {
+                console.warn('⚠️ Token expirado, tentando refresh...');
+                
+                // Tenta renovar o token
+                const refreshed = await refreshTokenSafely();
+                if (refreshed) {
+                    // Re-tenta a requisição com o novo token
+                    const newToken = localStorage.getItem('access_token');
+                    if (newToken) {
+                        headers['Authorization'] = `Bearer ${newToken}`;
+                        const retryResponse = await fetch(url, { ...options, headers });
+                        if (retryResponse.ok) {
+                            return retryResponse;
+                        }
+                    }
+                }
+                
+                // Se falhou, redireciona para login
+                console.error('❌ Falha ao renovar token, redirecionando para login');
+                EventBus.emit('auth:unauthorized', { 
+                    message: 'Sessão expirada',
+                    redirect: true 
+                });
+                Auth.handleUnauthorized();
+                return null;
+            }
+            
+            // 🔥 Tratamento de 429 - Rate Limit
+            if (response.status === 429) {
+                const data = await response.json().catch(() => ({}));
+                const retryAfter = data.retry_after || 60;
+                const remaining = data.remaining_attempts || 0;
+                
+                EventBus.emit('rate_limit:blocked', {
+                    retryAfter: retryAfter,
+                    remaining: remaining,
+                    message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
+                    for: url
+                });
+                
+                Utils.showNotification(`⏳ Aguarde ${retryAfter} segundos antes de tentar novamente.`, 'warning');
+                return response;
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('❌ fetchWithAuth error:', error);
+            EventBus.emit('fetch:error', { 
+                url, 
+                error: error.message,
+                options 
+            });
+            return null;
+        }
+    }
+
+    /**
+     * 🔥 refreshTokenSafely - Renova o token de forma segura
+     */
+    async function refreshTokenSafely() {
+        try {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) {
+                console.warn('⚠️ Sem refresh token disponível');
+                return false;
+            }
+            
+            const response = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                    if (data.refresh_token) {
+                        localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    console.log('✅ Token renovado com sucesso!');
+                    EventBus.emit('auth:token_refreshed', { 
+                        message: 'Token renovado automaticamente' 
+                    });
+                    return true;
+                }
+            }
+            
+            console.warn('⚠️ Falha ao renovar token');
+            return false;
+        } catch (error) {
+            console.error('❌ Erro ao renovar token:', error);
+            return false;
+        }
+    }
+
+    // ==============================================
+    // 🔥 INTERFACE DE AUTENTICAÇÃO (window.appAuth) - CENTRALIZADO
+    // ==============================================
+
+    /**
+     * 🔥 window.appAuth - Interface formal de autenticação
+     * Todos os módulos (payment.js, dashboard.js) usam esta interface
+     */
+    window.appAuth = {
+        isAuthenticated: () => Utils.isAuthenticated(),
+        isAdmin: () => State.isAdmin,
+        isPremium: () => State.isPremium,
+        getCredits: () => State.credits,
+        getCurrentUser: () => State.user,
+        getState: () => StateManager.getState(),
+        
+        // 🔥 FETCH UNIFICADO
+        fetchWithAuth: fetchWithAuth,
+        refreshTokenSafely: refreshTokenSafely,
+        
+        // 🔥 NOTIFICAÇÕES
+        showNotification: (msg, type) => Utils.showNotification(msg, type),
+        
+        // 🔥 ESTADO
+        updateState: StateManager.updateState,
+        updateCredits: StateManager.updateCredits,
+        updatePremiumStatus: StateManager.updatePremiumStatus,
+        
+        // 🔥 CRÉDITOS
+        loadUserCredits: async () => {
+            try {
+                const response = await fetchWithAuth('/api/auth/me');
+                if (response?.ok) {
+                    const data = await response.json();
+                    if (data.credits !== undefined) {
+                        StateManager.updateCredits(data.credits, data.is_premium || false);
+                    }
+                    if (data.user) {
+                        State.user = data.user;
+                    }
+                    return data;
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar créditos:', e);
+            }
+            return null;
+        },
+        
+        // 🔥 RATE LIMIT
+        getRateLimitStatus: () => ({
+            blocked: State.rateLimitBlocked,
+            blockedUntil: State.rateLimitBlockedUntil,
+            remainingAttempts: State.rateLimitRemainingAttempts,
+            for: State.rateLimitBlockedFor,
+            timeRemaining: Utils.getRateLimitTimeRemaining()
+        }),
+        
+        // 🔥 LOGOUT
+        logout: () => Auth.handleUnauthorized()
+    };
+
+    // ==============================================
+    // 🔥 ROTEADOR
     // ==============================================
 
     const Router = {
@@ -484,6 +782,7 @@
             
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
+                document.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
             } catch (e) {
                 // Ignora erro em ambiente seguro
             }
@@ -547,16 +846,15 @@
                 el.style.display = isAuth ? 'none' : 'block';
             });
 
-            if (isAuth && window.appAuth) {
+            if (isAuth) {
                 try {
-                    const userData = window.appAuth.getCurrentUser?.() || {};
-                    const name = userData.name || 'Usuário';
+                    const name = State.user?.name || 'Usuário';
                     
                     document.querySelectorAll('.user-name').forEach(el => {
                         el.textContent = name;
                     });
                     document.querySelectorAll('.workshop-name').forEach(el => {
-                        el.textContent = userData.workshop_name || 'Oficina';
+                        el.textContent = State.user?.workshop_name || 'Oficina';
                     });
 
                     UI.updateCredits();
@@ -573,23 +871,9 @@
 
         updateCredits: () => {
             try {
-                let credits = State.credits;
-                let isPremium = State.isPremium;
-                let isAdmin = State.isAdmin;
-                
-                if (window.appAuth) {
-                    const authCredits = window.appAuth.getCredits?.() || 0;
-                    const authIsPremium = window.appAuth.isPremium?.() || false;
-                    const authIsAdmin = window.appAuth.isAdmin?.() || false;
-                    
-                    if (credits === 0 && authCredits > 0) credits = authCredits;
-                    if (!isPremium && authIsPremium) isPremium = authIsPremium;
-                    if (!isAdmin && authIsAdmin) isAdmin = authIsAdmin;
-                }
-                
-                State.credits = credits;
-                State.isPremium = isPremium;
-                State.isAdmin = isAdmin;
+                const credits = State.credits || 0;
+                const isPremium = State.isPremium || false;
+                const isAdmin = State.isAdmin || false;
                 
                 const formattedDisplay = Utils.formatCreditsDisplay(credits, isPremium);
                 State.creditsDisplay = formattedDisplay;
@@ -612,17 +896,13 @@
                     }
                 });
 
-                const creditEventData = {
+                // Notifica via EventBus
+                EventBus.emit('credits:updated', {
                     credits,
                     display: formattedDisplay,
                     maxCredits: CONFIG.MAX_CREDITS_BALANCE,
                     isPremium
-                };
-                
-                EventBus.emit('credits:updated', creditEventData);
-                window.dispatchEvent(new CustomEvent('credits:updated', { 
-                    detail: creditEventData 
-                }));
+                });
 
             } catch (e) {
                 console.warn('Erro ao atualizar créditos:', e);
@@ -630,8 +910,7 @@
         },
 
         updateAdminBadge: () => {
-            const isAdmin = window.appAuth?.isAdmin?.() || false;
-            State.isAdmin = isAdmin;
+            const isAdmin = State.isAdmin || false;
             
             document.querySelectorAll('.admin-badge, .admin-only').forEach(el => {
                 el.style.display = isAdmin ? 'inline-block' : 'none';
@@ -640,8 +919,7 @@
         },
 
         updatePremiumBadge: () => {
-            const isPremium = window.appAuth?.isPremium?.() || false;
-            State.isPremium = isPremium;
+            const isPremium = State.isPremium || false;
             
             document.querySelectorAll('.premium-badge, .premium-only').forEach(el => {
                 el.style.display = isPremium ? 'inline-block' : 'none';
@@ -909,8 +1187,6 @@
         },
 
         _checkTokenRenewal: async () => {
-            if (!window.appAuth) return;
-            
             const token = localStorage.getItem('access_token');
             if (!token) return;
             
@@ -942,21 +1218,19 @@
                     EventBus.emit('auth:token_expired', eventData);
                     window.dispatchEvent(new CustomEvent('auth:token_expired', { detail: eventData }));
                     
-                    if (window.appAuth.refreshTokenSafely) {
-                        const refreshed = await window.appAuth.refreshTokenSafely();
-                        if (refreshed) {
-                            console.log('✅ Token renovado com sucesso!');
-                            
-                            const refreshEvent = { message: 'Token renovado com sucesso' };
-                            EventBus.emit('auth:token_refreshed', refreshEvent);
-                            window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
-                            
-                            Auth.resetSessionTimer();
-                            State.tokenValid = true;
-                        } else {
-                            console.log('❌ Falha ao renovar token, fazendo logout...');
-                            Auth.handleUnauthorized();
-                        }
+                    const refreshed = await refreshTokenSafely();
+                    if (refreshed) {
+                        console.log('✅ Token renovado com sucesso!');
+                        
+                        const refreshEvent = { message: 'Token renovado com sucesso' };
+                        EventBus.emit('auth:token_refreshed', refreshEvent);
+                        window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
+                        
+                        Auth.resetSessionTimer();
+                        State.tokenValid = true;
+                    } else {
+                        console.log('❌ Falha ao renovar token, fazendo logout...');
+                        Auth.handleUnauthorized();
                     }
                 } else if (response.ok) {
                     const data = await response.json();
@@ -970,8 +1244,7 @@
                         window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
                         
                         if (data.credits !== undefined) {
-                            State.credits = data.credits;
-                            UI.updateCredits();
+                            StateManager.updateCredits(data.credits);
                         }
                     }
                     
@@ -989,14 +1262,16 @@
             
             localStorage.clear();
             
-            State.isAuthenticated = false;
-            State.user = null;
-            State.userInitialized = false;
-            State.credits = 0;
-            State.isPremium = false;
-            State.isAdmin = false;
-            State.tokenValid = false;
-            State.isAppReady = false;
+            // Atualiza estado via StateManager
+            StateManager.updateState({
+                user: null,
+                credits: 0,
+                isPremium: false,
+                isAdmin: false,
+                tokenValid: false,
+                isAppReady: false,
+                userInitialized: false
+            });
             
             const eventData = { 
                 message: 'Sessão inválida ou expirada',
@@ -1027,7 +1302,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE CRÉDITOS
+    // 🔥 GERENCIADOR DE CRÉDITOS (REATIVO - SEM POLLING EXCESSIVO)
     // ==============================================
 
     const Credits = {
@@ -1038,51 +1313,21 @@
             if (window.appAuth?.loadUserCredits) {
                 try {
                     await window.appAuth.loadUserCredits();
-                    UI.updateCredits();
-                    
-                    const eventData = {
-                        credits: State.credits,
-                        display: State.creditsDisplay
-                    };
-                    
-                    EventBus.emit('credits:loaded', eventData);
-                    window.dispatchEvent(new CustomEvent('credits:loaded', { detail: eventData }));
+                    return State;
                 } catch (e) {
                     console.warn('Erro ao carregar créditos:', e);
                 }
             }
+            return null;
         },
 
         loadPremiumStatus: async () => {
-            // 🔥 CORREÇÃO: Verifica se a função existe no payment.js primeiro
+            // 🔥 PRIORIDADE: Usar window.loadPremiumStatus do payment.js
             if (window.loadPremiumStatus && typeof window.loadPremiumStatus === 'function') {
                 try {
                     const status = await window.loadPremiumStatus();
                     if (status) {
-                        State.isPremium = status.is_premium || false;
-                        State.daysLeftPremium = status.days_left || 0;
-                        State.hasPromotionalPrice = status.promotional_price_locked || false;
-                        State.promotionalPrice = status.promotional_price || null;
-                        State.canReceiveDailyCredit = status.can_receive_today || false;
-                        State.receivedDailyCreditToday = status.received_today || false;
-                        State.credits = status.credits_balance || 0;
-                        
-                        const eventData = {
-                            isPremium: State.isPremium,
-                            daysLeft: State.daysLeftPremium,
-                            hasPromotionalPrice: State.hasPromotionalPrice,
-                            promotionalPrice: State.promotionalPrice,
-                            canReceiveDailyCredit: State.canReceiveDailyCredit,
-                            receivedDailyCreditToday: State.receivedDailyCreditToday
-                        };
-                        
-                        EventBus.emit('premium:status_updated', eventData);
-                        window.dispatchEvent(new CustomEvent('premium:status_updated', { detail: eventData }));
-                        
-                        UI.updatePremiumBadge();
-                        UI.updateVitalicioBadge();
-                        UI.updateCredits();
-                        
+                        StateManager.updatePremiumStatus(status);
                         return status;
                     }
                 } catch (e) {
@@ -1090,29 +1335,15 @@
                 }
             }
             
-            // Fallback: tenta via API diretamente
+            // Fallback: via API
             try {
                 const token = localStorage.getItem('access_token');
                 if (!token) return null;
                 
-                const response = await fetch('/api/payments/premium-status', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (response.ok) {
+                const response = await fetchWithAuth('/api/payments/premium-status');
+                if (response?.ok) {
                     const status = await response.json();
-                    State.isPremium = status.is_premium || false;
-                    State.daysLeftPremium = status.days_left || 0;
-                    State.hasPromotionalPrice = status.promotional_price_locked || false;
-                    State.promotionalPrice = status.promotional_price || null;
-                    State.canReceiveDailyCredit = status.can_receive_today || false;
-                    State.receivedDailyCreditToday = status.received_today || false;
-                    State.credits = status.credits_balance || 0;
-                    
-                    UI.updatePremiumBadge();
-                    UI.updateVitalicioBadge();
-                    UI.updateCredits();
-                    
+                    StateManager.updatePremiumStatus(status);
                     return status;
                 }
             } catch (e) {
@@ -1130,15 +1361,6 @@
                         Utils.showNotification('✅ Crédito diário recebido com sucesso!', 'success');
                         await Credits.load();
                         await Credits.loadPremiumStatus();
-                        
-                        const eventData = {
-                            credits: State.credits,
-                            display: State.creditsDisplay
-                        };
-                        
-                        EventBus.emit('credits:daily_received', eventData);
-                        window.dispatchEvent(new CustomEvent('credits:daily_received', { detail: eventData }));
-                        
                         return result;
                     }
                 } catch (e) {
@@ -1190,7 +1412,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW (CORRIGIDO - SEM AUTO-REFILL)
+    // 🔥 GERENCIADOR DE PoW (MODO SOB DEMANDA)
     // ==============================================
 
     const Pow = {
@@ -1228,13 +1450,10 @@
                         }
                     }, 100);
                     
-                    const eventData = {
+                    EventBus.emit('pow:ready', {
                         solutionsReady: State.powSolutionsReady,
                         autoRefill: autoRefillEnabled
-                    };
-                    
-                    EventBus.emit('pow:ready', eventData);
-                    window.dispatchEvent(new CustomEvent('pow:ready', { detail: eventData }));
+                    });
                 }
             } catch (e) {
                 console.warn('Erro ao iniciar PoW:', e);
@@ -1348,11 +1567,6 @@
     // ==============================================
 
     const Analysis = {
-        _activeAnalyses: [],
-        _recentAnalyses: [],
-        _totalAnalyses: 0,
-        _analysesToday: 0,
-
         startAnalysis: (data) => {
             const analysis = {
                 id: Date.now(),
@@ -1364,15 +1578,11 @@
             };
             
             State.activeAnalyses.push(analysis);
-            Analysis._activeAnalyses.push(analysis);
             
-            const eventData = {
+            EventBus.emit('analysis:started', {
                 analysis,
                 activeCount: State.activeAnalyses.length
-            };
-            
-            EventBus.emit('analysis:started', eventData);
-            window.dispatchEvent(new CustomEvent('analysis:started', { detail: eventData }));
+            });
             
             return analysis;
         },
@@ -1384,9 +1594,7 @@
                 analysis.status = status;
                 analysis.lastUpdate = new Date().toISOString();
                 
-                const eventData = { analysis, progress, status };
-                EventBus.emit('analysis:progress', eventData);
-                window.dispatchEvent(new CustomEvent('analysis:progress', { detail: eventData }));
+                EventBus.emit('analysis:progress', { analysis, progress, status });
             }
         },
 
@@ -1402,45 +1610,21 @@
                 State.recentAnalyses.unshift(analysis);
                 State.totalAnalyses++;
                 
-                const today = new Date().toISOString().split('T')[0];
-                if (analysis.timestamp.startsWith(today)) {
-                    State.analysesToday++;
-                }
-                
                 if (State.recentAnalyses.length > 50) {
                     State.recentAnalyses = State.recentAnalyses.slice(0, 50);
                 }
 
                 if (result && result.user_credits !== undefined) {
-                    console.log(`💰 Atualizando créditos do backend: ${result.user_credits}`);
-                    State.credits = result.user_credits;
-                    
-                    const display = result.credits_display || Utils.formatCreditsDisplay(State.credits, State.isPremium);
-                    State.creditsDisplay = display;
-                    
-                    const creditEventData = {
-                        credits: State.credits,
-                        display: State.creditsDisplay,
-                        maxCredits: CONFIG.MAX_CREDITS_BALANCE,
-                        isPremium: State.isPremium
-                    };
-                    
-                    EventBus.emit('credits:updated', creditEventData);
-                    window.dispatchEvent(new CustomEvent('credits:updated', { detail: creditEventData }));
-                    
-                    UI.updateCredits();
+                    StateManager.updateCredits(result.user_credits);
                 }
                 
-                const eventData = {
+                EventBus.emit('analysis:success', {
                     analysis,
                     result,
                     total: State.totalAnalyses,
                     today: State.analysesToday,
                     creditsUpdated: result?.credits || 0
-                };
-                
-                EventBus.emit('analysis:success', eventData);
-                window.dispatchEvent(new CustomEvent('analysis:success', { detail: eventData }));
+                });
                 
                 UI.updateCredits();
             }
@@ -1456,14 +1640,11 @@
                 
                 State.activeAnalyses.splice(index, 1);
                 
-                const eventData = {
+                EventBus.emit('analysis:error', {
                     analysis,
                     error,
                     message: error.message || 'Erro na análise'
-                };
-                
-                EventBus.emit('analysis:error', eventData);
-                window.dispatchEvent(new CustomEvent('analysis:error', { detail: eventData }));
+                });
             }
         },
 
@@ -1478,12 +1659,11 @@
             State.analysesToday = 0;
             
             EventBus.emit('analysis:history_cleared', {});
-            window.dispatchEvent(new CustomEvent('analysis:history_cleared', {}));
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE SINCRONIZAÇÃO (CORRIGIDO)
+    // 🔥 GERENCIADOR DE SINCRONIZAÇÃO
     // ==============================================
 
     const Sync = {
@@ -1498,12 +1678,14 @@
                 
                 if (isAuth) {
                     const userData = window.appAuth.getCurrentUser?.() || {};
-                    State.user = userData;
-                    State.credits = userData.credits || 0;
-                    State.isAdmin = userData.is_admin || false;
-                    State.isPremium = userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL';
-                    State.tokenValid = true;
-                    State.userInitialized = true;
+                    StateManager.updateState({
+                        user: userData,
+                        credits: userData.credits || 0,
+                        isAdmin: userData.is_admin || false,
+                        isPremium: userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL',
+                        tokenValid: true,
+                        userInitialized: true
+                    });
                     
                     UI.updateNavbar();
                     Credits.startPolling();
@@ -1518,21 +1700,18 @@
                                 preSolve: false
                             });
                         }, 1000);
-                    } else if (isAuth && window.powClient) {
-                        console.log('⚠️ initPowClient não disponível, usando powClient diretamente');
-                        if (typeof window.powClient.startAutoRefill === 'function') {
-                            console.log('⚡ PoW disponível, aguardando upload para ativar');
-                        }
                     }
                 } else {
-                    State.tokenValid = false;
-                    State.userInitialized = false;
+                    StateManager.updateState({
+                        tokenValid: false,
+                        userInitialized: false
+                    });
                 }
 
                 return isAuth;
             } catch (e) {
                 console.error('Erro ao sincronizar auth:', e);
-                State.userInitialized = false;
+                StateManager.updateState({ userInitialized: false });
                 return false;
             }
         },
@@ -1568,51 +1747,24 @@
                 const token = localStorage.getItem('access_token');
                 if (!token) return;
                 
-                const response = await fetch('/api/payments/promotion-status', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (response.status === 429) {
-                    const data = await response.json().catch(() => ({}));
-                    
-                    const eventData = {
-                        retryAfter: data.retry_after || 60,
-                        remaining: data.remaining_attempts || 0,
-                        message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
-                        for: 'promotion'
-                    };
-                    
-                    EventBus.emit('rate_limit:blocked', eventData);
-                    window.dispatchEvent(new CustomEvent('rate_limit:blocked', { detail: eventData }));
-                    
-                    return;
-                }
-                
-                if (response.ok) {
+                const response = await fetchWithAuth('/api/payments/promotion-status');
+                if (response?.ok) {
                     const data = await response.json();
                     
-                    // 🔥 CORREÇÃO: Verificar se user_locked_price existe
-                    State.hasPromotionalPrice = data.user_locked_price !== null && data.user_locked_price !== undefined;
-                    State.promotionalPrice = data.user_locked_price || null;
+                    StateManager.updateState({
+                        hasPromotionalPrice: data.user_locked_price !== null && data.user_locked_price !== undefined,
+                        promotionalPrice: data.user_locked_price || null,
+                        remainingSlots: data.remaining_slots,
+                        totalSlots: data.total_slots
+                    });
                     
-                    // 🔥 CORREÇÃO: Atualizar também os campos de promoção
-                    if (data.remaining_slots !== undefined) {
-                        State.remainingSlots = data.remaining_slots;
-                        State.totalSlots = data.total_slots;
-                    }
-                    
-                    const eventData = {
+                    EventBus.emit('premium:promotion_updated', {
                         hasPromotionalPrice: State.hasPromotionalPrice,
                         promotionalPrice: State.promotionalPrice,
                         remainingSlots: data.remaining_slots,
                         totalSlots: data.total_slots
-                    };
+                    });
                     
-                    // 🔥 CORREÇÃO: Parênteses fechados corretamente
-                    EventBus.emit('premium:promotion_updated', eventData);
-                    window.dispatchEvent(new CustomEvent('premium:promotion_updated', { detail: eventData }));
-                    
-                    // 🔥 CORREÇÃO: Atualizar UI imediatamente
                     UI.updateVitalicioBadge();
                 }
             } catch (e) {
@@ -1646,10 +1798,12 @@
             if (window.appAuth?.getRateLimitStatus) {
                 const status = window.appAuth.getRateLimitStatus();
                 if (status) {
-                    State.rateLimitBlocked = status.blocked || false;
-                    State.rateLimitBlockedUntil = status.blockedUntil || 0;
-                    State.rateLimitRemainingAttempts = status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX;
-                    State.rateLimitBlockedFor = status.for || 'login';
+                    StateManager.updateState({
+                        rateLimitBlocked: status.blocked || false,
+                        rateLimitBlockedUntil: status.blockedUntil || 0,
+                        rateLimitRemainingAttempts: status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX,
+                        rateLimitBlockedFor: status.for || 'login'
+                    });
                     UI.updateRateLimitStatus();
                 }
             }
@@ -1657,30 +1811,83 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS (COM LISTENERS PARA PROMOTION)
+    // 🔥 GERENCIADOR DE EVENTOS
     // ==============================================
 
     const EventManager = {
         setup: () => {
-            // ... (código existente) ...
-
-            // 🔥 CORREÇÃO: Adicionar listener para premium:promotion_updated
-            EventBus.on('premium:promotion_updated', (data) => {
-                console.log('📢 premium:promotion_updated recebido:', data);
-                if (data) {
-                    State.hasPromotionalPrice = data.hasPromotionalPrice || false;
-                    State.promotionalPrice = data.promotionalPrice || null;
-                    UI.updateVitalicioBadge();
+            console.log('📡 Configurando gerenciador de eventos...');
+            
+            // 🔥 ESCUTA EVENTOS DO payment.js (sem dois pontos)
+            document.addEventListener('creditsUpdated', function(e) {
+                console.log('📢 [EventManager] creditsUpdated recebido do payment.js');
+                const data = e.detail || {};
+                StateManager.updateCredits(data.credits || 0, data.isPremium || false);
+            });
+            
+            document.addEventListener('premiumStatusUpdated', function(e) {
+                console.log('📢 [EventManager] premiumStatusUpdated recebido do payment.js');
+                const data = e.detail || {};
+                StateManager.updatePremiumStatus({
+                    is_premium: data.isPremium || false,
+                    days_left: data.daysLeft || 0,
+                    promotional_price_locked: data.hasPromotionalPrice || false,
+                    promotional_price: data.promotionalPrice || null,
+                    can_receive_today: data.canReceiveDailyCredit || false,
+                    received_today: data.receivedDailyCreditToday || false,
+                    credits_balance: data.creditsBalance || State.credits
+                });
+            });
+            
+            document.addEventListener('paymentReady', function(e) {
+                console.log('📢 [EventManager] paymentReady recebido');
+                window._paymentReady = true;
+                setTimeout(() => {
+                    Credits.loadPremiumStatus();
+                    Credits.load();
+                }, 300);
+            });
+            
+            // 🔥 ESCUTA EVENTOS DO dashboard.js
+            document.addEventListener('analysis:success', function(e) {
+                console.log('📢 [EventManager] analysis:success recebido do dashboard');
+                const detail = e.detail || {};
+                if (detail.result?.user_credits !== undefined) {
+                    StateManager.updateCredits(detail.result.user_credits);
                 }
             });
-
-            // 🔥 CORREÇÃO: Adicionar listener para credits:updated
-            EventBus.on('credits:updated', (data) => {
-                console.log('📢 credits:updated recebido:', data);
-                UI.updateCredits();
+            
+            // 🔥 ESCUTA MUDANÇAS DE ESTADO (para sincronizar com payment.js)
+            EventBus.on('app:state_changed', function(data) {
+                console.log('📢 [EventManager] app:state_changed', data.changes);
+                
+                // Notifica payment.js sobre mudanças de créditos
+                if (data.changes.credits !== undefined || data.changes.isPremium !== undefined) {
+                    window.dispatchEvent(new CustomEvent('creditsUpdated', {
+                        detail: {
+                            credits: State.credits,
+                            display: State.creditsDisplay,
+                            maxCredits: CONFIG.MAX_CREDITS_BALANCE,
+                            isPremium: State.isPremium
+                        }
+                    }));
+                }
+                
+                // Notifica payment.js sobre mudanças de status premium
+                if (data.changes.isPremium !== undefined || data.changes.daysLeftPremium !== undefined) {
+                    window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
+                        detail: {
+                            isPremium: State.isPremium,
+                            daysLeft: State.daysLeftPremium,
+                            hasPromotionalPrice: State.hasPromotionalPrice,
+                            promotionalPrice: State.promotionalPrice,
+                            canReceiveDailyCredit: State.canReceiveDailyCredit,
+                            receivedDailyCreditToday: State.receivedDailyCreditToday,
+                            creditsBalance: State.credits
+                        }
+                    }));
+                }
             });
-
-            // ... (restante do código) ...
         },
 
         clear: () => {
@@ -1689,17 +1896,17 @@
     };
 
     // ==============================================
-    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO (CORRIGIDA)
+    // 🔥 INICIALIZAÇÃO DA APLICAÇÃO
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v5.7...');
+        console.log('🚀 Inicializando App (Orquestrador) v6.0...');
 
         try {
             // 1. Resetar contador de reloads
             ReloadManager.reset();
 
-            // 🔥 CORRIGIDO: Aguardar auth.js carregar PRIMEIRO (antes de qualquer rota)
+            // 2. Aguardar auth.js carregar
             console.log('⏳ Aguardando auth.js carregar...');
             const authLoaded = await Utils.waitForAuth(30);
             
@@ -1713,7 +1920,7 @@
                 }
             }
 
-            // 🔥 CORRIGIDO: Verificar autenticação REAL antes de proteger rota
+            // 3. Verificar autenticação
             const token = localStorage.getItem('access_token');
             const hasValidToken = token && token !== 'undefined' && token !== 'null' && token.length > 10;
             
@@ -1750,7 +1957,10 @@
 
             console.log('✅ Rota verificada, continuando inicialização...');
 
-            // 4. Sincronizar com auth.js (se disponível)
+            // 4. Configurar EventManager (antes de tudo)
+            EventManager.setup();
+
+            // 5. Sincronizar com auth.js
             if (window.appAuth) {
                 const syncAuth = await Sync.syncAuth();
                 if (syncAuth) {
@@ -1758,16 +1968,18 @@
                 }
             } else {
                 if (isAuth) {
-                    State.tokenValid = true;
-                    State.userInitialized = true;
+                    StateManager.updateState({
+                        tokenValid: true,
+                        userInitialized: true
+                    });
                     console.log('✅ Autenticação via token (fallback)');
                 }
             }
             
-            // 5. Sincronizar Rate Limit
+            // 6. Sincronizar Rate Limit
             Sync.syncRateLimit();
 
-            // 6. Se estiver autenticado, sincroniza com payment, promoção e PoW
+            // 7. Se estiver autenticado, sincroniza com payment, promoção e PoW
             if (isAuth) {
                 console.log('🔐 Usuário autenticado, sincronizando serviços...');
                 
@@ -1779,7 +1991,6 @@
                         });
                     }, 1000);
                 } else if (window.powClient) {
-                    console.log('⚠️ initPowClient não disponível, usando powClient diretamente');
                     console.log('⚡ PoW disponível, aguardando upload para ativar');
                 }
                 
@@ -1787,33 +1998,30 @@
                 await Sync.syncPromotion();
             }
 
-            // 7. Configurar UI global
+            // 8. Configurar UI global
             UI.setupModals();
             UI.updateNavbar();
             UI.updateRateLimitStatus();
-
-            // 8. Configurar eventos globais
-            EventManager.setup();
 
             // 9. Configurar navegação
             Router.setupNavigation();
 
             // 10. Marcar como inicializado
-            State.initialized = true;
-            State.isAppReady = true;
-            State.userInitialized = true;
+            StateManager.updateState({
+                initialized: true,
+                isAppReady: true,
+                userInitialized: true
+            });
 
             window._appReadyFired = true;
+            window._appInitialized = true;
 
-            // ==============================================
-            // 🔥🔥🔥 ESPELHAMENTO DO EVENTO app:ready 🔥🔥🔥
-            // ==============================================
-            
+            // 11. DISPARAR EVENTO app:ready COM PAYLOAD COMPLETO
             const appReadyData = {
                 isAuthenticated: isAuth,
                 user: State.user,
                 credits: State.credits,
-                creditsDisplay: State.creditsDisplay || Utils.formatCreditsDisplay(State.credits, State.isPremium),
+                creditsDisplay: State.creditsDisplay,
                 isAdmin: State.isAdmin,
                 isPremium: State.isPremium,
                 maxCredits: CONFIG.MAX_CREDITS_BALANCE,
@@ -1827,52 +2035,56 @@
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
                 isReady: true,
-                version: '5.7'
+                version: '6.0'
             };
 
+            // Dispara em todos os canais
             EventBus.emit('app:ready', appReadyData);
             window.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
+            
+            // 🔥 NOTIFICA PAYMENT.JS
+            window.dispatchEvent(new CustomEvent('appReady', { 
+                detail: { isReady: true, version: '6.0' }
+            }));
 
-            console.log('✅ App (Orquestrador) v5.7 inicializado com sucesso!');
-            console.log('📢 Evento app:ready disparado via window, document e EventBus');
+            console.log('✅ App (Orquestrador) v6.0 inicializado com sucesso!');
+            console.log('📢 Evento app:ready com payload completo');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
             console.log(`📌 Premium: ${State.isPremium}`);
             console.log(`📌 Créditos: ${State.creditsDisplay}`);
-            console.log(`📌 userInitialized: ${State.userInitialized}`);
-            console.log('⚡ PoW em modo sob demanda (ativado apenas no upload)');
-            console.log('🛡️ Toastr blindado com try/catch');
-            console.log('🔧 CORREÇÕES v5.7:');
-            console.log('   ✅ EventBus.emit com parênteses fechados');
-            console.log('   ✅ syncPromotion com tratamento robusto');
-            console.log('   ✅ Eventos premium:promotion_updated com listeners');
+            console.log('🌉 window.appAuth centralizado e pronto');
+            console.log('📦 AppUtils disponível globalmente');
+            console.log('⚡ fetchWithAuth unificado com refresh automático');
+            console.log('🔄 Estado reativo via StateManager');
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
             Utils.showNotification('Erro ao inicializar aplicação. Recarregue a página.', 'error');
             
-            const eventData = {
+            EventBus.emit('app:error', { 
                 error: error.message || 'Erro na inicialização'
-            };
-            EventBus.emit('app:error', eventData);
-            window.dispatchEvent(new CustomEvent('app:error', { detail: eventData }));
+            });
             
-            State.initialized = false;
-            State.isAppReady = false;
-            State.userInitialized = false;
+            StateManager.updateState({
+                initialized: false,
+                isAppReady: false,
+                userInitialized: false
+            });
             window._appReadyFired = false;
         }
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS - V5.7
+    // 🔥 EXPORTAÇÕES GLOBAIS - V6.0
     // ==============================================
 
     const App = {
         CONFIG,
         State: State,
+        StateManager: StateManager,
         Utils,
         Router,
         EventBus,
@@ -1908,6 +2120,7 @@
             }
         },
         
+        // 🔥 INTERFACE DE AUTENTICAÇÃO (já exposta via window.appAuth)
         auth: Auth,
         pow: Pow,
         credits: Credits,
@@ -1971,7 +2184,11 @@
         escapeHtml: Utils.escapeHtml,
         formatDate: Utils.formatDate,
         sanitizeNumber: Utils.sanitizeNumber,
-        formatCreditsDisplay: Utils.formatCreditsDisplay
+        formatCreditsDisplay: Utils.formatCreditsDisplay,
+        
+        // 🔥 FETCH UNIFICADO
+        fetchWithAuth: fetchWithAuth,
+        refreshTokenSafely: refreshTokenSafely
     };
 
     // 🔥 EXPORTAÇÕES GLOBAIS
@@ -1981,7 +2198,9 @@
     window.autoAnalytics = App;
     window.EventBus = EventBus;
     window.__APP_STATE = State;
+    window.__APP_STATE_MANAGER = StateManager;
     window.__APP_CONFIG = CONFIG;
+    window.AppUtils = AppUtils;
     
     // 🔥 FUNÇÕES AUXILIARES
     window.showNotification = Utils.showNotification;
@@ -2025,35 +2244,11 @@
         timeRemaining: Utils.getRateLimitTimeRemaining()
     });
 
-    // 🔥 FUNÇÕES DO AUTH
-    window.fetchWithAuth = async (url, options = {}) => {
-        try {
-            const token = localStorage.getItem('access_token');
-            if (!token) {
-                console.warn('⚠️ fetchWithAuth: sem token');
-                return null;
-            }
-            
-            const headers = {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-                ...options.headers
-            };
-            
-            const response = await fetch(url, { ...options, headers });
-            
-            if (response.status === 401) {
-                Auth.handleUnauthorized();
-                return null;
-            }
-            
-            return response;
-        } catch (error) {
-            console.error('fetchWithAuth error:', error);
-            return null;
-        }
-    };
+    // 🔥 FETCH UNIFICADO
+    window.fetchWithAuth = fetchWithAuth;
+    window.refreshTokenSafely = refreshTokenSafely;
 
+    // 🔥 LOGOUT
     window.logout = () => {
         Auth.handleUnauthorized();
     };
@@ -2078,17 +2273,14 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v5.7 carregado!');
-    console.log('   🔥 isInitialized() robusto com múltiplas verificações');
-    console.log('   🔥 isReady() para verificação rápida');
-    console.log('   🔥 State compartilhado via window.__APP_STATE');
-    console.log('   🔥 Evento app:ready disparado em 3 canais (window, document, EventBus)');
-    console.log('   🔥 fetchWithAuth com tratamento de 401');
-    console.log('   🔥 window._appReadyFired para detecção de prontidão');
-    console.log('   🔥 CORREÇÃO: EventBus.emit com parênteses fechados');
-    console.log('   🔥 CORREÇÃO: syncPromotion com tratamento robusto');
-    console.log('   🔥 CORREÇÃO: Eventos premium:promotion_updated com listeners');
-    console.log('   🔥 CORREÇÃO: Evitar conflito com payment.js');
-    console.log('   🔥 BLINDAGEM: try/catch no showNotification (Toastr seguro)');
+    console.log('✅ app.js (Orquestrador) v6.0 carregado!');
+    console.log('   🔥 CENTRALIZAÇÃO: window.appAuth criado nativamente');
+    console.log('   🔥 ESTADO REATIVO: StateManager com atualização por eventos');
+    console.log('   🔥 UTILITÁRIOS GLOBAIS: AppUtils exposto para todos');
+    console.log('   🔥 FETCH UNIFICADO: fetchWithAuth com refresh automático');
+    console.log('   🔥 EVENTO app:ready com payload completo');
+    console.log('   🔥 ELIMINAÇÃO DE REDUNDÂNCIA: payment.js e dashboard.js usam AppUtils');
+    console.log('   🔥 SINCRONIA REATIVA: substitui polling por eventos');
+    console.log('   🔥 FALLBACK INTELIGENTE: coordenado pelo app.js');
 
-})();
+})()

@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.6');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.7 (Sincronizado com app.js v6.0)');
         })();
     </script>
     
@@ -850,7 +850,7 @@
                         <i class="fas fa-arrow-left me-1"></i> Voltar
                     </a>
                     
-                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.appAuth?.logout();">
+                    <a href="#" class="btn-sair" id="logoutBtn">
                         <i class="fas fa-sign-out-alt me-1"></i> Sair
                     </a>
                 </div>
@@ -905,132 +905,9 @@
                     </div>
                 </div>
 
-                <!-- 🔥 CONTAINER DO PLANO - COM CONTEÚDO ESTÁTICO DE FALLBACK -->
+                <!-- 🔥 CONTAINER DO PLANO - payment.js vai renderizar aqui -->
                 <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
-                    <!-- 🔥 PLANO BRONZE - ESTÁTICO (FALLBACK) -->
-                    <div class="col-lg-8 mx-auto">
-                        <div class="bronze-card" data-aos="fade-up" data-aos-duration="800">
-                            <div class="bronze-badge">
-                                <i class="fas fa-fire"></i> 🔥 PROMOÇÃO FUNDADOR
-                            </div>
-                            
-                            <div class="bronze-title">
-                                <span class="icon-big"><i class="fas fa-crown"></i></span>
-                                <h2>Plano Bronze</h2>
-                                <p class="subtitle">O plano ideal para sua oficina crescer com IA</p>
-                            </div>
-                            
-                            <div class="price-container">
-                                <span class="old-price">De R$ 149,90</span>
-                                <div class="price-tag" id="planoPreco">
-                                    R$ 97<span class="cents">,00</span>
-                                    <small>à vista</small>
-                                </div>
-                                <span class="economy-badge">
-                                    <i class="fas fa-tag"></i> Economia de 35%
-                                </span>
-                            </div>
-                            
-                            <div class="plan-info">
-                                <div class="row">
-                                    <div class="col-4">
-                                        <span class="number">30</span>
-                                        <span class="label">Créditos</span>
-                                    </div>
-                                    <div class="col-4">
-                                        <span class="number">3</span>
-                                        <span class="label">Arquivos/vez</span>
-                                    </div>
-                                    <div class="col-4">
-                                        <span class="number">∞</span>
-                                        <span class="label">Vitalício</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="vagas-counter">
-                                <div>
-                                    <span class="vagas-label">🎯 Apenas</span>
-                                    <span class="vagas-number">73</span>
-                                    <span class="vagas-label">vagas restantes</span>
-                                </div>
-                                <div class="vagas-progress">
-                                    <div class="vagas-progress-bar" style="width: 27%;"></div>
-                                </div>
-                                <small style="color:rgba(255,255,255,0.3); font-size:0.7rem;">
-                                    <i class="fas fa-clock"></i> Oferta por tempo limitado
-                                </small>
-                            </div>
-                            
-                            <div class="bronze-features">
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span><strong>30 créditos</strong> para análises completas</span>
-                                </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span><strong>Análise com IA</strong> (Google Gemini)</span>
-                                </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span><strong>Até 3 arquivos</strong> por análise (CSV/Excel)</span>
-                                </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span>📊 <strong>Dashboard completo</strong> com métricas</span>
-                                </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span>📄 <strong>Relatórios em PDF</strong> automáticos</span>
-                                </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span><strong>Suporte prioritário</strong> por email</span>
-                                </div>
-                            </div>
-                            
-                            <div class="d-grid gap-3 mt-4">
-                                <button class="btn btn-bronze btn-lg" onclick="window.openCpfModal('premium_mensal')">
-                                    <i class="fas fa-bolt me-2"></i>
-                                    🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
-                                    <small class="d-block fs-10">Pagamento seguro via PIX</small>
-                                </button>
-                            </div>
-                            
-                            <div class="limit-warning">
-                                <i class="fas fa-info-circle"></i>
-                                <span>Este é um <strong>plano vitalício</strong> com preço especial para os primeiros <strong>100 clientes</strong>. Após esgotar, o preço volta para R$ 149,90.</span>
-                            </div>
-                            
-                            <div class="credits-explanation">
-                                <div class="step">
-                                    <i class="fas fa-coins"></i>
-                                    <span><strong>Como funcionam os créditos:</strong></span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-plus-circle"></i>
-                                    <span>Você começa com <strong>3 créditos grátis</strong></span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-gem"></i>
-                                    <span>Com o <strong>Plano Bronze</strong>, você ganha <strong>30 créditos</strong> para usar quando quiser</span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-chart-line"></i>
-                                    <span>Cada análise consome <strong>1 crédito</strong> por arquivo</span>
-                                </div>
-                                <div class="highlight-box">
-                                    <span><i class="fas fa-bolt" style="color:#f5a623;"></i> <strong>Dica:</strong> Use seus créditos estrategicamente para análises mais importantes e maximize o ROI da sua oficina!</span>
-                                </div>
-                            </div>
-                            
-                            <div class="security-seals">
-                                <span class="seal"><i class="fas fa-lock"></i> Pagamento Seguro</span>
-                                <span class="seal"><i class="fas fa-shield-alt"></i> PoW Protegido</span>
-                                <span class="seal"><i class="fas fa-credit-card"></i> PIX</span>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- CONTEÚDO SERÁ RENDERIZADO PELO payment.js -->
                 </div>
 
                 <!-- INDICADOR DE RATE LIMIT -->
@@ -1251,7 +1128,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.6 - Planos e Suporte
+                        AutoAnalytics v2.7 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1318,7 +1195,7 @@
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CORRETA) -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ POW - v3.3 -->
@@ -1327,20 +1204,20 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v5.7 (com trava para planos) -->
-    <script src="/static/js/app.js?ver=5.7.0"></script>
+    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL - mesma versão do index.html) -->
+    <script src="/static/js/app.js?ver=6.0.0"></script>
     
     <!-- 4️⃣ PAYMENT - v2.5.1 -->
     <script src="/static/js/payment.js?ver=2.5.1"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO -->
+    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.6');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.7 (Sincronizado com app.js v6.0)');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1362,6 +1239,13 @@
                     offset: 50,
                     easing: 'ease-in-out'
                 });
+            }
+
+            // ==============================================
+            // 🔥 REFERÊNCIA AO APP (ORQUESTRADOR)
+            // ==============================================
+            function getApp() {
+                return window.App || window.app || window.autoAnalytics;
             }
 
             // ==============================================
@@ -1426,6 +1310,150 @@
             };
 
             // ==============================================
+            // 🔥 ATUALIZAR EXIBIÇÃO DE CRÉDITOS (REATIVO)
+            // ==============================================
+            function updateCreditsDisplay() {
+                const app = getApp();
+                const credits = app?.getCredits?.() || 0;
+                const isAdmin = app?.isAdmin?.() || false;
+                const displayText = isAdmin ? '∞' : credits;
+                
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                    if (el) el.textContent = displayText;
+                });
+            }
+
+            // ==============================================
+            // 🔥 ATUALIZAR NOME DO USUÁRIO
+            // ==============================================
+            function updateUserName() {
+                const app = getApp();
+                const user = app?.getCurrentUser?.();
+                const nameEl = document.getElementById('userName');
+                if (nameEl && user?.name) {
+                    nameEl.textContent = user.name;
+                }
+            }
+
+            // ==============================================
+            // 🔥 LOGOUT (usando app.js v6.0)
+            // ==============================================
+            document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
+                e.preventDefault();
+                const app = getApp();
+                if (app?.logout) {
+                    app.logout();
+                } else {
+                    // Fallback
+                    localStorage.clear();
+                    window.location.replace('/login');
+                }
+            });
+
+            // ==============================================
+            // 🔥 BRIDGE DE EVENTOS (SINCRONIZA COM PAYMENT.JS)
+            // ==============================================
+            
+            // Escuta eventos do payment.js (sem dois pontos)
+            document.addEventListener('creditsUpdated', function(e) {
+                const data = e.detail || {};
+                const credits = data.credits || 0;
+                const display = data.display || credits;
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                    if (el) el.textContent = display;
+                });
+                console.log('📢 creditsUpdated recebido:', credits);
+            });
+
+            document.addEventListener('premiumStatusUpdated', function(e) {
+                console.log('📢 premiumStatusUpdated recebido:', e.detail);
+                // Atualiza UI se necessário
+            });
+
+            document.addEventListener('paymentReady', function(e) {
+                console.log('📢 paymentReady recebido:', e.detail);
+                // Payment.js está pronto
+            });
+
+            // Escuta eventos do app.js (com dois pontos)
+            document.addEventListener('credits:updated', function(e) {
+                const data = e.detail || {};
+                const credits = data.credits || 0;
+                const display = data.display || credits;
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                    if (el) el.textContent = display;
+                });
+                console.log('📢 credits:updated recebido:', credits);
+            });
+
+            document.addEventListener('premium:status_updated', function(e) {
+                console.log('📢 premium:status_updated recebido:', e.detail);
+            });
+
+            // Escuta mudanças de estado do app.js
+            document.addEventListener('app:state_changed', function(e) {
+                const detail = e.detail || {};
+                const state = detail.state || {};
+                if (state.credits !== undefined) {
+                    const display = state.creditsDisplay || state.credits;
+                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                        if (el) el.textContent = display;
+                    });
+                }
+                if (state.user?.name) {
+                    const nameEl = document.getElementById('userName');
+                    if (nameEl) nameEl.textContent = state.user.name;
+                }
+            });
+
+            // ==============================================
+            // 🔥 ESCUTA app:ready (inicialização)
+            // ==============================================
+            document.addEventListener('app:ready', function(e) {
+                console.log('📢 app:ready recebido - sincronizando planos.html');
+                const detail = e.detail || {};
+                
+                // Atualiza nome
+                if (detail.displayName) {
+                    const nameEl = document.getElementById('userName');
+                    if (nameEl) nameEl.textContent = detail.displayName;
+                }
+                
+                // Atualiza créditos
+                if (detail.credits !== undefined) {
+                    const display = detail.creditsDisplay || detail.credits;
+                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                        if (el) el.textContent = display;
+                    });
+                }
+                
+                // Inicializa AOS novamente
+                if (typeof AOS !== 'undefined') {
+                    setTimeout(() => AOS.refresh(), 300);
+                }
+                
+                console.log('✅ planos.html sincronizado com app.js v6.0');
+            });
+
+            // ==============================================
+            // 🔥 FALLBACK: se app:ready já tiver ocorrido
+            // ==============================================
+            if (window._appReadyFired || window.App?.isReady?.() === true) {
+                console.log('✅ App já está pronto - sincronizando planos.html');
+                const state = window.__APP_STATE || {};
+                if (state.credits !== undefined) {
+                    const display = state.creditsDisplay || state.credits;
+                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                        if (el) el.textContent = display;
+                    });
+                }
+                if (state.user?.name) {
+                    const nameEl = document.getElementById('userName');
+                    if (nameEl) nameEl.textContent = state.user.name;
+                }
+            }
+
+            // ==============================================
             // 🔥 FORMULÁRIO DE CONTATO
             // ==============================================
             document.addEventListener('DOMContentLoaded', function() {
@@ -1447,9 +1475,8 @@
                             `---\nEnviado via AutoAnalytics Planos e Suporte`
                         )}`;
                         
-                        if (typeof toastr !== 'undefined') {
-                            toastr.success('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!');
-                        }
+                        const app = getApp();
+                        app?.showNotification?.('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!', 'success');
                         
                         document.getElementById('supportName').value = '';
                         document.getElementById('supportEmail').value = '';
@@ -1460,48 +1487,12 @@
                 }
 
                 // ==============================================
-                // 🔥 CARREGAR DADOS DO USUÁRIO
+                // 🔥 CARREGAR DADOS DO USUÁRIO VIA APP
                 // ==============================================
-                (async function loadUserData() {
-                    const token = localStorage.getItem('access_token');
-                    if (!token) {
-                        window.location.href = '/login';
-                        return;
-                    }
-                    
-                    try {
-                        const response = await fetch('/api/auth/me', {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            const user = data.data || data;
-                            
-                            const nameEl = document.getElementById('userName');
-                            if (nameEl && user.name) {
-                                nameEl.textContent = user.name;
-                            }
-                            
-                            const creditsSpan = document.getElementById('creditsCount');
-                            if (creditsSpan) {
-                                creditsSpan.textContent = user.is_admin ? '∞' : (user.credits || 0);
-                            }
-                            
-                            const nameInput = document.getElementById('supportName');
-                            if (nameInput && user.name) {
-                                nameInput.value = user.name;
-                            }
-                            
-                            const emailInput = document.getElementById('supportEmail');
-                            if (emailInput && user.email) {
-                                emailInput.value = user.email;
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Erro ao carregar usuário:', error);
-                    }
-                })();
+                setTimeout(() => {
+                    updateUserName();
+                    updateCreditsDisplay();
+                }, 500);
 
                 // ==============================================
                 // 🔥 INICIALIZAR POW STATUS
@@ -1512,9 +1503,10 @@
                         const powTextEl = document.getElementById('powStatusText');
                         if (!powStatusEl || !powTextEl) return;
                         
+                        const app = getApp();
                         let stats = null;
-                        if (window.App && typeof window.App.getPowStats === 'function') {
-                            stats = window.App.getPowStats();
+                        if (app && typeof app.getPowStats === 'function') {
+                            stats = app.getPowStats();
                         } else if (window.powClient && typeof window.powClient.getStats === 'function') {
                             stats = window.powClient.getStats();
                         }
@@ -1540,10 +1532,16 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.6 carregado com sucesso!');
+                // ==============================================
+                // 🔥 ATUALIZAÇÃO PERIÓDICA DE CRÉDITOS
+                // ==============================================
+                setInterval(updateCreditsDisplay, 30000);
+
+                console.log('✅ planos.html v2.7 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
-                console.log('   📦 Plano com fallback estático (payment.js pode sobrescrever)');
-                console.log('   🔄 Sincronizado com app.js v5.7 (com trava)');
+                console.log('   🔄 Sincronizado com app.js v6.0 (orquestrador)');
+                console.log('   🔗 Bridge de eventos configurada');
+                console.log('   📡 Escutando: creditsUpdated, premiumStatusUpdated, app:ready');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
                 console.log('   🔧 ID do container: plans-container (com hífen)');
             });
