@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.5');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.6');
         })();
     </script>
     
@@ -894,7 +894,7 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 1: PLANOS - RENDERIZADO PELO payment.js -->
+            <!-- 🔥 ABA 1: PLANOS -->
             <!-- ============================================== -->
             <div class="tab-content active" id="tab-planos">
                 <div class="row justify-content-center">
@@ -905,14 +905,131 @@
                     </div>
                 </div>
 
-                <!-- 🔥 CONTAINER ONDE O payment.js VAI RENDERIZAR O PLANO -->
-                <!-- 🔥 CORREÇÃO: id="plans-container" (COM HÍFEN) -->
+                <!-- 🔥 CONTAINER DO PLANO - COM CONTEÚDO ESTÁTICO DE FALLBACK -->
                 <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
-                    <div class="col-lg-8 text-center py-5">
-                        <div class="spinner-border text-warning" role="status" style="color: #f5a623 !important;">
-                            <span class="visually-hidden">Carregando plano...</span>
+                    <!-- 🔥 PLANO BRONZE - ESTÁTICO (FALLBACK) -->
+                    <div class="col-lg-8 mx-auto">
+                        <div class="bronze-card" data-aos="fade-up" data-aos-duration="800">
+                            <div class="bronze-badge">
+                                <i class="fas fa-fire"></i> 🔥 PROMOÇÃO FUNDADOR
+                            </div>
+                            
+                            <div class="bronze-title">
+                                <span class="icon-big"><i class="fas fa-crown"></i></span>
+                                <h2>Plano Bronze</h2>
+                                <p class="subtitle">O plano ideal para sua oficina crescer com IA</p>
+                            </div>
+                            
+                            <div class="price-container">
+                                <span class="old-price">De R$ 149,90</span>
+                                <div class="price-tag" id="planoPreco">
+                                    R$ 97<span class="cents">,00</span>
+                                    <small>à vista</small>
+                                </div>
+                                <span class="economy-badge">
+                                    <i class="fas fa-tag"></i> Economia de 35%
+                                </span>
+                            </div>
+                            
+                            <div class="plan-info">
+                                <div class="row">
+                                    <div class="col-4">
+                                        <span class="number">30</span>
+                                        <span class="label">Créditos</span>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="number">3</span>
+                                        <span class="label">Arquivos/vez</span>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="number">∞</span>
+                                        <span class="label">Vitalício</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="vagas-counter">
+                                <div>
+                                    <span class="vagas-label">🎯 Apenas</span>
+                                    <span class="vagas-number">73</span>
+                                    <span class="vagas-label">vagas restantes</span>
+                                </div>
+                                <div class="vagas-progress">
+                                    <div class="vagas-progress-bar" style="width: 27%;"></div>
+                                </div>
+                                <small style="color:rgba(255,255,255,0.3); font-size:0.7rem;">
+                                    <i class="fas fa-clock"></i> Oferta por tempo limitado
+                                </small>
+                            </div>
+                            
+                            <div class="bronze-features">
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>30 créditos</strong> para análises completas</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Análise com IA</strong> (Google Gemini)</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Até 3 arquivos</strong> por análise (CSV/Excel)</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span>📊 <strong>Dashboard completo</strong> com métricas</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span>📄 <strong>Relatórios em PDF</strong> automáticos</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Suporte prioritário</strong> por email</span>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-3 mt-4">
+                                <button class="btn btn-bronze btn-lg" onclick="window.openCpfModal('premium_mensal')">
+                                    <i class="fas fa-bolt me-2"></i>
+                                    🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                                    <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                                </button>
+                            </div>
+                            
+                            <div class="limit-warning">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Este é um <strong>plano vitalício</strong> com preço especial para os primeiros <strong>100 clientes</strong>. Após esgotar, o preço volta para R$ 149,90.</span>
+                            </div>
+                            
+                            <div class="credits-explanation">
+                                <div class="step">
+                                    <i class="fas fa-coins"></i>
+                                    <span><strong>Como funcionam os créditos:</strong></span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-plus-circle"></i>
+                                    <span>Você começa com <strong>3 créditos grátis</strong></span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-gem"></i>
+                                    <span>Com o <strong>Plano Bronze</strong>, você ganha <strong>30 créditos</strong> para usar quando quiser</span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Cada análise consome <strong>1 crédito</strong> por arquivo</span>
+                                </div>
+                                <div class="highlight-box">
+                                    <span><i class="fas fa-bolt" style="color:#f5a623;"></i> <strong>Dica:</strong> Use seus créditos estrategicamente para análises mais importantes e maximize o ROI da sua oficina!</span>
+                                </div>
+                            </div>
+                            
+                            <div class="security-seals">
+                                <span class="seal"><i class="fas fa-lock"></i> Pagamento Seguro</span>
+                                <span class="seal"><i class="fas fa-shield-alt"></i> PoW Protegido</span>
+                                <span class="seal"><i class="fas fa-credit-card"></i> PIX</span>
+                            </div>
                         </div>
-                        <p class="mt-2" style="color: rgba(255,255,255,0.4);">Carregando plano Bronze...</p>
                     </div>
                 </div>
 
@@ -1134,7 +1251,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.5 - Planos e Suporte
+                        AutoAnalytics v2.6 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1149,7 +1266,7 @@
     </section>
 
     <!-- ============================================== -->
-    <!-- 🔥 MODAL DE CRÉDITOS (APENAS ESTE PERMANECE) -->
+    <!-- 🔥 MODAL DE CRÉDITOS -->
     <!-- ============================================== -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
@@ -1185,16 +1302,16 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM CORRETA -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ JQUERY (obrigatório para Toastr) -->
+    <!-- 1️⃣ JQUERY -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <!-- 2️⃣ TOASTR -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
-    <!-- 3️⃣ BOOTSTRAP - versão 5.3.2 consistente -->
+    <!-- 3️⃣ BOOTSTRAP -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- 4️⃣ AOS -->
@@ -1210,10 +1327,10 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v5.7 (ORQUESTRADOR CENTRAL COM TRAVA) -->
+    <!-- 3️⃣ APP - v5.7 (com trava para planos) -->
     <script src="/static/js/app.js?ver=5.7.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.5.1 (GERENCIA CPF E PIX DINAMICAMENTE) -->
+    <!-- 4️⃣ PAYMENT - v2.5.1 -->
     <script src="/static/js/payment.js?ver=2.5.1"></script>
 
     <!-- ============================================== -->
@@ -1223,7 +1340,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.5');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.6');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1387,54 +1504,6 @@
                 })();
 
                 // ==============================================
-                // 🔥 CARREGAR PLANO VIA payment.js
-                // ==============================================
-                // Aguarda o app.js inicializar completamente
-                function waitForAppAndLoadPlans() {
-                    if (window.App && window.App.isReady && window.App.isReady()) {
-                        console.log('✅ App pronto, carregando planos...');
-                        if (typeof window.loadPlans === 'function') {
-                            window.loadPlans();
-                        } else {
-                            console.warn('⚠️ window.loadPlans não disponível');
-                        }
-                        return true;
-                    }
-                    return false;
-                }
-
-                // Tenta carregar imediatamente
-                if (!waitForAppAndLoadPlans()) {
-                    // Se não estiver pronto, escuta o evento app:ready
-                    document.addEventListener('app:ready', function() {
-                        console.log('📢 app:ready recebido - carregando planos');
-                        if (typeof window.loadPlans === 'function') {
-                            window.loadPlans();
-                        }
-                    });
-                    
-                    // Fallback: tenta novamente após 2 segundos
-                    setTimeout(function() {
-                        if (typeof window.loadPlans === 'function') {
-                            console.log('⏰ Fallback: carregando planos após timeout');
-                            window.loadPlans();
-                        }
-                    }, 2000);
-                }
-
-                // ==============================================
-                // 🔥 ATUALIZAR STATUS PREMIUM
-                // ==============================================
-                setTimeout(() => {
-                    if (typeof window.loadSubscriptionStatus === 'function') {
-                        window.loadSubscriptionStatus();
-                    }
-                    if (typeof window.loadPremiumStatus === 'function') {
-                        window.loadPremiumStatus();
-                    }
-                }, 800);
-
-                // ==============================================
                 // 🔥 INICIALIZAR POW STATUS
                 // ==============================================
                 function updatePowStatus() {
@@ -1471,12 +1540,11 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.5 carregado com sucesso!');
+                console.log('✅ planos.html v2.6 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
-                console.log('   📦 Plano renderizado pelo payment.js');
-                console.log('   🔄 Sincronizado com app.js v5.7 (com trava) e auth.js');
+                console.log('   📦 Plano com fallback estático (payment.js pode sobrescrever)');
+                console.log('   🔄 Sincronizado com app.js v5.7 (com trava)');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
-                console.log('   🗑️ Modais CPF e PIX removidos (gerenciados pelo payment.js)');
                 console.log('   🔧 ID do container: plans-container (com hífen)');
             });
 
