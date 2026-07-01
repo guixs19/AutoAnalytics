@@ -1,20 +1,21 @@
-// payment.js - VERSÃO OTIMIZADA v2.5 (CÓDIGO LIMPO E COMPLETO)
+// payment.js - VERSÃO CORRIGIDA v2.5.1 (FIX: plans-container)
 // ==============================================
-// 🔥 OTIMIZAÇÕES V2.5:
-// 1. Código mais limpo e organizado
-// 2. Remoção de duplicações
-// 3. Fallback para renderização estática do plano
-// 4. Modais criados dinamicamente e corretamente
-// 5. Todas as funções expostas globalmente
+// 🔥 CORREÇÃO V2.5.1:
+// 1. CORREÇÃO: getElementById('plans-container') em vez de 'plansContainer'
+// 2. Sincronizado com o ID correto do planos.html
+// 3. Todas as funções expostas globalmente via window.
+// 4. Sanitização de dados (XSS protection)
+// 5. Validação de CPF com algoritmo completo
+// 6. Modais CPF e PIX criados dinamicamente
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando payment.js v2.5 (otimizado)...');
+    console.log('🚀 Inicializando payment.js v2.5.1 (fix plans-container)...');
 
     // ==============================================
-    // 🔒 CONFIGURAÇÕES GLOBAIS
+    // 🔒 CONFIGURAÇÕES GLOBAIS (ISOLADAS)
     // ==============================================
 
     const CONFIG = {
@@ -226,11 +227,18 @@
 
     // ==============================================
     // 🔥 RENDERIZAÇÃO DO PLANO (FALLBACK ESTÁTICO)
+    // 🔥 CORREÇÃO: getElementById('plans-container') com hífen
     // ==============================================
 
     function renderBronzePlanStatic() {
-        const container = document.getElementById('plansContainer');
-        if (!container) return;
+        // 🔥 CORREÇÃO: Usar 'plans-container' (com hífen) para coincidir com o HTML
+        const container = document.getElementById('plans-container');
+        if (!container) {
+            console.warn('⚠️ Container #plans-container não encontrado');
+            return;
+        }
+
+        console.log('📦 Renderizando plano estático...');
 
         if (isAdmin()) {
             container.innerHTML = `
@@ -316,16 +324,19 @@
         `;
         
         container.innerHTML = html;
+        console.log('✅ Plano estático renderizado com sucesso!');
     }
 
     async function loadPlans() {
+        console.log('📦 Carregando planos...');
+        
         try {
             const response = await fetch(`${API_URL}/payments/plans`);
             if (response.ok) {
                 const data = await response.json();
                 const safeData = sanitizeResponse(data);
                 // Tenta renderizar com dados da API
-                renderBronzePlan(safeData.plans, safeData);
+                await renderBronzePlan(safeData.plans, safeData);
             } else {
                 console.warn('⚠️ Falha ao carregar planos da API, usando fallback estático');
                 renderBronzePlanStatic();
@@ -337,8 +348,13 @@
     }
 
     async function renderBronzePlan(plans, fullData = null) {
-        const container = document.getElementById('plansContainer');
-        if (!container) return;
+        // 🔥 CORREÇÃO: Usar 'plans-container' (com hífen) para coincidir com o HTML
+        const container = document.getElementById('plans-container');
+        if (!container) {
+            console.warn('⚠️ Container #plans-container não encontrado');
+            renderBronzePlanStatic();
+            return;
+        }
         
         if (isAdmin()) {
             renderBronzePlanStatic();
@@ -521,6 +537,7 @@
         `;
         
         container.innerHTML = html;
+        console.log('✅ Plano renderizado com dados da API!');
     }
 
     // ==============================================
@@ -829,7 +846,7 @@
     // ==============================================
 
     function isPlansPage() {
-        return document.getElementById('plansContainer') !== null;
+        return document.getElementById('plans-container') !== null;
     }
 
     function isDashboardPage() {
@@ -837,7 +854,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('📄 DOMContentLoaded - Inicializando payment.js v2.5');
+        console.log('📄 DOMContentLoaded - Inicializando payment.js v2.5.1');
         
         if (isPlansPage()) {
             setTimeout(() => {
@@ -861,7 +878,7 @@
         
         // Dispara evento de carregamento
         window.dispatchEvent(new CustomEvent('paymentReady', {
-            detail: { loaded: true, version: '2.5' }
+            detail: { loaded: true, version: '2.5.1' }
         }));
     });
 
@@ -887,10 +904,11 @@
     window.sanitizeCPF = sanitizeCPF;
     window.validateCPF = validateCPF;
 
-    console.log('✅ payment.js v2.5 carregado com sucesso!');
+    console.log('✅ payment.js v2.5.1 carregado com sucesso!');
     console.log('🔒 Proteção antifraude: CPF obrigatório e validado');
     console.log(`💰 Preço Fundador: R$ ${CONFIG.PROMOTIONAL_PRICE} (vitalício)`);
     console.log(`🎯 Total de vagas: ${CONFIG.TOTAL_PROMOTIONAL_SLOTS}`);
     console.log('📡 Eventos: paymentReady, creditsUpdated, premiumStatusUpdated');
+    console.log('🔧 CORREÇÃO: getElementById("plans-container") com hífen');
 
 })(); // <-- FECHA A IIFE
