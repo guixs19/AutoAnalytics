@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.4');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.5');
         })();
     </script>
     
@@ -893,35 +893,78 @@
                 </div>
             </div>
 
-           <!-- ============================================== -->
-<!-- 🔥 ABA 1: PLANOS - RENDERIZADO PELO payment.js -->
-<!-- ============================================== -->
-<div class="tab-content active" id="tab-planos">
-    <div class="row justify-content-center">
-        <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
-            <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
-                <i class="fas fa-fire me-1"></i> Oferta Especial - Edição Limitada
-            </span>
-        </div>
-    </div>
+            <!-- ============================================== -->
+            <!-- 🔥 ABA 1: PLANOS - RENDERIZADO PELO payment.js -->
+            <!-- ============================================== -->
+            <div class="tab-content active" id="tab-planos">
+                <div class="row justify-content-center">
+                    <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
+                        <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
+                            <i class="fas fa-fire me-1"></i> Oferta Especial - Edição Limitada
+                        </span>
+                    </div>
+                </div>
 
-    <!-- 🔥 CONTAINER ONDE O payment.js VAI RENDERIZAR O PLANO -->
-    <!-- 🔥 CORREÇÃO: id="plans-container" (COM HÍFEN) -->
-    <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
-        <div class="col-lg-8 text-center py-5">
-            <div class="spinner-border text-warning" role="status" style="color: #f5a623 !important;">
-                <span class="visually-hidden">Carregando plano...</span>
+                <!-- 🔥 CONTAINER ONDE O payment.js VAI RENDERIZAR O PLANO -->
+                <!-- 🔥 CORREÇÃO: id="plans-container" (COM HÍFEN) -->
+                <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
+                    <div class="col-lg-8 text-center py-5">
+                        <div class="spinner-border text-warning" role="status" style="color: #f5a623 !important;">
+                            <span class="visually-hidden">Carregando plano...</span>
+                        </div>
+                        <p class="mt-2" style="color: rgba(255,255,255,0.4);">Carregando plano Bronze...</p>
+                    </div>
+                </div>
+
+                <!-- INDICADOR DE RATE LIMIT -->
+                <div class="row justify-content-center mt-3" id="rateLimitContainer">
+                    <div class="col-lg-8">
+                        <div class="rate-limit-indicator" id="rateLimitIndicator">
+                            <span><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
+                            <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STATUS DO PLANO -->
+                <div class="row justify-content-center mt-4" id="subscriptionStatusContainer" data-aos="fade-up" data-aos-delay="100"></div>
+
+                <!-- FORMATOS SUPORTADOS -->
+                <div class="row justify-content-center mt-4" data-aos="fade-up" data-aos-delay="200">
+                    <div class="col-lg-8">
+                        <div class="glass-card">
+                            <h5 class="card-title mb-3">
+                                <i class="fas fa-upload"></i> Formatos suportados
+                            </h5>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="format-badge d-flex align-items-center">
+                                        <i class="fas fa-file-csv fa-2x me-3"></i>
+                                        <div>
+                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos CSV</h6>
+                                            <small style="color:rgba(255,255,255,0.4);">Delimitados por vírgula</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="format-badge d-flex align-items-center">
+                                        <i class="fas fa-file-excel fa-2x me-3"></i>
+                                        <div>
+                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos Excel</h6>
+                                            <small style="color:rgba(255,255,255,0.4);">.xlsx e .xls</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 text-center small" style="color:rgba(255,255,255,0.3);">
+                                <i class="fas fa-layer-group me-1"></i>
+                                Máximo de 3 arquivos por vez | <strong style="color:#48bb78;">Limite de 200KB por arquivo</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p class="mt-2" style="color: rgba(255,255,255,0.4);">Carregando plano Bronze...</p>
-        </div>
-    </div>
 
-    <!-- INDICADOR DE RATE LIMIT -->
-    <div class="row justify-content-center mt-3" id="rateLimitContainer">
-        ...
-    </div>
-    ...
-</div>
             <!-- ============================================== -->
             <!-- 🔥 ABA 2: ATENDIMENTO AO CLIENTE -->
             <!-- ============================================== -->
@@ -1091,7 +1134,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.4 - Planos e Suporte
+                        AutoAnalytics v2.5 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1167,11 +1210,11 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v5.6 (ORQUESTRADOR CENTRAL) -->
-    <script src="/static/js/app.js?ver=5.6.0"></script>
+    <!-- 3️⃣ APP - v5.7 (ORQUESTRADOR CENTRAL COM TRAVA) -->
+    <script src="/static/js/app.js?ver=5.7.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.5 (GERENCIA CPF E PIX DINAMICAMENTE) -->
-    <script src="/static/js/payment.js?ver=2.5.0"></script>
+    <!-- 4️⃣ PAYMENT - v2.5.1 (GERENCIA CPF E PIX DINAMICAMENTE) -->
+    <script src="/static/js/payment.js?ver=2.5.1"></script>
 
     <!-- ============================================== -->
     <!-- 🔥 INICIALIZAÇÃO -->
@@ -1180,7 +1223,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.4');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.5');
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1428,12 +1471,13 @@
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
-                console.log('✅ planos.html v2.4 carregado com sucesso!');
+                console.log('✅ planos.html v2.5 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
                 console.log('   📦 Plano renderizado pelo payment.js');
-                console.log('   🔄 Sincronizado com app.js e auth.js');
+                console.log('   🔄 Sincronizado com app.js v5.7 (com trava) e auth.js');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
                 console.log('   🗑️ Modais CPF e PIX removidos (gerenciados pelo payment.js)');
+                console.log('   🔧 ID do container: plans-container (com hífen)');
             });
 
         })();
