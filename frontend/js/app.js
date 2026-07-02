@@ -1,22 +1,114 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V6.0 (SINCRONIA TOTAL)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V6.2 (ROBUSTO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V6.0:
- * 1. 🔥 CENTRALIZAÇÃO: window.appAuth criado nativamente pelo app.js
- * 2. 🔥 ESTADO REATIVO: StateManager com atualização por eventos
- * 3. 🔥 UTILITÁRIOS GLOBAIS: AppUtils exposto para todos os módulos
- * 4. 🔥 FETCH UNIFICADO: fetchWithAuth centralizado com tratamento 401
- * 5. 🔥 EVENTO app:ready com payload completo do estado
- * 6. 🔥 ELIMINAÇÃO DE REDUNDÂNCIA: dashboard.js e payment.js usam AppUtils
- * 7. 🔥 SINCRONIA REATIVA: substitui polling por eventos
- * 8. 🔥 FALLBACK INTELIGENTE: coordenado pelo app.js
+ * 🏗️ ARQUITETURA V6.2:
+ * 1. 🔥 CORREÇÃO: Reconhecimento automático do token + cookie sync
+ * 2. 🔥 SINCRONIZAÇÃO: Com auth.js, payment.js, dashboard.js
+ * 3. 🔥 ESTADO REATIVO: StateManager com eventos
+ * 4. 🔥 FETCH UNIFICADO: Com refresh automático e rate limit
+ * 5. 🔥 SISTEMA DE CRÉDITOS: Sincronizado com MAX_CREDITS_PREMIUM = 3
+ * 6. 🔥 SEM POLLING EXCESSIVO: Event-driven com fallback
+ * 7. 🔥 DEBUG COMPLETO: Logs para monitoramento
+ * 8. 🔥 FALLBACK INTELIGENTE: Para casos de timeout
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v6.0...');
+    console.log('🚀 Inicializando App (Orquestrador) v6.2...');
+
+    // ==============================================
+    // 🔥 CORREÇÃO: FORÇAR RECONHECIMENTO DO TOKEN (com cookie sync)
+    // ==============================================
+
+    (function forceAuthRecognition() {
+        try {
+            // 🔥 Verifica cookie primeiro (para links HTML puros)
+            const getCookie = (name) => {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+                return null;
+            };
+
+            let token = localStorage.getItem('access_token');
+            
+            // Se não tiver token no localStorage, tenta o cookie
+            if (!token || token === '' || token === 'undefined' || token === 'null') {
+                const cookieToken = getCookie('access_token');
+                if (cookieToken && cookieToken !== '' && cookieToken !== 'undefined' && cookieToken !== 'null') {
+                    token = cookieToken;
+                    localStorage.setItem('access_token', token);
+                    console.log('🍪 Token restaurado do cookie para localStorage');
+                }
+            }
+
+            const hasValidToken = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
+            
+            if (hasValidToken) {
+                console.log('🔐 Token válido encontrado! Forçando autenticação...');
+                
+                // Pré-configura o estado global
+                if (typeof window.__APP_STATE !== 'undefined') {
+                    window.__APP_STATE.tokenValid = true;
+                    window.__APP_STATE.userInitialized = true;
+                    window.__APP_STATE.isAppReady = true;
+                    
+                    // Tenta restaurar dados do usuário
+                    try {
+                        const savedUser = localStorage.getItem('user_data');
+                        if (savedUser) {
+                            window.__APP_STATE.user = JSON.parse(savedUser);
+                            console.log('👤 Usuário restaurado do localStorage:', window.__APP_STATE.user?.name);
+                        } else {
+                            // Cria usuário básico a partir do email salvo
+                            const userEmail = localStorage.getItem('user_email') || 'usuario@email.com';
+                            window.__APP_STATE.user = {
+                                name: userEmail.split('@')[0] || 'Usuário',
+                                email: userEmail,
+                                credits: window.__APP_STATE.credits || 3
+                            };
+                            console.log('👤 Usuário padrão criado:', window.__APP_STATE.user.name);
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Erro ao restaurar usuário:', e);
+                        window.__APP_STATE.user = { name: 'Usuário', email: 'usuario@email.com', credits: 3 };
+                    }
+                }
+                
+                // 🔥 DISPARA EVENTO APPREADY IMEDIATAMENTE
+                setTimeout(() => {
+                    const eventData = {
+                        isAuthenticated: true,
+                        tokenValid: true,
+                        userInitialized: true,
+                        isReady: true,
+                        version: '6.2',
+                        user: window.__APP_STATE?.user || { name: 'Usuário' },
+                        credits: window.__APP_STATE?.credits || 3,
+                        isAdmin: window.__APP_STATE?.isAdmin || false,
+                        isPremium: window.__APP_STATE?.isPremium || false
+                    };
+                    
+                    console.log('📡 Disparando appReady (forçado)...');
+                    window.dispatchEvent(new CustomEvent('appReady', { detail: eventData }));
+                    document.dispatchEvent(new CustomEvent('app:ready', { detail: eventData }));
+                    
+                    // Dispara paymentReady também
+                    setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('paymentReady', {
+                            detail: { loaded: true, version: '6.4', forced: true }
+                        }));
+                    }, 100);
+                }, 50);
+            } else {
+                console.log('🔒 Nenhum token válido encontrado.');
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro no forceAuthRecognition:', e);
+        }
+    })();
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -46,7 +138,7 @@
         POW_STOCK_SIZE: 2,
         
         API_BASE: '/api',
-        CREDITS_UPDATE_INTERVAL: 30000,
+        CREDITS_UPDATE_INTERVAL: 300000, // 5 minutos (fallback)
         MAX_LOAD_ATTEMPTS: 10,
         LOAD_RETRY_DELAY: 500,
         
@@ -107,7 +199,7 @@
     };
 
     // ==============================================
-    // 🔥 ESTADO GLOBAL (REATIVO) - COMPARTILHADO
+    // 🔥 ESTADO GLOBAL (REATIVO)
     // ==============================================
 
     const State = {
@@ -152,18 +244,14 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE ESTADO REATIVO (NOVO)
+    // 🔥 GERENCIADOR DE ESTADO REATIVO
     // ==============================================
 
     const StateManager = {
-        /**
-         * Atualiza o estado e notifica todos os módulos via EventBus
-         */
         updateState: function(newState) {
             const previousState = { ...State };
             Object.assign(State, newState);
             
-            // Atualiza o display de créditos se necessário
             if (newState.credits !== undefined || newState.isPremium !== undefined || newState.isAdmin !== undefined) {
                 State.creditsDisplay = Utils.formatCreditsDisplay(State.credits, State.isPremium);
             }
@@ -172,10 +260,11 @@
                 credits: State.credits,
                 isPremium: State.isPremium,
                 isAdmin: State.isAdmin,
-                creditsDisplay: State.creditsDisplay
+                creditsDisplay: State.creditsDisplay,
+                tokenValid: State.tokenValid,
+                userInitialized: State.userInitialized
             });
             
-            // Notifica todos os módulos sobre a mudança
             const eventData = {
                 state: State,
                 changes: newState,
@@ -183,7 +272,7 @@
                 timestamp: Date.now()
             };
             
-            // Dispara via EventBus (app.js interno)
+            // Dispara via EventBus
             EventBus.emit('app:state_changed', eventData);
             
             // Dispara via DOM (para payment.js e dashboard.js)
@@ -196,7 +285,7 @@
                 bubbles: true 
             }));
             
-            // Atualiza UI imediatamente
+            // Atualiza UI
             UI.updateNavbar();
             UI.updateCredits();
             UI.updatePremiumBadge();
@@ -206,18 +295,12 @@
             return State;
         },
         
-        /**
-         * Atualiza apenas os créditos
-         */
         updateCredits: function(credits, isPremium = null) {
             const updates = { credits: credits };
             if (isPremium !== null) updates.isPremium = isPremium;
             return this.updateState(updates);
         },
         
-        /**
-         * Atualiza apenas o status premium
-         */
         updatePremiumStatus: function(status) {
             return this.updateState({
                 isPremium: status.is_premium || false,
@@ -230,20 +313,17 @@
             });
         },
         
-        /**
-         * Obtém o estado atual (read-only)
-         */
         getState: function() {
             return { ...State };
         }
     };
 
-    // 🔥 EXPORTA ESTADO E GERENCIADOR PARA OUTROS MÓDULOS
+    // 🔥 EXPORTA ESTADO E GERENCIADOR
     window.__APP_STATE = State;
     window.__APP_STATE_MANAGER = StateManager;
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (AGORA GLOBAIS)
+    // 🔥 UTILITÁRIOS (SINCRONIZADOS)
     // ==============================================
 
     const Utils = {
@@ -259,10 +339,12 @@
         },
 
         sanitizeNumber: (value, defaultValue = 0) => {
+            if (value === undefined || value === null) return defaultValue;
             const num = parseFloat(String(value).replace(/[^0-9.,-]/g, '').replace(',', '.'));
             return isNaN(num) ? defaultValue : num;
         },
 
+        // 🔥 SINCRONIZADO COM crud.py: MAX_CREDITS_PREMIUM = 3
         formatCreditsDisplay: (credits, isPremium = false) => {
             if (State.isAdmin) return '∞';
             const safeCredits = Utils.sanitizeNumber(credits, 0);
@@ -272,9 +354,8 @@
             return safeCredits.toString();
         },
 
-        // 🔥 BLINDAGEM: try/catch no showNotification para evitar crash do Toastr
+        // 🔥 BLINDAGEM: try/catch no showNotification
         showNotification: (message, type = 'info') => {
-            // 1. Tenta usar appAuth primeiro
             if (window.appAuth?.showNotification) {
                 try {
                     return window.appAuth.showNotification(message, type);
@@ -283,13 +364,12 @@
                 }
             }
             
-            // 2. Tenta usar Toastr (com try/catch para blindagem)
             if (window.toastr?.[type]) {
                 try {
                     window.toastr[type](message);
                     return true;
                 } catch (e) {
-                    console.warn('⚠️ Toastr falhou ao renderizar. Usando fallback.', e);
+                    console.warn('⚠️ Toastr falhou:', e);
                     if (type === 'error' || type === 'warning') {
                         alert(`⚠️ ${message}`);
                         return true;
@@ -297,7 +377,6 @@
                 }
             }
             
-            // 3. Fallback final
             if (type === 'error' || type === 'warning') {
                 console.warn(`[${type}] ${message}`);
                 alert(`⚠️ ${message}`);
@@ -323,18 +402,11 @@
             }
         },
 
+        // 🔥 CORRIGIDO: SEM LOOP INFINITO
         isAuthenticated: () => {
             try {
                 const token = localStorage.getItem('access_token');
-                const hasValidToken = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
-                
-                if (window.appAuth) {
-                    if (typeof window.appAuth.isAuthenticated === 'function') {
-                        return window.appAuth.isAuthenticated();
-                    }
-                    return !!window.appAuth.isAuthenticated;
-                }
-                return hasValidToken;
+                return token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
             } catch (e) {
                 return !!localStorage.getItem('access_token');
             }
@@ -405,13 +477,9 @@
     };
 
     // ==============================================
-    // 🔥 EXPORTA UTILITÁRIOS GLOBAIS (NOVO)
+    // 🔥 EXPORTA UTILITÁRIOS GLOBAIS
     // ==============================================
 
-    /**
-     * 🔥 AppUtils - Utilitários globais para todos os módulos
-     * Elimina redundância entre payment.js e dashboard.js
-     */
     window.AppUtils = {
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
@@ -420,23 +488,37 @@
         showNotification: Utils.showNotification,
         isAuthenticated: Utils.isAuthenticated,
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
-        getConfig: () => CONFIG
+        getConfig: () => CONFIG,
+        // 🔥 VALIDAÇÃO DE CPF (sincronizada com back-end)
+        validateCPF: function(cpf) {
+            const clean = String(cpf).replace(/\D/g, '');
+            if (clean.length !== 11) return false;
+            const invalid = ['00000000000', '11111111111', '22222222222', '33333333333',
+                            '44444444444', '55555555555', '66666666666', '77777777777',
+                            '88888888888', '99999999999'];
+            if (invalid.includes(clean)) return false;
+            let sum = 0;
+            for (let i = 0; i < 9; i++) sum += parseInt(clean[i]) * (10 - i);
+            let remainder = (sum * 10) % 11;
+            if (remainder === 10 || remainder === 11) remainder = 0;
+            if (remainder !== parseInt(clean[9])) return false;
+            sum = 0;
+            for (let i = 0; i < 10; i++) sum += parseInt(clean[i]) * (11 - i);
+            remainder = (sum * 10) % 11;
+            if (remainder === 10 || remainder === 11) remainder = 0;
+            return remainder === parseInt(clean[10]);
+        }
     };
 
     // ==============================================
-    // 🔥 FETCH UNIFICADO (NOVO)
+    // 🔥 FETCH UNIFICADO (COM REFRESH AUTOMÁTICO)
     // ==============================================
 
-    /**
-     * 🔥 fetchWithAuth - Função centralizada para todas as requisições
-     * Todos os módulos (payment.js, dashboard.js) devem usar esta função
-     */
     async function fetchWithAuth(url, options = {}) {
         try {
             const token = localStorage.getItem('access_token');
             if (!token) {
                 console.warn('⚠️ fetchWithAuth: sem token');
-                // Dispara evento de não autenticado
                 EventBus.emit('auth:unauthorized', { message: 'Token não encontrado' });
                 return null;
             }
@@ -448,21 +530,18 @@
                 ...options.headers
             };
             
-            // Se for FormData, remove Content-Type para o browser definir
             if (options.body instanceof FormData) {
                 delete headers['Content-Type'];
             }
             
             const response = await fetch(url, { ...options, headers });
             
-            // 🔥 Tratamento de 401 - Token expirado
+            // 🔥 Tratamento 401 - Token expirado
             if (response.status === 401) {
                 console.warn('⚠️ Token expirado, tentando refresh...');
                 
-                // Tenta renovar o token
                 const refreshed = await refreshTokenSafely();
                 if (refreshed) {
-                    // Re-tenta a requisição com o novo token
                     const newToken = localStorage.getItem('access_token');
                     if (newToken) {
                         headers['Authorization'] = `Bearer ${newToken}`;
@@ -473,7 +552,6 @@
                     }
                 }
                 
-                // Se falhou, redireciona para login
                 console.error('❌ Falha ao renovar token, redirecionando para login');
                 EventBus.emit('auth:unauthorized', { 
                     message: 'Sessão expirada',
@@ -483,7 +561,7 @@
                 return null;
             }
             
-            // 🔥 Tratamento de 429 - Rate Limit
+            // 🔥 Tratamento 429 - Rate Limit
             if (response.status === 429) {
                 const data = await response.json().catch(() => ({}));
                 const retryAfter = data.retry_after || 60;
@@ -500,6 +578,18 @@
                 return response;
             }
             
+            // 🔥 Tratamento 402 - Créditos insuficientes (upload_routes.py)
+            if (response.status === 402) {
+                const data = await response.json().catch(() => ({}));
+                console.warn('⚠️ Créditos insuficientes:', data);
+                EventBus.emit('credits:insufficient', {
+                    message: data.message || 'Créditos insuficientes',
+                    credits_available: data.credits_available || 0,
+                    credits_needed: data.credits_needed || 1
+                });
+                return response;
+            }
+            
             return response;
         } catch (error) {
             console.error('❌ fetchWithAuth error:', error);
@@ -512,9 +602,6 @@
         }
     }
 
-    /**
-     * 🔥 refreshTokenSafely - Renova o token de forma segura
-     */
     async function refreshTokenSafely() {
         try {
             const refreshToken = localStorage.getItem('refresh_token');
@@ -525,9 +612,7 @@
             
             const response = await fetch('/api/auth/refresh', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refresh_token: refreshToken })
             });
             
@@ -535,8 +620,14 @@
                 const data = await response.json();
                 if (data.access_token) {
                     localStorage.setItem('access_token', data.access_token);
+                    // 🔥 Sincroniza com cookie
+                    document.cookie = `access_token=${data.access_token}; path=/; max-age=900; SameSite=Strict`;
                     if (data.refresh_token) {
                         localStorage.setItem('refresh_token', data.refresh_token);
+                    }
+                    if (data.user) {
+                        localStorage.setItem('user_data', JSON.stringify(data.user));
+                        localStorage.setItem('user_email', data.user.email || '');
                     }
                     console.log('✅ Token renovado com sucesso!');
                     EventBus.emit('auth:token_refreshed', { 
@@ -555,13 +646,9 @@
     }
 
     // ==============================================
-    // 🔥 INTERFACE DE AUTENTICAÇÃO (window.appAuth) - CENTRALIZADO
+    // 🔥 INTERFACE DE AUTENTICAÇÃO (window.appAuth)
     // ==============================================
 
-    /**
-     * 🔥 window.appAuth - Interface formal de autenticação
-     * Todos os módulos (payment.js, dashboard.js) usam esta interface
-     */
     window.appAuth = {
         isAuthenticated: () => Utils.isAuthenticated(),
         isAdmin: () => State.isAdmin,
@@ -570,30 +657,42 @@
         getCurrentUser: () => State.user,
         getState: () => StateManager.getState(),
         
-        // 🔥 FETCH UNIFICADO
         fetchWithAuth: fetchWithAuth,
         refreshTokenSafely: refreshTokenSafely,
         
-        // 🔥 NOTIFICAÇÕES
         showNotification: (msg, type) => Utils.showNotification(msg, type),
         
-        // 🔥 ESTADO
         updateState: StateManager.updateState,
         updateCredits: StateManager.updateCredits,
         updatePremiumStatus: StateManager.updatePremiumStatus,
         
-        // 🔥 CRÉDITOS
+        // 🔥 CORRIGIDO: Carrega créditos e atualiza estado corretamente
         loadUserCredits: async () => {
             try {
                 const response = await fetchWithAuth('/api/auth/me');
                 if (response?.ok) {
                     const data = await response.json();
-                    if (data.credits !== undefined) {
-                        StateManager.updateCredits(data.credits, data.is_premium || false);
-                    }
+                    
+                    // 🔥 Atualiza TUDO de uma vez
+                    StateManager.updateState({
+                        user: data.user || null,
+                        credits: data.credits || 0,
+                        isPremium: data.is_premium || false,
+                        isAdmin: data.is_admin || false,
+                        tokenValid: true,
+                        userInitialized: true,
+                        isAppReady: true
+                    });
+                    
+                    // Salva no localStorage para fallback
                     if (data.user) {
-                        State.user = data.user;
+                        try {
+                            localStorage.setItem('user_data', JSON.stringify(data.user));
+                            localStorage.setItem('user_email', data.user.email || '');
+                        } catch (e) {}
                     }
+                    
+                    console.log(`✅ Créditos carregados: ${data.credits || 0}`);
                     return data;
                 }
             } catch (e) {
@@ -602,7 +701,30 @@
             return null;
         },
         
-        // 🔥 RATE LIMIT
+        // 🔥 MÉTODOS DE LOGIN/REGISTER (integração com auth.js)
+        handleLogin: async (e) => {
+            if (window.appAuth && typeof window.appAuth._handleLogin === 'function') {
+                return window.appAuth._handleLogin(e);
+            }
+            // Fallback: usa o auth.js diretamente
+            if (window.appAuthInstance && typeof window.appAuthInstance.handleLogin === 'function') {
+                return window.appAuthInstance.handleLogin(e);
+            }
+            console.warn('⚠️ handleLogin não disponível');
+            return false;
+        },
+        
+        handleRegister: async (e) => {
+            if (window.appAuth && typeof window.appAuth._handleRegister === 'function') {
+                return window.appAuth._handleRegister(e);
+            }
+            if (window.appAuthInstance && typeof window.appAuthInstance.handleRegister === 'function') {
+                return window.appAuthInstance.handleRegister(e);
+            }
+            console.warn('⚠️ handleRegister não disponível');
+            return false;
+        },
+        
         getRateLimitStatus: () => ({
             blocked: State.rateLimitBlocked,
             blockedUntil: State.rateLimitBlockedUntil,
@@ -611,7 +733,6 @@
             timeRemaining: Utils.getRateLimitTimeRemaining()
         }),
         
-        // 🔥 LOGOUT
         logout: () => Auth.handleUnauthorized()
     };
 
@@ -667,17 +788,7 @@
         },
 
         protect: function() {
-            const token = localStorage.getItem('access_token');
-            const hasValidToken = token && token !== 'undefined' && token !== 'null' && token.length > 10;
-            
-            let isAuth = hasValidToken;
-            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
-                try {
-                    isAuth = window.appAuth.isAuthenticated();
-                } catch (e) {
-                    isAuth = hasValidToken;
-                }
-            }
+            const isAuth = Utils.isAuthenticated();
             
             if (this.isProtected() && !isAuth) {
                 console.log('🔒 Rota protegida - redirecionando para login');
@@ -744,7 +855,6 @@
 
     const EventBus = {
         _handlers: new Map(),
-        _onceHandlers: new Map(),
         
         on: function(event, handler, options = {}) {
             if (!this._handlers.has(event)) {
@@ -783,9 +893,7 @@
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
                 document.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
-            } catch (e) {
-                // Ignora erro em ambiente seguro
-            }
+            } catch (e) {}
             
             if (!this._handlers.has(event)) return;
             
@@ -816,7 +924,6 @@
         
         clear: function() {
             this._handlers.clear();
-            this._onceHandlers.clear();
         }
     };
 
@@ -896,7 +1003,6 @@
                     }
                 });
 
-                // Notifica via EventBus
                 EventBus.emit('credits:updated', {
                     credits,
                     display: formattedDisplay,
@@ -1107,9 +1213,7 @@
                         try {
                             const instance = bootstrap.Modal.getInstance(modal);
                             if (instance) instance.hide();
-                        } catch (e) {
-                            // Ignora erro se Bootstrap não estiver carregado
-                        }
+                        } catch (e) {}
                     });
                 }
             });
@@ -1120,9 +1224,7 @@
                         try {
                             const instance = bootstrap.Modal.getInstance(modal);
                             if (instance) instance.hide();
-                        } catch (e) {
-                            // Ignora erro se Bootstrap não estiver carregado
-                        }
+                        } catch (e) {}
                     }
                 });
             });
@@ -1139,7 +1241,6 @@
 
     const Auth = {
         _sessionTimeout: null,
-        _tokenCheckInterval: null,
 
         startSessionTimer: () => {
             if (Auth._sessionTimeout) {
@@ -1172,97 +1273,19 @@
             }
         },
 
-        startTokenCheck: () => {
-            if (Auth._tokenCheckInterval) {
-                clearInterval(Auth._tokenCheckInterval);
-            }
-
-            Auth._checkTokenRenewal();
-            
-            Auth._tokenCheckInterval = setInterval(() => {
-                Auth._checkTokenRenewal();
-            }, CONFIG.TOKEN_CHECK_INTERVAL);
-            
-            console.log(`⏰ Verificação de token: ${CONFIG.TOKEN_CHECK_INTERVAL/1000}s`);
-        },
-
-        _checkTokenRenewal: async () => {
-            const token = localStorage.getItem('access_token');
-            if (!token) return;
-            
-            try {
-                const response = await fetch('/api/auth/check-token', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (response.status === 429) {
-                    const data = await response.json().catch(() => ({}));
-                    
-                    const eventData = {
-                        retryAfter: data.retry_after || 60,
-                        remaining: data.remaining_attempts || 0,
-                        message: data.detail || data.message || 'Muitas requisições. Aguarde um momento.',
-                        for: 'token-check'
-                    };
-                    
-                    EventBus.emit('rate_limit:blocked', eventData);
-                    window.dispatchEvent(new CustomEvent('rate_limit:blocked', { detail: eventData }));
-                    
-                    return;
-                }
-                
-                if (response.status === 401) {
-                    console.log('🔄 Token expirado, tentando refresh...');
-                    
-                    const eventData = { message: 'Token expirado, tentando renovar...' };
-                    EventBus.emit('auth:token_expired', eventData);
-                    window.dispatchEvent(new CustomEvent('auth:token_expired', { detail: eventData }));
-                    
-                    const refreshed = await refreshTokenSafely();
-                    if (refreshed) {
-                        console.log('✅ Token renovado com sucesso!');
-                        
-                        const refreshEvent = { message: 'Token renovado com sucesso' };
-                        EventBus.emit('auth:token_refreshed', refreshEvent);
-                        window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
-                        
-                        Auth.resetSessionTimer();
-                        State.tokenValid = true;
-                    } else {
-                        console.log('❌ Falha ao renovar token, fazendo logout...');
-                        Auth.handleUnauthorized();
-                    }
-                } else if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.status === 'refreshed' && data.access_token) {
-                        console.log('🔄 Token renovado via check-token');
-                        State.tokenValid = true;
-                        
-                        const refreshEvent = { message: 'Token renovado automaticamente' };
-                        EventBus.emit('auth:token_refreshed', refreshEvent);
-                        window.dispatchEvent(new CustomEvent('auth:token_refreshed', { detail: refreshEvent }));
-                        
-                        if (data.credits !== undefined) {
-                            StateManager.updateCredits(data.credits);
-                        }
-                    }
-                    
-                    Auth.resetSessionTimer();
-                }
-            } catch (error) {
-                console.warn('Erro ao verificar token:', error);
-            }
-        },
+        // 🔥 REMOVIDO: startTokenCheck (desnecessário - fetchWithAuth já trata 401)
 
         handleUnauthorized: function() {
             console.error('❌ [Orquestrador] Sessão inválida ou expirada.');
             
             sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
             
+            // 🔥 Limpa localStorage e cookies
             localStorage.clear();
+            document.cookie.split(';').forEach(function(c) {
+                document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+            });
             
-            // Atualiza estado via StateManager
             StateManager.updateState({
                 user: null,
                 credits: 0,
@@ -1294,20 +1317,15 @@
                 clearTimeout(Auth._sessionTimeout);
                 Auth._sessionTimeout = null;
             }
-            if (Auth._tokenCheckInterval) {
-                clearInterval(Auth._tokenCheckInterval);
-                Auth._tokenCheckInterval = null;
-            }
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE CRÉDITOS (REATIVO - SEM POLLING EXCESSIVO)
+    // 🔥 GERENCIADOR DE CRÉDITOS (EVENT-DRIVEN)
     // ==============================================
 
     const Credits = {
         _updateInterval: null,
-        _premiumInterval: null,
 
         load: async () => {
             if (window.appAuth?.loadUserCredits) {
@@ -1335,7 +1353,6 @@
                 }
             }
             
-            // Fallback: via API
             try {
                 const token = localStorage.getItem('access_token');
                 if (!token) return null;
@@ -1371,6 +1388,7 @@
             return null;
         },
 
+        // 🔥 POLLING REDUZIDO (apenas fallback - 5 minutos)
         startPolling: () => {
             if (Credits._updateInterval) {
                 clearInterval(Credits._updateInterval);
@@ -1380,23 +1398,9 @@
             
             Credits._updateInterval = setInterval(() => {
                 Credits.load();
-            }, CONFIG.CREDITS_UPDATE_INTERVAL);
+            }, CONFIG.CREDITS_UPDATE_INTERVAL); // 5 minutos
             
-            console.log(`⏰ Atualização de créditos: ${CONFIG.CREDITS_UPDATE_INTERVAL/1000}s`);
-        },
-
-        startPremiumPolling: () => {
-            if (Credits._premiumInterval) {
-                clearInterval(Credits._premiumInterval);
-            }
-            
-            Credits.loadPremiumStatus();
-            
-            Credits._premiumInterval = setInterval(() => {
-                Credits.loadPremiumStatus();
-            }, CONFIG.CREDITS_UPDATE_INTERVAL);
-            
-            console.log(`⏰ Atualização de status premium: ${CONFIG.CREDITS_UPDATE_INTERVAL/1000}s`);
+            console.log(`⏰ Atualização de créditos (fallback): ${CONFIG.CREDITS_UPDATE_INTERVAL/1000}s`);
         },
 
         stop: () => {
@@ -1404,124 +1408,254 @@
                 clearInterval(Credits._updateInterval);
                 Credits._updateInterval = null;
             }
-            if (Credits._premiumInterval) {
-                clearInterval(Credits._premiumInterval);
-                Credits._premiumInterval = null;
+        }
+    };
+
+    // ==============================================
+    // 🔥 GERENCIADOR DE EVENTOS (SINCRONIZADO)
+    // ==============================================
+
+    const EventManager = {
+        setup: () => {
+            console.log('📡 Configurando gerenciador de eventos...');
+            
+            // 🔥 ESCUTA EVENTOS DO payment.js (camelCase)
+            document.addEventListener('creditsUpdated', function(e) {
+                console.log('📢 creditsUpdated recebido do payment.js');
+                const data = e.detail || {};
+                StateManager.updateCredits(data.credits || 0, data.isPremium || false);
+            });
+            
+            document.addEventListener('premiumStatusUpdated', function(e) {
+                console.log('📢 premiumStatusUpdated recebido do payment.js');
+                const data = e.detail || {};
+                StateManager.updatePremiumStatus({
+                    is_premium: data.isPremium || false,
+                    days_left: data.daysLeft || 0,
+                    promotional_price_locked: data.hasPromotionalPrice || false,
+                    promotional_price: data.promotionalPrice || null,
+                    can_receive_today: data.canReceiveDailyCredit || false,
+                    received_today: data.receivedDailyCreditToday || false,
+                    credits_balance: data.creditsBalance || State.credits
+                });
+            });
+            
+            document.addEventListener('paymentReady', function(e) {
+                console.log('📢 paymentReady recebido');
+                window._paymentReady = true;
+                setTimeout(() => {
+                    Credits.loadPremiumStatus();
+                    Credits.load();
+                }, 300);
+            });
+            
+            // 🔥 ESCUTA EVENTOS DO dashboard.js
+            document.addEventListener('analysis:success', function(e) {
+                console.log('📢 analysis:success recebido do dashboard');
+                const detail = e.detail || {};
+                if (detail.result?.user_credits !== undefined) {
+                    StateManager.updateCredits(detail.result.user_credits);
+                }
+                if (detail.result?.credits_balance !== undefined) {
+                    StateManager.updateCredits(detail.result.credits_balance);
+                }
+            });
+            
+            // 🔥 ESCUTA EVENTOS DO upload_routes.py (via fetch)
+            document.addEventListener('upload:completed', function(e) {
+                console.log('📢 upload:completed recebido');
+                const detail = e.detail || {};
+                if (detail.credits_remaining !== undefined) {
+                    StateManager.updateCredits(detail.credits_remaining);
+                }
+                setTimeout(() => Credits.load(), 1000);
+            });
+
+            // 🔥 ESCUTA CRÉDITOS INSUFICIENTES (402)
+            document.addEventListener('credits:insufficient', function(e) {
+                console.log('📢 credits:insufficient recebido');
+                const detail = e.detail || {};
+                Utils.showNotification(detail.message || 'Créditos insuficientes!', 'warning');
+                window.dispatchEvent(new CustomEvent('payment:show_upgrade_modal', {
+                    detail: {
+                        message: detail.message,
+                        credits_available: detail.credits_available,
+                        credits_needed: detail.credits_needed
+                    }
+                }));
+            });
+            
+            // 🔥 ESCUTA RATE LIMIT (429)
+            document.addEventListener('rate_limit:blocked', function(e) {
+                console.log('📢 rate_limit:blocked recebido');
+                const detail = e.detail || {};
+                State.rateLimitBlocked = true;
+                State.rateLimitBlockedUntil = Date.now() + (detail.retryAfter || 60) * 1000;
+                State.rateLimitRemainingAttempts = detail.remaining || 0;
+                UI.updateRateLimitStatus();
+                Utils.showNotification(detail.message || 'Muitas tentativas. Aguarde um momento.', 'warning');
+            });
+            
+            // 🔥 ESCUTA AUTH READY (do auth.js)
+            document.addEventListener('authReady', function(e) {
+                console.log('📢 authReady recebido do auth.js');
+                const detail = e.detail || {};
+                if (detail.isAuthenticated) {
+                    StateManager.updateState({
+                        tokenValid: true,
+                        userInitialized: true,
+                        isAppReady: true
+                    });
+                    setTimeout(() => Credits.load(), 500);
+                }
+            });
+
+            // 🔥 ESCUTA AUTH LOGOUT
+            document.addEventListener('authLogout', function() {
+                console.log('📢 authLogout recebido');
+                Auth.handleUnauthorized();
+            });
+            
+            console.log('✅ Event listeners configurados');
+        },
+
+        clear: () => {}
+    };
+
+    // ==============================================
+    // 🔥 GERENCIADOR DE SINCRONIZAÇÃO
+    // ==============================================
+
+    const Sync = {
+        syncAuth: async () => {
+            if (!window.appAuth) {
+                console.warn('⚠️ Auth não inicializado.');
+                return false;
+            }
+
+            try {
+                const isAuth = Utils.isAuthenticated();
+                
+                if (isAuth) {
+                    // Carrega dados do usuário
+                    await window.appAuth.loadUserCredits();
+                    
+                    StateManager.updateState({
+                        tokenValid: true,
+                        userInitialized: true
+                    });
+                    
+                    UI.updateNavbar();
+                    Credits.startPolling();
+                    Auth.startSessionTimer();
+                    
+                    if (typeof window.initPowClient === 'function') {
+                        console.log('🔐 Usuário autenticado, inicializando PoW...');
+                        setTimeout(() => {
+                            window.initPowClient({
+                                autoRefill: false,
+                                preSolve: false
+                            });
+                        }, 1000);
+                    }
+                } else {
+                    StateManager.updateState({
+                        tokenValid: false,
+                        userInitialized: false
+                    });
+                }
+
+                return isAuth;
+            } catch (e) {
+                console.error('Erro ao sincronizar auth:', e);
+                StateManager.updateState({ userInitialized: false });
+                return false;
+            }
+        },
+
+        syncPayment: async () => {
+            if (!window.appAuth) return;
+            
+            try {
+                const paymentLoaded = await Utils.waitForPayment(30);
+                
+                if (paymentLoaded) {
+                    if (typeof window.loadPremiumStatus === 'function') {
+                        await Credits.loadPremiumStatus();
+                    }
+                    console.log('✅ Payment sincronizado com sucesso!');
+                } else {
+                    console.warn('⚠️ Payment não carregou. Tentando novamente...');
+                    setTimeout(() => {
+                        if (typeof window.loadPremiumStatus === 'function') {
+                            Credits.loadPremiumStatus();
+                        }
+                    }, 5000);
+                }
+            } catch (e) {
+                console.warn('Erro ao sincronizar payment:', e);
+            }
+        },
+
+        syncPromotion: async () => {
+            try {
+                const token = localStorage.getItem('access_token');
+                if (!token) return;
+                
+                const response = await fetchWithAuth('/api/payments/promotion-status');
+                if (response?.ok) {
+                    const data = await response.json();
+                    
+                    StateManager.updateState({
+                        hasPromotionalPrice: data.user_locked_price !== null && data.user_locked_price !== undefined,
+                        promotionalPrice: data.user_locked_price || null,
+                        remainingSlots: data.remaining_slots,
+                        totalSlots: data.total_slots
+                    });
+                    
+                    EventBus.emit('premium:promotion_updated', {
+                        hasPromotionalPrice: State.hasPromotionalPrice,
+                        promotionalPrice: State.promotionalPrice,
+                        remainingSlots: data.remaining_slots,
+                        totalSlots: data.total_slots
+                    });
+                    
+                    UI.updateVitalicioBadge();
+                }
+            } catch (e) {
+                console.warn('Erro ao sincronizar promoção:', e);
+            }
+        },
+
+        syncRateLimit: () => {
+            if (window.appAuth?.getRateLimitStatus) {
+                const status = window.appAuth.getRateLimitStatus();
+                if (status) {
+                    StateManager.updateState({
+                        rateLimitBlocked: status.blocked || false,
+                        rateLimitBlockedUntil: status.blockedUntil || 0,
+                        rateLimitRemainingAttempts: status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX,
+                        rateLimitBlockedFor: status.for || 'login'
+                    });
+                    UI.updateRateLimitStatus();
+                }
             }
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW (MODO SOB DEMANDA)
+    // 🔥 GERENCIADOR DE PoW
     // ==============================================
 
     const Pow = {
-        _autoRefillInterval: null,
-
         isAvailable: () => {
             return window.powClient !== undefined && window.powClient !== null;
-        },
-
-        startAutoRefill: () => {
-            if (!Pow.isAvailable()) {
-                console.log('⏳ PoW não disponível, aguardando...');
-                return;
-            }
-
-            try {
-                if (typeof window.powClient.startAutoRefill === 'function') {
-                    if (Pow._autoRefillInterval) {
-                        clearInterval(Pow._autoRefillInterval);
-                    }
-                    
-                    const autoRefillEnabled = false;
-                    
-                    if (autoRefillEnabled) {
-                        window.powClient.startAutoRefill(CONFIG.POW_AUTO_REFILL_INTERVAL);
-                        State.powAutoRefillActive = true;
-                        console.log(`⚡ PoW auto-refill iniciado (${CONFIG.POW_AUTO_REFILL_INTERVAL/1000}s)`);
-                    } else {
-                        console.log('⚡ PoW em modo sob demanda (auto-refill desativado)');
-                    }
-                    
-                    setTimeout(() => {
-                        if (typeof window.powClient.preSolve === 'function') {
-                            window.powClient.preSolve();
-                        }
-                    }, 100);
-                    
-                    EventBus.emit('pow:ready', {
-                        solutionsReady: State.powSolutionsReady,
-                        autoRefill: autoRefillEnabled
-                    });
-                }
-            } catch (e) {
-                console.warn('Erro ao iniciar PoW:', e);
-            }
-        },
-
-        stopAutoRefill: () => {
-            if (!Pow.isAvailable()) return;
-            
-            try {
-                if (typeof window.powClient.stopAutoRefill === 'function') {
-                    window.powClient.stopAutoRefill();
-                    State.powAutoRefillActive = false;
-                    console.log('⏹️ PoW auto-refill parado');
-                }
-            } catch (e) {
-                console.warn('Erro ao parar PoW auto-refill:', e);
-            }
-            
-            if (Pow._autoRefillInterval) {
-                clearInterval(Pow._autoRefillInterval);
-                Pow._autoRefillInterval = null;
-            }
-        },
-
-        reset: () => {
-            if (!Pow.isAvailable()) return;
-            
-            try {
-                if (typeof window.powClient.reset === 'function') {
-                    window.powClient.reset();
-                    State.powSolutionsReady = 0;
-                    console.log('🔄 PoW resetado');
-                }
-            } catch (e) {
-                console.warn('Erro ao resetar PoW:', e);
-            }
-        },
-
-        prepareForUpload: async () => {
-            if (!Pow.isAvailable()) {
-                console.log('⏳ PoW não disponível para preparar upload');
-                return false;
-            }
-
-            try {
-                if (typeof window.powClient.prepareForUpload === 'function') {
-                    const result = await window.powClient.prepareForUpload();
-                    
-                    if (typeof window.powClient.getStats === 'function') {
-                        const stats = window.powClient.getStats();
-                        State.powSolutionsReady = stats.solutionsReady || 0;
-                        UI.updatePowStatus();
-                    }
-                    
-                    return result;
-                }
-            } catch (e) {
-                console.warn('Erro ao preparar PoW para upload:', e);
-            }
-            return false;
         },
 
         getStats: () => {
             if (!Pow.isAvailable()) {
                 return { available: false, solutionsReady: 0 };
             }
-
             try {
                 if (typeof window.powClient.getStats === 'function') {
                     const stats = window.powClient.getStats();
@@ -1541,13 +1675,77 @@
             return { available: false, solutionsReady: 0 };
         },
 
-        uploadWithPow: async (file, endpoint = '/api/upload-auto') => {
+        prepareForUpload: async () => {
             if (!Pow.isAvailable()) {
-                throw new Error('PoW não disponível');
+                console.log('⏳ PoW não disponível para preparar upload');
+                return false;
+            }
+            try {
+                if (typeof window.powClient.prepareForUpload === 'function') {
+                    const result = await window.powClient.prepareForUpload();
+                    if (typeof window.powClient.getStats === 'function') {
+                        const stats = window.powClient.getStats();
+                        State.powSolutionsReady = stats.solutionsReady || 0;
+                        UI.updatePowStatus();
+                    }
+                    return result;
+                }
+            } catch (e) {
+                console.warn('Erro ao preparar PoW para upload:', e);
+            }
+            return false;
+        },
+
+        uploadWithPow: async (files, endpoint = '/api/upload-auto') => {
+            if (!Pow.isAvailable()) {
+                console.log('⏳ PoW não disponível, usando upload normal');
+                // Fallback: upload normal
+                const formData = new FormData();
+                if (Array.isArray(files)) {
+                    for (const file of files) {
+                        formData.append('files', file);
+                    }
+                } else {
+                    formData.append('files', files);
+                }
+                
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                return response;
             }
 
             try {
                 if (typeof window.powClient.uploadWithPow === 'function') {
+                    // Se for array, processa um por um ou usa o método multi
+                    if (Array.isArray(files) && files.length > 1) {
+                        // Para múltiplos arquivos, usa upload normal com headers PoW
+                        const solution = await window.powClient.getSolutionForUpload();
+                        const formData = new FormData();
+                        for (const file of files) {
+                            formData.append('files', file);
+                        }
+                        
+                        const token = localStorage.getItem('access_token');
+                        const headers = { 'Authorization': `Bearer ${token}` };
+                        if (solution && solution.prefix && solution.nonce) {
+                            headers['X-PoW-Challenge'] = solution.prefix;
+                            headers['X-PoW-Nonce'] = solution.nonce;
+                        }
+                        
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: headers,
+                            body: formData
+                        });
+                        return response;
+                    }
+                    
+                    // Arquivo único
+                    const file = Array.isArray(files) ? files[0] : files;
                     return await window.powClient.uploadWithPow(file, endpoint);
                 }
             } catch (e) {
@@ -1555,10 +1753,6 @@
                 throw e;
             }
             throw new Error('Método uploadWithPow não disponível');
-        },
-
-        stop: () => {
-            Pow.stopAutoRefill();
         }
     };
 
@@ -1593,7 +1787,6 @@
                 analysis.progress = progress;
                 analysis.status = status;
                 analysis.lastUpdate = new Date().toISOString();
-                
                 EventBus.emit('analysis:progress', { analysis, progress, status });
             }
         },
@@ -1657,241 +1850,7 @@
             State.recentAnalyses = [];
             State.totalAnalyses = 0;
             State.analysesToday = 0;
-            
             EventBus.emit('analysis:history_cleared', {});
-        }
-    };
-
-    // ==============================================
-    // 🔥 GERENCIADOR DE SINCRONIZAÇÃO
-    // ==============================================
-
-    const Sync = {
-        syncAuth: async () => {
-            if (!window.appAuth) {
-                console.warn('⚠️ Auth não inicializado.');
-                return false;
-            }
-
-            try {
-                const isAuth = await window.appAuth.checkToken?.();
-                
-                if (isAuth) {
-                    const userData = window.appAuth.getCurrentUser?.() || {};
-                    StateManager.updateState({
-                        user: userData,
-                        credits: userData.credits || 0,
-                        isAdmin: userData.is_admin || false,
-                        isPremium: userData.plan === 'premium_mensal' || userData.plan === 'PREMIUM_MENSAL',
-                        tokenValid: true,
-                        userInitialized: true
-                    });
-                    
-                    UI.updateNavbar();
-                    Credits.startPolling();
-                    Auth.startTokenCheck();
-                    Auth.startSessionTimer();
-                    
-                    if (isAuth && typeof window.initPowClient === 'function') {
-                        console.log('🔐 Usuário autenticado, inicializando PoW (modo sob demanda)...');
-                        setTimeout(() => {
-                            window.initPowClient({
-                                autoRefill: false,
-                                preSolve: false
-                            });
-                        }, 1000);
-                    }
-                } else {
-                    StateManager.updateState({
-                        tokenValid: false,
-                        userInitialized: false
-                    });
-                }
-
-                return isAuth;
-            } catch (e) {
-                console.error('Erro ao sincronizar auth:', e);
-                StateManager.updateState({ userInitialized: false });
-                return false;
-            }
-        },
-
-        syncPayment: async () => {
-            if (!window.appAuth) return;
-            
-            try {
-                const paymentLoaded = await Utils.waitForPayment(30);
-                
-                if (paymentLoaded) {
-                    if (typeof window.loadPremiumStatus === 'function') {
-                        await Credits.loadPremiumStatus();
-                    }
-                    
-                    Credits.startPremiumPolling();
-                    console.log('✅ Payment sincronizado com sucesso!');
-                } else {
-                    console.warn('⚠️ Payment não carregou. Algumas funcionalidades podem estar indisponíveis.');
-                    setTimeout(() => {
-                        if (typeof window.loadPremiumStatus === 'function') {
-                            Credits.loadPremiumStatus();
-                        }
-                    }, 5000);
-                }
-            } catch (e) {
-                console.warn('Erro ao sincronizar payment:', e);
-            }
-        },
-
-        syncPromotion: async () => {
-            try {
-                const token = localStorage.getItem('access_token');
-                if (!token) return;
-                
-                const response = await fetchWithAuth('/api/payments/promotion-status');
-                if (response?.ok) {
-                    const data = await response.json();
-                    
-                    StateManager.updateState({
-                        hasPromotionalPrice: data.user_locked_price !== null && data.user_locked_price !== undefined,
-                        promotionalPrice: data.user_locked_price || null,
-                        remainingSlots: data.remaining_slots,
-                        totalSlots: data.total_slots
-                    });
-                    
-                    EventBus.emit('premium:promotion_updated', {
-                        hasPromotionalPrice: State.hasPromotionalPrice,
-                        promotionalPrice: State.promotionalPrice,
-                        remainingSlots: data.remaining_slots,
-                        totalSlots: data.total_slots
-                    });
-                    
-                    UI.updateVitalicioBadge();
-                }
-            } catch (e) {
-                console.warn('Erro ao sincronizar promoção:', e);
-            }
-        },
-
-        syncPow: async () => {
-            try {
-                const powLoaded = await Utils.waitForPow(20);
-                
-                if (powLoaded) {
-                    console.log('✅ PoW sincronizado com sucesso!');
-                    
-                    if (Utils.isAuthenticated()) {
-                        console.log('⚡ PoW em modo sob demanda (aguardando upload)');
-                    }
-                    
-                    return true;
-                } else {
-                    console.warn('⚠️ PoW não carregou. Algumas funcionalidades podem estar indisponíveis.');
-                    return false;
-                }
-            } catch (e) {
-                console.warn('Erro ao sincronizar PoW:', e);
-                return false;
-            }
-        },
-
-        syncRateLimit: () => {
-            if (window.appAuth?.getRateLimitStatus) {
-                const status = window.appAuth.getRateLimitStatus();
-                if (status) {
-                    StateManager.updateState({
-                        rateLimitBlocked: status.blocked || false,
-                        rateLimitBlockedUntil: status.blockedUntil || 0,
-                        rateLimitRemainingAttempts: status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX,
-                        rateLimitBlockedFor: status.for || 'login'
-                    });
-                    UI.updateRateLimitStatus();
-                }
-            }
-        }
-    };
-
-    // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS
-    // ==============================================
-
-    const EventManager = {
-        setup: () => {
-            console.log('📡 Configurando gerenciador de eventos...');
-            
-            // 🔥 ESCUTA EVENTOS DO payment.js (sem dois pontos)
-            document.addEventListener('creditsUpdated', function(e) {
-                console.log('📢 [EventManager] creditsUpdated recebido do payment.js');
-                const data = e.detail || {};
-                StateManager.updateCredits(data.credits || 0, data.isPremium || false);
-            });
-            
-            document.addEventListener('premiumStatusUpdated', function(e) {
-                console.log('📢 [EventManager] premiumStatusUpdated recebido do payment.js');
-                const data = e.detail || {};
-                StateManager.updatePremiumStatus({
-                    is_premium: data.isPremium || false,
-                    days_left: data.daysLeft || 0,
-                    promotional_price_locked: data.hasPromotionalPrice || false,
-                    promotional_price: data.promotionalPrice || null,
-                    can_receive_today: data.canReceiveDailyCredit || false,
-                    received_today: data.receivedDailyCreditToday || false,
-                    credits_balance: data.creditsBalance || State.credits
-                });
-            });
-            
-            document.addEventListener('paymentReady', function(e) {
-                console.log('📢 [EventManager] paymentReady recebido');
-                window._paymentReady = true;
-                setTimeout(() => {
-                    Credits.loadPremiumStatus();
-                    Credits.load();
-                }, 300);
-            });
-            
-            // 🔥 ESCUTA EVENTOS DO dashboard.js
-            document.addEventListener('analysis:success', function(e) {
-                console.log('📢 [EventManager] analysis:success recebido do dashboard');
-                const detail = e.detail || {};
-                if (detail.result?.user_credits !== undefined) {
-                    StateManager.updateCredits(detail.result.user_credits);
-                }
-            });
-            
-            // 🔥 ESCUTA MUDANÇAS DE ESTADO (para sincronizar com payment.js)
-            EventBus.on('app:state_changed', function(data) {
-                console.log('📢 [EventManager] app:state_changed', data.changes);
-                
-                // Notifica payment.js sobre mudanças de créditos
-                if (data.changes.credits !== undefined || data.changes.isPremium !== undefined) {
-                    window.dispatchEvent(new CustomEvent('creditsUpdated', {
-                        detail: {
-                            credits: State.credits,
-                            display: State.creditsDisplay,
-                            maxCredits: CONFIG.MAX_CREDITS_BALANCE,
-                            isPremium: State.isPremium
-                        }
-                    }));
-                }
-                
-                // Notifica payment.js sobre mudanças de status premium
-                if (data.changes.isPremium !== undefined || data.changes.daysLeftPremium !== undefined) {
-                    window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
-                        detail: {
-                            isPremium: State.isPremium,
-                            daysLeft: State.daysLeftPremium,
-                            hasPromotionalPrice: State.hasPromotionalPrice,
-                            promotionalPrice: State.promotionalPrice,
-                            canReceiveDailyCredit: State.canReceiveDailyCredit,
-                            receivedDailyCreditToday: State.receivedDailyCreditToday,
-                            creditsBalance: State.credits
-                        }
-                    }));
-                }
-            });
-        },
-
-        clear: () => {
-            // Limpeza de event listeners se necessário
         }
     };
 
@@ -1900,7 +1859,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v6.0...');
+        console.log('🚀 Inicializando App (Orquestrador) v6.2...');
 
         try {
             // 1. Resetar contador de reloads
@@ -1921,19 +1880,7 @@
             }
 
             // 3. Verificar autenticação
-            const token = localStorage.getItem('access_token');
-            const hasValidToken = token && token !== 'undefined' && token !== 'null' && token.length > 10;
-            
-            let isAuth = false;
-            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
-                try {
-                    isAuth = window.appAuth.isAuthenticated();
-                } catch (e) {
-                    isAuth = hasValidToken;
-                }
-            } else {
-                isAuth = hasValidToken;
-            }
+            const isAuth = Utils.isAuthenticated();
 
             const currentPath = Utils.getCurrentPath();
             const isProtectedRoute = CONFIG.ROUTES.PROTECTED.some(route => 
@@ -1957,7 +1904,7 @@
 
             console.log('✅ Rota verificada, continuando inicialização...');
 
-            // 4. Configurar EventManager (antes de tudo)
+            // 4. Configurar EventManager
             EventManager.setup();
 
             // 5. Sincronizar com auth.js
@@ -2016,7 +1963,7 @@
             window._appReadyFired = true;
             window._appInitialized = true;
 
-            // 11. DISPARAR EVENTO app:ready COM PAYLOAD COMPLETO
+            // 11. DISPARAR EVENTO app:ready
             const appReadyData = {
                 isAuthenticated: isAuth,
                 user: State.user,
@@ -2035,21 +1982,19 @@
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
                 isReady: true,
-                version: '6.0'
+                version: '6.2'
             };
 
-            // Dispara em todos os canais
             EventBus.emit('app:ready', appReadyData);
             window.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             
             // 🔥 NOTIFICA PAYMENT.JS
             window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { isReady: true, version: '6.0' }
+                detail: { isReady: true, version: '6.2' }
             }));
 
-            console.log('✅ App (Orquestrador) v6.0 inicializado com sucesso!');
-            console.log('📢 Evento app:ready com payload completo');
+            console.log('✅ App (Orquestrador) v6.2 inicializado com sucesso!');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
@@ -2059,6 +2004,8 @@
             console.log('📦 AppUtils disponível globalmente');
             console.log('⚡ fetchWithAuth unificado com refresh automático');
             console.log('🔄 Estado reativo via StateManager');
+            console.log('🔐 Sincronizado com back-end (crud.py, security.py, upload_routes.py)');
+            console.log('🔗 Integrado com auth.js, payment.js, dashboard.js');
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
@@ -2078,7 +2025,7 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS - V6.0
+    // 🔥 EXPORTAÇÕES GLOBAIS
     // ==============================================
 
     const App = {
@@ -2101,12 +2048,7 @@
         
         isInitialized: function() {
             try {
-                const appInit = !!window._appInitialized;
-                const userInit = State && State.userInitialized === true;
-                const appReady = State && State.isAppReady === true;
-                const flagReady = !!window._appReadyFired;
-                
-                return appInit && userInit && appReady;
+                return !!(window._appInitialized && State && State.userInitialized === true && State.isAppReady === true);
             } catch (e) {
                 return false;
             }
@@ -2120,7 +2062,6 @@
             }
         },
         
-        // 🔥 INTERFACE DE AUTENTICAÇÃO (já exposta via window.appAuth)
         auth: Auth,
         pow: Pow,
         credits: Credits,
@@ -2146,29 +2087,11 @@
         getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
         getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
         
-        isPowAvailable: Pow.isAvailable,
-        getPowStats: Pow.getStats,
-        preparePowForUpload: Pow.prepareForUpload,
-        uploadWithPow: Pow.uploadWithPow,
-        startPowAutoRefill: Pow.startAutoRefill,
-        stopPowAutoRefill: Pow.stopAutoRefill,
-        resetPow: Pow.reset,
-        
         loadCredits: Credits.load,
         loadPremiumStatus: Credits.loadPremiumStatus,
         receiveDailyCredit: Credits.receiveDailyCredit,
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
         getCreditsBalance: () => State ? State.credits : 0,
-        
-        startAnalysis: Analysis.startAnalysis,
-        updateAnalysisProgress: Analysis.updateProgress,
-        completeAnalysis: Analysis.completeAnalysis,
-        failAnalysis: Analysis.failAnalysis,
-        getActiveAnalyses: Analysis.getActiveAnalyses,
-        getRecentAnalyses: Analysis.getRecentAnalyses,
-        getTotalAnalyses: Analysis.getTotalAnalyses,
-        getAnalysesToday: Analysis.getAnalysesToday,
-        clearAnalysisHistory: Analysis.clearHistory,
         
         navigate: Router.navigate,
         goBack: Utils.goBack,
@@ -2186,9 +2109,23 @@
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
         
-        // 🔥 FETCH UNIFICADO
         fetchWithAuth: fetchWithAuth,
-        refreshTokenSafely: refreshTokenSafely
+        refreshTokenSafely: refreshTokenSafely,
+        
+        uploadWithPow: Pow.uploadWithPow,
+        preparePowForUpload: Pow.prepareForUpload,
+        getPowStats: Pow.getStats,
+        isPowAvailable: Pow.isAvailable,
+        
+        startAnalysis: Analysis.startAnalysis,
+        updateAnalysisProgress: Analysis.updateProgress,
+        completeAnalysis: Analysis.completeAnalysis,
+        failAnalysis: Analysis.failAnalysis,
+        getActiveAnalyses: Analysis.getActiveAnalyses,
+        getRecentAnalyses: Analysis.getRecentAnalyses,
+        getTotalAnalyses: Analysis.getTotalAnalyses,
+        getAnalysesToday: Analysis.getAnalysesToday,
+        clearAnalysisHistory: Analysis.clearHistory
     };
 
     // 🔥 EXPORTAÇÕES GLOBAIS
@@ -2218,12 +2155,9 @@
     window.receiveDailyCredit = Credits.receiveDailyCredit;
     window.loadPremiumStatus = Credits.loadPremiumStatus;
     window.uploadWithPow = Pow.uploadWithPow;
-    window.startPowAutoRefill = Pow.startAutoRefill;
-    window.stopPowAutoRefill = Pow.stopAutoRefill;
-    window.resetPow = Pow.reset;
+    window.preparePowForUpload = Pow.prepareForUpload;
     window.isPowAvailable = Pow.isAvailable;
     window.getPowStats = Pow.getStats;
-    window.preparePowForUpload = Pow.prepareForUpload;
     window.startAnalysis = Analysis.startAnalysis;
     window.updateAnalysisProgress = Analysis.updateProgress;
     window.completeAnalysis = Analysis.completeAnalysis;
@@ -2244,11 +2178,9 @@
         timeRemaining: Utils.getRateLimitTimeRemaining()
     });
 
-    // 🔥 FETCH UNIFICADO
     window.fetchWithAuth = fetchWithAuth;
     window.refreshTokenSafely = refreshTokenSafely;
 
-    // 🔥 LOGOUT
     window.logout = () => {
         Auth.handleUnauthorized();
     };
@@ -2258,7 +2190,7 @@
     };
 
     // ==============================================
-    // 🔥 INICIAR QUANDO O DOM ESTIVER PRONTO
+    // 🔥 INICIAR
     // ==============================================
 
     if (window._appInitialized) {
@@ -2273,14 +2205,13 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v6.0 carregado!');
-    console.log('   🔥 CENTRALIZAÇÃO: window.appAuth criado nativamente');
-    console.log('   🔥 ESTADO REATIVO: StateManager com atualização por eventos');
-    console.log('   🔥 UTILITÁRIOS GLOBAIS: AppUtils exposto para todos');
-    console.log('   🔥 FETCH UNIFICADO: fetchWithAuth com refresh automático');
-    console.log('   🔥 EVENTO app:ready com payload completo');
-    console.log('   🔥 ELIMINAÇÃO DE REDUNDÂNCIA: payment.js e dashboard.js usam AppUtils');
-    console.log('   🔥 SINCRONIA REATIVA: substitui polling por eventos');
-    console.log('   🔥 FALLBACK INTELIGENTE: coordenado pelo app.js');
+    console.log('✅ app.js (Orquestrador) v6.2 carregado!');
+    console.log('   🔥 CORREÇÃO: Reconhecimento automático do token + cookie sync');
+    console.log('   🔥 SINCRONIZAÇÃO: Com auth.js, payment.js, dashboard.js');
+    console.log('   🔥 ESTADO REATIVO: StateManager com eventos');
+    console.log('   🔥 FETCH UNIFICADO: Com refresh automático e rate limit');
+    console.log('   🔥 SISTEMA DE CRÉDITOS: MAX_CREDITS_PREMIUM = 3');
+    console.log('   🔥 SEM POLLING EXCESSIVO: Event-driven com fallback');
+    console.log('   🔥 EVENTOS: app:ready, appReady, paymentReady, creditsUpdated');
 
-})()
+})();

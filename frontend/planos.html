@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.8 (UI Reativa com app.js v6.0)');
+            console.log('✅ AutoAnalytics - Planos v3.0 (Card Estático + Upgrade)');
         })();
     </script>
     
@@ -128,7 +128,7 @@
             transform: translateY(-2px);
         }
 
-        /* ===== BADGES REATIVAS (app.js) ===== */
+        /* ===== BADGES REATIVAS ===== */
         .auth-required { display: none; }
         .auth-required.show { display: inline-block; }
         
@@ -147,51 +147,8 @@
         .vitalicio-only { display: none; }
         .vitalicio-only.show { display: inline-block; }
         
-        .non-premium { display: inline-block; }
-        .non-premium.hidden { display: none; }
-        
         .premium-days-badge { display: none; }
         .premium-days-badge.show { display: inline-block; }
-
-        /* Botão de compra - estados */
-        .btn-buy { display: inline-block; }
-        .btn-buy.hidden { display: none; }
-        
-        .btn-premium-active { display: none; }
-        .btn-premium-active.show { display: inline-block; }
-        
-        .btn-upgrade { display: none; }
-        .btn-upgrade.show { display: inline-block; }
-
-        /* ===== POW STATUS ===== */
-        .pow-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0.15rem 0.6rem;
-            border-radius: 50px;
-            font-size: 0.6rem;
-            font-weight: 700;
-            background: rgba(72, 187, 120, 0.15);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
-            cursor: default;
-        }
-        .pow-status.loading {
-            background: rgba(245, 166, 35, 0.15);
-            border-color: rgba(245, 166, 35, 0.3);
-            color: #f5a623;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        .pow-status.error {
-            background: rgba(220, 53, 69, 0.15);
-            border-color: rgba(220, 53, 69, 0.3);
-            color: #dc3545;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
 
         /* ===== CONTEÚDO ===== */
         .hero-section { padding: 100px 0 40px; min-height: 100vh; }
@@ -204,12 +161,6 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             color: white;
-        }
-        .glass-card:hover {
-            transform: translateY(-6px);
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 107, 53, 0.3);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
 
         /* ===== NAVEGAÇÃO POR ABAS ===== */
@@ -251,30 +202,20 @@
             box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
             transform: translateY(-2px);
         }
-        .tab-btn i { font-size: 1.1rem; }
 
-        /* ===== CONTEÚDO DAS ABAS ===== */
         .tab-content {
             display: none;
             animation: tabFadeIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
-        .tab-content.active {
-            display: block;
-        }
+        .tab-content.active { display: block; }
 
         @keyframes tabFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px) scale(0.98);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+            from { opacity: 0; transform: translateY(20px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
         /* ============================================== */
-        /* 🔥 ESTILOS DO PLANO - RENDERIZADO PELO payment.js */
+        /* 🔥 ESTILOS DO PLANO - CARD ESTÁTICO */
         /* ============================================== */
         
         .bronze-card {
@@ -312,6 +253,29 @@
         .bronze-card:hover {
             transform: translateY(-8px) scale(1.01);
             box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
+        }
+
+        /* ===== CARD PARA USUÁRIO PREMIUM (verde) ===== */
+        .bronze-card.premium-active {
+            background: linear-gradient(145deg, rgba(26, 71, 42, 0.95) 0%, rgba(45, 106, 79, 0.95) 100%);
+            border: 2px solid #48bb78;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(72, 187, 120, 0.3);
+        }
+        .bronze-card.premium-active .bronze-badge {
+            background: linear-gradient(135deg, #48bb78, #2d6a4f);
+        }
+        .bronze-card.premium-active .price-tag {
+            color: #48bb78;
+        }
+
+        /* ===== CARD PARA ADMIN (dourado) ===== */
+        .bronze-card.admin-card {
+            background: linear-gradient(145deg, rgba(44, 26, 10, 0.95) 0%, rgba(61, 38, 20, 0.95) 100%);
+            border: 2px solid #f5a623;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(245, 166, 35, 0.3);
+        }
+        .bronze-card.admin-card .bronze-badge {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
         }
 
         .bronze-badge {
@@ -376,8 +340,6 @@
             font-size: 0.9rem;
             display: inline-block;
             box-shadow: 0 4px 20px rgba(40, 167, 69, 0.3);
-            position: relative;
-            z-index: 1;
         }
         .vitalicio-badge i { margin-right: 0.5rem; }
         .vitalicio-badge small { font-weight: 400; opacity: 0.8; }
@@ -473,9 +435,7 @@
             position: relative;
             z-index: 1;
         }
-        .plan-info .row {
-            text-align: center;
-        }
+        .plan-info .row { text-align: center; }
         .plan-info .col-4 {
             border-right: 1px solid rgba(205, 127, 50, 0.15);
             padding: 0.3rem 0;
@@ -531,17 +491,12 @@
             border-radius: 10px;
             transition: width 0.8s ease;
         }
-        .vagas-urgent {
-            animation: urgent-pulse 1.2s ease-in-out infinite;
-            border-color: #f5a623;
-        }
-        @keyframes urgent-pulse {
-            0%, 100% { border-color: rgba(245, 166, 35, 0.3); box-shadow: 0 0 20px rgba(245, 166, 35, 0.05); }
-            50% { border-color: rgba(245, 166, 35, 0.8); box-shadow: 0 0 40px rgba(245, 166, 35, 0.15); }
-        }
 
-        /* 🔥 BOTÕES REATIVOS (com estados) */
-        .btn-bronze {
+        /* ============================================== */
+        /* 🔥 BOTÕES REATIVOS */
+        /* ============================================== */
+
+        .btn-upgrade {
             background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
             border: none;
@@ -559,26 +514,18 @@
             justify-content: center;
             gap: 0.8rem;
         }
-        .btn-bronze:hover {
+        .btn-upgrade:hover {
             transform: translateY(-3px) scale(1.01);
             box-shadow: 0 15px 50px rgba(245, 166, 35, 0.6);
             color: white;
         }
-        .btn-bronze:disabled {
+        .btn-upgrade:disabled {
             opacity: 0.5;
-            transform: none;
             cursor: not-allowed;
-            box-shadow: none;
-        }
-        .btn-bronze .arrow {
-            transition: transform 0.3s;
-        }
-        .btn-bronze:hover .arrow {
-            transform: translateX(5px);
+            transform: none !important;
         }
 
-        /* Botão Premium Ativo (verde) */
-        .btn-premium-active {
+        .btn-premium-active-btn {
             background: linear-gradient(135deg, #28a745, #20c997);
             color: white;
             border: none;
@@ -594,13 +541,10 @@
             box-shadow: 0 10px 40px rgba(40, 167, 69, 0.4);
             cursor: default;
         }
-        .btn-premium-active.show {
-            display: flex;
-        }
+        .btn-premium-active-btn.show { display: flex; }
 
-        /* Botão Upgrade */
-        .btn-upgrade {
-            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+        .btn-admin-btn {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
             color: white;
             border: none;
             padding: 1.2rem 2rem;
@@ -612,17 +556,30 @@
             align-items: center;
             justify-content: center;
             gap: 0.8rem;
-            box-shadow: 0 10px 40px rgba(108, 92, 231, 0.4);
-            transition: all 0.4s;
+            box-shadow: 0 10px 40px rgba(243, 156, 18, 0.4);
+            cursor: default;
         }
-        .btn-upgrade.show {
+        .btn-admin-btn.show { display: flex; }
+
+        .security-seals {
             display: flex;
+            gap: 0.8rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
         }
-        .btn-upgrade:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 50px rgba(108, 92, 231, 0.6);
-            color: white;
+        .security-seals .seal {
+            background: rgba(255,255,255,0.04);
+            color: rgba(255,255,255,0.4);
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.6rem;
+            border: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
         }
+        .security-seals .seal i { color: #48bb78; }
 
         .limit-warning {
             background: rgba(245, 166, 35, 0.08);
@@ -632,8 +589,6 @@
             margin-top: 1rem;
             font-size: 0.85rem;
             color: rgba(255, 255, 255, 0.7);
-            position: relative;
-            z-index: 1;
         }
         .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
 
@@ -643,8 +598,6 @@
             padding: 1.25rem;
             margin-top: 1.5rem;
             border: 1px solid rgba(205, 127, 50, 0.15);
-            position: relative;
-            z-index: 1;
         }
         .credits-explanation .step {
             display: flex;
@@ -668,32 +621,6 @@
             margin-top: 0.75rem;
             border-left: 3px solid #f5a623;
         }
-        .credits-explanation .highlight-box span {
-            color: rgba(255, 255, 255, 0.85);
-            font-size: 0.85rem;
-        }
-
-        .security-seals {
-            display: flex;
-            gap: 0.8rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 1rem;
-            position: relative;
-            z-index: 1;
-        }
-        .security-seals .seal {
-            background: rgba(255,255,255,0.04);
-            color: rgba(255,255,255,0.4);
-            padding: 0.3rem 0.8rem;
-            border-radius: 50px;
-            font-size: 0.6rem;
-            border: 1px solid rgba(255,255,255,0.04);
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-        .security-seals .seal i { color: #48bb78; }
 
         /* ===== SUPORTE ===== */
         .support-card {
@@ -829,6 +756,17 @@
         }
         .admin-badge.show { display: inline-block; }
 
+        .premium-days-badge {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
+            color: white;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            display: none;
+        }
+        .premium-days-badge.show { display: inline-block; }
+
         .rate-limit-indicator {
             display: none;
             margin-top: 10px;
@@ -849,18 +787,33 @@
             color: #fc8181;
         }
 
-        /* ===== PREMIUM DAYS BADGE ===== */
-        .premium-days-badge {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
-            color: white;
+        .pow-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
             padding: 0.15rem 0.6rem;
             border-radius: 50px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            display: none;
+            font-size: 0.6rem;
+            font-weight: 700;
+            background: rgba(72, 187, 120, 0.15);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+            cursor: default;
         }
-        .premium-days-badge.show {
-            display: inline-block;
+        .pow-status.loading {
+            background: rgba(245, 166, 35, 0.15);
+            border-color: rgba(245, 166, 35, 0.3);
+            color: #f5a623;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .pow-status.error {
+            background: rgba(220, 53, 69, 0.15);
+            border-color: rgba(220, 53, 69, 0.3);
+            color: #dc3545;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
         /* ===== RESPONSIVIDADE ===== */
@@ -878,7 +831,6 @@
             .price-tag { font-size: 3rem; }
             .vagas-number { font-size: 2rem; }
             .plan-info .number { font-size: 1.4rem; }
-            .support-icon { width: 50px; height: 50px; font-size: 1.2rem; }
             .bronze-badge { font-size: 0.7rem; padding: 0.3rem 0.8rem; top: 12px; right: 12px; }
         }
         @media (max-width: 480px) {
@@ -892,7 +844,7 @@
             .price-tag .currency { font-size: 1.2rem; }
             .price-tag .cents { font-size: 1.2rem; }
             .vagas-number { font-size: 1.6rem; }
-            .btn-bronze { font-size: 1rem; padding: 0.8rem 1.2rem; }
+            .btn-upgrade { font-size: 1rem; padding: 0.8rem 1.2rem; }
             .plan-info .number { font-size: 1.2rem; }
             .bronze-feature { font-size: 0.85rem; padding: 0.5rem 0; }
             .bronze-badge { font-size: 0.6rem; padding: 0.2rem 0.6rem; top: 10px; right: 10px; }
@@ -976,15 +928,16 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 1: PLANOS -->
+            <!-- 🔥 ABA 1: PLANOS (CARD ESTÁTICO) -->
             <!-- ============================================== -->
             <div class="tab-content active" id="tab-planos">
                 <div class="row justify-content-center">
                     <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
-                        <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
-                            <i class="fas fa-fire me-1"></i> Oferta Especial - Edição Limitada
+                        <!-- Badge de status do usuário -->
+                        <span id="userStatusBadge" class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
+                            <i class="fas fa-user me-1"></i> Plano Grátis
                         </span>
-                        <!-- 🔥 Badge de dias restantes (Premium) -->
+                        <!-- Badge de dias restantes (Premium) -->
                         <span class="premium-days-badge" id="premiumDaysBadge">
                             <i class="fas fa-clock me-1"></i>
                             <span id="premiumDaysCount">0</span> dias restantes
@@ -992,9 +945,171 @@
                     </div>
                 </div>
 
-                <!-- 🔥 CONTAINER DO PLANO - payment.js vai renderizar aqui -->
+                <!-- 🔥 CARD ESTÁTICO DO PLANO -->
                 <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
-                    <!-- CONTEÚDO SERÁ RENDERIZADO PELO payment.js -->
+                    <div class="col-lg-8 mx-auto">
+                        <div class="bronze-card" id="planCard">
+                            
+                            <!-- Badge do Plano -->
+                            <div class="bronze-badge" id="planBadge">
+                                <i class="fas fa-fire"></i> <span id="planBadgeText">🔥 PROMOÇÃO FUNDADOR</span>
+                            </div>
+                            
+                            <!-- Título -->
+                            <div class="bronze-title">
+                                <span class="icon-big"><i class="fas fa-crown"></i></span>
+                                <h2>Plano Bronze</h2>
+                                <p class="subtitle">O plano ideal para sua oficina crescer com IA</p>
+                            </div>
+                            
+                            <!-- Preço -->
+                            <div class="price-container" id="priceContainer">
+                                <span class="old-price" id="oldPrice">De R$ 149,90</span>
+                                <div class="price-tag" id="priceTag">
+                                    R$ <span id="currentPrice">97</span><span class="cents">,00</span>
+                                    <small>à vista</small>
+                                </div>
+                                <span class="economy-badge" id="economyBadge">
+                                    <i class="fas fa-tag"></i> Economia de 35%
+                                </span>
+                            </div>
+                            
+                            <!-- Informações do Plano -->
+                            <div class="plan-info">
+                                <div class="row">
+                                    <div class="col-4">
+                                        <span class="number">30</span>
+                                        <span class="label">Créditos</span>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="number">3</span>
+                                        <span class="label">Arquivos/vez</span>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="number">∞</span>
+                                        <span class="label">Vitalício</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Vagas Promocionais -->
+                            <div class="vagas-counter" id="vagasCounter">
+                                <div>
+                                    <span class="vagas-label">🎯 Apenas</span>
+                                    <span class="vagas-number" id="vagasRestantes">73</span>
+                                    <span class="vagas-label">vagas restantes</span>
+                                </div>
+                                <div class="vagas-progress">
+                                    <div class="vagas-progress-bar" id="vagasProgress" style="width: 27%;"></div>
+                                </div>
+                                <small style="color:rgba(255,255,255,0.3); font-size:0.7rem;">
+                                    <i class="fas fa-clock"></i> Oferta por tempo limitado
+                                </small>
+                            </div>
+                            
+                            <!-- Features -->
+                            <div class="bronze-features">
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>30 créditos</strong> para análises completas</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Análise com IA</strong> (Google Gemini)</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Até 3 arquivos</strong> por análise (CSV/Excel)</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span>📊 <strong>Dashboard completo</strong> com métricas</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span>📄 <strong>Relatórios em PDF</strong> automáticos</span>
+                                </div>
+                                <div class="bronze-feature">
+                                    <i class="fas fa-check-circle check"></i>
+                                    <span><strong>Suporte prioritário</strong> por email</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 🔥 BOTÕES REATIVOS -->
+                            <div class="d-grid gap-3 mt-4">
+                                
+                                <!-- Botão UPGRADE (usuário free) -->
+                                <button class="btn-upgrade" id="btnUpgrade" onclick="window.handleUpgrade()">
+                                    <i class="fas fa-bolt me-2"></i>
+                                    🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                                    <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                                </button>
+                                
+                                <!-- Botão PLANO ATIVO (usuário premium) -->
+                                <button class="btn-premium-active-btn" id="btnPremiumActive">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    ✅ PLANO ATIVO
+                                    <small class="d-block fs-10">Aproveite todos os benefícios</small>
+                                </button>
+                                
+                                <!-- Botão ADMIN -->
+                                <button class="btn-admin-btn" id="btnAdmin">
+                                    <i class="fas fa-crown me-2"></i>
+                                    👑 ADMIN - ACESSO ILIMITADO
+                                    <small class="d-block fs-10">Você tem créditos infinitos</small>
+                                </button>
+                                
+                            </div>
+                            
+                            <!-- Warning -->
+                            <div class="limit-warning">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Este é um <strong>plano vitalício</strong> com preço especial para os primeiros <strong>100 clientes</strong>. Após esgotar, o preço volta para R$ 149,90.</span>
+                            </div>
+                            
+                            <!-- Explicação dos Créditos -->
+                            <div class="credits-explanation">
+                                <div class="step">
+                                    <i class="fas fa-coins"></i>
+                                    <span><strong>Como funcionam os créditos:</strong></span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-plus-circle"></i>
+                                    <span>Você começa com <strong>3 créditos grátis</strong></span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-gem"></i>
+                                    <span>Com o <strong>Plano Bronze</strong>, você ganha <strong>30 créditos</strong> para usar quando quiser</span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Cada análise consome <strong>1 crédito</strong> por arquivo</span>
+                                </div>
+                                <div class="step">
+                                    <i class="fas fa-calendar-day"></i>
+                                    <span><strong>⭐ Premium:</strong> 1 crédito novo por dia (até o limite de 3)</span>
+                                </div>
+                                <div class="highlight-box">
+                                    <span>
+                                        <i class="fas fa-bolt" style="color:#f5a623;"></i>
+                                        <strong>Dica:</strong> Use seus créditos estrategicamente para análises mais importantes e maximize o ROI da sua oficina!
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <!-- Security Seals -->
+                            <div class="security-seals">
+                                <span class="seal"><i class="fas fa-lock"></i> Pagamento Seguro</span>
+                                <span class="seal"><i class="fas fa-shield-alt"></i> PoW Protegido</span>
+                                <span class="seal"><i class="fas fa-credit-card"></i> PIX</span>
+                            </div>
+                            
+                            <p class="text-center small mt-4 mb-0" style="color: rgba(255,255,255,0.6);">
+                                <i class="fas fa-check-circle text-warning me-1"></i>
+                                Após o pagamento, você receberá 1 crédito por dia durante 30 dias
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- INDICADOR DE RATE LIMIT -->
@@ -1005,11 +1120,6 @@
                             <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
                         </div>
                     </div>
-                </div>
-
-                <!-- 🔥 STATUS DO PLANO (REATIVO) -->
-                <div class="row justify-content-center mt-4" id="subscriptionStatusContainer" data-aos="fade-up" data-aos-delay="100">
-                    <!-- Renderizado dinamicamente -->
                 </div>
 
                 <!-- FORMATOS SUPORTADOS -->
@@ -1049,13 +1159,12 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 2: ATENDIMENTO AO CLIENTE -->
+            <!-- 🔥 ABA 2: ATENDIMENTO AO CLIENTE (mantido) -->
             <!-- ============================================== -->
             <div class="tab-content" id="tab-suporte">
+                <!-- ... (mesmo conteúdo da aba suporte) ... -->
                 <div class="row justify-content-center">
                     <div class="col-lg-10" data-aos="fade-up" data-aos-duration="800">
-                        
-                        <!-- Cabeçalho do Suporte -->
                         <div class="text-center mb-4">
                             <div class="support-icon mx-auto mb-3" style="width:70px; height:70px; font-size:2rem;">
                                 <i class="fas fa-headset"></i>
@@ -1063,9 +1172,7 @@
                             <h2 class="fw-bold" style="color:white;">Precisa de Ajuda?</h2>
                             <p style="color:rgba(255,255,255,0.5);">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
                         </div>
-
                         <div class="row g-4">
-                            <!-- Coluna do Email -->
                             <div class="col-md-6">
                                 <div class="support-card h-100">
                                     <div class="d-flex align-items-start mb-3">
@@ -1081,7 +1188,6 @@
                                             </p>
                                         </div>
                                     </div>
-                                    
                                     <div class="mt-3 pt-2">
                                         <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
                                             <i class="fas fa-check-circle text-success me-2"></i> Dúvidas sobre o plano Bronze
@@ -1096,8 +1202,6 @@
                                             <i class="fas fa-check-circle text-success me-2"></i> Sugestões e feedbacks
                                         </div>
                                     </div>
-
-                                    <!-- Horário de Atendimento -->
                                     <div class="mt-4 pt-3 border-top" style="border-color:rgba(255,255,255,0.06);">
                                         <div class="d-flex flex-wrap gap-2 justify-content-center">
                                             <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
@@ -1116,16 +1220,12 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Coluna do FAQ e Contato -->
                             <div class="col-md-6">
                                 <div class="support-card h-100">
-                                    <!-- FAQ -->
                                     <h5 class="fw-bold mb-3" style="color:white;">
                                         <i class="fas fa-question-circle me-2" style="color:#f5a623;"></i>
                                         Perguntas Frequentes
                                     </h5>
-                                    
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
                                             <span><i class="fas fa-coins me-2" style="color:#f5a623;"></i>Como funcionam os créditos?</span>
@@ -1135,7 +1235,6 @@
                                             Cada análise consome 1 crédito. Gratuito começa com 3 créditos. Premium recebe <strong style="color:#f5a623;">1 crédito NOVO por dia</strong>!
                                         </div>
                                     </div>
-
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
                                             <span><i class="fas fa-chart-line me-2" style="color:#f5a623;"></i>O que acontece quando os créditos acabam?</span>
@@ -1145,7 +1244,6 @@
                                             Assine o plano Bronze (R$ 97,00) e receba <strong style="color:#f5a623;">30 créditos totais</strong> para usar quando quiser!
                                         </div>
                                     </div>
-
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
                                             <span><i class="fas fa-credit-card me-2" style="color:#f5a623;"></i>Como comprar o plano?</span>
@@ -1155,7 +1253,6 @@
                                             Clique em <strong style="color:#f5a623;">"Garantir Preço Fundador"</strong>, informe seu CPF e finalize com PIX. Fácil e seguro!
                                         </div>
                                     </div>
-
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
                                             <span><i class="fas fa-mobile-alt me-2" style="color:#f5a623;"></i>Posso usar no celular?</span>
@@ -1165,8 +1262,6 @@
                                             Sim! O sistema é <strong style="color:#f5a623;">100% responsivo</strong> e funciona perfeitamente em qualquer dispositivo.
                                         </div>
                                     </div>
-
-                                    <!-- Contato Rápido -->
                                     <div class="quick-contact-form mt-4">
                                         <h6 class="fw-bold mb-3" style="color:white;">
                                             <i class="fas fa-paper-plane me-2" style="color:#f5a623;"></i>
@@ -1174,12 +1269,10 @@
                                         </h6>
                                         <form id="quickSupportForm">
                                             <div class="mb-3">
-                                                <input type="text" class="form-control" id="supportName" 
-                                                       placeholder="Seu nome" required>
+                                                <input type="text" class="form-control" id="supportName" placeholder="Seu nome" required>
                                             </div>
                                             <div class="mb-3">
-                                                <input type="email" class="form-control" id="supportEmail" 
-                                                       placeholder="Seu email" required>
+                                                <input type="email" class="form-control" id="supportEmail" placeholder="Seu email" required>
                                             </div>
                                             <div class="mb-3">
                                                 <select class="form-select" id="supportSubject">
@@ -1191,8 +1284,7 @@
                                                 </select>
                                             </div>
                                             <div class="mb-3">
-                                                <textarea class="form-control" rows="3" id="supportMessage" 
-                                                          placeholder="Sua mensagem..." required></textarea>
+                                                <textarea class="form-control" rows="3" id="supportMessage" placeholder="Sua mensagem..." required></textarea>
                                             </div>
                                             <button type="submit" class="btn-support w-100">
                                                 <i class="fas fa-envelope me-2"></i> Enviar Mensagem
@@ -1217,7 +1309,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.8 - Planos e Suporte
+                        AutoAnalytics v3.0 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1293,11 +1385,11 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL) -->
-    <script src="/static/js/app.js?ver=6.0.0"></script>
+    <!-- 3️⃣ APP - v6.2 (ORQUESTRADOR CENTRAL) -->
+    <script src="/static/js/app.js?ver=6.2.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.8 (com integração reativa) -->
-    <script src="/static/js/payment.js?ver=2.8.0"></script>
+    <!-- 4️⃣ PAYMENT - v6.5 (APENAS FUNÇÕES DE PAGAMENTO) -->
+    <script src="/static/js/payment.js?ver=6.5.0"></script>
 
     <!-- ============================================== -->
     <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO REATIVA -->
@@ -1306,106 +1398,21 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.8 (UI Reativa com app.js v6.0)');
+            console.log('🚀 AutoAnalytics - Planos v3.0 (Card Estático + Upgrade)');
 
-            // ===== REFERÊNCIA AO APP =====
+            // ==============================================
+            // 🔥 REFERÊNCIA AO APP
+            // ==============================================
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
-            // ===== TOASTR =====
-            if (typeof toastr !== 'undefined') {
-                toastr.options = {
-                    closeButton: true,
-                    progressBar: true,
-                    positionClass: "toast-top-right",
-                    timeOut: 5000,
-                    extendedTimeOut: 1000,
-                    escapeHtml: true
-                };
-            }
-
-            // ===== AOS =====
-            if (typeof AOS !== 'undefined') {
-                AOS.init({
-                    once: true,
-                    duration: 800,
-                    offset: 50,
-                    easing: 'ease-in-out'
-                });
-            }
-
             // ==============================================
-            // 🔥 FUNÇÃO PARA TROCAR ABAS
-            // ==============================================
-            window.switchTab = function(tabId) {
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
-                });
-
-                const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
-                if (btn) btn.classList.add('active');
-
-                const content = document.getElementById(`tab-${tabId}`);
-                if (content) content.classList.add('active');
-
-                setTimeout(() => {
-                    if (typeof AOS !== 'undefined') {
-                        AOS.refresh();
-                    }
-                }, 100);
-            };
-
-            // ==============================================
-            // 🔥 FUNÇÃO PARA TOGGLE FAQ
-            // ==============================================
-            window.toggleFaq = function(element) {
-                const answer = element.querySelector('.faq-answer');
-                const icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
-                
-                if (answer) {
-                    const isOpen = answer.classList.contains('open');
-                    
-                    document.querySelectorAll('.faq-answer').forEach(a => {
-                        if (a !== answer) {
-                            a.classList.remove('open');
-                            const parentIcon = a.closest('.faq-item')?.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
-                            if (parentIcon) {
-                                parentIcon.className = 'fas fa-chevron-down';
-                                parentIcon.style.color = 'rgba(255,255,255,0.3)';
-                            }
-                        }
-                    });
-                    
-                    if (isOpen) {
-                        answer.classList.remove('open');
-                        if (icon) {
-                            icon.className = 'fas fa-chevron-down';
-                            icon.style.color = 'rgba(255,255,255,0.3)';
-                        }
-                    } else {
-                        answer.classList.add('open');
-                        if (icon) {
-                            icon.className = 'fas fa-chevron-up';
-                            icon.style.color = '#f5a623';
-                        }
-                    }
-                }
-            };
-
-            // ==============================================
-            // 🔥 UI REATIVA - SINCRONIZAÇÃO COM APP.JS
+            // 🔥 FUNÇÕES DE UI REATIVA
             // ==============================================
 
-            /**
-             * Atualiza todos os elementos reativos baseados no estado do app
-             */
-            function updateReactiveUI(state) {
+            function updatePlanCard(state) {
                 const app = getApp();
-                const isAuth = app?.isAuthenticated?.() || !!localStorage.getItem('access_token');
                 const isAdmin = state?.isAdmin || app?.isAdmin?.() || false;
                 const isPremium = state?.isPremium || app?.isPremium?.() || false;
                 const credits = state?.credits || app?.getCredits?.() || 0;
@@ -1413,33 +1420,27 @@
                 const hasVitalicio = state?.hasPromotionalPrice || false;
                 const promotionalPrice = state?.promotionalPrice || null;
 
-                console.log('🔄 Atualizando UI Reativa:', { isAuth, isAdmin, isPremium, credits, daysLeft, hasVitalicio });
+                console.log('🔄 Atualizando card do plano:', { isAdmin, isPremium, credits, daysLeft });
 
-                // ===== 1. BADGES DE AUTENTICAÇÃO =====
-                document.querySelectorAll('.auth-required').forEach(el => {
-                    el.classList.toggle('show', isAuth);
-                });
-                document.querySelectorAll('.guest-only').forEach(el => {
-                    el.classList.toggle('show', !isAuth);
-                });
+                // ===== 1. BADGE DE STATUS DO USUÁRIO =====
+                const statusBadge = document.getElementById('userStatusBadge');
+                if (statusBadge) {
+                    if (isAdmin) {
+                        statusBadge.innerHTML = '<i class="fas fa-crown me-1"></i> Administrador';
+                        statusBadge.style.background = 'linear-gradient(135deg, #f39c12, #e67e22)';
+                        statusBadge.style.color = 'white';
+                    } else if (isPremium) {
+                        statusBadge.innerHTML = '<i class="fas fa-star me-1"></i> Premium';
+                        statusBadge.style.background = 'linear-gradient(135deg, #48bb78, #2d6a4f)';
+                        statusBadge.style.color = 'white';
+                    } else {
+                        statusBadge.innerHTML = '<i class="fas fa-user me-1"></i> Plano Grátis';
+                        statusBadge.style.background = 'rgba(255,255,255,0.08)';
+                        statusBadge.style.color = 'rgba(255,255,255,0.5)';
+                    }
+                }
 
-                // ===== 2. BADGES DE ADMIN =====
-                document.querySelectorAll('.admin-only').forEach(el => {
-                    el.classList.toggle('show', isAdmin);
-                });
-
-                // ===== 3. BADGES DE PREMIUM =====
-                document.querySelectorAll('.premium-only').forEach(el => {
-                    el.classList.toggle('show', isPremium);
-                });
-                document.querySelectorAll('.non-premium').forEach(el => {
-                    el.classList.toggle('hidden', isPremium);
-                });
-                document.querySelectorAll('.premium-missing').forEach(el => {
-                    el.classList.toggle('show', !isPremium && isAuth);
-                });
-
-                // ===== 4. BADGE DE DIAS PREMIUM =====
+                // ===== 2. BADGE DE DIAS PREMIUM =====
                 const daysBadge = document.getElementById('premiumDaysBadge');
                 const daysCount = document.getElementById('premiumDaysCount');
                 if (daysBadge && daysCount) {
@@ -1451,152 +1452,173 @@
                     }
                 }
 
-                // ===== 5. BADGE VITALÍCIO =====
-                document.querySelectorAll('.vitalicio-only').forEach(el => {
-                    el.classList.toggle('show', hasVitalicio);
-                });
+                // ===== 3. CARD - ESTILO =====
+                const planCard = document.getElementById('planCard');
+                if (planCard) {
+                    planCard.classList.remove('premium-active', 'admin-card');
+                    if (isAdmin) {
+                        planCard.classList.add('admin-card');
+                    } else if (isPremium) {
+                        planCard.classList.add('premium-active');
+                    }
+                }
 
-                // ===== 6. BOTÕES DE COMPRA (ESTADOS) =====
-                // Botão "Comprar" (padrão)
-                document.querySelectorAll('.btn-buy').forEach(el => {
-                    el.classList.toggle('hidden', isPremium);
-                });
-                // Botão "Plano Ativo" (Premium)
-                document.querySelectorAll('.btn-premium-active').forEach(el => {
-                    el.classList.toggle('show', isPremium);
-                });
-                // Botão "Fazer Upgrade" (não premium)
-                document.querySelectorAll('.btn-upgrade').forEach(el => {
-                    el.classList.toggle('show', !isPremium && isAuth);
-                });
+                // ===== 4. BADGE DO PLANO =====
+                const badgeText = document.getElementById('planBadgeText');
+                if (badgeText) {
+                    if (isAdmin) {
+                        badgeText.textContent = '👑 ADMIN - ACESSO ILIMITADO';
+                    } else if (isPremium) {
+                        badgeText.textContent = '✅ PLANO ATIVO';
+                    } else {
+                        badgeText.textContent = '🔥 PROMOÇÃO FUNDADOR';
+                    }
+                }
 
-                // ===== 7. ATUALIZAR PREÇO PROMOCIONAL DINAMICAMENTE =====
-                updatePromotionalPrice(hasVitalicio, promotionalPrice);
+                // ===== 5. BOTÕES =====
+                const btnUpgrade = document.getElementById('btnUpgrade');
+                const btnPremiumActive = document.getElementById('btnPremiumActive');
+                const btnAdmin = document.getElementById('btnAdmin');
 
-                // ===== 8. ATUALIZAR CRÉDITOS =====
+                if (isAdmin) {
+                    if (btnUpgrade) btnUpgrade.style.display = 'none';
+                    if (btnPremiumActive) btnPremiumActive.style.display = 'none';
+                    if (btnAdmin) btnAdmin.style.display = 'flex';
+                } else if (isPremium) {
+                    if (btnUpgrade) btnUpgrade.style.display = 'none';
+                    if (btnPremiumActive) btnPremiumActive.style.display = 'flex';
+                    if (btnAdmin) btnAdmin.style.display = 'none';
+                } else {
+                    if (btnUpgrade) btnUpgrade.style.display = 'flex';
+                    if (btnPremiumActive) btnPremiumActive.style.display = 'none';
+                    if (btnAdmin) btnAdmin.style.display = 'none';
+                }
+
+                // ===== 6. PREÇO =====
+                updatePrice(hasVitalicio, promotionalPrice);
+
+                // ===== 7. CRÉDITOS =====
                 const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
                 document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
                     if (el) el.textContent = displayText;
                 });
 
-                // ===== 9. ATUALIZAR NOME =====
+                // ===== 8. NOME DO USUÁRIO =====
                 const user = app?.getCurrentUser?.() || state?.user;
                 const nameEl = document.getElementById('userName');
                 if (nameEl && user?.name) {
                     nameEl.textContent = user.name;
                 }
 
-                // ===== 10. ATUALIZAR BADGE DE ADMIN =====
+                // ===== 9. BADGE DE ADMIN =====
                 document.querySelectorAll('.admin-badge').forEach(el => {
                     el.classList.toggle('show', isAdmin);
                 });
             }
 
-            /**
-             * Atualiza o preço promocional dinamicamente
-             */
-            function updatePromotionalPrice(hasVitalicio, promotionalPrice) {
-                // Procura elementos de preço no DOM
-                const oldPriceElements = document.querySelectorAll('.old-price');
-                const priceTagElements = document.querySelectorAll('.price-tag');
-                const economyBadges = document.querySelectorAll('.economy-badge');
+            function updatePrice(hasVitalicio, promotionalPrice) {
+                const oldPrice = document.getElementById('oldPrice');
+                const currentPrice = document.getElementById('currentPrice');
+                const economyBadge = document.getElementById('economyBadge');
 
                 if (hasVitalicio && promotionalPrice) {
-                    // Usuário tem preço vitalício - mostra o preço bloqueado
-                    const formattedPrice = `R$ ${promotionalPrice.toFixed(2).replace('.', ',')}`;
-                    
-                    priceTagElements.forEach(el => {
-                        // Mantém o formato, atualiza o valor
-                        const text = el.textContent;
-                        if (text.includes('R$')) {
-                            // Substitui apenas o valor, mantendo o formato
-                            const match = text.match(/R\$\s*([\d,]+)/);
-                            if (match) {
-                                const newText = text.replace(match[0], `R$ ${promotionalPrice.toFixed(2).replace('.', ',')}`);
-                                // Atualiza mantendo HTML
-                                el.innerHTML = newText;
-                            }
-                        }
-                    });
-
-                    // Esconde o "de R$ 149,90" se tiver preço bloqueado
-                    oldPriceElements.forEach(el => {
-                        el.style.display = 'none';
-                    });
-
-                    // Atualiza badges de economia
-                    economyBadges.forEach(el => {
-                        el.textContent = `🔥 PREÇO BLOQUEADO - VITALÍCIO`;
-                        el.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
-                    });
-
+                    if (oldPrice) oldPrice.style.display = 'none';
+                    if (currentPrice) currentPrice.textContent = promotionalPrice.toFixed(0);
+                    if (economyBadge) {
+                        economyBadge.textContent = '🔥 PREÇO BLOQUEADO - VITALÍCIO';
+                        economyBadge.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+                    }
                 } else {
-                    // Mostra preço normal
-                    oldPriceElements.forEach(el => {
-                        el.style.display = 'block';
-                    });
-                    economyBadges.forEach(el => {
-                        el.textContent = `🔥 ECONOMIZE R$ ${(149.90 - 97.00).toFixed(2).replace('.', ',')} 🔥`;
-                        el.style.background = 'linear-gradient(135deg, #f5a623, #e67e22)';
-                    });
+                    if (oldPrice) oldPrice.style.display = 'block';
+                    if (currentPrice) currentPrice.textContent = '97';
+                    if (economyBadge) {
+                        economyBadge.textContent = '🔥 ECONOMIZE R$ 52,90 🔥';
+                        economyBadge.style.background = 'linear-gradient(135deg, #f5a623, #e67e22)';
+                    }
                 }
             }
+
+            // ==============================================
+            // 🔥 HANDLE UPGRADE - CHAMA O PAYMENT.JS
+            // ==============================================
+
+            window.handleUpgrade = function() {
+                console.log('🛒 Iniciando upgrade...');
+                
+                const app = getApp();
+                const isPremium = app?.isPremium?.() || false;
+                const isAdmin = app?.isAdmin?.() || false;
+
+                if (isAdmin) {
+                    app?.showNotification?.('👑 Admin tem acesso ilimitado!', 'info');
+                    return;
+                }
+
+                if (isPremium) {
+                    app?.showNotification?.('✅ Você já possui um plano ativo!', 'success');
+                    window.location.href = '/dashboard';
+                    return;
+                }
+
+                // 🔥 CHAMA O PAYMENT.JS
+                if (typeof window.openCpfModal === 'function') {
+                    window.openCpfModal('premium_mensal');
+                } else {
+                    app?.showNotification?.('Sistema de pagamento indisponível. Tente novamente.', 'error');
+                    console.error('❌ window.openCpfModal não encontrado');
+                }
+            };
 
             // ==============================================
             // 🔥 ESCUTA EVENTOS DO APP.JS
             // ==============================================
 
-            // 1. app:state_changed - atualização de estado
+            // 1. app:state_changed
             document.addEventListener('app:state_changed', function(e) {
                 const detail = e.detail || {};
                 const state = detail.state || detail || {};
-                console.log('📢 app:state_changed recebido:', state);
-                updateReactiveUI(state);
+                console.log('📢 app:state_changed recebido');
+                updatePlanCard(state);
             });
 
-            // 2. app:ready - inicialização
+            // 2. app:ready
             document.addEventListener('app:ready', function(e) {
                 const detail = e.detail || {};
-                console.log('📢 app:ready recebido - sincronizando planos.html');
-                updateReactiveUI(detail);
-                
-                // Inicializa AOS novamente
+                console.log('📢 app:ready recebido');
+                updatePlanCard(detail);
                 if (typeof AOS !== 'undefined') {
                     setTimeout(() => AOS.refresh(), 300);
                 }
             });
 
-            // 3. creditsUpdated (payment.js) - atualização de créditos
+            // 3. creditsUpdated (payment.js)
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
+                console.log('📢 creditsUpdated recebido:', data);
                 const app = getApp();
                 const isAdmin = app?.isAdmin?.() || false;
                 const isPremium = app?.isPremium?.() || false;
                 const credits = data.credits || 0;
                 const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
-                
                 document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
                     if (el) el.textContent = displayText;
                 });
-                console.log('📢 creditsUpdated recebido:', credits);
             });
 
-            // 4. premiumStatusUpdated (payment.js) - atualização de status premium
+            // 4. premiumStatusUpdated (payment.js)
             document.addEventListener('premiumStatusUpdated', function(e) {
                 const data = e.detail || {};
                 console.log('📢 premiumStatusUpdated recebido:', data);
-                
-                const daysBadge = document.getElementById('premiumDaysBadge');
-                const daysCount = document.getElementById('premiumDaysCount');
                 if (data.isPremium && data.daysLeft > 0) {
+                    const daysBadge = document.getElementById('premiumDaysBadge');
+                    const daysCount = document.getElementById('premiumDaysCount');
                     if (daysBadge) daysBadge.classList.add('show');
                     if (daysCount) daysCount.textContent = data.daysLeft;
-                } else {
-                    if (daysBadge) daysBadge.classList.remove('show');
                 }
+                updatePlanCard(data);
             });
 
-            // 5. paymentReady - payment.js carregado
+            // 5. paymentReady
             document.addEventListener('paymentReady', function(e) {
                 console.log('📢 paymentReady recebido:', e.detail);
             });
@@ -1605,9 +1627,9 @@
             // 🔥 FALLBACK: se app já estiver pronto
             // ==============================================
             if (window._appReadyFired || window.App?.isReady?.() === true) {
-                console.log('✅ App já está pronto - sincronizando planos.html');
+                console.log('✅ App já está pronto - sincronizando');
                 const state = window.__APP_STATE || {};
-                updateReactiveUI(state);
+                updatePlanCard(state);
             }
 
             // ==============================================
@@ -1625,92 +1647,129 @@
             });
 
             // ==============================================
-            // 🔥 FORMULÁRIO DE CONTATO
+            // 🔥 FUNÇÕES AUXILIARES (TABS, FAQ, POW)
+            // ==============================================
+
+            window.switchTab = function(tabId) {
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+                if (btn) btn.classList.add('active');
+                const content = document.getElementById(`tab-${tabId}`);
+                if (content) content.classList.add('active');
+                setTimeout(() => { if (typeof AOS !== 'undefined') AOS.refresh(); }, 100);
+            };
+
+            window.toggleFaq = function(element) {
+                const answer = element.querySelector('.faq-answer');
+                const icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
+                if (answer) {
+                    const isOpen = answer.classList.contains('open');
+                    document.querySelectorAll('.faq-answer').forEach(a => {
+                        if (a !== answer) {
+                            a.classList.remove('open');
+                            const parentIcon = a.closest('.faq-item')?.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
+                            if (parentIcon) {
+                                parentIcon.className = 'fas fa-chevron-down';
+                                parentIcon.style.color = 'rgba(255,255,255,0.3)';
+                            }
+                        }
+                    });
+                    if (isOpen) {
+                        answer.classList.remove('open');
+                        if (icon) {
+                            icon.className = 'fas fa-chevron-down';
+                            icon.style.color = 'rgba(255,255,255,0.3)';
+                        }
+                    } else {
+                        answer.classList.add('open');
+                        if (icon) {
+                            icon.className = 'fas fa-chevron-up';
+                            icon.style.color = '#f5a623';
+                        }
+                    }
+                }
+            };
+
+            function updatePowStatus() {
+                try {
+                    const powStatusEl = document.getElementById('powStatus');
+                    const powTextEl = document.getElementById('powStatusText');
+                    if (!powStatusEl || !powTextEl) return;
+                    const app = getApp();
+                    let stats = null;
+                    if (app && typeof app.getPowStats === 'function') {
+                        stats = app.getPowStats();
+                    } else if (window.powClient && typeof window.powClient.getStats === 'function') {
+                        stats = window.powClient.getStats();
+                    }
+                    if (stats && stats.available !== false) {
+                        const solutionsReady = stats.solutionsReady || 0;
+                        if (solutionsReady > 0) {
+                            powStatusEl.className = 'pow-status';
+                            powTextEl.textContent = `${solutionsReady} PoW`;
+                        } else {
+                            powStatusEl.className = 'pow-status loading';
+                            powTextEl.textContent = '⚡ Pronto';
+                        }
+                    } else {
+                        powStatusEl.className = 'pow-status error';
+                        powTextEl.textContent = 'Indisponível';
+                    }
+                } catch (e) {}
+            }
+
+            // ==============================================
+            // 🔥 DOMContentLoaded
             // ==============================================
             document.addEventListener('DOMContentLoaded', function() {
+                // Toastr
+                if (typeof toastr !== 'undefined') {
+                    toastr.options = {
+                        closeButton: true,
+                        progressBar: true,
+                        positionClass: "toast-top-right",
+                        timeOut: 5000,
+                        extendedTimeOut: 1000,
+                        escapeHtml: true
+                    };
+                }
+
+                // AOS
+                if (typeof AOS !== 'undefined') {
+                    AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
+                }
+
+                // POW Status
+                setTimeout(updatePowStatus, 1500);
+                setInterval(updatePowStatus, 30000);
+
+                // Formulário de contato
                 const form = document.getElementById('quickSupportForm');
                 if (form) {
                     form.addEventListener('submit', function(e) {
                         e.preventDefault();
-                        
                         const name = document.getElementById('supportName').value;
                         const email = document.getElementById('supportEmail').value;
                         const subject = document.getElementById('supportSubject').value;
                         const message = document.getElementById('supportMessage').value;
-                        
                         const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
-                            `Nome: ${name}\n` +
-                            `Email: ${email}\n` +
-                            `Assunto: ${subject}\n\n` +
-                            `Mensagem:\n${message}\n\n` +
-                            `---\nEnviado via AutoAnalytics Planos e Suporte`
+                            `Nome: ${name}\nEmail: ${email}\nAssunto: ${subject}\n\nMensagem:\n${message}\n\n---\nEnviado via AutoAnalytics Planos e Suporte`
                         )}`;
-                        
                         const app = getApp();
                         app?.showNotification?.('📧 Abrindo seu email... Envie a mensagem para entrarmos em contato!', 'success');
-                        
                         document.getElementById('supportName').value = '';
                         document.getElementById('supportEmail').value = '';
                         document.getElementById('supportMessage').value = '';
-                        
                         window.location.href = mailtoLink;
                     });
                 }
 
-                // ==============================================
-                // 🔥 INICIALIZAR POW STATUS
-                // ==============================================
-                function updatePowStatus() {
-                    try {
-                        const powStatusEl = document.getElementById('powStatus');
-                        const powTextEl = document.getElementById('powStatusText');
-                        if (!powStatusEl || !powTextEl) return;
-                        
-                        const app = getApp();
-                        let stats = null;
-                        if (app && typeof app.getPowStats === 'function') {
-                            stats = app.getPowStats();
-                        } else if (window.powClient && typeof window.powClient.getStats === 'function') {
-                            stats = window.powClient.getStats();
-                        }
-                        
-                        if (stats && stats.available !== false) {
-                            const solutionsReady = stats.solutionsReady || 0;
-                            if (solutionsReady > 0) {
-                                powStatusEl.className = 'pow-status';
-                                powTextEl.textContent = `${solutionsReady} PoW`;
-                            } else {
-                                powStatusEl.className = 'pow-status loading';
-                                powTextEl.textContent = '⚡ Pronto';
-                            }
-                        } else {
-                            powStatusEl.className = 'pow-status error';
-                            powTextEl.textContent = 'Indisponível';
-                        }
-                    } catch (e) {
-                        // Ignora
-                    }
-                }
-
-                setTimeout(updatePowStatus, 1500);
-                setInterval(updatePowStatus, 30000);
-
-                // ==============================================
-                // 🔥 ATUALIZAÇÃO PERIÓDICA DA UI
-                // ==============================================
-                setInterval(() => {
-                    const app = getApp();
-                    if (app?.State) {
-                        updateReactiveUI(app.State);
-                    }
-                }, 30000);
-
-                console.log('✅ planos.html v2.8 carregado com sucesso!');
-                console.log('   🔥 Abas: Planos | Atendimento');
-                console.log('   🔄 UI Reativa - sincronizada com app.js v6.0');
-                console.log('   📡 Badges reativas: auth-required, guest-only, premium-only, admin-only');
-                console.log('   🎯 Botões reativos: btn-buy, btn-premium-active, btn-upgrade');
-                console.log('   💰 Preço promocional dinâmico via StateManager');
+                console.log('✅ planos.html v3.0 carregado com sucesso!');
+                console.log('   🔥 Card Estático - NUNCA some');
+                console.log('   🔥 Botão Upgrade integrado com payment.js');
+                console.log('   🔄 UI Reativa - sincronizada com app.js v6.2');
+                console.log('   💰 Preço promocional dinâmico');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
             });
 
