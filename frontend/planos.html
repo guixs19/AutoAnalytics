@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos e Suporte v2.7 (Sincronizado com app.js v6.0)');
+            console.log('✅ AutoAnalytics - Planos e Suporte v2.8 (UI Reativa com app.js v6.0)');
         })();
     </script>
     
@@ -128,6 +128,42 @@
             transform: translateY(-2px);
         }
 
+        /* ===== BADGES REATIVAS (app.js) ===== */
+        .auth-required { display: none; }
+        .auth-required.show { display: inline-block; }
+        
+        .guest-only { display: none; }
+        .guest-only.show { display: inline-block; }
+        
+        .admin-only { display: none; }
+        .admin-only.show { display: inline-block; }
+        
+        .premium-only { display: none; }
+        .premium-only.show { display: inline-block; }
+        
+        .premium-missing { display: none; }
+        .premium-missing.show { display: inline-block; }
+        
+        .vitalicio-only { display: none; }
+        .vitalicio-only.show { display: inline-block; }
+        
+        .non-premium { display: inline-block; }
+        .non-premium.hidden { display: none; }
+        
+        .premium-days-badge { display: none; }
+        .premium-days-badge.show { display: inline-block; }
+
+        /* Botão de compra - estados */
+        .btn-buy { display: inline-block; }
+        .btn-buy.hidden { display: none; }
+        
+        .btn-premium-active { display: none; }
+        .btn-premium-active.show { display: inline-block; }
+        
+        .btn-upgrade { display: none; }
+        .btn-upgrade.show { display: inline-block; }
+
+        /* ===== POW STATUS ===== */
         .pow-status {
             display: inline-flex;
             align-items: center;
@@ -174,15 +210,6 @@
             background: rgba(255, 255, 255, 0.1);
             border-color: rgba(255, 107, 53, 0.3);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-        .glass-card .card-title {
-            color: white;
-            font-weight: 700;
-            font-size: 1.1rem;
-        }
-        .glass-card .card-title i {
-            color: #ff6b35;
-            margin-right: 0.5rem;
         }
 
         /* ===== NAVEGAÇÃO POR ABAS ===== */
@@ -513,6 +540,7 @@
             50% { border-color: rgba(245, 166, 35, 0.8); box-shadow: 0 0 40px rgba(245, 166, 35, 0.15); }
         }
 
+        /* 🔥 BOTÕES REATIVOS (com estados) */
         .btn-bronze {
             background: linear-gradient(135deg, #f5a623, #e67e22);
             color: white;
@@ -547,6 +575,53 @@
         }
         .btn-bronze:hover .arrow {
             transform: translateX(5px);
+        }
+
+        /* Botão Premium Ativo (verde) */
+        .btn-premium-active {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            padding: 1.2rem 2rem;
+            border-radius: 60px;
+            font-weight: 800;
+            font-size: 1.2rem;
+            width: 100%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+            box-shadow: 0 10px 40px rgba(40, 167, 69, 0.4);
+            cursor: default;
+        }
+        .btn-premium-active.show {
+            display: flex;
+        }
+
+        /* Botão Upgrade */
+        .btn-upgrade {
+            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+            color: white;
+            border: none;
+            padding: 1.2rem 2rem;
+            border-radius: 60px;
+            font-weight: 800;
+            font-size: 1.2rem;
+            width: 100%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+            box-shadow: 0 10px 40px rgba(108, 92, 231, 0.4);
+            transition: all 0.4s;
+        }
+        .btn-upgrade.show {
+            display: flex;
+        }
+        .btn-upgrade:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 50px rgba(108, 92, 231, 0.6);
+            color: white;
         }
 
         .limit-warning {
@@ -752,6 +827,7 @@
             font-weight: 600;
             display: none;
         }
+        .admin-badge.show { display: inline-block; }
 
         .rate-limit-indicator {
             display: none;
@@ -773,12 +849,18 @@
             color: #fc8181;
         }
 
-        /* ===== PREMIUM STATUS CARD (para dashboard) ===== */
-        .premium-status-card {
-            background: linear-gradient(135deg, #2c1a0a 0%, #3d2614 100%);
-            border-radius: 20px;
-            padding: 1.5rem;
-            border: 1px solid #cd7f32;
+        /* ===== PREMIUM DAYS BADGE ===== */
+        .premium-days-badge {
+            background: linear-gradient(135deg, #f5a623, #e67e22);
+            color: white;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            display: none;
+        }
+        .premium-days-badge.show {
+            display: inline-block;
         }
 
         /* ===== RESPONSIVIDADE ===== */
@@ -902,6 +984,11 @@
                         <span class="badge" style="background: linear-gradient(135deg, #cd7f32, #b8681e); color: white; padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
                             <i class="fas fa-fire me-1"></i> Oferta Especial - Edição Limitada
                         </span>
+                        <!-- 🔥 Badge de dias restantes (Premium) -->
+                        <span class="premium-days-badge" id="premiumDaysBadge">
+                            <i class="fas fa-clock me-1"></i>
+                            <span id="premiumDaysCount">0</span> dias restantes
+                        </span>
                     </div>
                 </div>
 
@@ -920,8 +1007,10 @@
                     </div>
                 </div>
 
-                <!-- STATUS DO PLANO -->
-                <div class="row justify-content-center mt-4" id="subscriptionStatusContainer" data-aos="fade-up" data-aos-delay="100"></div>
+                <!-- 🔥 STATUS DO PLANO (REATIVO) -->
+                <div class="row justify-content-center mt-4" id="subscriptionStatusContainer" data-aos="fade-up" data-aos-delay="100">
+                    <!-- Renderizado dinamicamente -->
+                </div>
 
                 <!-- FORMATOS SUPORTADOS -->
                 <div class="row justify-content-center mt-4" data-aos="fade-up" data-aos-delay="200">
@@ -1128,7 +1217,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v2.7 - Planos e Suporte
+                        AutoAnalytics v2.8 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1204,20 +1293,25 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL - mesma versão do index.html) -->
+    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL) -->
     <script src="/static/js/app.js?ver=6.0.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.5.1 -->
-    <script src="/static/js/payment.js?ver=2.5.1"></script>
+    <!-- 4️⃣ PAYMENT - v2.8 (com integração reativa) -->
+    <script src="/static/js/payment.js?ver=2.8.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO -->
+    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO REATIVA -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos e Suporte v2.7 (Sincronizado com app.js v6.0)');
+            console.log('🚀 AutoAnalytics - Planos e Suporte v2.8 (UI Reativa com app.js v6.0)');
+
+            // ===== REFERÊNCIA AO APP =====
+            function getApp() {
+                return window.App || window.app || window.autoAnalytics;
+            }
 
             // ===== TOASTR =====
             if (typeof toastr !== 'undefined') {
@@ -1239,13 +1333,6 @@
                     offset: 50,
                     easing: 'ease-in-out'
                 });
-            }
-
-            // ==============================================
-            // 🔥 REFERÊNCIA AO APP (ORQUESTRADOR)
-            // ==============================================
-            function getApp() {
-                return window.App || window.app || window.autoAnalytics;
             }
 
             // ==============================================
@@ -1310,33 +1397,221 @@
             };
 
             // ==============================================
-            // 🔥 ATUALIZAR EXIBIÇÃO DE CRÉDITOS (REATIVO)
+            // 🔥 UI REATIVA - SINCRONIZAÇÃO COM APP.JS
             // ==============================================
-            function updateCreditsDisplay() {
+
+            /**
+             * Atualiza todos os elementos reativos baseados no estado do app
+             */
+            function updateReactiveUI(state) {
                 const app = getApp();
-                const credits = app?.getCredits?.() || 0;
-                const isAdmin = app?.isAdmin?.() || false;
-                const displayText = isAdmin ? '∞' : credits;
-                
+                const isAuth = app?.isAuthenticated?.() || !!localStorage.getItem('access_token');
+                const isAdmin = state?.isAdmin || app?.isAdmin?.() || false;
+                const isPremium = state?.isPremium || app?.isPremium?.() || false;
+                const credits = state?.credits || app?.getCredits?.() || 0;
+                const daysLeft = state?.daysLeftPremium || 0;
+                const hasVitalicio = state?.hasPromotionalPrice || false;
+                const promotionalPrice = state?.promotionalPrice || null;
+
+                console.log('🔄 Atualizando UI Reativa:', { isAuth, isAdmin, isPremium, credits, daysLeft, hasVitalicio });
+
+                // ===== 1. BADGES DE AUTENTICAÇÃO =====
+                document.querySelectorAll('.auth-required').forEach(el => {
+                    el.classList.toggle('show', isAuth);
+                });
+                document.querySelectorAll('.guest-only').forEach(el => {
+                    el.classList.toggle('show', !isAuth);
+                });
+
+                // ===== 2. BADGES DE ADMIN =====
+                document.querySelectorAll('.admin-only').forEach(el => {
+                    el.classList.toggle('show', isAdmin);
+                });
+
+                // ===== 3. BADGES DE PREMIUM =====
+                document.querySelectorAll('.premium-only').forEach(el => {
+                    el.classList.toggle('show', isPremium);
+                });
+                document.querySelectorAll('.non-premium').forEach(el => {
+                    el.classList.toggle('hidden', isPremium);
+                });
+                document.querySelectorAll('.premium-missing').forEach(el => {
+                    el.classList.toggle('show', !isPremium && isAuth);
+                });
+
+                // ===== 4. BADGE DE DIAS PREMIUM =====
+                const daysBadge = document.getElementById('premiumDaysBadge');
+                const daysCount = document.getElementById('premiumDaysCount');
+                if (daysBadge && daysCount) {
+                    if (isPremium && daysLeft > 0) {
+                        daysBadge.classList.add('show');
+                        daysCount.textContent = daysLeft;
+                    } else {
+                        daysBadge.classList.remove('show');
+                    }
+                }
+
+                // ===== 5. BADGE VITALÍCIO =====
+                document.querySelectorAll('.vitalicio-only').forEach(el => {
+                    el.classList.toggle('show', hasVitalicio);
+                });
+
+                // ===== 6. BOTÕES DE COMPRA (ESTADOS) =====
+                // Botão "Comprar" (padrão)
+                document.querySelectorAll('.btn-buy').forEach(el => {
+                    el.classList.toggle('hidden', isPremium);
+                });
+                // Botão "Plano Ativo" (Premium)
+                document.querySelectorAll('.btn-premium-active').forEach(el => {
+                    el.classList.toggle('show', isPremium);
+                });
+                // Botão "Fazer Upgrade" (não premium)
+                document.querySelectorAll('.btn-upgrade').forEach(el => {
+                    el.classList.toggle('show', !isPremium && isAuth);
+                });
+
+                // ===== 7. ATUALIZAR PREÇO PROMOCIONAL DINAMICAMENTE =====
+                updatePromotionalPrice(hasVitalicio, promotionalPrice);
+
+                // ===== 8. ATUALIZAR CRÉDITOS =====
+                const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
                 document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
                     if (el) el.textContent = displayText;
                 });
-            }
 
-            // ==============================================
-            // 🔥 ATUALIZAR NOME DO USUÁRIO
-            // ==============================================
-            function updateUserName() {
-                const app = getApp();
-                const user = app?.getCurrentUser?.();
+                // ===== 9. ATUALIZAR NOME =====
+                const user = app?.getCurrentUser?.() || state?.user;
                 const nameEl = document.getElementById('userName');
                 if (nameEl && user?.name) {
                     nameEl.textContent = user.name;
                 }
+
+                // ===== 10. ATUALIZAR BADGE DE ADMIN =====
+                document.querySelectorAll('.admin-badge').forEach(el => {
+                    el.classList.toggle('show', isAdmin);
+                });
+            }
+
+            /**
+             * Atualiza o preço promocional dinamicamente
+             */
+            function updatePromotionalPrice(hasVitalicio, promotionalPrice) {
+                // Procura elementos de preço no DOM
+                const oldPriceElements = document.querySelectorAll('.old-price');
+                const priceTagElements = document.querySelectorAll('.price-tag');
+                const economyBadges = document.querySelectorAll('.economy-badge');
+
+                if (hasVitalicio && promotionalPrice) {
+                    // Usuário tem preço vitalício - mostra o preço bloqueado
+                    const formattedPrice = `R$ ${promotionalPrice.toFixed(2).replace('.', ',')}`;
+                    
+                    priceTagElements.forEach(el => {
+                        // Mantém o formato, atualiza o valor
+                        const text = el.textContent;
+                        if (text.includes('R$')) {
+                            // Substitui apenas o valor, mantendo o formato
+                            const match = text.match(/R\$\s*([\d,]+)/);
+                            if (match) {
+                                const newText = text.replace(match[0], `R$ ${promotionalPrice.toFixed(2).replace('.', ',')}`);
+                                // Atualiza mantendo HTML
+                                el.innerHTML = newText;
+                            }
+                        }
+                    });
+
+                    // Esconde o "de R$ 149,90" se tiver preço bloqueado
+                    oldPriceElements.forEach(el => {
+                        el.style.display = 'none';
+                    });
+
+                    // Atualiza badges de economia
+                    economyBadges.forEach(el => {
+                        el.textContent = `🔥 PREÇO BLOQUEADO - VITALÍCIO`;
+                        el.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+                    });
+
+                } else {
+                    // Mostra preço normal
+                    oldPriceElements.forEach(el => {
+                        el.style.display = 'block';
+                    });
+                    economyBadges.forEach(el => {
+                        el.textContent = `🔥 ECONOMIZE R$ ${(149.90 - 97.00).toFixed(2).replace('.', ',')} 🔥`;
+                        el.style.background = 'linear-gradient(135deg, #f5a623, #e67e22)';
+                    });
+                }
             }
 
             // ==============================================
-            // 🔥 LOGOUT (usando app.js v6.0)
+            // 🔥 ESCUTA EVENTOS DO APP.JS
+            // ==============================================
+
+            // 1. app:state_changed - atualização de estado
+            document.addEventListener('app:state_changed', function(e) {
+                const detail = e.detail || {};
+                const state = detail.state || detail || {};
+                console.log('📢 app:state_changed recebido:', state);
+                updateReactiveUI(state);
+            });
+
+            // 2. app:ready - inicialização
+            document.addEventListener('app:ready', function(e) {
+                const detail = e.detail || {};
+                console.log('📢 app:ready recebido - sincronizando planos.html');
+                updateReactiveUI(detail);
+                
+                // Inicializa AOS novamente
+                if (typeof AOS !== 'undefined') {
+                    setTimeout(() => AOS.refresh(), 300);
+                }
+            });
+
+            // 3. creditsUpdated (payment.js) - atualização de créditos
+            document.addEventListener('creditsUpdated', function(e) {
+                const data = e.detail || {};
+                const app = getApp();
+                const isAdmin = app?.isAdmin?.() || false;
+                const isPremium = app?.isPremium?.() || false;
+                const credits = data.credits || 0;
+                const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
+                
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                    if (el) el.textContent = displayText;
+                });
+                console.log('📢 creditsUpdated recebido:', credits);
+            });
+
+            // 4. premiumStatusUpdated (payment.js) - atualização de status premium
+            document.addEventListener('premiumStatusUpdated', function(e) {
+                const data = e.detail || {};
+                console.log('📢 premiumStatusUpdated recebido:', data);
+                
+                const daysBadge = document.getElementById('premiumDaysBadge');
+                const daysCount = document.getElementById('premiumDaysCount');
+                if (data.isPremium && data.daysLeft > 0) {
+                    if (daysBadge) daysBadge.classList.add('show');
+                    if (daysCount) daysCount.textContent = data.daysLeft;
+                } else {
+                    if (daysBadge) daysBadge.classList.remove('show');
+                }
+            });
+
+            // 5. paymentReady - payment.js carregado
+            document.addEventListener('paymentReady', function(e) {
+                console.log('📢 paymentReady recebido:', e.detail);
+            });
+
+            // ==============================================
+            // 🔥 FALLBACK: se app já estiver pronto
+            // ==============================================
+            if (window._appReadyFired || window.App?.isReady?.() === true) {
+                console.log('✅ App já está pronto - sincronizando planos.html');
+                const state = window.__APP_STATE || {};
+                updateReactiveUI(state);
+            }
+
+            // ==============================================
+            // 🔥 LOGOUT
             // ==============================================
             document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -1344,114 +1619,10 @@
                 if (app?.logout) {
                     app.logout();
                 } else {
-                    // Fallback
                     localStorage.clear();
                     window.location.replace('/login');
                 }
             });
-
-            // ==============================================
-            // 🔥 BRIDGE DE EVENTOS (SINCRONIZA COM PAYMENT.JS)
-            // ==============================================
-            
-            // Escuta eventos do payment.js (sem dois pontos)
-            document.addEventListener('creditsUpdated', function(e) {
-                const data = e.detail || {};
-                const credits = data.credits || 0;
-                const display = data.display || credits;
-                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
-                    if (el) el.textContent = display;
-                });
-                console.log('📢 creditsUpdated recebido:', credits);
-            });
-
-            document.addEventListener('premiumStatusUpdated', function(e) {
-                console.log('📢 premiumStatusUpdated recebido:', e.detail);
-                // Atualiza UI se necessário
-            });
-
-            document.addEventListener('paymentReady', function(e) {
-                console.log('📢 paymentReady recebido:', e.detail);
-                // Payment.js está pronto
-            });
-
-            // Escuta eventos do app.js (com dois pontos)
-            document.addEventListener('credits:updated', function(e) {
-                const data = e.detail || {};
-                const credits = data.credits || 0;
-                const display = data.display || credits;
-                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
-                    if (el) el.textContent = display;
-                });
-                console.log('📢 credits:updated recebido:', credits);
-            });
-
-            document.addEventListener('premium:status_updated', function(e) {
-                console.log('📢 premium:status_updated recebido:', e.detail);
-            });
-
-            // Escuta mudanças de estado do app.js
-            document.addEventListener('app:state_changed', function(e) {
-                const detail = e.detail || {};
-                const state = detail.state || {};
-                if (state.credits !== undefined) {
-                    const display = state.creditsDisplay || state.credits;
-                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
-                        if (el) el.textContent = display;
-                    });
-                }
-                if (state.user?.name) {
-                    const nameEl = document.getElementById('userName');
-                    if (nameEl) nameEl.textContent = state.user.name;
-                }
-            });
-
-            // ==============================================
-            // 🔥 ESCUTA app:ready (inicialização)
-            // ==============================================
-            document.addEventListener('app:ready', function(e) {
-                console.log('📢 app:ready recebido - sincronizando planos.html');
-                const detail = e.detail || {};
-                
-                // Atualiza nome
-                if (detail.displayName) {
-                    const nameEl = document.getElementById('userName');
-                    if (nameEl) nameEl.textContent = detail.displayName;
-                }
-                
-                // Atualiza créditos
-                if (detail.credits !== undefined) {
-                    const display = detail.creditsDisplay || detail.credits;
-                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
-                        if (el) el.textContent = display;
-                    });
-                }
-                
-                // Inicializa AOS novamente
-                if (typeof AOS !== 'undefined') {
-                    setTimeout(() => AOS.refresh(), 300);
-                }
-                
-                console.log('✅ planos.html sincronizado com app.js v6.0');
-            });
-
-            // ==============================================
-            // 🔥 FALLBACK: se app:ready já tiver ocorrido
-            // ==============================================
-            if (window._appReadyFired || window.App?.isReady?.() === true) {
-                console.log('✅ App já está pronto - sincronizando planos.html');
-                const state = window.__APP_STATE || {};
-                if (state.credits !== undefined) {
-                    const display = state.creditsDisplay || state.credits;
-                    document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
-                        if (el) el.textContent = display;
-                    });
-                }
-                if (state.user?.name) {
-                    const nameEl = document.getElementById('userName');
-                    if (nameEl) nameEl.textContent = state.user.name;
-                }
-            }
 
             // ==============================================
             // 🔥 FORMULÁRIO DE CONTATO
@@ -1485,14 +1656,6 @@
                         window.location.href = mailtoLink;
                     });
                 }
-
-                // ==============================================
-                // 🔥 CARREGAR DADOS DO USUÁRIO VIA APP
-                // ==============================================
-                setTimeout(() => {
-                    updateUserName();
-                    updateCreditsDisplay();
-                }, 500);
 
                 // ==============================================
                 // 🔥 INICIALIZAR POW STATUS
@@ -1533,17 +1696,22 @@
                 setInterval(updatePowStatus, 30000);
 
                 // ==============================================
-                // 🔥 ATUALIZAÇÃO PERIÓDICA DE CRÉDITOS
+                // 🔥 ATUALIZAÇÃO PERIÓDICA DA UI
                 // ==============================================
-                setInterval(updateCreditsDisplay, 30000);
+                setInterval(() => {
+                    const app = getApp();
+                    if (app?.State) {
+                        updateReactiveUI(app.State);
+                    }
+                }, 30000);
 
-                console.log('✅ planos.html v2.7 carregado com sucesso!');
+                console.log('✅ planos.html v2.8 carregado com sucesso!');
                 console.log('   🔥 Abas: Planos | Atendimento');
-                console.log('   🔄 Sincronizado com app.js v6.0 (orquestrador)');
-                console.log('   🔗 Bridge de eventos configurada');
-                console.log('   📡 Escutando: creditsUpdated, premiumStatusUpdated, app:ready');
+                console.log('   🔄 UI Reativa - sincronizada com app.js v6.0');
+                console.log('   📡 Badges reativas: auth-required, guest-only, premium-only, admin-only');
+                console.log('   🎯 Botões reativos: btn-buy, btn-premium-active, btn-upgrade');
+                console.log('   💰 Preço promocional dinâmico via StateManager');
                 console.log('   📞 Suporte: autonalytics@gmail.com');
-                console.log('   🔧 ID do container: plans-container (com hífen)');
             });
 
         })();
