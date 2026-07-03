@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos v3.1 (Vagas em Destaque)');
+            console.log('✅ AutoAnalytics - Planos v3.2 (Vagas em Tempo Real)');
         })();
     </script>
     
@@ -284,6 +284,7 @@
             align-items: center;
             gap: 0.5rem;
             animation: badgePulse 2s ease-in-out infinite;
+            transition: all 0.5s ease;
         }
         @keyframes badgePulse {
             0%, 100% { box-shadow: 0 4px 20px rgba(205, 127, 50, 0.4); }
@@ -369,6 +370,7 @@
             display: inline-block;
             margin-top: 0.5rem;
             box-shadow: 0 4px 15px rgba(245, 166, 35, 0.3);
+            transition: all 0.5s ease;
         }
 
         .bronze-features {
@@ -431,7 +433,7 @@
         }
 
         /* ============================================== */
-        /* 🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ */
+        /* 🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ (EM TEMPO REAL) */
         /* ============================================== */
         
         .vagas-container {
@@ -483,7 +485,7 @@
 
         @keyframes numberPulse {
             0% { transform: scale(1); }
-            50% { transform: scale(1.4); color: #ff6b35; }
+            40% { transform: scale(1.5); color: #ff6b35; }
             100% { transform: scale(1); }
         }
 
@@ -496,6 +498,10 @@
         .vagas-total {
             font-size: 0.9rem;
             color: rgba(255, 255, 255, 0.25);
+        }
+        .vagas-percent {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.2);
         }
 
         .vagas-progress {
@@ -1003,7 +1009,7 @@
                         Escolha o melhor para sua oficina
                     </h1>
                     <p class="lead" style="color: rgba(255,255,255,0.6); max-width: 600px; margin: 0 auto;">
-                        Apenas <strong style="color: #f5a623;">100 vagas</strong> com preço especial. Garanta a sua antes que acabe!
+                        Apenas <strong style="color: #f5a623;" id="vagasHeaderText">100</strong> vagas com preço especial. Garanta a sua antes que acabe!
                     </p>
                 </div>
             </div>
@@ -1047,7 +1053,7 @@
                             
                             <!-- Badge do Plano -->
                             <div class="bronze-badge" id="planBadge">
-                                <i class="fas fa-fire"></i> <span id="planBadgeText">🔥 100 VAGAS DISPONÍVEIS</span>
+                                <i class="fas fa-fire"></i> <span id="planBadgeText">🔥 CARREGANDO VAGAS...</span>
                             </div>
                             
                             <!-- Título -->
@@ -1081,7 +1087,7 @@
                                         <div class="d-flex align-items-center gap-3">
                                             <span class="vagas-number" id="vagasRestantes">--</span>
                                             <span class="vagas-total">de <span id="vagasTotal">100</span></span>
-                                            <span id="vagasPercentText" style="font-size: 0.7rem; color: rgba(255,255,255,0.2);">0% preenchidas</span>
+                                            <span class="vagas-percent" id="vagasPercentText">0% preenchidas</span>
                                         </div>
                                     </div>
                                     <div style="flex:1.5; min-width:80px;">
@@ -1295,6 +1301,7 @@
                             <p style="color:rgba(255,255,255,0.5);">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
                         </div>
                         <div class="row g-4">
+                            <!-- Coluna do Email -->
                             <div class="col-md-6">
                                 <div class="support-card h-100">
                                     <div class="d-flex align-items-start mb-3">
@@ -1431,7 +1438,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v3.1 - Planos e Suporte
+                        AutoAnalytics v3.2 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1507,7 +1514,7 @@
     <!-- 2️⃣ AUTH - v3.0 -->
     <script src="/static/js/auth.js?ver=3.0.0"></script>
     
-    <!-- 3️⃣ APP - v6.2 -->
+    <!-- 3️⃣ APP - v6.2 (ORQUESTRADOR CENTRAL) -->
     <script src="/static/js/app.js?ver=6.2.0"></script>
     
     <!-- 4️⃣ PAYMENT - v6.6 (com sistema de vagas) -->
@@ -1520,7 +1527,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.1 (Vagas em Destaque)');
+            console.log('🚀 AutoAnalytics - Planos v3.2 (Vagas em Tempo Real)');
 
             // ===== REFERÊNCIA AO APP =====
             function getApp() {
@@ -1528,7 +1535,150 @@
             }
 
             // ==============================================
-            // 🔥 FUNÇÕES DE UI REATIVA
+            // 🔥 FUNÇÃO: ATUALIZAR VAGAS (RECEBE DO PAYMENT.JS)
+            // ==============================================
+
+            function updateVagasUI(data) {
+                console.log('📊 Atualizando UI de vagas:', data);
+
+                const remaining = data.remaining_slots || 0;
+                const total = data.total_slots || 100;
+                const isSoldOut = remaining <= 0;
+                const isUrgent = remaining <= 20 && remaining > 0;
+                const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
+
+                // 🔥 1. Número de vagas
+                const vagasElement = document.getElementById('vagasRestantes');
+                if (vagasElement) {
+                    const oldValue = vagasElement.textContent;
+                    vagasElement.textContent = remaining;
+                    
+                    // Animação de pulso se mudou
+                    if (oldValue !== String(remaining) && oldValue !== '--') {
+                        vagasElement.classList.remove('pulse');
+                        void vagasElement.offsetWidth; // Trigger reflow
+                        vagasElement.classList.add('pulse');
+                    }
+                }
+
+                // 🔥 2. Total de vagas
+                const totalElement = document.getElementById('vagasTotal');
+                if (totalElement) totalElement.textContent = total;
+
+                // 🔥 3. Percentual preenchido
+                const percentText = document.getElementById('vagasPercentText');
+                if (percentText) {
+                    percentText.textContent = `${Math.round(percent)}% preenchidas`;
+                }
+
+                // 🔥 4. Header
+                const headerText = document.getElementById('vagasHeaderText');
+                if (headerText) headerText.textContent = remaining;
+
+                // 🔥 5. Barra de progresso
+                const progressBar = document.getElementById('vagasProgress');
+                if (progressBar) {
+                    progressBar.style.width = `${Math.min(100, percent)}%`;
+                    progressBar.classList.remove('urgent', 'sold-out');
+                    if (isSoldOut) {
+                        progressBar.classList.add('sold-out');
+                    } else if (isUrgent) {
+                        progressBar.classList.add('urgent');
+                    }
+                }
+
+                // 🔥 6. Container
+                const container = document.getElementById('vagasContainer');
+                if (container) {
+                    container.classList.remove('urgent', 'sold-out');
+                    if (isSoldOut) {
+                        container.classList.add('sold-out');
+                    } else if (isUrgent) {
+                        container.classList.add('urgent');
+                    }
+                }
+
+                // 🔥 7. Alerta de urgência
+                const urgentAlert = document.getElementById('vagasUrgentAlert');
+                const urgentCount = document.getElementById('vagasUrgentCount');
+                if (urgentAlert && urgentCount) {
+                    if (isUrgent) {
+                        urgentAlert.classList.add('show');
+                        urgentCount.textContent = remaining;
+                    } else {
+                        urgentAlert.classList.remove('show');
+                    }
+                }
+
+                // 🔥 8. Alerta de esgotamento
+                const soldOutAlert = document.getElementById('vagasSoldOutAlert');
+                if (soldOutAlert) {
+                    if (isSoldOut) {
+                        soldOutAlert.classList.add('show');
+                    } else {
+                        soldOutAlert.classList.remove('show');
+                    }
+                }
+
+                // 🔥 9. Badge do plano
+                const badgeText = document.getElementById('planBadgeText');
+                if (badgeText) {
+                    if (isSoldOut) {
+                        badgeText.textContent = '❌ PROMOÇÃO ESGOTADA';
+                        badgeText.style.color = '#dc3545';
+                    } else if (isUrgent) {
+                        badgeText.textContent = `🔥 ÚLTIMAS ${remaining} VAGAS!`;
+                        badgeText.style.color = '#f5a623';
+                        badgeText.style.animation = 'badgePulse 0.8s ease-in-out infinite';
+                    } else {
+                        badgeText.textContent = `🔥 ${remaining} VAGAS DISPONÍVEIS`;
+                        badgeText.style.color = '#ffffff';
+                        badgeText.style.animation = 'badgePulse 2s ease-in-out infinite';
+                    }
+                }
+
+                // 🔥 10. Preço (se esgotou)
+                if (isSoldOut) {
+                    const priceTag = document.getElementById('currentPrice');
+                    const oldPrice = document.getElementById('oldPrice');
+                    const economyBadge = document.getElementById('economyBadge');
+                    const btnUpgrade = document.getElementById('btnUpgrade');
+
+                    if (priceTag) priceTag.textContent = '149.90';
+                    if (oldPrice) oldPrice.style.display = 'none';
+                    if (economyBadge) {
+                        economyBadge.textContent = '❌ PROMOÇÃO ESGOTADA';
+                        economyBadge.style.background = 'linear-gradient(135deg, #dc3545, #c0392b)';
+                    }
+                    if (btnUpgrade) {
+                        btnUpgrade.innerHTML = `
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            COMPRAR POR R$ 149,90
+                            <small class="d-block fs-10">Promoção encerrada</small>
+                        `;
+                        btnUpgrade.classList.add('sold-out');
+                    }
+                } else {
+                    // Restaura preço normal se não esgotou
+                    const btnUpgrade = document.getElementById('btnUpgrade');
+                    if (btnUpgrade) {
+                        btnUpgrade.classList.remove('sold-out');
+                        btnUpgrade.innerHTML = `
+                            <i class="fas fa-bolt me-2"></i>
+                            🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                            <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                        `;
+                    }
+                }
+
+                // 🔥 11. Evento para analytics
+                window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
+                    detail: { remaining, total, isSoldOut, isUrgent, percent }
+                }));
+            }
+
+            // ==============================================
+            // 🔥 FUNÇÕES DE UI REATIVA (USUÁRIO)
             // ==============================================
 
             function updatePlanCard(state) {
@@ -1537,8 +1687,6 @@
                 const isPremium = state?.isPremium || app?.isPremium?.() || false;
                 const credits = state?.credits || app?.getCredits?.() || 0;
                 const daysLeft = state?.daysLeftPremium || 0;
-
-                console.log('🔄 Atualizando card do plano:', { isAdmin, isPremium, credits, daysLeft });
 
                 // ===== 1. BADGE DE STATUS =====
                 const statusBadge = document.getElementById('userStatusBadge');
@@ -1580,7 +1728,7 @@
 
                 // ===== 4. BADGE DO PLANO =====
                 const badgeText = document.getElementById('planBadgeText');
-                if (badgeText) {
+                if (badgeText && !badgeText.textContent.includes('VAGAS')) {
                     if (isAdmin) badgeText.textContent = '👑 ADMIN - ACESSO ILIMITADO';
                     else if (isPremium) badgeText.textContent = '✅ PLANO ATIVO';
                 }
@@ -1649,14 +1797,21 @@
             // 🔥 ESCUTA EVENTOS
             // ==============================================
 
-            // app:state_changed
+            // 🔥 1. vagas:updated (do payment.js) - ATUALIZA VAGAS
+            document.addEventListener('vagas:updated', function(e) {
+                const data = e.detail || {};
+                console.log('📢 vagas:updated recebido:', data);
+                updateVagasUI(data);
+            });
+
+            // 🔥 2. app:state_changed
             document.addEventListener('app:state_changed', function(e) {
                 const detail = e.detail || {};
                 const state = detail.state || detail || {};
                 updatePlanCard(state);
             });
 
-            // app:ready
+            // 🔥 3. app:ready
             document.addEventListener('app:ready', function(e) {
                 const detail = e.detail || {};
                 updatePlanCard(detail);
@@ -1665,7 +1820,7 @@
                 }
             });
 
-            // creditsUpdated
+            // 🔥 4. creditsUpdated
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
                 const app = getApp();
@@ -1678,7 +1833,7 @@
                 });
             });
 
-            // premiumStatusUpdated
+            // 🔥 5. premiumStatusUpdated
             document.addEventListener('premiumStatusUpdated', function(e) {
                 const data = e.detail || {};
                 if (data.isPremium && data.daysLeft > 0) {
@@ -1690,19 +1845,13 @@
                 updatePlanCard(data);
             });
 
-            // paymentReady
+            // 🔥 6. paymentReady
             document.addEventListener('paymentReady', function(e) {
                 console.log('📢 paymentReady recebido');
             });
 
-            // 🔥 VAGAS: updated (do payment.js)
-            document.addEventListener('vagas:updated', function(e) {
-                const data = e.detail || {};
-                console.log('📊 Vagas atualizadas:', data);
-            });
-
             // ==============================================
-            // 🔥 FALLBACK
+            // 🔥 FALLBACK: se app já estiver pronto
             // ==============================================
             if (window._appReadyFired || window.App?.isReady?.() === true) {
                 const state = window.__APP_STATE || {};
@@ -1830,10 +1979,11 @@
                     });
                 }
 
-                console.log('✅ planos.html v3.1 carregado com sucesso!');
-                console.log('   🔥 Card Estático com VAGAS EM DESTAQUE');
-                console.log('   🔥 Estratégia de escassez em tempo real');
-                console.log('   🔥 Botão Upgrade integrado com payment.js');
+                console.log('✅ planos.html v3.2 carregado com sucesso!');
+                console.log('   🔥 Card Estático com VAGAS EM TEMPO REAL');
+                console.log('   🔥 Escuta evento vagas:updated do payment.js');
+                console.log('   🔥 Estratégia de escassez visual');
+                console.log('   🔥 Botão Upgrade integrado');
                 console.log('   🔄 UI Reativa - sincronizada com app.js v6.2');
             });
 
