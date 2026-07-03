@@ -1,18 +1,17 @@
-// payment.js - VERSÃO 6.5 (APENAS FUNÇÕES DE PAGAMENTO)
+// payment.js - VERSÃO 6.6 (COM SISTEMA DE VAGAS - ESCASSEZ)
 // ==============================================
-// 🔥 MELHORIAS V6.5:
-// 1. ✅ REMOVIDA renderização de planos (card estático no HTML)
-// 2. ✅ MANTÉM: openCpfModal, proceedWithCpf, createPaymentWithPix
-// 3. ✅ MANTÉM: showPixModal, verifyPayment, copyPixCode
-// 4. ✅ MANTÉM: loadPremiumStatus, receiveDailyCredit
-// 5. ✅ INTEGRAÇÃO TOTAL com app.js
-// 6. ✅ CONSUMO DE window.fetchWithAuth
+// 🔥 NOVIDADES V6.6:
+// 1. ✅ SISTEMA DE VAGAS DINÂMICAS (estratégia de escassez)
+// 2. ✅ ATUALIZAÇÃO EM TEMPO REAL (polling inteligente)
+// 3. ✅ ALERTAS DE URGÊNCIA (últimas 20 vagas)
+// 4. ✅ ALERTA DE ESGOTAMENTO
+// 5. ✅ Sincronização com app.js via eventos
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando payment.js v6.5 (Apenas funções de pagamento)...');
+    console.log('🚀 Inicializando payment.js v6.6 (Sistema de Vagas)...');
 
     // ==============================================
     // 🔒 DETECTA AMBIENTE
@@ -35,7 +34,11 @@
         DAYS_PREMIUM: 30,
         CACHE_TTL: 60000,
         RETRY_ATTEMPTS: 3,
-        RETRY_DELAY: 1000
+        RETRY_DELAY: 1000,
+        // 🔥 NOVAS CONFIGURAÇÕES DE VAGAS
+        VAGAS_UPDATE_INTERVAL: 30000, // 30 segundos
+        VAGAS_URGENT_THRESHOLD: 20,   // Últimas 20 vagas
+        VAGAS_CACHE_TTL: 15000        // 15 segundos de cache
     };
 
     // ==============================================
@@ -272,6 +275,260 @@
             tokenValid: !!localStorage.getItem('access_token')
         };
     }
+
+    // ==============================================
+    // 🔥 SISTEMA DE VAGAS DINÂMICAS (ESCASSEZ)
+    // ==============================================
+
+    const VagasSystem = {
+        _lastUpdate: 0,
+        _updateInterval: null,
+        _cacheValidity: CONFIG.VAGAS_CACHE_TTL,
+        _isUpdating: false,
+        _currentData: null,
+        _listeners: [],
+        
+        /**
+         * Inicializa o sistema de vagas
+         */
+        init() {
+            console.log('🎯 Inicializando Sistema de Vagas (Escassez)...');
+            
+            // Atualiza imediatamente
+            this.updateVagas();
+            
+            // 🔥 Polling inteligente (30 segundos)
+            this._updateInterval = setInterval(() => {
+                this.updateVagas();
+            }, CONFIG.VAGAS_UPDATE_INTERVAL);
+            
+            // 🔥 Escuta eventos de compra para atualizar
+            document.addEventListener('payment:completed', () => {
+                console.log('🔄 Pagamento concluído - atualizando vagas');
+                setTimeout(() => this.updateVagas(true), 1000);
+            });
+            
+            document.addEventListener('premiumStatusUpdated', (e) => {
+                if (e.detail?.isPremium) {
+                    console.log('🔄 Novo usuário premium - atualizando vagas');
+                    setTimeout(() => this.updateVagas(true), 2000);
+                }
+            });
+            
+            // 🔥 Escuta app:state_changed
+            document.addEventListener('app:state_changed', (e) => {
+                const state = e.detail?.state || {};
+                if (state.isPremium !== undefined) {
+                    // Atualiza vagas quando o status premium muda
+                    setTimeout(() => this.updateVagas(true), 1000);
+                }
+            });
+            
+            console.log('✅ Sistema de Vagas inicializado');
+        },
+        
+        /**
+         * Atualiza o contador de vagas
+         */
+        async updateVagas(force = false) {
+            if (this._isUpdating) return;
+            
+            const now = Date.now();
+            if (!force && (now - this._lastUpdate) < this._cacheValidity) {
+                console.log('📦 Usando cache de vagas');
+                return this._currentData;
+            }
+            
+            this._isUpdating = true;
+            
+            try {
+                const response = await fetchWithRetry('/api/payments/promotion-status');
+                if (response?.ok) {
+                    const data = await response.json();
+                    const safeData = Security.sanitizeObject(data);
+                    
+                    this._currentData = safeData;
+                    this._lastUpdate = now;
+                    
+                    // 🔥 Atualiza a UI
+                    this._updateUI(safeData);
+                    
+                    console.log(`📊 Vagas atualizadas: ${safeData.remaining_slots}/${safeData.total_slots}`);
+                    
+                    // 🔥 Dispara evento
+                    window.dispatchEvent(new CustomEvent('vagas:updated', {
+                        detail: safeData
+                    }));
+                    EventBus.emit('vagas:updated', safeData);
+                    
+                    return safeData;
+                }
+            } catch (error) {
+                console.warn('⚠️ Erro ao atualizar vagas:', error);
+            } finally {
+                this._isUpdating = false;
+            }
+            
+            return null;
+        },
+        
+        /**
+         * Atualiza a UI com os dados das vagas
+         */
+        _updateUI(data) {
+            const remaining = data.remaining_slots || 0;
+            const total = data.total_slots || CONFIG.TOTAL_PROMOTIONAL_SLOTS;
+            const isSoldOut = remaining <= 0;
+            const isUrgent = remaining <= CONFIG.VAGAS_URGENT_THRESHOLD && remaining > 0;
+            
+            // 🔥 1. Atualiza número de vagas
+            const vagasElement = document.getElementById('vagasRestantes');
+            if (vagasElement) {
+                vagasElement.textContent = remaining;
+                // Animação de mudança
+                vagasElement.style.transition = 'transform 0.3s ease';
+                vagasElement.style.transform = 'scale(1.3)';
+                setTimeout(() => {
+                    vagasElement.style.transform = 'scale(1)';
+                }, 300);
+            }
+            
+            // 🔥 2. Atualiza total
+            const totalElement = document.getElementById('vagasTotal');
+            if (totalElement) {
+                totalElement.textContent = total;
+            }
+            
+            // 🔥 3. Atualiza barra de progresso
+            const progressBar = document.getElementById('vagasProgress');
+            if (progressBar) {
+                const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
+                progressBar.style.width = `${Math.min(100, percent)}%`;
+                
+                // Muda cor baseado na quantidade
+                if (isSoldOut) {
+                    progressBar.style.background = 'linear-gradient(90deg, #dc3545, #c0392b)';
+                } else if (isUrgent) {
+                    progressBar.style.background = 'linear-gradient(90deg, #f5a623, #e67e22)';
+                    progressBar.style.animation = 'pulse 1.5s ease-in-out infinite';
+                } else {
+                    progressBar.style.background = 'linear-gradient(90deg, #cd7f32, #f5a623)';
+                    progressBar.style.animation = 'none';
+                }
+            }
+            
+            // 🔥 4. Alerta de urgência (últimas 20 vagas)
+            const urgentAlert = document.getElementById('vagasUrgentAlert');
+            const urgentCount = document.getElementById('vagasUrgentCount');
+            if (urgentAlert && urgentCount) {
+                if (isUrgent) {
+                    urgentAlert.style.display = 'block';
+                    urgentCount.textContent = remaining;
+                } else {
+                    urgentAlert.style.display = 'none';
+                }
+            }
+            
+            // 🔥 5. Alerta de esgotamento
+            const soldOutAlert = document.getElementById('vagasSoldOutAlert');
+            if (soldOutAlert) {
+                if (isSoldOut) {
+                    soldOutAlert.style.display = 'block';
+                } else {
+                    soldOutAlert.style.display = 'none';
+                }
+            }
+            
+            // 🔥 6. Atualiza preço (se esgotou)
+            if (isSoldOut) {
+                const priceTag = document.getElementById('currentPrice');
+                const oldPrice = document.getElementById('oldPrice');
+                const economyBadge = document.getElementById('economyBadge');
+                const btnUpgrade = document.getElementById('btnUpgrade');
+                
+                if (priceTag) priceTag.textContent = '149.90';
+                if (oldPrice) oldPrice.style.display = 'none';
+                if (economyBadge) {
+                    economyBadge.textContent = '❌ PROMOÇÃO ESGOTADA';
+                    economyBadge.style.background = 'linear-gradient(135deg, #dc3545, #c0392b)';
+                }
+                if (btnUpgrade) {
+                    btnUpgrade.innerHTML = `
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        COMPRAR POR R$ 149,90
+                        <small class="d-block fs-10">Promoção encerrada</small>
+                    `;
+                }
+            } else if (data.user_locked_price) {
+                // Usuário com preço bloqueado
+                const priceTag = document.getElementById('currentPrice');
+                if (priceTag) priceTag.textContent = data.user_locked_price.toFixed(0);
+            }
+            
+            // 🔥 7. Atualiza badge do plano
+            const badgeText = document.getElementById('planBadgeText');
+            if (badgeText) {
+                if (isSoldOut) {
+                    badgeText.textContent = '❌ PROMOÇÃO ENCERRADA';
+                } else if (isUrgent) {
+                    badgeText.textContent = `🔥 ÚLTIMAS ${remaining} VAGAS!`;
+                } else {
+                    badgeText.textContent = `🔥 ${remaining} VAGAS DISPONÍVEIS`;
+                }
+            }
+            
+            // 🔥 8. Dispara evento para outros módulos
+            window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
+                detail: {
+                    remaining,
+                    total,
+                    isSoldOut,
+                    isUrgent,
+                    percent: total > 0 ? ((total - remaining) / total) * 100 : 0
+                }
+            }));
+        },
+        
+        /**
+         * Obtém os dados atuais das vagas
+         */
+        getCurrentData() {
+            return this._currentData || {
+                remaining_slots: CONFIG.TOTAL_PROMOTIONAL_SLOTS,
+                total_slots: CONFIG.TOTAL_PROMOTIONAL_SLOTS,
+                promotional_price: CONFIG.PROMOTIONAL_PRICE,
+                regular_price: CONFIG.REGULAR_PRICE,
+                user_locked_price: null
+            };
+        },
+        
+        /**
+         * Para o polling
+         */
+        stop() {
+            if (this._updateInterval) {
+                clearInterval(this._updateInterval);
+                this._updateInterval = null;
+            }
+        },
+        
+        /**
+         * Registra um listener para atualizações de vagas
+         */
+        addListener(callback) {
+            this._listeners.push(callback);
+        },
+        
+        /**
+         * Remove um listener
+         */
+        removeListener(callback) {
+            const index = this._listeners.indexOf(callback);
+            if (index !== -1) {
+                this._listeners.splice(index, 1);
+            }
+        }
+    };
 
     // ==============================================
     // 🔥 LOAD PREMIUM STATUS (EXPORTADA PARA APP.JS)
@@ -525,7 +782,7 @@
             const data = await response.json();
             console.log('✅ Pagamento criado:', data);
 
-            // 🔥 Dispara evento creditsUpdated (camelCase - esperado pelo app.js)
+            // 🔥 Dispara evento creditsUpdated
             if (data.credits_balance !== undefined) {
                 window.dispatchEvent(new CustomEvent('creditsUpdated', {
                     detail: {
@@ -536,7 +793,7 @@
                 }));
             }
 
-            // 🔥 Dispara evento premiumStatusUpdated (camelCase - esperado pelo app.js)
+            // 🔥 Dispara evento premiumStatusUpdated
             if (data.is_premium !== undefined) {
                 window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
                     detail: {
@@ -548,6 +805,15 @@
                     }
                 }));
             }
+
+            // 🔥 Dispara evento de pagamento concluído (para atualizar vagas)
+            window.dispatchEvent(new CustomEvent('payment:completed', {
+                detail: {
+                    user_id: data.user_id,
+                    plan: data.plan,
+                    amount: data.amount
+                }
+            }));
 
             showPixModal(data);
 
@@ -745,6 +1011,15 @@
                         }
                     }));
                 }
+
+                // 🔥 Dispara evento para atualizar vagas
+                window.dispatchEvent(new CustomEvent('payment:completed', {
+                    detail: {
+                        user_id: data.user_id,
+                        plan: data.plan,
+                        amount: data.amount
+                    }
+                }));
                 
                 const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
                 if (modal) modal.hide();
@@ -775,11 +1050,23 @@
     window.verifyPayment = verifyPayment;
     window.createPaymentWithPix = createPaymentWithPix;
 
-    window.paymentReady = false;
-    window.paymentVersion = '6.5';
+    // 🔥 Sistema de Vagas
+    window.VagasSystem = VagasSystem;
 
-    console.log('✅ payment.js v6.5 carregado');
+    // Status
+    window.paymentReady = false;
+    window.paymentVersion = '6.6';
+
+    console.log('✅ payment.js v6.6 carregado');
     console.log('   📦 Funções de pagamento prontas');
-    console.log('   🔗 Integrado com app.js v6.2');
+    console.log('   🎯 Sistema de Vagas (Escassez) ativo');
+    console.log('   🔗 Integrado com app.js');
+
+    // ==============================================
+    // 🔥 INICIALIZAÇÃO
+    // ==============================================
+
+    // Inicializa o sistema de vagas
+    VagasSystem.init();
 
 })();
