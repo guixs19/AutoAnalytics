@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.4 (SINCRONIZADA COM APP.JS V6.0) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.5 (COM NOTIFICAÇÃO DE NOVOS USUÁRIOS) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,7 +7,7 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <!-- ============================================== -->
-    <!-- 🔥 SEGURANÇA E BLOQUEIO (MANTIDO) -->
+    <!-- 🔥 SEGURANÇA E BLOQUEIO -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -27,12 +27,12 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - SPA Mecânicos v7.4');
+            console.log('✅ AutoAnalytics - SPA Mecânicos v7.5');
         })();
     </script>
     
     <!-- ============================================== -->
-    <!-- 🔥 BIBLIOTECAS (MANTIDAS) -->
+    <!-- 🔥 BIBLIOTECAS -->
     <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -490,6 +490,191 @@
             margin-top: 0.5rem;
         }
 
+        /* ============================================== */
+        /* 🔥 NOTIFICAÇÃO DE BOAS-VINDAS (NOVOS USUÁRIOS) */
+        /* ============================================== */
+
+        .welcome-notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            max-width: 420px;
+            width: 100%;
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 20px;
+            padding: 1.5rem 1.8rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 107, 53, 0.1);
+            z-index: 9998;
+            transform: translateX(120%);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(20px);
+        }
+
+        .welcome-notification.show {
+            transform: translateX(0);
+        }
+
+        .welcome-notification .notif-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: white;
+            flex-shrink: 0;
+            animation: notifPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes notifPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(255, 107, 53, 0.4); }
+        }
+
+        .welcome-notification .notif-content {
+            flex: 1;
+        }
+
+        .welcome-notification .notif-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #ff6b35;
+            margin-bottom: 0.2rem;
+        }
+
+        .welcome-notification .notif-subtitle {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-notification .notif-credits {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 107, 53, 0.12);
+            border: 1px solid rgba(255, 107, 53, 0.2);
+            border-radius: 50px;
+            padding: 0.3rem 1.2rem;
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: #f5a623;
+        }
+
+        .welcome-notification .notif-credits i {
+            color: #ff6b35;
+            font-size: 1.2rem;
+        }
+
+        .welcome-notification .notif-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .welcome-notification .notif-btn {
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .welcome-notification .notif-btn-primary {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+        }
+
+        .welcome-notification .notif-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+        }
+
+        .welcome-notification .notif-btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .welcome-notification .notif-btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .welcome-notification .notif-close {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.2);
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 0.2rem 0.4rem;
+            border-radius: 8px;
+        }
+
+        .welcome-notification .notif-close:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .welcome-notification .notif-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 0 0 20px 20px;
+            overflow: hidden;
+        }
+
+        .welcome-notification .notif-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            border-radius: 0 0 20px 20px;
+            transition: width 6s linear;
+            width: 100%;
+        }
+
+        @media (max-width: 480px) {
+            .welcome-notification {
+                top: 70px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+                padding: 1rem 1.2rem;
+            }
+            .welcome-notification .notif-icon {
+                width: 45px;
+                height: 45px;
+                font-size: 1.3rem;
+            }
+            .welcome-notification .notif-title {
+                font-size: 0.95rem;
+            }
+            .welcome-notification .notif-credits {
+                font-size: 1rem;
+                padding: 0.2rem 0.8rem;
+            }
+            .welcome-notification .notif-actions {
+                flex-direction: column;
+            }
+            .welcome-notification .notif-btn {
+                width: 100%;
+                text-align: center;
+                justify-content: center;
+            }
+        }
+
         @media (max-width: 992px) {
             .hero-section { padding: 90px 0 30px; }
             .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
@@ -513,6 +698,53 @@
             .upload-area h4 { font-size: 0.9rem; }
             .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
         }
+
+        /* ===== TIMELINE ===== */
+        .timeline {
+            position: relative;
+            padding-left: 1.5rem;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .timeline::-webkit-scrollbar { width: 4px; }
+        .timeline::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+        .timeline::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 4px; }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #ff6b35, #f7931e);
+            border-radius: 2px;
+            opacity: 0.3;
+        }
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.2rem;
+        }
+        .timeline-item:last-child { padding-bottom: 0; }
+        .timeline-marker {
+            position: absolute;
+            left: -1.5rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff6b35;
+            border: 2px solid white;
+            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.3);
+        }
+        .timeline-marker.bg-success {
+            background: #48bb78;
+            box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.3);
+        }
+        .timeline-content {
+            padding-left: 0.5rem;
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .timeline-content strong { color: #f5a623; }
     </style>
 </head>
 <body>
@@ -548,13 +780,56 @@
                         <i class="fas fa-crown me-1"></i> Planos
                     </a>
                     
-                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.App?.logout?.();">
+                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.logout();">
                         <i class="fas fa-sign-out-alt me-1"></i> Sair
                     </a>
                 </div>
             </div>
         </div>
     </nav>
+
+    <!-- ============================================== -->
+    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS (NOVOS USUÁRIOS) -->
+    <!-- ============================================== -->
+    <div class="welcome-notification" id="welcomeNotification" role="alert">
+        <button class="notif-close" id="notifClose" aria-label="Fechar notificação">
+            <i class="fas fa-times"></i>
+        </button>
+        
+        <div class="d-flex align-items-start gap-3">
+            <div class="notif-icon">
+                <i class="fas fa-gift"></i>
+            </div>
+            <div class="notif-content">
+                <div class="notif-title" id="notifTitle">🎉 Bem-vindo ao AutoAnalytics!</div>
+                <div class="notif-subtitle" id="notifSubtitle">
+                    Você ganhou <strong id="notifCreditsHighlight">3</strong> créditos grátis para começar.
+                </div>
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <span class="notif-credits">
+                        <i class="fas fa-coins"></i>
+                        <span id="notifCreditsCount">3</span> créditos grátis
+                    </span>
+                    <span style="font-size:0.65rem; color: rgba(255,255,255,0.2);">
+                        <i class="fas fa-bolt me-1" style="color:#f5a623;"></i>
+                        Válido por 30 dias
+                    </span>
+                </div>
+                <div class="notif-actions">
+                    <button class="notif-btn notif-btn-primary" id="notifGoDashboard">
+                        <i class="fas fa-chart-line me-1"></i> Ir para Dashboard
+                    </button>
+                    <button class="notif-btn notif-btn-secondary" id="notifDismiss">
+                        <i class="fas fa-check me-1"></i> Entendi
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="notif-progress">
+            <div class="notif-progress-bar" id="notifProgressBar"></div>
+        </div>
+    </div>
 
     <!-- ============================================== -->
     <!-- 🔥 LOADING OVERLAY -->
@@ -732,10 +1007,10 @@
                             <i class="fas fa-history me-2" style="color: #ff6b35;"></i>
                             <h5 class="card-title mb-0">Seu histórico de análises</h5>
                         </div>
-                        <div class="timeline" id="recentAnalyses" style="position:relative; padding-left:1.5rem; max-height:250px; overflow-y:auto;">
-                            <div class="timeline-item" style="position:relative; padding-bottom:1.2rem;">
-                                <div class="timeline-marker" style="position:absolute; left:-1.5rem; top:0.25rem; width:12px; height:12px; border-radius:50%; background:#ff6b35; border:2px solid white; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
-                                <div class="timeline-content" style="padding-left:0.5rem; color:rgba(255,255,255,0.85);">
+                        <div class="timeline" id="recentAnalyses">
+                            <div class="timeline-item">
+                                <div class="timeline-marker" style="background:#ff6b35; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
+                                <div class="timeline-content">
                                     <p class="mb-1 small">Carregando histórico...</p>
                                     <small style="color: rgba(255,255,255,0.3);">Aguarde</small>
                                 </div>
@@ -755,7 +1030,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.4 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.5 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -831,6 +1106,99 @@
     </div>
 
     <!-- ============================================== -->
+    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js v7.0) -->
+    <!-- ============================================== -->
+
+    <!-- Template: Modal CPF -->
+    <template id="cpfModalTemplate">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-id-card me-2"></i>Confirme seu CPF
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-white-50 mb-3">
+                        <i class="fas fa-shield-alt me-2"></i> 
+                        CPF obrigatório para gerar PIX e proteger sua compra.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label text-white">CPF</label>
+                        <input type="text" class="form-control form-control-lg" 
+                               id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
+                               style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;">
+                        <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
+                    </div>
+                    <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.5rem 1.5rem; font-weight:700;">
+                        <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Template: Modal PIX -->
+    <template id="pixModalTemplate">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.15); border-color: #28a745; color: #48bb78;">
+                        <i class="fas fa-gem me-2"></i>
+                        <strong id="pixPromoText">🎉 VOCÊ GARANTIU O PREÇO FUNDADOR!</strong><br>
+                        <small id="pixPriceText">R$ 97,00 - Preço bloqueado VITALÍCIO!</small>
+                    </div>
+                    
+                    <h6 class="mb-3" style="color: rgba(255,255,255,0.7);">Escaneie o QR Code com seu banco</h6>
+                    
+                    <div class="text-center mb-3">
+                        <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
+                            <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px; display: none;">
+                            <div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
+                        <code id="pixCodeText" class="small" style="color: #f5a623;">autonalytics@gmail.com</code>
+                    </div>
+                    
+                    <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
+                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.3); border-radius: 12px; padding: 0.75rem;">
+                        <i class="fas fa-copy me-2"></i> Copiar Chave PIX
+                    </button>
+                    
+                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.08); border-color: rgba(205,127,50,0.2); color: rgba(255,255,255,0.7);">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Informações do pagamento:</strong><br>
+                        <strong id="pixPlanText">Plano Bronze</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
+                        <span class="text-success" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
+                        <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
+                    </div>
+                    
+                    <div id="paymentStatus" class="mt-2"></div>
+                </div>
+                <div class="modal-footer border-0 justify-content-center" style="border-top: 1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn w-100" id="pixVerifyBtn" 
+                            style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); border: none; border-radius: 50px; padding: 0.75rem;">
+                        <i class="fas fa-check-circle me-2"></i> Já realizei o pagamento / Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- ============================================== -->
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
@@ -855,80 +1223,432 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CORRETA) -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS (VERSÕES ATUALIZADAS) -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ POW - v3.3 -->
     <script src="/static/js/pow-client.js?ver=3.3.0"></script>
     
-    <!-- 2️⃣ AUTH - v3.0 -->
-    <script src="/static/js/auth.js?ver=3.0.0"></script>
+    <!-- 2️⃣ AUTH - v3.1 (COM COOKIE SYNC) -->
+    <script src="/static/js/auth.js?ver=3.1.0"></script>
     
-    <!-- 3️⃣ APP - v6.0 (ORQUESTRADOR CENTRAL) -->
-    <script src="/static/js/app.js?ver=6.0.0"></script>
+    <!-- 3️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL REFATORADO) -->
+    <script src="/static/js/app.js?ver=7.0.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v2.5 (SINCRONIZADO COM APP.JS V6.0) -->
-    <script src="/static/js/payment.js?ver=2.5.0"></script>
+    <!-- 4️⃣ PAYMENT - v7.0 (REFATORADO COM TEMPLATES) -->
+    <script src="/static/js/payment.js?ver=7.0.0"></script>
     
-    <!-- 5️⃣ DASHBOARD - v6.3 (SINCRONIZADO COM APP.JS V6.0) -->
+    <!-- 5️⃣ DASHBOARD - v6.3 (SINCRONIZADO) -->
     <script src="/static/js/dashboard.js?ver=6.3.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO E CONTROLE DO UPLOAD (SINCRONIZADO) -->
+    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.4 (Sincronizado com app.js v6.0)');
+            console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
 
-            // ===== CONFIG =====
-            const MAX_FILES = 3;
-            const MAX_FILE_SIZE_KB = 200;
-            const CREDITS_PER_FILE = 1;
+            // ===== CONFIGURAÇÕES =====
+            var NOTIF_CONFIG = {
+                AUTO_CLOSE_DELAY: 6000,
+                STORAGE_KEY: '_aa_welcome_shown',
+                WELCOME_PERMANENT_KEY: '_aa_welcome_permanent',
+                INITIAL_CREDITS: 3
+            };
 
-            // ===== ESTADO LOCAL =====
-            let selectedFiles = [];
-            let isInitialized = false;
+            // ===== ELEMENTOS =====
+            var notification = document.getElementById('welcomeNotification');
+            var notifClose = document.getElementById('notifClose');
+            var notifDismiss = document.getElementById('notifDismiss');
+            var notifGoDashboard = document.getElementById('notifGoDashboard');
+            var notifCreditsCount = document.getElementById('notifCreditsCount');
+            var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
+            var notifTitle = document.getElementById('notifTitle');
+            var notifSubtitle = document.getElementById('notifSubtitle');
+            var progressBar = document.getElementById('notifProgressBar');
 
-            // ===== ELEMENTOS DOM =====
-            const dropArea = document.getElementById('dropArea');
-            const fileInput = document.getElementById('fileInput');
-            const filePreview = document.getElementById('filePreviewContainer');
-            const uploadBtn = document.getElementById('uploadButton');
-            const uploadForm = document.getElementById('uploadForm');
+            // ===== OBTÉM DADOS DO USUÁRIO =====
+            function getUserData() {
+                try {
+                    var userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        return JSON.parse(userData);
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro ao ler user_data:', e);
+                }
+                return null;
+            }
 
-            // ===== REFERÊNCIA AO APP (ORQUESTRADOR) =====
+            // ===== OBTÉM CRÉDITOS DO ESTADO GLOBAL =====
+            function getCreditsFromState() {
+                try {
+                    if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
+                        return window.__APP_STATE.credits;
+                    }
+                    if (window.App && typeof window.App.getCredits === 'function') {
+                        return window.App.getCredits();
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro ao obter créditos do estado:', e);
+                }
+                return null;
+            }
+
+            // ===== VERIFICA SE DEVE MOSTRAR =====
+            function shouldShowWelcome() {
+                try {
+                    // 🔥 1. Já mostrou nesta sessão?
+                    if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') {
+                        console.log('🔔 Notificação já mostrada nesta sessão');
+                        return false;
+                    }
+
+                    // 🔥 2. Já mostrou permanentemente?
+                    if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') {
+                        console.log('🔔 Notificação já mostrada permanentemente');
+                        return false;
+                    }
+
+                    // 🔥 3. Verifica se é admin
+                    var user = getUserData();
+                    if (user && user.is_admin === true) {
+                        console.log('👑 Admin não precisa de notificação');
+                        localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
+                        return false;
+                    }
+
+                    // 🔥 4. Verifica se já tem créditos
+                    var credits = getCreditsFromState() || (user ? user.credits : 0);
+                    
+                    // Se o usuário já gastou créditos, não é novo
+                    if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) {
+                        console.log('🔔 Usuário já gastou créditos, não é novo');
+                        return false;
+                    }
+
+                    // 🔥 5. Verifica se é novo usuário (baseado no user_data)
+                    if (user && user.created_at) {
+                        var createdAt = new Date(user.created_at);
+                        var now = new Date();
+                        var diffMinutes = (now - createdAt) / (1000 * 60);
+                        
+                        if (diffMinutes < 5) {
+                            console.log('🔔 Usuário criado há ' + Math.round(diffMinutes) + ' minutos - novo!');
+                            return true;
+                        }
+                    }
+
+                    // 🔥 6. Fallback: se tem 3 créditos e 0 análises
+                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        var totalAnalyses = user ? user.total_analyses || 0 : 0;
+                        if (totalAnalyses === 0) {
+                            console.log('🔔 Usuário com créditos iniciais e sem análises - novo!');
+                            return true;
+                        }
+                    }
+
+                    console.log('🔔 Usuário não é novo, notificação não será mostrada');
+                    return false;
+
+                } catch (e) {
+                    console.warn('⚠️ Erro ao verificar notificação:', e);
+                    return false;
+                }
+            }
+
+            // ===== CONFIGURA TEXTO DA NOTIFICAÇÃO =====
+            function setupNotificationContent() {
+                var user = getUserData();
+                var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
+                var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
+
+                if (notifCreditsCount) {
+                    notifCreditsCount.textContent = credits;
+                }
+                if (notifCreditsHighlight) {
+                    notifCreditsHighlight.textContent = credits;
+                }
+
+                if (notifTitle) {
+                    notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
+                }
+
+                if (notifSubtitle) {
+                    if (credits > 0) {
+                        notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
+                    } else {
+                        notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
+                    }
+                }
+            }
+
+            // ===== MOSTRA NOTIFICAÇÃO =====
+            function showWelcomeNotification() {
+                if (!notification) {
+                    console.warn('⚠️ Elemento de notificação não encontrado');
+                    return;
+                }
+
+                setupNotificationContent();
+                notification.classList.add('show');
+                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+                startAutoClose();
+
+                window.dispatchEvent(new CustomEvent('welcome:shown', {
+                    detail: {
+                        credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS,
+                        timestamp: Date.now()
+                    }
+                }));
+
+                console.log('🔔 Notificação de boas-vindas exibida!');
+            }
+
+            // ===== AUTO-CLOSE =====
+            function startAutoClose() {
+                if (!progressBar) return;
+
+                progressBar.style.width = '100%';
+                progressBar.style.transition = 'none';
+                void progressBar.offsetWidth;
+                progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
+                
+                setTimeout(function() {
+                    progressBar.style.width = '0%';
+                }, 50);
+
+                clearTimeout(window._notifTimer);
+                window._notifTimer = setTimeout(function() {
+                    dismissNotification();
+                }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
+            }
+
+            // ===== FECHA NOTIFICAÇÃO =====
+            function dismissNotification() {
+                if (!notification) return;
+
+                notification.classList.remove('show');
+                clearTimeout(window._notifTimer);
+                localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
+                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+
+                window.dispatchEvent(new CustomEvent('welcome:dismissed', {
+                    detail: { timestamp: Date.now() }
+                }));
+
+                console.log('🔔 Notificação fechada');
+            }
+
+            // ===== IR PARA DASHBOARD =====
+            function goToDashboard() {
+                dismissNotification();
+                window.location.href = '/dashboard';
+            }
+
+            // ===== CONFIGURA EVENTOS =====
+            function setupEvents() {
+                if (notifClose) {
+                    notifClose.addEventListener('click', dismissNotification);
+                }
+
+                if (notifDismiss) {
+                    notifDismiss.addEventListener('click', dismissNotification);
+                }
+
+                if (notifGoDashboard) {
+                    notifGoDashboard.addEventListener('click', goToDashboard);
+                }
+
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
+                        dismissNotification();
+                    }
+                });
+
+                if (notification) {
+                    notification.addEventListener('mouseenter', function() {
+                        clearTimeout(window._notifTimer);
+                        if (progressBar) {
+                            progressBar.style.transition = 'none';
+                            progressBar.style.width = progressBar.style.width || '100%';
+                        }
+                    });
+
+                    notification.addEventListener('mouseleave', function() {
+                        var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
+                        var percent = parseFloat(remaining) || 100;
+                        var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
+                        
+                        if (remainingTime > 500) {
+                            clearTimeout(window._notifTimer);
+                            if (progressBar) {
+                                progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
+                                progressBar.style.width = '0%';
+                            }
+                            window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
+                        }
+                    });
+                }
+
+                console.log('🔔 Eventos da notificação configurados');
+            }
+
+            // ===== ESCUTA EVENTOS DO APP =====
+            function listenAppEvents() {
+                document.addEventListener('authLoginSuccess', function(e) {
+                    console.log('📢 authLoginSuccess - verificando notificação');
+                    var data = e.detail || {};
+                    if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        setTimeout(function() {
+                            if (shouldShowWelcome()) {
+                                showWelcomeNotification();
+                            }
+                        }, 800);
+                    }
+                });
+
+                document.addEventListener('app:ready', function(e) {
+                    console.log('📢 app:ready - verificando notificação');
+                    var detail = e.detail || {};
+                    setTimeout(function() {
+                        if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) {
+                            showWelcomeNotification();
+                        }
+                    }, 500);
+                });
+
+                document.addEventListener('authReady', function(e) {
+                    console.log('📢 authReady - verificando notificação');
+                    if (e.detail && e.detail.isAuthenticated) {
+                        setTimeout(function() {
+                            if (shouldShowWelcome()) {
+                                showWelcomeNotification();
+                            }
+                        }, 600);
+                    }
+                });
+
+                document.addEventListener('paymentReady', function(e) {
+                    console.log('📢 paymentReady - sistema de pagamentos pronto');
+                    setTimeout(function() {
+                        if (shouldShowWelcome()) {
+                            showWelcomeNotification();
+                        }
+                    }, 800);
+                });
+
+                console.log('🔔 Listeners do app configurados');
+            }
+
+            // ===== RESET DA NOTIFICAÇÃO =====
+            function resetNotification() {
+                sessionStorage.removeItem(NOTIF_CONFIG.STORAGE_KEY);
+                localStorage.removeItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY);
+                console.log('🔔 Reset da notificação feito');
+            }
+
+            // ===== INICIALIZAÇÃO =====
+            function init() {
+                console.log('🔔 Inicializando sistema de notificação...');
+                setupEvents();
+                listenAppEvents();
+
+                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
+                    console.log('🔔 App já pronto - fallback');
+                    setTimeout(function() {
+                        if (shouldShowWelcome()) {
+                            showWelcomeNotification();
+                        }
+                    }, 400);
+                }
+
+                if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
+                    console.log('🔔 Auth já pronto - fallback');
+                    var credits = getCreditsFromState();
+                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        setTimeout(function() {
+                            if (shouldShowWelcome()) {
+                                showWelcomeNotification();
+                            }
+                        }, 600);
+                    }
+                }
+
+                console.log('✅ Sistema de notificação inicializado!');
+                console.log('   💰 Créditos iniciais: ' + NOTIF_CONFIG.INITIAL_CREDITS);
+                console.log('   ⏰ Auto-close: ' + (NOTIF_CONFIG.AUTO_CLOSE_DELAY/1000) + 's');
+                console.log('   🔄 Sincronizado com crud.py (INITIAL_FREE_CREDITS)');
+            }
+
+            // ===== DOMContentLoaded =====
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                setTimeout(init, 300);
+            }
+
+            // ===== EXPÕE FUNÇÕES GLOBAIS =====
+            window.WelcomeNotif = {
+                show: showWelcomeNotification,
+                dismiss: dismissNotification,
+                shouldShow: shouldShowWelcome,
+                reset: resetNotification
+            };
+
+            console.log('✅ welcome-notification.js carregado!');
+            console.log('   🔔 Mostra notificação para novos usuários');
+            console.log('   💰 Sincronizado com INITIAL_FREE_CREDITS = ' + NOTIF_CONFIG.INITIAL_CREDITS);
+            console.log('   🔄 Integrado com auth.js, app.js, payment.js');
+
+        })();
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 CONTROLE DO UPLOAD (SINCRONIZADO) -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+
+            console.log('🚀 AutoAnalytics Mecânicos v7.5');
+
+            var MAX_FILES = 3;
+            var MAX_FILE_SIZE_KB = 200;
+            var CREDITS_PER_FILE = 1;
+            var selectedFiles = [];
+            var isInitialized = false;
+
+            var dropArea = document.getElementById('dropArea');
+            var fileInput = document.getElementById('fileInput');
+            var filePreview = document.getElementById('filePreviewContainer');
+            var uploadBtn = document.getElementById('uploadButton');
+            var uploadForm = document.getElementById('uploadForm');
+
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
-            // ===== FUNÇÃO PARA FORMATAR TAMANHO =====
             function formatFileSize(bytes) {
                 if (bytes < 1024) return bytes + ' B';
                 if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
                 return (bytes / 1048576).toFixed(1) + ' MB';
             }
 
-            // ===== FUNÇÃO PARA VALIDAR ARQUIVO =====
             function validateFile(file) {
-                const errors = [];
-                
-                // Extensão permitida
-                const ext = file.name.split('.').pop().toLowerCase();
+                var errors = [];
+                var ext = file.name.split('.').pop().toLowerCase();
                 if (!['csv', 'xlsx', 'xls'].includes(ext)) {
                     errors.push('Formato não suportado. Use CSV, XLSX ou XLS.');
                 }
-                
-                // Tamanho máximo
                 if (file.size > MAX_FILE_SIZE_KB * 1024) {
-                    errors.push(`Arquivo excede ${MAX_FILE_SIZE_KB} KB.`);
+                    errors.push('Arquivo excede ' + MAX_FILE_SIZE_KB + ' KB.');
                 }
-                
-                return { valid: errors.length === 0, errors };
+                return { valid: errors.length === 0, errors: errors };
             }
 
-            // ===== FUNÇÃO PARA ATUALIZAR PREVIEW =====
             function updateFilePreview() {
                 if (selectedFiles.length === 0) {
                     filePreview.innerHTML = '';
@@ -936,53 +1656,50 @@
                     return;
                 }
 
-                let html = '';
-                selectedFiles.forEach((file, index) => {
-                    const ext = file.name.split('.').pop().toLowerCase();
-                    let icon = 'fa-file-excel';
+                var html = '';
+                selectedFiles.forEach(function(file, index) {
+                    var ext = file.name.split('.').pop().toLowerCase();
+                    var icon = 'fa-file-excel';
                     if (ext === 'csv') icon = 'fa-file-csv';
                     
-                    html += `
-                        <div class="file-preview-item" data-index="${index}">
-                            <div class="file-info">
-                                <i class="fas ${icon}"></i>
-                                <span class="file-name" title="${file.name}">${file.name}</span>
-                                <span class="file-size">${formatFileSize(file.size)}</span>
-                            </div>
-                            <button type="button" class="file-remove" data-index="${index}" title="Remover arquivo">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                    `;
+                    html += '<div class="file-preview-item" data-index="' + index + '">';
+                    html += '<div class="file-info">';
+                    html += '<i class="fas ' + icon + '"></i>';
+                    html += '<span class="file-name" title="' + file.name + '">' + file.name + '</span>';
+                    html += '<span class="file-size">' + formatFileSize(file.size) + '</span>';
+                    html += '</div>';
+                    html += '<button type="button" class="file-remove" data-index="' + index + '" title="Remover arquivo">';
+                    html += '<i class="fas fa-times"></i>';
+                    html += '</button>';
+                    html += '</div>';
                 });
                 
                 filePreview.innerHTML = html;
                 uploadBtn.disabled = false;
 
-                // Eventos de remoção
-                document.querySelectorAll('.file-remove').forEach(btn => {
+                document.querySelectorAll('.file-remove').forEach(function(btn) {
                     btn.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        const idx = parseInt(this.dataset.index);
+                        var idx = parseInt(this.dataset.index);
                         removeFile(idx);
                     });
                 });
             }
 
-            // ===== FUNÇÃO PARA ADICIONAR ARQUIVOS =====
             function addFiles(files) {
-                let added = 0;
-                let errors = [];
+                var added = 0;
+                var errors = [];
 
-                for (const file of files) {
+                for (var i = 0; i < files.length; i++) {
+                    var file = files[i];
                     if (selectedFiles.length >= MAX_FILES) {
-                        errors.push(`Limite de ${MAX_FILES} arquivos atingido.`);
+                        errors.push('Limite de ' + MAX_FILES + ' arquivos atingido.');
                         break;
                     }
 
-                    const validation = validateFile(file);
+                    var validation = validateFile(file);
                     if (!validation.valid) {
-                        errors.push(`${file.name}: ${validation.errors.join(' ')}`);
+                        errors.push(file.name + ': ' + validation.errors.join(' '));
                         continue;
                     }
 
@@ -993,174 +1710,148 @@
                 updateFilePreview();
 
                 if (added > 0) {
-                    const app = getApp();
-                    app?.showNotification?.(`${added} arquivo(s) adicionado(s)`, 'info');
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification(added + ' arquivo(s) adicionado(s)', 'info');
+                    }
                 }
 
                 if (errors.length > 0) {
-                    const app = getApp();
-                    app?.showNotification?.(errors.join(' | '), 'warning');
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification(errors.join(' | '), 'warning');
+                    }
                 }
 
                 updateCreditsDisplay();
             }
 
-            // ===== FUNÇÃO PARA REMOVER ARQUIVO =====
             function removeFile(index) {
                 if (index >= 0 && index < selectedFiles.length) {
                     selectedFiles.splice(index, 1);
                     updateFilePreview();
                     updateCreditsDisplay();
-                    
-                    if (selectedFiles.length === 0) {
-                        const app = getApp();
-                        app?.showNotification?.('Todos os arquivos removidos', 'info');
-                    }
                 }
             }
 
-            // ===== FUNÇÃO PARA ATUALIZAR EXIBIÇÃO DE CRÉDITOS =====
             function updateCreditsDisplay() {
-                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                const app = getApp();
-                const creditsAvailable = app?.getCredits?.() || 0;
+                var creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                var app = getApp();
+                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
                 
-                // Atualiza elementos de créditos
-                document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(el => {
+                document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(function(el) {
                     if (el) {
                         if (el.id === 'creditsDisplay') {
-                            el.textContent = app?.State?.creditsDisplay || creditsAvailable;
+                            el.textContent = (app && app.State && app.State.creditsDisplay) ? app.State.creditsDisplay : creditsAvailable;
                         } else {
                             el.textContent = creditsAvailable;
                         }
                     }
                 });
 
-                // Atualiza badge de créditos no botão
-                const badge = uploadBtn.querySelector('.badge');
+                var badge = uploadBtn.querySelector('.badge');
                 if (badge) {
                     if (selectedFiles.length > 0) {
-                        badge.textContent = `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''}`;
+                        badge.textContent = creditsNeeded + ' crédito' + (creditsNeeded > 1 ? 's' : '');
                     } else {
                         badge.textContent = '1 crédito/arquivo';
                     }
                 }
 
-                // Verifica se tem créditos suficientes
-                const hasCredits = creditsNeeded > 0 ? creditsAvailable >= creditsNeeded : true;
+                var hasCredits = creditsNeeded > 0 ? creditsAvailable >= creditsNeeded : true;
                 uploadBtn.disabled = !hasCredits || selectedFiles.length === 0;
             }
 
-            // ===== FUNÇÃO DE UPLOAD USANDO APP.JS =====
-            async function performUpload(files) {
-                const app = getApp();
-                
-                if (!app) {
-                    console.error('❌ App não disponível para upload');
-                    app?.showNotification?.('Erro: aplicação não inicializada.', 'error');
-                    return false;
-                }
-
-                try {
-                    // Usa o método de upload com PoW do app.js
-                    const result = await app.uploadWithPow?.(files, '/api/upload-auto');
-                    
-                    if (result) {
-                        app.showNotification?.('✅ Arquivos enviados com sucesso!', 'success');
-                        
-                        // Limpa a lista
-                        selectedFiles = [];
-                        updateFilePreview();
-                        updateCreditsDisplay();
-                        
-                        // Dispara evento para dashboard.js atualizar
-                        window.dispatchEvent(new CustomEvent('analysis:uploaded', { 
-                            detail: { result, files } 
-                        }));
-                        
-                        return true;
-                    } else {
-                        app.showNotification?.('Erro ao enviar arquivos.', 'error');
-                        return false;
-                    }
-                } catch (error) {
-                    console.error('❌ Erro no upload:', error);
-                    app.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
-                    return false;
-                }
-            }
-
             // ===== EVENTOS DE DRAG & DROP =====
-            dropArea.addEventListener('dragover', (e) => {
+            dropArea.addEventListener('dragover', function(e) {
                 e.preventDefault();
                 dropArea.classList.add('dragover');
             });
 
-            dropArea.addEventListener('dragleave', (e) => {
+            dropArea.addEventListener('dragleave', function(e) {
                 e.preventDefault();
                 dropArea.classList.remove('dragover');
             });
 
-            dropArea.addEventListener('drop', (e) => {
+            dropArea.addEventListener('drop', function(e) {
                 e.preventDefault();
                 dropArea.classList.remove('dragover');
-                
-                const files = e.dataTransfer.files;
+                var files = e.dataTransfer.files;
                 if (files.length > 0) {
                     addFiles(files);
                 }
             });
 
-            // Clique na área abre o seletor
-            dropArea.addEventListener('click', () => {
+            dropArea.addEventListener('click', function() {
                 fileInput.click();
             });
 
-            // Seletor de arquivos
-            fileInput.addEventListener('change', (e) => {
+            fileInput.addEventListener('change', function(e) {
                 if (e.target.files.length > 0) {
                     addFiles(e.target.files);
                 }
                 fileInput.value = '';
             });
 
-            // ===== SUBMISSÃO DO FORMULÁRIO =====
-            uploadForm.addEventListener('submit', async (e) => {
+            // ===== SUBMISSÃO =====
+            uploadForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
 
                 if (selectedFiles.length === 0) {
-                    const app = getApp();
-                    app?.showNotification?.('Nenhum arquivo selecionado.', 'warning');
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('Nenhum arquivo selecionado.', 'warning');
+                    }
                     return;
                 }
 
-                const app = getApp();
-                const creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                const creditsAvailable = app?.getCredits?.() || 0;
+                var app = getApp();
+                var creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
 
                 if (creditsAvailable < creditsNeeded) {
-                    app?.showNotification?.(
-                        `Créditos insuficientes. Você tem ${creditsAvailable}, precisa de ${creditsNeeded}.`,
-                        'error'
-                    );
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('Créditos insuficientes. Você tem ' + creditsAvailable + ', precisa de ' + creditsNeeded + '.', 'error');
+                    }
                     return;
                 }
 
-                // Prepara os arquivos para upload
-                const filesToUpload = [...selectedFiles];
+                var filesToUpload = selectedFiles.slice();
                 
-                // Mostra loading via app.js
-                app?.showLoading?.('Enviando arquivos...', 'A IA está processando seus dados');
+                if (app && typeof app.showLoading === 'function') {
+                    app.showLoading('Enviando arquivos...', 'A IA está processando seus dados');
+                }
                 
                 try {
-                    const success = await performUpload(filesToUpload);
-                    if (!success) {
-                        app?.hideLoading?.();
+                    if (app && typeof app.uploadWithPow === 'function') {
+                        var result = await app.uploadWithPow(filesToUpload, '/api/upload-auto');
+                        if (result) {
+                            if (app && typeof app.showNotification === 'function') {
+                                app.showNotification('✅ Arquivos enviados com sucesso!', 'success');
+                            }
+                            selectedFiles = [];
+                            updateFilePreview();
+                            updateCreditsDisplay();
+                            window.dispatchEvent(new CustomEvent('analysis:uploaded', { detail: { result: result, files: filesToUpload } }));
+                        } else {
+                            if (app && typeof app.showNotification === 'function') {
+                                app.showNotification('Erro ao enviar arquivos.', 'error');
+                            }
+                        }
+                    } else {
+                        if (app && typeof app.showNotification === 'function') {
+                            app.showNotification('Sistema de upload indisponível.', 'error');
+                        }
                     }
                 } catch (error) {
                     console.error('❌ Erro no upload:', error);
-                    app?.showNotification?.(error.message || 'Erro ao processar upload.', 'error');
-                    app?.hideLoading?.();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification(error.message || 'Erro ao processar upload.', 'error');
+                    }
+                } finally {
+                    if (app && typeof app.hideLoading === 'function') {
+                        app.hideLoading();
+                    }
                 }
             });
 
@@ -1169,18 +1860,14 @@
                 updateCreditsDisplay();
             }
 
-            // Eventos do app.js (com dois pontos)
             document.addEventListener('credits:updated', onCreditsUpdated);
             document.addEventListener('credits:loaded', onCreditsUpdated);
-            
-            // Eventos do payment.js (sem dois pontos)
             document.addEventListener('creditsUpdated', onCreditsUpdated);
             document.addEventListener('premiumStatusUpdated', onCreditsUpdated);
             
-            // Estado mudou
-            document.addEventListener('app:state_changed', (e) => {
-                const detail = e.detail || {};
-                if (detail.changes?.credits !== undefined || detail.changes?.isPremium !== undefined) {
+            document.addEventListener('app:state_changed', function(e) {
+                var detail = e.detail || {};
+                if (detail.changes && (detail.changes.credits !== undefined || detail.changes.isPremium !== undefined)) {
                     updateCreditsDisplay();
                 }
             });
@@ -1189,7 +1876,6 @@
             function init() {
                 if (isInitialized) return;
                 
-                // Configura Toastr
                 if (typeof toastr !== 'undefined') {
                     toastr.options = {
                         closeButton: true,
@@ -1201,7 +1887,6 @@
                     };
                 }
 
-                // AOS
                 if (typeof AOS !== 'undefined') {
                     AOS.init({
                         once: true,
@@ -1211,93 +1896,49 @@
                     });
                 }
 
-                // Atualiza créditos
                 setTimeout(updateCreditsDisplay, 300);
-                
-                // Atualização periódica
                 setInterval(updateCreditsDisplay, 30000);
 
                 isInitialized = true;
                 console.log('✅ Upload area inicializada com sucesso!');
-                console.log(`📁 Máximo: ${MAX_FILES} arquivos, ${MAX_FILE_SIZE_KB} KB cada`);
-                console.log(`🔗 Sincronizado com app.js v6.0`);
             }
 
-            // ===== ESCUTA app:ready =====
             document.addEventListener('app:ready', function(e) {
                 console.log('📢 app:ready recebido - inicializando upload');
-                const detail = e.detail || {};
-                console.log(`📌 Estado recebido: ${detail.isAuthenticated ? 'Autenticado' : 'Não autenticado'}`);
-                console.log(`📌 Créditos: ${detail.credits || 0}`);
-                
-                // Atualiza créditos imediatamente com os dados do payload
-                if (detail.credits !== undefined) {
-                    const creditsEls = document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay');
-                    creditsEls.forEach(el => {
-                        if (el) {
-                            if (el.id === 'creditsDisplay') {
-                                el.textContent = detail.creditsDisplay || detail.credits;
-                            } else {
-                                el.textContent = detail.credits;
-                            }
-                        }
-                    });
-                }
-                
                 setTimeout(init, 200);
             });
 
-            // ===== FALLBACK: se app:ready já tiver ocorrido =====
-            if (window._appReadyFired || window.App?.isReady?.() === true) {
+            if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
                 console.log('✅ App já está pronto - inicializando upload');
-                const state = window.__APP_STATE || {};
-                if (state.credits !== undefined) {
-                    document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(el => {
-                        if (el) {
-                            if (el.id === 'creditsDisplay') {
-                                el.textContent = state.creditsDisplay || state.credits;
-                            } else {
-                                el.textContent = state.credits;
-                            }
-                        }
-                    });
-                }
                 setTimeout(init, 300);
             }
 
-            // ===== DOMContentLoaded =====
-            document.addEventListener('DOMContentLoaded', () => {
-                if (window._appReadyFired || window.App?.isReady?.()) {
+            document.addEventListener('DOMContentLoaded', function() {
+                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
                     init();
                 }
             });
 
-            // ===== EXPÕE FUNÇÕES GLOBAIS =====
             window.uploadFiles = {
-                addFiles,
-                removeFile,
-                clearFiles: () => { 
-                    selectedFiles = []; 
-                    updateFilePreview(); 
-                    updateCreditsDisplay(); 
-                },
-                getFiles: () => [...selectedFiles],
-                getCount: () => selectedFiles.length,
-                MAX_FILES,
-                MAX_FILE_SIZE_KB,
-                CREDITS_PER_FILE,
-                updateCreditsDisplay
+                addFiles: addFiles,
+                removeFile: removeFile,
+                clearFiles: function() { selectedFiles = []; updateFilePreview(); updateCreditsDisplay(); },
+                getFiles: function() { return selectedFiles.slice(); },
+                getCount: function() { return selectedFiles.length; },
+                MAX_FILES: MAX_FILES,
+                MAX_FILE_SIZE_KB: MAX_FILE_SIZE_KB,
+                CREDITS_PER_FILE: CREDITS_PER_FILE,
+                updateCreditsDisplay: updateCreditsDisplay
             };
 
-            // ===== EXPÕE PARA O APP =====
             if (window.App) {
                 window.App.upload = window.uploadFiles;
             }
 
-            console.log('✅ upload-control.js carregado v7.4');
+            console.log('✅ upload-control.js carregado v7.5');
             console.log('   📁 Arraste e solte arquivos CSV ou Excel');
-            console.log('   🔗 Sincronizado com app.js v6.0 (orquestrador)');
-            console.log('   🔄 Atualização reativa de créditos via eventos');
+            console.log('   🔗 Sincronizado com app.js v7.0');
+            console.log('   🔔 Notificação de novos usuários ativa');
 
         })();
     </script>

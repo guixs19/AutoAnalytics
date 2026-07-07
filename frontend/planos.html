@@ -26,7 +26,7 @@
             window._security_initialized = true;
             window._isAuthenticated = true;
             
-            console.log('✅ AutoAnalytics - Planos v3.2 (Vagas em Tempo Real)');
+            console.log('✅ AutoAnalytics - Planos v3.3 (Vagas em Tempo Real)');
         })();
     </script>
     
@@ -1438,7 +1438,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v3.2 - Planos e Suporte
+                        AutoAnalytics v3.3 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1451,6 +1451,99 @@
 
         </div>
     </section>
+
+    <!-- ============================================== -->
+    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js v7.0) -->
+    <!-- ============================================== -->
+
+    <!-- Template: Modal CPF -->
+    <template id="cpfModalTemplate">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-id-card me-2"></i>Confirme seu CPF
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-white-50 mb-3">
+                        <i class="fas fa-shield-alt me-2"></i> 
+                        CPF obrigatório para gerar PIX e proteger sua compra.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label text-white">CPF</label>
+                        <input type="text" class="form-control form-control-lg" 
+                               id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
+                               style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;">
+                        <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
+                    </div>
+                    <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.5rem 1.5rem; font-weight:700;">
+                        <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Template: Modal PIX -->
+    <template id="pixModalTemplate">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h5 class="modal-title" style="color: #f5a623;">
+                        <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.15); border-color: #28a745; color: #48bb78;">
+                        <i class="fas fa-gem me-2"></i>
+                        <strong id="pixPromoText">🎉 VOCÊ GARANTIU O PREÇO FUNDADOR!</strong><br>
+                        <small id="pixPriceText">R$ 97,00 - Preço bloqueado VITALÍCIO!</small>
+                    </div>
+                    
+                    <h6 class="mb-3" style="color: rgba(255,255,255,0.7);">Escaneie o QR Code com seu banco</h6>
+                    
+                    <div class="text-center mb-3">
+                        <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
+                            <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px; display: none;">
+                            <div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
+                        <code id="pixCodeText" class="small" style="color: #f5a623;">autonalytics@gmail.com</code>
+                    </div>
+                    
+                    <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
+                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.3); border-radius: 12px; padding: 0.75rem;">
+                        <i class="fas fa-copy me-2"></i> Copiar Chave PIX
+                    </button>
+                    
+                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.08); border-color: rgba(205,127,50,0.2); color: rgba(255,255,255,0.7);">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Informações do pagamento:</strong><br>
+                        <strong id="pixPlanText">Plano Bronze</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
+                        <span class="text-success" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
+                        <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
+                    </div>
+                    
+                    <div id="paymentStatus" class="mt-2"></div>
+                </div>
+                <div class="modal-footer border-0 justify-content-center" style="border-top: 1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn w-100" id="pixVerifyBtn" 
+                            style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); border: none; border-radius: 50px; padding: 0.75rem;">
+                        <i class="fas fa-check-circle me-2"></i> Já realizei o pagamento / Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
 
     <!-- ============================================== -->
     <!-- 🔥 MODAL DE CRÉDITOS -->
@@ -1511,14 +1604,14 @@
     <!-- 1️⃣ POW - v3.3 -->
     <script src="/static/js/pow-client.js?ver=3.3.0"></script>
     
-    <!-- 2️⃣ AUTH - v3.0 -->
-    <script src="/static/js/auth.js?ver=3.0.0"></script>
+    <!-- 2️⃣ AUTH - v3.1 -->
+    <script src="/static/js/auth.js?ver=3.1.0"></script>
     
     <!-- 3️⃣ APP - v6.2 (ORQUESTRADOR CENTRAL) -->
     <script src="/static/js/app.js?ver=6.2.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v6.6 (com sistema de vagas) -->
-    <script src="/static/js/payment.js?ver=6.6.0"></script>
+    <!-- 4️⃣ PAYMENT - v7.0 (REFATORADO) -->
+    <script src="/static/js/payment.js?ver=7.0.0"></script>
 
     <!-- ============================================== -->
     <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO -->
@@ -1527,80 +1620,104 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.2 (Vagas em Tempo Real)');
+            console.log('🚀 AutoAnalytics - Planos v3.3 (Vagas em Tempo Real)');
 
             // ===== REFERÊNCIA AO APP =====
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
+            // ===== ESPERA O APP FICAR PRONTO =====
+            function waitForApp(maxAttempts) {
+                maxAttempts = maxAttempts || 30;
+                return new Promise(function(resolve) {
+                    var attempts = 0;
+                    var check = function() {
+                        attempts++;
+                        var app = getApp();
+                        if (app && typeof app.isReady === 'function' && app.isReady()) {
+                            resolve(true);
+                            return;
+                        }
+                        if (window._appReadyFired) {
+                            resolve(true);
+                            return;
+                        }
+                        if (attempts >= maxAttempts) {
+                            resolve(false);
+                            return;
+                        }
+                        setTimeout(check, 200);
+                    };
+                    check();
+                });
+            }
+
             // ==============================================
-            // 🔥 FUNÇÃO: ATUALIZAR VAGAS (RECEBE DO PAYMENT.JS)
+            // 🔥 FUNÇÃO: ATUALIZAR VAGAS UI
             // ==============================================
 
             function updateVagasUI(data) {
                 console.log('📊 Atualizando UI de vagas:', data);
 
-                const remaining = data.remaining_slots || 0;
-                const total = data.total_slots || 100;
-                const isSoldOut = remaining <= 0;
-                const isUrgent = remaining <= 20 && remaining > 0;
-                const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
+                var remaining = data.remaining_slots || 0;
+                var total = data.total_slots || 100;
+                var isSoldOut = remaining <= 0;
+                var isUrgent = remaining <= 20 && remaining > 0;
+                var percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
 
-                // 🔥 1. Número de vagas
-                const vagasElement = document.getElementById('vagasRestantes');
-                if (vagasElement) {
-                    const oldValue = vagasElement.textContent;
-                    vagasElement.textContent = remaining;
-                    
-                    // Animação de pulso se mudou
-                    if (oldValue !== String(remaining) && oldValue !== '--') {
-                        vagasElement.classList.remove('pulse');
-                        void vagasElement.offsetWidth; // Trigger reflow
-                        vagasElement.classList.add('pulse');
+                // Elementos
+                var vagasEl = document.getElementById('vagasRestantes');
+                var totalEl = document.getElementById('vagasTotal');
+                var percentEl = document.getElementById('vagasPercentText');
+                var headerEl = document.getElementById('vagasHeaderText');
+                var progressEl = document.getElementById('vagasProgress');
+                var containerEl = document.getElementById('vagasContainer');
+                var urgentAlert = document.getElementById('vagasUrgentAlert');
+                var urgentCount = document.getElementById('vagasUrgentCount');
+                var soldOutAlert = document.getElementById('vagasSoldOutAlert');
+                var badgeText = document.getElementById('planBadgeText');
+                var priceTag = document.getElementById('currentPrice');
+                var oldPrice = document.getElementById('oldPrice');
+                var economyBadge = document.getElementById('economyBadge');
+                var btnUpgrade = document.getElementById('btnUpgrade');
+
+                // 1. Número
+                if (vagasEl) {
+                    var old = vagasEl.textContent;
+                    vagasEl.textContent = remaining;
+                    if (old !== String(remaining) && old !== '--') {
+                        vagasEl.classList.remove('pulse');
+                        void vagasEl.offsetWidth;
+                        vagasEl.classList.add('pulse');
                     }
                 }
 
-                // 🔥 2. Total de vagas
-                const totalElement = document.getElementById('vagasTotal');
-                if (totalElement) totalElement.textContent = total;
+                // 2. Total
+                if (totalEl) totalEl.textContent = total;
 
-                // 🔥 3. Percentual preenchido
-                const percentText = document.getElementById('vagasPercentText');
-                if (percentText) {
-                    percentText.textContent = `${Math.round(percent)}% preenchidas`;
+                // 3. Percentual
+                if (percentEl) percentEl.textContent = Math.round(percent) + '% preenchidas';
+
+                // 4. Header
+                if (headerEl) headerEl.textContent = remaining;
+
+                // 5. Progresso
+                if (progressEl) {
+                    progressEl.style.width = Math.min(100, percent) + '%';
+                    progressEl.classList.remove('urgent', 'sold-out');
+                    if (isSoldOut) progressEl.classList.add('sold-out');
+                    else if (isUrgent) progressEl.classList.add('urgent');
                 }
 
-                // 🔥 4. Header
-                const headerText = document.getElementById('vagasHeaderText');
-                if (headerText) headerText.textContent = remaining;
-
-                // 🔥 5. Barra de progresso
-                const progressBar = document.getElementById('vagasProgress');
-                if (progressBar) {
-                    progressBar.style.width = `${Math.min(100, percent)}%`;
-                    progressBar.classList.remove('urgent', 'sold-out');
-                    if (isSoldOut) {
-                        progressBar.classList.add('sold-out');
-                    } else if (isUrgent) {
-                        progressBar.classList.add('urgent');
-                    }
+                // 6. Container
+                if (containerEl) {
+                    containerEl.classList.remove('urgent', 'sold-out');
+                    if (isSoldOut) containerEl.classList.add('sold-out');
+                    else if (isUrgent) containerEl.classList.add('urgent');
                 }
 
-                // 🔥 6. Container
-                const container = document.getElementById('vagasContainer');
-                if (container) {
-                    container.classList.remove('urgent', 'sold-out');
-                    if (isSoldOut) {
-                        container.classList.add('sold-out');
-                    } else if (isUrgent) {
-                        container.classList.add('urgent');
-                    }
-                }
-
-                // 🔥 7. Alerta de urgência
-                const urgentAlert = document.getElementById('vagasUrgentAlert');
-                const urgentCount = document.getElementById('vagasUrgentCount');
+                // 7. Alertas
                 if (urgentAlert && urgentCount) {
                     if (isUrgent) {
                         urgentAlert.classList.add('show');
@@ -1609,9 +1726,6 @@
                         urgentAlert.classList.remove('show');
                     }
                 }
-
-                // 🔥 8. Alerta de esgotamento
-                const soldOutAlert = document.getElementById('vagasSoldOutAlert');
                 if (soldOutAlert) {
                     if (isSoldOut) {
                         soldOutAlert.classList.add('show');
@@ -1620,30 +1734,24 @@
                     }
                 }
 
-                // 🔥 9. Badge do plano
-                const badgeText = document.getElementById('planBadgeText');
+                // 8. Badge
                 if (badgeText) {
                     if (isSoldOut) {
                         badgeText.textContent = '❌ PROMOÇÃO ESGOTADA';
                         badgeText.style.color = '#dc3545';
                     } else if (isUrgent) {
-                        badgeText.textContent = `🔥 ÚLTIMAS ${remaining} VAGAS!`;
+                        badgeText.textContent = '\uD83D\uDD25 ÚLTIMAS ' + remaining + ' VAGAS!';
                         badgeText.style.color = '#f5a623';
                         badgeText.style.animation = 'badgePulse 0.8s ease-in-out infinite';
                     } else {
-                        badgeText.textContent = `🔥 ${remaining} VAGAS DISPONÍVEIS`;
+                        badgeText.textContent = '\uD83D\uDD25 ' + remaining + ' VAGAS DISPONÍVEIS';
                         badgeText.style.color = '#ffffff';
                         badgeText.style.animation = 'badgePulse 2s ease-in-out infinite';
                     }
                 }
 
-                // 🔥 10. Preço (se esgotou)
+                // 9. Preço
                 if (isSoldOut) {
-                    const priceTag = document.getElementById('currentPrice');
-                    const oldPrice = document.getElementById('oldPrice');
-                    const economyBadge = document.getElementById('economyBadge');
-                    const btnUpgrade = document.getElementById('btnUpgrade');
-
                     if (priceTag) priceTag.textContent = '149.90';
                     if (oldPrice) oldPrice.style.display = 'none';
                     if (economyBadge) {
@@ -1659,37 +1767,36 @@
                         btnUpgrade.classList.add('sold-out');
                     }
                 } else {
-                    // Restaura preço normal se não esgotou
-                    const btnUpgrade = document.getElementById('btnUpgrade');
                     if (btnUpgrade) {
                         btnUpgrade.classList.remove('sold-out');
                         btnUpgrade.innerHTML = `
                             <i class="fas fa-bolt me-2"></i>
-                            🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                            \uD83D\uDD25 GARANTIR PREÇO FUNDADOR R$ 97,00
                             <small class="d-block fs-10">Pagamento seguro via PIX</small>
                         `;
                     }
                 }
 
-                // 🔥 11. Evento para analytics
+                // 10. Evento
                 window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
-                    detail: { remaining, total, isSoldOut, isUrgent, percent }
+                    detail: { remaining: remaining, total: total, isSoldOut: isSoldOut, isUrgent: isUrgent, percent: percent }
                 }));
             }
 
             // ==============================================
-            // 🔥 FUNÇÕES DE UI REATIVA (USUÁRIO)
+            // 🔥 FUNÇÃO: ATUALIZAR UI DO USUÁRIO
             // ==============================================
 
-            function updatePlanCard(state) {
-                const app = getApp();
-                const isAdmin = state?.isAdmin || app?.isAdmin?.() || false;
-                const isPremium = state?.isPremium || app?.isPremium?.() || false;
-                const credits = state?.credits || app?.getCredits?.() || 0;
-                const daysLeft = state?.daysLeftPremium || 0;
+            function updateUserUI(state) {
+                var app = getApp();
+                var isAdmin = state && state.isAdmin !== undefined ? state.isAdmin : (app && typeof app.isAdmin === 'function' ? app.isAdmin() : false);
+                var isPremium = state && state.isPremium !== undefined ? state.isPremium : (app && typeof app.isPremium === 'function' ? app.isPremium() : false);
+                var credits = state && state.credits !== undefined ? state.credits : (app && typeof app.getCredits === 'function' ? app.getCredits() : 0);
+                var daysLeft = state && state.daysLeftPremium !== undefined ? state.daysLeftPremium : 0;
+                var user = state && state.user ? state.user : (app && typeof app.getCurrentUser === 'function' ? app.getCurrentUser() : {});
 
-                // ===== 1. BADGE DE STATUS =====
-                const statusBadge = document.getElementById('userStatusBadge');
+                // Status Badge
+                var statusBadge = document.getElementById('userStatusBadge');
                 if (statusBadge) {
                     if (isAdmin) {
                         statusBadge.innerHTML = '<i class="fas fa-crown me-1"></i> Administrador';
@@ -1706,9 +1813,9 @@
                     }
                 }
 
-                // ===== 2. DIAS PREMIUM =====
-                const daysBadge = document.getElementById('premiumDaysBadge');
-                const daysCount = document.getElementById('premiumDaysCount');
+                // Dias Premium
+                var daysBadge = document.getElementById('premiumDaysBadge');
+                var daysCount = document.getElementById('premiumDaysCount');
                 if (daysBadge && daysCount) {
                     if (isPremium && daysLeft > 0) {
                         daysBadge.classList.add('show');
@@ -1718,25 +1825,18 @@
                     }
                 }
 
-                // ===== 3. CARD ESTILO =====
-                const planCard = document.getElementById('planCard');
+                // Card
+                var planCard = document.getElementById('planCard');
                 if (planCard) {
                     planCard.classList.remove('premium-active', 'admin-card');
                     if (isAdmin) planCard.classList.add('admin-card');
                     else if (isPremium) planCard.classList.add('premium-active');
                 }
 
-                // ===== 4. BADGE DO PLANO =====
-                const badgeText = document.getElementById('planBadgeText');
-                if (badgeText && !badgeText.textContent.includes('VAGAS')) {
-                    if (isAdmin) badgeText.textContent = '👑 ADMIN - ACESSO ILIMITADO';
-                    else if (isPremium) badgeText.textContent = '✅ PLANO ATIVO';
-                }
-
-                // ===== 5. BOTÕES =====
-                const btnUpgrade = document.getElementById('btnUpgrade');
-                const btnPremiumActive = document.getElementById('btnPremiumActive');
-                const btnAdmin = document.getElementById('btnAdmin');
+                // Botões
+                var btnUpgrade = document.getElementById('btnUpgrade');
+                var btnPremiumActive = document.getElementById('btnPremiumActive');
+                var btnAdmin = document.getElementById('btnAdmin');
 
                 if (isAdmin) {
                     if (btnUpgrade) btnUpgrade.style.display = 'none';
@@ -1752,16 +1852,15 @@
                     if (btnAdmin) btnAdmin.style.display = 'none';
                 }
 
-                // ===== 6. CRÉDITOS =====
-                const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
-                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                // Créditos
+                var displayText = isAdmin ? '∞' : (isPremium ? credits + '/3' : String(credits));
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(function(el) {
                     if (el) el.textContent = displayText;
                 });
 
-                // ===== 7. NOME =====
-                const user = app?.getCurrentUser?.() || state?.user;
-                const nameEl = document.getElementById('userName');
-                if (nameEl && user?.name) nameEl.textContent = user.name;
+                // Nome
+                var nameEl = document.getElementById('userName');
+                if (nameEl && user && user.name) nameEl.textContent = user.name;
             }
 
             // ==============================================
@@ -1771,17 +1870,21 @@
             window.handleUpgrade = function() {
                 console.log('🛒 Iniciando upgrade...');
                 
-                const app = getApp();
-                const isPremium = app?.isPremium?.() || false;
-                const isAdmin = app?.isAdmin?.() || false;
+                var app = getApp();
+                var isPremium = app && typeof app.isPremium === 'function' ? app.isPremium() : false;
+                var isAdmin = app && typeof app.isAdmin === 'function' ? app.isAdmin() : false;
 
                 if (isAdmin) {
-                    app?.showNotification?.('👑 Admin tem acesso ilimitado!', 'info');
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('👑 Admin tem acesso ilimitado!', 'info');
+                    }
                     return;
                 }
 
                 if (isPremium) {
-                    app?.showNotification?.('✅ Você já possui um plano ativo!', 'success');
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('✅ Você já possui um plano ativo!', 'success');
+                    }
                     window.location.href = '/dashboard';
                     return;
                 }
@@ -1789,7 +1892,9 @@
                 if (typeof window.openCpfModal === 'function') {
                     window.openCpfModal('premium_mensal');
                 } else {
-                    app?.showNotification?.('Sistema de pagamento indisponível.', 'error');
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('Sistema de pagamento indisponível.', 'error');
+                    }
                 }
             };
 
@@ -1797,100 +1902,194 @@
             // 🔥 ESCUTA EVENTOS
             // ==============================================
 
-            // 🔥 1. vagas:updated (do payment.js) - ATUALIZA VAGAS
+            // Vagas
             document.addEventListener('vagas:updated', function(e) {
-                const data = e.detail || {};
-                console.log('📢 vagas:updated recebido:', data);
+                var data = e.detail || {};
                 updateVagasUI(data);
             });
 
-            // 🔥 2. app:state_changed
+            // Estado do App
             document.addEventListener('app:state_changed', function(e) {
-                const detail = e.detail || {};
-                const state = detail.state || detail || {};
-                updatePlanCard(state);
+                var detail = e.detail || {};
+                var state = detail.state || detail || {};
+                updateUserUI(state);
             });
 
-            // 🔥 3. app:ready
+            // App Ready
             document.addEventListener('app:ready', function(e) {
-                const detail = e.detail || {};
-                updatePlanCard(detail);
+                var detail = e.detail || {};
+                updateUserUI(detail);
                 if (typeof AOS !== 'undefined') {
-                    setTimeout(() => AOS.refresh(), 300);
+                    setTimeout(function() { AOS.refresh(); }, 300);
                 }
             });
 
-            // 🔥 4. creditsUpdated
+            // Créditos
             document.addEventListener('creditsUpdated', function(e) {
-                const data = e.detail || {};
-                const app = getApp();
-                const isAdmin = app?.isAdmin?.() || false;
-                const isPremium = app?.isPremium?.() || false;
-                const credits = data.credits || 0;
-                const displayText = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
-                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(el => {
+                var data = e.detail || {};
+                var app = getApp();
+                var isAdmin = app && typeof app.isAdmin === 'function' ? app.isAdmin() : false;
+                var isPremium = app && typeof app.isPremium === 'function' ? app.isPremium() : false;
+                var credits = data.credits || 0;
+                var displayText = isAdmin ? '∞' : (isPremium ? credits + '/3' : String(credits));
+                document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(function(el) {
                     if (el) el.textContent = displayText;
                 });
             });
 
-            // 🔥 5. premiumStatusUpdated
+            // Premium Status
             document.addEventListener('premiumStatusUpdated', function(e) {
-                const data = e.detail || {};
+                var data = e.detail || {};
                 if (data.isPremium && data.daysLeft > 0) {
-                    const daysBadge = document.getElementById('premiumDaysBadge');
-                    const daysCount = document.getElementById('premiumDaysCount');
+                    var daysBadge = document.getElementById('premiumDaysBadge');
+                    var daysCount = document.getElementById('premiumDaysCount');
                     if (daysBadge) daysBadge.classList.add('show');
                     if (daysCount) daysCount.textContent = data.daysLeft;
                 }
-                updatePlanCard(data);
-            });
-
-            // 🔥 6. paymentReady
-            document.addEventListener('paymentReady', function(e) {
-                console.log('📢 paymentReady recebido');
+                updateUserUI(data);
             });
 
             // ==============================================
-            // 🔥 FALLBACK: se app já estiver pronto
+            // 🔥 INICIALIZAÇÃO
             // ==============================================
-            if (window._appReadyFired || window.App?.isReady?.() === true) {
-                const state = window.__APP_STATE || {};
-                updatePlanCard(state);
+
+            function updatePowStatus() {
+                try {
+                    var powStatusEl = document.getElementById('powStatus');
+                    var powTextEl = document.getElementById('powStatusText');
+                    if (!powStatusEl || !powTextEl) return;
+                    
+                    var app = getApp();
+                    var stats = null;
+                    if (app && typeof app.getPowStats === 'function') {
+                        stats = app.getPowStats();
+                    } else if (window.powClient && typeof window.powClient.getStats === 'function') {
+                        stats = window.powClient.getStats();
+                    }
+                    
+                    if (stats && stats.available !== false) {
+                        var solutionsReady = stats.solutionsReady || 0;
+                        if (solutionsReady > 0) {
+                            powStatusEl.className = 'pow-status';
+                            powTextEl.textContent = solutionsReady + ' PoW';
+                        } else {
+                            powStatusEl.className = 'pow-status loading';
+                            powTextEl.textContent = '⚡ Pronto';
+                        }
+                    } else {
+                        powStatusEl.className = 'pow-status error';
+                        powTextEl.textContent = 'Indisponível';
+                    }
+                } catch (e) {}
             }
 
-            // ==============================================
-            // 🔥 LOGOUT
-            // ==============================================
-            document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
-                e.preventDefault();
-                const app = getApp();
-                if (app?.logout) app.logout();
-                else {
-                    localStorage.clear();
-                    window.location.replace('/login');
+            async function init() {
+                // Aguarda app pronto
+                var ready = await waitForApp(30);
+                
+                if (ready) {
+                    var app = getApp();
+                    var state = app && app.State ? app.State : window.__APP_STATE || {};
+                    updateUserUI(state);
                 }
+
+                // Atualiza PoW
+                setTimeout(updatePowStatus, 1500);
+                setInterval(updatePowStatus, 30000);
+
+                if (typeof AOS !== 'undefined') {
+                    AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
+                }
+
+                // Carrega vagas iniciais via payment.js
+                if (window.VagasSystem && typeof window.VagasSystem.updateVagas === 'function') {
+                    window.VagasSystem.updateVagas();
+                }
+
+                console.log('✅ planos.html v3.3 carregado com sucesso!');
+                console.log('   🔥 Templates para modais (payment.js v7.0)');
+                console.log('   🔥 Vagas em tempo real via evento');
+                console.log('   🔥 UI reativa sincronizada');
+            }
+
+            // ===== DOMContentLoaded =====
+            document.addEventListener('DOMContentLoaded', function() {
+                if (typeof toastr !== 'undefined') {
+                    toastr.options = {
+                        closeButton: true,
+                        progressBar: true,
+                        positionClass: "toast-top-right",
+                        timeOut: 5000,
+                        extendedTimeOut: 1000,
+                        escapeHtml: true
+                    };
+                }
+
+                // Form de suporte
+                var form = document.getElementById('quickSupportForm');
+                if (form) {
+                    form.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        var name = document.getElementById('supportName').value;
+                        var email = document.getElementById('supportEmail').value;
+                        var subject = document.getElementById('supportSubject').value;
+                        var message = document.getElementById('supportMessage').value;
+                        var mailtoLink = 'mailto:autonalytics@gmail.com?subject=' + encodeURIComponent(subject + ' - ' + name) + '&body=' + encodeURIComponent(
+                            'Nome: ' + name + '\nEmail: ' + email + '\nAssunto: ' + subject + '\n\nMensagem:\n' + message + '\n\n---\nEnviado via AutoAnalytics Planos e Suporte'
+                        );
+                        var app = getApp();
+                        if (app && typeof app.showNotification === 'function') {
+                            app.showNotification('📧 Abrindo seu email...', 'success');
+                        }
+                        document.getElementById('supportName').value = '';
+                        document.getElementById('supportEmail').value = '';
+                        document.getElementById('supportMessage').value = '';
+                        window.location.href = mailtoLink;
+                    });
+                }
+
+                // Logout
+                var logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        var app = getApp();
+                        if (app && typeof app.logout === 'function') {
+                            app.logout();
+                        } else {
+                            localStorage.clear();
+                            window.location.replace('/login');
+                        }
+                    });
+                }
+
+                // Inicia
+                init();
             });
 
-            // ==============================================
-            // 🔥 FUNÇÕES AUXILIARES
-            // ==============================================
-
+            // Funções globais
             window.switchTab = function(tabId) {
-                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+                document.querySelectorAll('.tab-btn').forEach(function(btn) {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.tab-content').forEach(function(content) {
+                    content.classList.remove('active');
+                });
+                var btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
                 if (btn) btn.classList.add('active');
-                const content = document.getElementById(`tab-${tabId}`);
+                var content = document.getElementById('tab-' + tabId);
                 if (content) content.classList.add('active');
-                setTimeout(() => { if (typeof AOS !== 'undefined') AOS.refresh(); }, 100);
+                setTimeout(function() {
+                    if (typeof AOS !== 'undefined') AOS.refresh();
+                }, 100);
             };
 
             window.toggleFaq = function(element) {
-                const answer = element.querySelector('.faq-answer');
-                const icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
+                var answer = element.querySelector('.faq-answer');
+                var icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
                 if (answer) {
-                    const isOpen = answer.classList.contains('open');
-                    document.querySelectorAll('.faq-answer').forEach(a => {
+                    var isOpen = answer.classList.contains('open');
+                    document.querySelectorAll('.faq-answer').forEach(function(a) {
                         if (a !== answer) a.classList.remove('open');
                     });
                     if (isOpen) {
@@ -1908,84 +2107,6 @@
                     }
                 }
             };
-
-            function updatePowStatus() {
-                try {
-                    const powStatusEl = document.getElementById('powStatus');
-                    const powTextEl = document.getElementById('powStatusText');
-                    if (!powStatusEl || !powTextEl) return;
-                    const app = getApp();
-                    let stats = null;
-                    if (app && typeof app.getPowStats === 'function') {
-                        stats = app.getPowStats();
-                    } else if (window.powClient && typeof window.powClient.getStats === 'function') {
-                        stats = window.powClient.getStats();
-                    }
-                    if (stats && stats.available !== false) {
-                        const solutionsReady = stats.solutionsReady || 0;
-                        if (solutionsReady > 0) {
-                            powStatusEl.className = 'pow-status';
-                            powTextEl.textContent = `${solutionsReady} PoW`;
-                        } else {
-                            powStatusEl.className = 'pow-status loading';
-                            powTextEl.textContent = '⚡ Pronto';
-                        }
-                    } else {
-                        powStatusEl.className = 'pow-status error';
-                        powTextEl.textContent = 'Indisponível';
-                    }
-                } catch (e) {}
-            }
-
-            // ==============================================
-            // 🔥 DOMContentLoaded
-            // ==============================================
-            document.addEventListener('DOMContentLoaded', function() {
-                if (typeof toastr !== 'undefined') {
-                    toastr.options = {
-                        closeButton: true,
-                        progressBar: true,
-                        positionClass: "toast-top-right",
-                        timeOut: 5000,
-                        extendedTimeOut: 1000,
-                        escapeHtml: true
-                    };
-                }
-
-                if (typeof AOS !== 'undefined') {
-                    AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
-                }
-
-                setTimeout(updatePowStatus, 1500);
-                setInterval(updatePowStatus, 30000);
-
-                const form = document.getElementById('quickSupportForm');
-                if (form) {
-                    form.addEventListener('submit', function(e) {
-                        e.preventDefault();
-                        const name = document.getElementById('supportName').value;
-                        const email = document.getElementById('supportEmail').value;
-                        const subject = document.getElementById('supportSubject').value;
-                        const message = document.getElementById('supportMessage').value;
-                        const mailtoLink = `mailto:autonalytics@gmail.com?subject=${encodeURIComponent(subject + ' - ' + name)}&body=${encodeURIComponent(
-                            `Nome: ${name}\nEmail: ${email}\nAssunto: ${subject}\n\nMensagem:\n${message}\n\n---\nEnviado via AutoAnalytics Planos e Suporte`
-                        )}`;
-                        const app = getApp();
-                        app?.showNotification?.('📧 Abrindo seu email...', 'success');
-                        document.getElementById('supportName').value = '';
-                        document.getElementById('supportEmail').value = '';
-                        document.getElementById('supportMessage').value = '';
-                        window.location.href = mailtoLink;
-                    });
-                }
-
-                console.log('✅ planos.html v3.2 carregado com sucesso!');
-                console.log('   🔥 Card Estático com VAGAS EM TEMPO REAL');
-                console.log('   🔥 Escuta evento vagas:updated do payment.js');
-                console.log('   🔥 Estratégia de escassez visual');
-                console.log('   🔥 Botão Upgrade integrado');
-                console.log('   🔄 UI Reativa - sincronizada com app.js v6.2');
-            });
 
         })();
     </script>
