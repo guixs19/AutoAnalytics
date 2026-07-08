@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.5 (COM NOTIFICAÇÃO DE NOVOS USUÁRIOS) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.6 (UNIFICAÇÃO DE AUTENTICAÇÃO) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,29 +7,34 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <!-- ============================================== -->
-    <!-- 🔥 SEGURANÇA E BLOQUEIO -->
+    <!-- 🔥 SEGURANÇA E BLOQUEIO (MODO PASSIVO) -->
     <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            
-            const token = localStorage.getItem('access_token');
-            const isTokenValid = token && token !== '' && token !== 'undefined' && token !== 'null' && token.length > 10;
-            
-            if (!isTokenValid) {
-                window.location.replace('/login');
-                return;
-            }
-            
-            if (window._security_initialized) {
-                return;
-            }
-            window._security_initialized = true;
-            window._isAuthenticated = true;
-            
-            console.log('✅ AutoAnalytics - SPA Mecânicos v7.5');
-        })();
-    </script>
+    <style>
+        /* 🔥 Oculta a interface por padrão para evitar Flash de Conteúdo Protegido (FOUC) */
+        body {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            min-height: 100vh;
+        }
+        body.app-ready {
+            opacity: 1;
+        }
+        /* Fallback: se o JS falhar, mostra uma mensagem amigável */
+        body.loading-state::before {
+            content: '🔄 Carregando...';
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Inter', sans-serif;
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.5);
+            z-index: 9999;
+        }
+        body.app-ready::before {
+            display: none;
+        }
+    </style>
     
     <!-- ============================================== -->
     <!-- 🔥 BIBLIOTECAS -->
@@ -46,7 +51,6 @@
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-            min-height: 100vh;
             color: #ffffff;
             overflow-x: hidden;
         }
@@ -747,7 +751,7 @@
         .timeline-content strong { color: #f5a623; }
     </style>
 </head>
-<body>
+<body class="loading-state">
 
     <!-- ============================================== -->
     <!-- 🔥 NAVBAR -->
@@ -1030,7 +1034,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.5 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.6 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1199,7 +1203,7 @@
     </template>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS -->
+    <!-- 🔥 SCRIPTS (ORDEM CORRETA - APP PRIMEIRO) -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ JQUERY - PRIMEIRO -->
@@ -1223,23 +1227,143 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS (VERSÕES ATUALIZADAS) -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS (APP PRIMEIRO - ORDEM CRÍTICA) -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ POW - v3.3 -->
-    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
-    
-    <!-- 2️⃣ AUTH - v3.1 (COM COOKIE SYNC) -->
-    <script src="/static/js/auth.js?ver=3.1.0"></script>
-    
-    <!-- 3️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL REFATORADO) -->
+    <!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL - DEVE CARREGAR PRIMEIRO) -->
     <script src="/static/js/app.js?ver=7.0.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v7.0 (REFATORADO COM TEMPLATES) -->
+    <!-- 2️⃣ POW - v3.3 (DEPENDE DO APP) -->
+    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
+    
+    <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
+    <script src="/static/js/auth.js?ver=3.1.0"></script>
+    
+    <!-- 4️⃣ PAYMENT - v7.0 (DEPENDE DO APP) -->
     <script src="/static/js/payment.js?ver=7.0.0"></script>
     
-    <!-- 5️⃣ DASHBOARD - v6.3 (SINCRONIZADO) -->
+    <!-- 5️⃣ DASHBOARD - v6.3 (DEPENDE DO APP) -->
     <script src="/static/js/dashboard.js?ver=6.3.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (PASSIVO) -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+
+            console.log('🔐 Inicializando fallback de autenticação...');
+
+            // ===== REFERÊNCIA AO APP =====
+            function getApp() {
+                return window.App || window.app || window.autoAnalytics;
+            }
+
+            // ===== VERIFICA SE O APP ESTÁ PRONTO =====
+            function isAppReady() {
+                var app = getApp();
+                if (app && typeof app.isReady === 'function') {
+                    return app.isReady();
+                }
+                return !!window._appReadyFired;
+            }
+
+            // ===== FALLBACK DE REDIRECIONAMENTO =====
+            function redirectToLogin() {
+                console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
+                window.location.replace('/login');
+            }
+
+            // ===== VERIFICA AUTENTICAÇÃO DE FORMA PASSIVA =====
+            function checkAuth() {
+                // 🔥 Aguarda o app.js completar seu ciclo
+                if (isAppReady()) {
+                    console.log('🔐 App pronto - verificando autenticação...');
+                    var app = getApp();
+                    var isAuth = app && typeof app.isAuthenticated === 'function' 
+                        ? app.isAuthenticated() 
+                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
+                    
+                    if (!isAuth) {
+                        redirectToLogin();
+                        return false;
+                    }
+                    
+                    // ✅ Autenticado - mostra a página
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Autenticação verificada com sucesso!');
+                    return true;
+                }
+
+                // 🔥 Se o app não estiver pronto, aguarda o evento 'app:ready'
+                console.log('🔐 Aguardando app:ready...');
+                document.addEventListener('app:ready', function handler(e) {
+                    document.removeEventListener('app:ready', handler);
+                    console.log('🔐 app:ready recebido - verificando autenticação...');
+                    
+                    var app = getApp();
+                    var isAuth = app && typeof app.isAuthenticated === 'function' 
+                        ? app.isAuthenticated() 
+                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
+                    
+                    if (!isAuth) {
+                        redirectToLogin();
+                        return;
+                    }
+                    
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Autenticação verificada com sucesso!');
+                });
+
+                // 🔥 Timeout de segurança: se o app não responder em 5s, verifica token
+                var timeoutId = setTimeout(function() {
+                    document.removeEventListener('app:ready', function() {});
+                    console.warn('🔐 Timeout: app não respondeu, verificando token...');
+                    
+                    var token = localStorage.getItem('access_token');
+                    if (!token || token.length <= 10) {
+                        redirectToLogin();
+                        return;
+                    }
+                    
+                    // Token existe - libera acesso (o app.js cuidará da validação completa)
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Acesso liberado por fallback (token presente)');
+                }, 5000);
+
+                // Cancela timeout se app:ready chegar
+                document.addEventListener('app:ready', function() {
+                    clearTimeout(timeoutId);
+                }, { once: true });
+
+                return null;
+            }
+
+            // ===== INICIALIZA =====
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(checkAuth, 100);
+                });
+            } else {
+                setTimeout(checkAuth, 100);
+            }
+
+            // ===== EXPÕE FUNÇÃO DE FALLBACK =====
+            window._authFallback = {
+                check: checkAuth,
+                redirectToLogin: redirectToLogin,
+                isAppReady: isAppReady
+            };
+
+            console.log('✅ Fallback de autenticação carregado!');
+            console.log('   🔐 Modo passivo - aguarda app:ready');
+            console.log('   ⏰ Timeout de segurança: 5s');
+
+        })();
+    </script>
 
     <!-- ============================================== -->
     <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
@@ -1613,7 +1737,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.5');
+            console.log('🚀 AutoAnalytics Mecânicos v7.6');
 
             var MAX_FILES = 3;
             var MAX_FILE_SIZE_KB = 200;
@@ -1935,7 +2059,7 @@
                 window.App.upload = window.uploadFiles;
             }
 
-            console.log('✅ upload-control.js carregado v7.5');
+            console.log('✅ upload-control.js carregado v7.6');
             console.log('   📁 Arraste e solte arquivos CSV ou Excel');
             console.log('   🔗 Sincronizado com app.js v7.0');
             console.log('   🔔 Notificação de novos usuários ativa');
