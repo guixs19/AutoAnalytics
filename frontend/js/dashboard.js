@@ -1958,7 +1958,7 @@
             .timeline::-webkit-scrollbar-thumb,
             .history-scroll::-webkit-scrollbar-thumb {
                 background: rgba(255,107,53,0.2);
-                border-radius: 4px;
+                border-radius: 4px; 
             }
             .timeline::-webkit-scrollbar-thumb:hover,
             .history-scroll::-webkit-scrollbar-thumb:hover {

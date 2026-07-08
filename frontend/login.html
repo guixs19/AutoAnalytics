@@ -14,8 +14,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     
     <!-- ============================================== -->
-    <!-- 🔥 VERIFICAÇÃO DE SESSÃO - CORRIGIDA V4.2     -->
-    <!-- 🔥 REDIRECIONA PARA / (RAIZ) → NÃO LOOP      -->
+    <!-- 🔥 VERIFICAÇÃO DE SESSÃO - CORRIGIDA V5.0     -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -25,7 +24,6 @@
             
             const token = localStorage.getItem('access_token');
             
-            // Se NÃO tiver token, fica na página de login
             if (!token || token === '' || token === 'undefined' || token === 'null') {
                 console.log('📝 Nenhum token encontrado. Página de login carregada.');
                 return;
@@ -33,7 +31,6 @@
             
             console.log('🔄 Token encontrado. Verificando validade...');
             
-            // 🔥 Verifica se o token é válido ANTES de redirecionar
             fetch('/api/auth/check-token', {
                 headers: { 
                     'Authorization': `Bearer ${token}`,
@@ -43,21 +40,18 @@
             })
             .then(res => {
                 if (res.ok) {
-                    console.log('✅ Token válido - redirecionando para o dashboard');
-                    // 🔥🔥🔥 CORREÇÃO FINAL: Redireciona para / (RAIZ) 
-                    // O index.html cuida do redirecionamento para /dashboard
+                    console.log('✅ Token válido - redirecionando para /');
                     window.location.replace('/');
                 } else if (res.status === 429) {
                     console.log('⚠️ Rate limit atingido. Permanecendo na página.');
-                    // Não remove o token, apenas aguarda
                 } else {
                     console.log('❌ Token inválido - removendo e permanecendo na página');
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('refresh_token');
                     localStorage.removeItem('user_email');
                     localStorage.removeItem('user_name');
+                    localStorage.removeItem('user_data');
                     
-                    // Limpa cookies também
                     document.cookie.split(";").forEach(function(c) { 
                         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
                     });
@@ -71,6 +65,7 @@
                 localStorage.removeItem('refresh_token');
                 localStorage.removeItem('user_email');
                 localStorage.removeItem('user_name');
+                localStorage.removeItem('user_data');
             });
         })();
     </script>
@@ -1293,8 +1288,8 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - ORDEM DE CARREGAMENTO OTIMIZADA -->
-    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
+    <!-- 🔥 SCRIPTS - ORDEM DE CARREGAMENTO CORRIGIDA  -->
+    <!-- 🔥 APP.JS PRIMEIRO (ORQUESTRADOR)             -->
     <!-- ============================================== -->
     
     <!-- 1. CONFIGURAÇÃO TOASTR -->
@@ -1341,7 +1336,6 @@
                     const tabName = this.getAttribute('data-tab');
                     console.log(`📝 [TABS] Alternando para: ${tabName}`);
                     
-                    // Atualiza tabs
                     document.querySelectorAll('.auth-tab').forEach(function(b) {
                         b.classList.remove('active');
                         b.setAttribute('aria-selected', 'false');
@@ -1350,7 +1344,6 @@
                     this.classList.add('active');
                     this.setAttribute('aria-selected', 'true');
                     
-                    // Atualiza conteúdo
                     document.querySelectorAll('.auth-tab-content').forEach(function(c) {
                         c.classList.remove('active');
                     });
@@ -1412,7 +1405,6 @@
                     
                     container.classList.add('show');
                     
-                    // Calcula força
                     let score = 0;
                     if (password.length >= 6) score++;
                     if (password.length >= 10) score++;
@@ -1567,176 +1559,82 @@
 
     <!-- ============================================== -->
     <!-- 🔥 SCRIPTS DA APLICAÇÃO - ORDEM CORRETA        -->
-    <!-- 🔥 CORRIGIDO: pow-client.js → auth.js → app.js -->
+    <!-- 🔥 CORRIGIDO: app.js PRIMEIRO (orquestrador)   -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ POW - PRIMEIRO (Proteção anti-bot) -->
-    <script src="/static/js/pow-client.js" defer></script>
+    <!-- 1️⃣ APP - PRIMEIRO (Orquestrador central) -->
+    <script src="/static/js/app.js?ver=7.0.0" defer></script>
     
-    <!-- 2️⃣ AUTH - SEGUNDO (Motor de autenticação) -->
-    <script src="/static/js/auth.js" defer></script>
+     <!-- 3️⃣ AUTH - SEGUNDO (Motor de autenticação - depende do app.js) -->
+     <script src="/static/js/auth.js?ver=4.0.0" defer></script>
     
-    <!-- 3️⃣ APP - TERCEIRO (Orquestrador - depende do auth.js) -->
-    <script src="/static/js/app.js" defer></script>
-
+     <!-- 2️⃣ POW - TERCEIRO (Proteção anti-bot) -->
+    <script src="/static/js/pow-client.js?ver=3.3.0" defer></script>
     <!-- ============================================== -->
-    <!-- 🔥 HANDLER DO FORMULÁRIO COM FALLBACK INTELIGENTE -->
+    <!-- 🔥 HANDLER DO FORMULÁRIO - VERSÃO SIMPLIFICADA  -->
     <!-- ============================================== -->
     <script>
         /**
-         * 🔥 Handler do submit do login com fallback inteligente
+         * 🔥 Handler do submit do login - delega para o auth.js
          */
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🔧 [LOGIN] Configurando handler...');
             
             const loginForm = document.getElementById('loginForm');
-            
-            if (!loginForm) {
-                console.warn('⚠️ [LOGIN] Formulário não encontrado!');
-                return;
-            }
-
-            loginForm.removeEventListener('submit', handleLoginSubmit);
-            loginForm.addEventListener('submit', handleLoginSubmit);
-            
-            console.log('✅ [LOGIN] Handler configurado com sucesso!');
-        });
-
-        async function handleLoginSubmit(e) {
-            e.preventDefault();
-            
-            console.log('📤 [LOGIN] Submit interceptado!');
-            
-            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
-            
-            if (!authModule) {
-                console.warn('⏳ [LOGIN] Auth não disponível. Aguardando...');
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
-                
-                if (!authModuleRetry) {
-                    console.error('❌ [LOGIN] Auth não encontrado!');
-                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
-                    
-                    const btn = document.getElementById('loginBtn');
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
-                    }
-                    return;
-                }
-                
-                try {
-                    await authModuleRetry.handleLogin(e);
-                } catch (error) {
-                    console.error('❌ [LOGIN] Erro:', error);
-                    toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
-                }
-                return;
-            }
-
-            try {
-                await authModule.handleLogin(e);
-            } catch (error) {
-                console.error('❌ [LOGIN] Erro:', error);
-                toastr.error('Erro ao processar login. Tente novamente.', 'Erro');
-                
-                const btn = document.getElementById('loginBtn');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('loading');
-                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar no Sistema';
-                }
-            }
-        }
-
-        /**
-         * 🔥 Handler do submit do registro com fallback inteligente
-         */
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 [REGISTER] Configurando handler...');
-            
             const registerForm = document.getElementById('registerForm');
             
-            if (!registerForm) {
-                console.warn('⚠️ [REGISTER] Formulário não encontrado!');
-                return;
-            }
-
-            registerForm.removeEventListener('submit', handleRegisterSubmit);
-            registerForm.addEventListener('submit', handleRegisterSubmit);
+            // 🔥 Os handlers são configurados pelo auth.js
+            // Este é apenas um fallback de segurança
             
-            console.log('✅ [REGISTER] Handler configurado com sucesso!');
-        });
-
-        async function handleRegisterSubmit(e) {
-            e.preventDefault();
-            
-            console.log('📤 [REGISTER] Submit interceptado!');
-            
-            const termsCheckbox = document.getElementById('terms');
-            const termsFeedback = document.getElementById('termsFeedback');
-            
-            if (termsCheckbox && !termsCheckbox.checked) {
-                termsFeedback.style.display = 'block';
-                toastr.warning('Você precisa aceitar os termos para continuar.', 'Atenção');
-                return;
-            } else if (termsFeedback) {
-                termsFeedback.style.display = 'none';
-            }
-            
-            const authModule = window.appAuth || (window.App?.auth) || (window.app?.auth);
-            
-            if (!authModule) {
-                console.warn('⏳ [REGISTER] Auth não disponível. Aguardando...');
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                const authModuleRetry = window.appAuth || (window.App?.auth) || (window.app?.auth);
-                
-                if (!authModuleRetry) {
-                    console.error('❌ [REGISTER] Auth não encontrado!');
-                    toastr.error('Sistema de segurança indisponível. Recarregue a página.', 'Erro');
+            if (loginForm && !loginForm._handlerConfigured) {
+                loginForm._handlerConfigured = true;
+                loginForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
                     
-                    const btn = document.getElementById('registerBtn');
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
+                    // 🔥 Tenta usar o auth.js primeiro
+                    if (window.appAuth && typeof window.appAuth.handleLogin === 'function') {
+                        window.appAuth.handleLogin(e);
+                        return;
                     }
-                    return;
-                }
-                
-                try {
-                    await authModuleRetry.handleRegister(e);
-                } catch (error) {
-                    console.error('❌ [REGISTER] Erro:', error);
-                    toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
-                }
-                return;
+                    
+                    // 🔥 Fallback: tenta usar o App
+                    if (window.App && window.App.auth && typeof window.App.auth.handleLogin === 'function') {
+                        window.App.auth.handleLogin(e);
+                        return;
+                    }
+                    
+                    // 🔥 Fallback final: mensagem de erro
+                    console.error('❌ [LOGIN] Auth não disponível');
+                    toastr.error('Sistema de autenticação indisponível. Recarregue a página.');
+                });
             }
-
-            try {
-                await authModule.handleRegister(e);
-            } catch (error) {
-                console.error('❌ [REGISTER] Erro:', error);
-                toastr.error('Erro ao processar registro. Tente novamente.', 'Erro');
-                
-                const btn = document.getElementById('registerBtn');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('loading');
-                    btn.querySelector('.btn-text').innerHTML = '<i class="fas fa-user-plus"></i> Criar Minha Conta';
-                }
+            
+            if (registerForm && !registerForm._handlerConfigured) {
+                registerForm._handlerConfigured = true;
+                registerForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    if (window.appAuth && typeof window.appAuth.handleRegister === 'function') {
+                        window.appAuth.handleRegister(e);
+                        return;
+                    }
+                    
+                    if (window.App && window.App.auth && typeof window.App.auth.handleRegister === 'function') {
+                        window.App.auth.handleRegister(e);
+                        return;
+                    }
+                    
+                    console.error('❌ [REGISTER] Auth não disponível');
+                    toastr.error('Sistema de autenticação indisponível. Recarregue a página.');
+                });
             }
-        }
+            
+            console.log('✅ [LOGIN] Handlers configurados com sucesso!');
+        });
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 RATE LIMITER DINÂMICO -->
+    <!-- 🔥 RATE LIMITER DINÂMICO (OTIMIZADO) -->
     <!-- ============================================== -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -1824,8 +1722,7 @@
             if (button) {
                 button.disabled = true;
                 const remaining = window.App ? window.App.getRateLimitTimeRemaining() : (detail?.retryAfter || 60);
-                const icon = 'fa-hourglass-half';
-                button.innerHTML = `<span class="spinner"></span><span class="btn-text"><i class="fas ${icon}"></i> Aguarde ${remaining}s</span>`;
+                button.innerHTML = `<span class="spinner"></span><span class="btn-text"><i class="fas fa-hourglass-half"></i> Aguarde ${remaining}s</span>`;
                 button.classList.add('loading');
             }
         }
@@ -1859,10 +1756,12 @@
     <!-- 🔥 LOG DE INICIALIZAÇÃO -->
     <!-- ============================================== -->
     <script>
-        console.log('✅ Login page v4.2 carregada com sucesso!');
-        console.log('   🔥 CORREÇÃO FINAL:');
+        console.log('✅ Login page v5.0 carregada com sucesso!');
+        console.log('   🔥 CORREÇÕES CRÍTICAS:');
+        console.log('   ✅ ORDEM CORRETA: app.js → pow-client.js → auth.js');
         console.log('   ✅ Redirecionamento para / (RAIZ) - FIM DO LOOP!');
         console.log('   ✅ O index.html cuida do redirecionamento para /dashboard');
+        console.log('   ✅ Handlers simplificados (delega para auth.js)');
         console.log('   ✅ Rate limit com UI dinâmica');
         console.log('   ✅ Validação em tempo real dos campos');
         console.log('   ✅ Força da senha com feedback visual');
@@ -1871,7 +1770,6 @@
         console.log('   ✅ Performance otimizada (preconnect)');
         console.log('   ✅ UI responsiva e acessível');
         console.log('   ✅ Fallback inteligente para auth');
-        console.log('   ✅ Ordem correta: pow-client.js → auth.js → app.js');
     </script>
 
 </body>
