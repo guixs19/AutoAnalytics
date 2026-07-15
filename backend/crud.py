@@ -8,7 +8,7 @@ SINCRONIZADO COM:
 """
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, not_, desc, asc, update
+from sqlalchemy import func, and_, or_, not_, desc, asc, update, text
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any, Union
 import logging
@@ -944,13 +944,6 @@ def get_recent_analyses(db: Session, limit: int = 10) -> List[models.Analysis]:
     ).limit(limit).all()
 
 
-def count_user_analyses(db: Session, user_id: int) -> int:
-    """Conta quantas análises o usuário já fez"""
-    return db.query(models.Analysis).filter(
-        models.Analysis.user_id == user_id
-    ).count()
-
-
 # ==============================================
 # ADMIN - OPERAÇÕES AVANÇADAS
 # ==============================================
@@ -1233,6 +1226,8 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     logger.info(f"🔓 Logout completo: {user.email}")
     
     return True
+
+
 # ==============================================
 # 🔥 SISTEMA DE MENSAGENS INTELIGENTES - SEGMENTAÇÃO DE USUÁRIO
 # ==============================================
@@ -1242,16 +1237,32 @@ def count_user_analyses(db: Session, user_id: int) -> int:
     🔥 Conta quantas análises o usuário já fez
     Usado para determinar se é 'new' ou 'regular'
     
+    🔥 TRATAMENTO DE ERRO: Se a tabela não existir, retorna 0
+    
     Args:
         db: Sessão do banco de dados
         user_id: ID do usuário
     
     Returns:
-        Número total de análises do usuário
+        Número total de análises do usuário (0 se tabela não existir)
     """
-    return db.query(models.Analysis).filter(
-        models.Analysis.user_id == user_id
-    ).count()
+    try:
+        # Verifica se a tabela existe primeiro
+        try:
+            # Tenta fazer uma consulta simples para verificar se a tabela existe
+            db.execute(text("SELECT 1 FROM analyses LIMIT 1"))
+        except Exception as e:
+            logger.warning(f"⚠️ Tabela 'analyses' não existe ou não está acessível: {e}")
+            return 0
+        
+        # Se chegou aqui, a tabela existe, faz a contagem
+        return db.query(models.Analysis).filter(
+            models.Analysis.user_id == user_id
+        ).count()
+    except Exception as e:
+        # Qualquer erro, retorna 0 (usuário novo)
+        logger.warning(f"⚠️ Erro ao contar análises do usuário {user_id}: {e}")
+        return 0
 
 
 def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
@@ -1297,7 +1308,7 @@ def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
             "days_since_creation": 0,
             "is_premium": True,
             "credits": user.credits or 0,
-            "has_ever_used": True  # Premium já usou o sistema
+            "has_ever_used": True
         }
     
     # 2. 🔥 VERIFICA SE É NOVO USUÁRIO
@@ -1307,7 +1318,6 @@ def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
     # Calcula dias desde a criação (com timezone blindado)
     days_since_creation = 999
     if user.created_at:
-        # Remove timezone para comparação segura
         created_naive = user.created_at.replace(tzinfo=None) if user.created_at.tzinfo else user.created_at
         now_naive = _now_brasil().replace(tzinfo=None)
         days_since_creation = (now_naive - created_naive).days
@@ -1498,7 +1508,6 @@ def get_message_config(segment: str, credits: int, is_admin: bool = False) -> Di
     # 👤 USUÁRIO REGULAR - Mensagens para usuários regulares
     # ==========================================
     if credits > 0:
-        # Mensagem personalizada com plural/singular
         credit_text = "crédito" if credits == 1 else "créditos"
         return {
             "message_id": f"regular_{credits}",
@@ -1596,6 +1605,7 @@ def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
         "message_config": message_config
     }
 
+
 print("=" * 70)
 print("✅ crud.py carregado - TIMEZONE BLINDADO")
 print("   🔥 _is_datetime_expired() → Função universal blindada")
@@ -1605,4 +1615,5 @@ print("   🔥 cleanup_expired_refresh_tokens() → Corrigido")
 print("   🔥 get_user_session_info() → Corrigido")
 print("   🔥 cleanup_orphaned_sessions() → Corrigido")
 print("   🔥 UTC-3 (Brasília) mantido para criação de registros")
+print("   📢 count_user_analyses() → Com tratamento de erro (tabela pode não existir)")
 print("=" * 70)
