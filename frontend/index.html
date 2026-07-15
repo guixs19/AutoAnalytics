@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.6 (UNIFICAÇÃO DE AUTENTICAÇÃO) -->
+<!-- frontend/index.html - VERSÃO COMPLETA V7.7 (COM SISTEMA DE MENSAGENS) -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -649,34 +649,149 @@
             width: 100%;
         }
 
-        @media (max-width: 480px) {
-            .welcome-notification {
+        /* ============================================== */
+        /* 🔥 MENSAGENS INTELIGENTES - ESTILOS           */
+        /* ============================================== */
+
+        #messageContainer {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1050;
+            max-width: 420px;
+            width: 100%;
+            pointer-events: none;
+        }
+
+        #messageContainer .message-banner {
+            pointer-events: auto;
+        }
+
+        .message-banner {
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            border-radius: 16px;
+            padding: 16px 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 40px rgba(255,107,53,0.05);
+            border-left: 4px solid #6c757d;
+            transform: translateX(30px);
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            margin-bottom: 12px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .message-banner.message-visible {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .message-banner.message-success { border-left-color: #28a745; }
+        .message-banner.message-warning { border-left-color: #ffc107; }
+        .message-banner.message-info { border-left-color: #17a2b8; }
+        .message-banner.message-danger { border-left-color: #dc3545; }
+        .message-banner.message-primary { border-left-color: #007bff; }
+        .message-banner.message-premium { 
+            border-left-color: #f39c12; 
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98), rgba(40, 30, 10, 0.95));
+            border-color: rgba(243, 156, 18, 0.2);
+        }
+
+        .message-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .message-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .message-success .message-icon { color: #28a745; }
+        .message-warning .message-icon { color: #ffc107; }
+        .message-info .message-icon { color: #17a2b8; }
+        .message-danger .message-icon { color: #dc3545; }
+        .message-primary .message-icon { color: #007bff; }
+        .message-premium .message-icon { color: #f39c12; }
+
+        .message-text { flex: 1; min-width: 0; }
+        .message-title { 
+            font-weight: 700; 
+            font-size: 1rem; 
+            margin-bottom: 2px;
+            color: #ffffff;
+        }
+        .message-body { 
+            font-size: 0.9rem; 
+            color: rgba(255,255,255,0.7); 
+            line-height: 1.4;
+        }
+        .message-action { margin-top: 8px; }
+        .message-action .btn { 
+            font-size: 0.8rem; 
+            padding: 4px 14px; 
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .message-success .message-action .btn-success { background: #28a745; border-color: #28a745; color: white; }
+        .message-warning .message-action .btn-warning { background: #ffc107; border-color: #ffc107; color: #1a1a2e; }
+        .message-info .message-action .btn-info { background: #17a2b8; border-color: #17a2b8; color: white; }
+        .message-danger .message-action .btn-danger { background: #dc3545; border-color: #dc3545; color: white; }
+        .message-primary .message-action .btn-primary { background: #007bff; border-color: #007bff; color: white; }
+        .message-premium .message-action .btn-premium { 
+            background: linear-gradient(135deg, #f39c12, #e67e22); 
+            border-color: #f39c12; 
+            color: white; 
+        }
+
+        .message-dismiss {
+            flex-shrink: 0;
+            background: transparent;
+            border: none;
+            padding: 4px;
+            font-size: 1.2rem;
+            opacity: 0.3;
+            transition: opacity 0.2s;
+            margin-top: -4px;
+            color: white;
+        }
+        .message-dismiss:hover { opacity: 1; }
+
+        @keyframes pulse-rocket {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1) rotate(-5deg); }
+        }
+        .new-user-message .message-icon { animation: pulse-rocket 2s infinite; }
+
+        @keyframes spin-star {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .premium-message .message-icon { animation: spin-star 3s linear infinite; }
+
+        @keyframes glow-coins {
+            0%, 100% { filter: drop-shadow(0 0 5px rgba(255,107,53,0.3)); }
+            50% { filter: drop-shadow(0 0 20px rgba(255,107,53,0.6)); }
+        }
+        .message-icon .fa-coins { animation: glow-coins 2s ease-in-out infinite; }
+
+        @media (max-width: 576px) {
+            #messageContainer {
                 top: 70px;
                 right: 10px;
                 left: 10px;
                 max-width: none;
-                padding: 1rem 1.2rem;
             }
-            .welcome-notification .notif-icon {
-                width: 45px;
-                height: 45px;
-                font-size: 1.3rem;
+            .message-banner { 
+                padding: 12px 16px; 
+                border-radius: 12px;
             }
-            .welcome-notification .notif-title {
-                font-size: 0.95rem;
-            }
-            .welcome-notification .notif-credits {
-                font-size: 1rem;
-                padding: 0.2rem 0.8rem;
-            }
-            .welcome-notification .notif-actions {
-                flex-direction: column;
-            }
-            .welcome-notification .notif-btn {
-                width: 100%;
-                text-align: center;
-                justify-content: center;
-            }
+            .message-content { gap: 8px; }
+            .message-icon { font-size: 20px; }
+            .message-title { font-size: 0.9rem; }
+            .message-body { font-size: 0.8rem; }
         }
 
         @media (max-width: 992px) {
@@ -791,6 +906,12 @@
             </div>
         </div>
     </nav>
+
+    <!-- ============================================== -->
+    <!-- 🔥 CONTAINER DE MENSAGENS INTELIGENTES         -->
+    <!-- ============================================== -->
+    <div id="messageContainer" style="display: none;"></div>
+    <!-- ============================================== -->
 
     <!-- ============================================== -->
     <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS (NOVOS USUÁRIOS) -->
@@ -1034,7 +1155,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.6 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.7 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1737,7 +1858,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics Mecânicos v7.6');
+            console.log('🚀 AutoAnalytics Mecânicos v7.7');
 
             var MAX_FILES = 3;
             var MAX_FILE_SIZE_KB = 200;
@@ -2059,12 +2180,286 @@
                 window.App.upload = window.uploadFiles;
             }
 
-            console.log('✅ upload-control.js carregado v7.6');
+            console.log('✅ upload-control.js carregado v7.7');
             console.log('   📁 Arraste e solte arquivos CSV ou Excel');
             console.log('   🔗 Sincronizado com app.js v7.0');
             console.log('   🔔 Notificação de novos usuários ativa');
+            console.log('   📢 Sistema de mensagens inteligentes ativo');
 
         })();
     </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 RENDERIZADOR DE MENSAGENS INTELIGENTES     -->
+    <!-- ============================================== -->
+    <script>
+    (function() {
+        'use strict';
+        
+        console.log('📢 Inicializando MessageRenderer...');
+        
+        /**
+         * MessageRenderer - Renderiza mensagens baseadas no estado global
+         * Totalmente integrado com __APP_STATE e EventBus
+         */
+        class MessageRenderer {
+            constructor() {
+                this.container = document.getElementById('messageContainer');
+                this._dismissedMessages = new Set();
+                this._autoDismissTimer = null;
+                this._lastRendered = null;
+                
+                if (!this.container) {
+                    console.warn('⚠️ messageContainer não encontrado no HTML');
+                    return;
+                }
+                
+                // Carrega mensagens dispensadas do localStorage
+                this._loadDismissedState();
+                
+                // Configura listeners
+                this._setupListeners();
+                
+                // Renderiza mensagem inicial se disponível
+                setTimeout(() => this.render(), 400);
+                
+                console.log('✅ MessageRenderer inicializado');
+            }
+            
+            _loadDismissedState() {
+                try {
+                    const saved = localStorage.getItem('_dismissed_messages');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed)) {
+                            this._dismissedMessages = new Set(parsed);
+                        }
+                    }
+                } catch (e) {
+                    // Ignora
+                }
+            }
+            
+            _saveDismissedState() {
+                try {
+                    const arr = Array.from(this._dismissedMessages);
+                    localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
+                } catch (e) {
+                    // Ignora
+                }
+            }
+            
+            _setupListeners() {
+                // 🔥 Mudanças no estado global (app.js)
+                window.addEventListener('app:state_changed', (e) => {
+                    const detail = e.detail || {};
+                    if (detail.key === 'currentMessage' || 
+                        detail.key === 'userSegment' ||
+                        detail.key === 'credits') {
+                        setTimeout(() => this.render(), 100);
+                    }
+                });
+                
+                // 🔥 Atualização de contexto de mensagem (auth.js)
+                window.addEventListener('message:context_updated', (e) => {
+                    console.log('📢 message:context_updated recebido');
+                    setTimeout(() => this.render(), 150);
+                });
+                
+                // 🔥 Mudanças de créditos (payment.js / upload)
+                document.addEventListener('creditsUpdated', (e) => {
+                    console.log('📢 creditsUpdated recebido');
+                    setTimeout(() => this.render(), 200);
+                });
+                
+                // 🔥 App pronto
+                window.addEventListener('app:ready', (e) => {
+                    console.log('📢 app:ready recebido');
+                    setTimeout(() => this.render(), 300);
+                });
+                
+                // 🔥 Auth pronto
+                window.addEventListener('authReady', (e) => {
+                    console.log('📢 authReady recebido');
+                    setTimeout(() => this.render(), 500);
+                });
+                
+                // 🔥 Login sucesso
+                window.addEventListener('authLoginSuccess', (e) => {
+                    console.log('📢 authLoginSuccess recebido');
+                    setTimeout(() => this.render(), 600);
+                });
+            }
+            
+            render() {
+                // Pega o estado global
+                const state = window.__APP_STATE || window.App?.State;
+                if (!state) {
+                    return;
+                }
+                
+                const message = state.currentMessage;
+                const segment = state.userSegment;
+                const credits = state.credits;
+                
+                // Se não tem mensagem, esconde
+                if (!message) {
+                    this._hideContainer();
+                    return;
+                }
+                
+                const messageId = message.message_id || `${segment}_${credits}`;
+                
+                // Se o usuário já dispensou esta mensagem, não mostra
+                if (this._dismissedMessages.has(messageId)) {
+                    this._hideContainer();
+                    return;
+                }
+                
+                // Renderiza
+                this._renderMessage(message, segment, credits);
+                this._lastRendered = messageId;
+            }
+            
+            _renderMessage(message, segment, credits) {
+                if (!this.container) return;
+                
+                const {
+                    title = 'Mensagem',
+                    icon = 'fa-info-circle',
+                    color = 'info',
+                    message: msgText = '',
+                    show_action = false,
+                    action_text = 'Ver mais',
+                    action_url = '#',
+                    dismissible = true,
+                    priority = 0,
+                    message_id = ''
+                } = message;
+                
+                const colorClass = this._getColorClass(color);
+                const iconClass = icon;
+                const segmentClass = segment === 'new' ? 'new-user-message' : 
+                                     segment === 'premium' ? 'premium-message' : '';
+                
+                // Verifica se é uma URL externa ou interna
+                const isExternal = action_url.startsWith('http') || action_url.startsWith('//');
+                const targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
+                
+                this.container.innerHTML = `
+                    <div class="message-banner message-${colorClass} ${segmentClass}" 
+                         data-message-id="${message_id}"
+                         data-priority="${priority}">
+                        <div class="message-content">
+                            <div class="message-icon">
+                                <i class="fas ${iconClass}"></i>
+                            </div>
+                            <div class="message-text">
+                                <div class="message-title">${title}</div>
+                                <div class="message-body">${msgText}</div>
+                                ${show_action ? `
+                                    <div class="message-action">
+                                        <a href="${action_url}" class="btn btn-${colorClass}" ${targetAttr}>
+                                            ${action_text} <i class="fas fa-arrow-right ms-1"></i>
+                                        </a>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${dismissible ? `
+                                <button class="message-dismiss btn-close" aria-label="Fechar"></button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                this.container.style.display = 'block';
+                
+                // Evento de dismiss
+                const dismissBtn = this.container.querySelector('.message-dismiss');
+                if (dismissBtn) {
+                    dismissBtn.addEventListener('click', () => {
+                        const id = this.container.dataset.messageId || message_id;
+                        if (id) {
+                            this._dismissedMessages.add(id);
+                            this._saveDismissedState();
+                        }
+                        this._hideContainer();
+                        
+                        window.dispatchEvent(new CustomEvent('message:dismissed', {
+                            detail: { messageId: id, segment, credits }
+                        }));
+                    });
+                }
+                
+                // Animação de entrada
+                requestAnimationFrame(() => {
+                    const banner = this.container.querySelector('.message-banner');
+                    if (banner) {
+                        banner.classList.add('message-visible');
+                    }
+                });
+                
+                // Auto-dismiss após 8 segundos (prioridade baixa)
+                if (priority <= 1 && dismissible) {
+                    clearTimeout(this._autoDismissTimer);
+                    this._autoDismissTimer = setTimeout(() => {
+                        const id = this.container.dataset.messageId || message_id;
+                        if (id) {
+                            this._dismissedMessages.add(id);
+                            this._saveDismissedState();
+                        }
+                        this._hideContainer();
+                    }, 8000);
+                }
+            }
+            
+            _getColorClass(color) {
+                const map = {
+                    'success': 'success',
+                    'warning': 'warning',
+                    'info': 'info',
+                    'danger': 'danger',
+                    'primary': 'primary',
+                    'premium': 'premium',
+                    'dark': 'dark'
+                };
+                return map[color] || 'info';
+            }
+            
+            _hideContainer() {
+                if (this.container) {
+                    this.container.style.display = 'none';
+                    this.container.innerHTML = '';
+                }
+                clearTimeout(this._autoDismissTimer);
+            }
+            
+            refresh() {
+                this._dismissedMessages.clear();
+                this._saveDismissedState();
+                this.render();
+            }
+        }
+        
+        // Inicializa quando o DOM estiver pronto
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                window.messageRenderer = new MessageRenderer();
+            });
+        } else {
+            setTimeout(() => {
+                window.messageRenderer = new MessageRenderer();
+            }, 300);
+        }
+        
+        console.log('✅ MessageRenderer carregado');
+        console.log('   📢 Sistema de mensagens inteligentes ativo');
+        console.log('   🔄 Integrado com __APP_STATE e EventBus');
+        console.log('   💾 Mensagens dispensadas salvas no localStorage');
+        
+    })();
+    </script>
+    <!-- ============================================== -->
+
 </body>
 </html>

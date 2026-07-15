@@ -1,17 +1,21 @@
-# backend/api/auth_routes.py - VERSÃO CORRIGIDA V4.0
+# backend/api/auth_routes.py - VERSÃO CORRIGIDA V4.1
 """
 Módulo de LOGIN e AUTENTICAÇÃO - SEM CAPTCHA
 Responsável por login, logout, refresh token e verificação de sessão
+
+🔥 CORREÇÕES V4.1:
+- ✅ Rota /session-status expandida com segmentação de usuário
+- ✅ Adicionado sistema de mensagens inteligentes
+- ✅ Retorna ui_context e message_config para o frontend
+- ✅ Logs detalhados para debugging
 
 🔥 CORREÇÕES V4.0:
 - ✅ Usa blacklist_token() centralizada (consistente entre workers)
 - ✅ Usa _get_remaining_seconds() para evitar erro de timezone
 - ✅ NÃO usa pending_blacklist diretamente
-- ✅ 🔥 CORREÇÃO: Função _is_token_expired() unificada para comparação segura
-- ✅ 🔥 CORREÇÃO: Rota /refresh usa _is_token_expired()
-- ✅ 🔥 CORREÇÃO: Rota /check-token usa _is_token_expired()
-- ✅ 🔥 CORREÇÃO: Todas as comparações de data usam replace(tzinfo=None)
-- ✅ 🔥 MELHORIA: Logs mais detalhados para debugging
+- ✅ Função _is_token_expired() unificada para comparação segura
+- ✅ Rota /refresh usa _is_token_expired()
+- ✅ Rota /check-token usa _is_token_expired()
 """
 
 from datetime import datetime, timedelta
@@ -524,31 +528,86 @@ async def get_me(current_user = Depends(get_current_active_user)):
 
 
 # ==============================================
-# VALIDADE DA SESSÃO
+# 🔥 VALIDADE DA SESSÃO - COM SEGMENTAÇÃO E MENSAGENS
 # ==============================================
 
 @router.get("/session-status", response_model=None)
-async def get_session_status(current_user = Depends(get_current_active_user)):
-    """📊 Verifica o status da sessão atual"""
-    from backend.security import _get_remaining_seconds
+async def get_session_status(
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    📊 Verifica o status da sessão atual
+    🔥 AGORA COM SEGMENTAÇÃO DE USUÁRIO E MENSAGENS INTELIGENTES
     
-    # Extrai o token da requisição via depêndencia
-    # Usa o token do current_user para verificar expiração
+    Retorna:
+    - authenticated: bool
+    - user: str (email)
+    - name: str
+    - credits: int
+    - is_admin: bool
+    - is_premium: bool
+    - session_active: bool
+    - credits_display: str
+    - max_credits: int
+    - segment: 'premium' | 'new' | 'regular'
+    - ui_context: dict (dados para a UI)
+    - message_config: dict (configuração da mensagem)
+    - premium: dict (detalhes do plano premium)
+    """
+    from backend.crud import get_full_user_context, get_credits_display, MAX_CREDITS_PREMIUM
     
-    return {
+    # 🔥 Busca o contexto completo do usuário (segmento + mensagem)
+    user_context = get_full_user_context(db, current_user)
+    
+    segment = user_context["segment"]
+    ui_context = user_context["ui_context"]
+    message_config = user_context["message_config"]
+    
+    # 🔥 Verifica status premium
+    is_premium = current_user.is_premium() if hasattr(current_user, 'is_premium') else False
+    days_left = current_user.get_premium_days_left() if is_premium and hasattr(current_user, 'get_premium_days_left') else 0
+    
+    # 🔥 Monta resposta completa
+    response_data = {
         "authenticated": True,
         "user": current_user.email,
         "name": current_user.name,
-        "credits": current_user.credits,
+        "credits": current_user.credits or 0,
         "is_admin": current_user.is_admin,
-        "is_premium": current_user.plan and "PREMIUM" in str(current_user.plan).upper(),
-        "session_active": True
+        "is_premium": is_premium,
+        "session_active": True,
+        "credits_display": get_credits_display(current_user),
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "segment": segment,
+        "ui_context": ui_context,
+        "message_config": message_config,
+        "premium": {
+            "is_premium": is_premium,
+            "days_left": max(0, days_left),
+            "plan": str(current_user.plan) if current_user.plan else "basico"
+        },
+        "promotional": {
+            "has_locked_price": current_user.promotional_price_locked if hasattr(current_user, 'promotional_price_locked') else False,
+            "locked_price": current_user.promotional_price if hasattr(current_user, 'promotional_price') else None,
+            "is_vitalicio": current_user.promotional_price_locked if hasattr(current_user, 'promotional_price_locked') else False
+        }
     }
+    
+    # 🔥 Log para debug
+    logger.info(f"📊 [SESSION] Usuário: {current_user.email}")
+    logger.info(f"   - Segmento: {segment}")
+    logger.info(f"   - Créditos: {current_user.credits or 0}")
+    logger.info(f"   - Premium: {is_premium}")
+    logger.info(f"   - Mensagem: {message_config.get('message_id', 'none') if message_config else 'none'}")
+    
+    return response_data
 
 
-print("✅ auth_routes.py v4.0 carregado com sucesso!")
+print("✅ auth_routes.py v4.1 carregado com sucesso!")
 print("   ✅ Função _is_token_expired() unificada para comparação segura de datas")
 print("   ✅ Rota /refresh com validação de expiração corrigida")
 print("   ✅ Rota /check-token com validação de expiração corrigida")
+print("   ✅ Rota /session-status expandida com segmentação e mensagens")
 print("   ✅ Todas as comparações de data usam replace(tzinfo=None)")
 print("   ✅ Logs mais detalhados para debugging")

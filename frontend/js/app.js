@@ -1,8 +1,8 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V7.0 (REFATORADO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V7.1 (COM MENSAGENS)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.0:
+ * 🏗️ ARQUITETURA V7.1:
  * 1. 🔥 REMOVIDO: forceAuthRecognition agressivo (agora passivo)
  * 2. 🔥 MELHORADO: StateManager com Proxy (detecta mudanças aninhadas)
  * 3. 🔥 REMOVIDO: Credits Polling desnecessário (event-driven)
@@ -11,12 +11,15 @@
  * 6. 🔥 UNIFICADO: EventBus único (sem conflitos)
  * 7. 🔥 ADICIONADO: Lazy loading de módulos
  * 8. 🔥 ADICIONADO: Sistema de filas para eventos
+ * 9. 🔥 NOVO: Sistema de mensagens inteligentes
+ * 10. 🔥 NOVO: Campos userSegment, currentMessage, uiContext no estado
+ * 11. 🔥 NOVO: Métodos getMessageContext(), refreshMessage(), dismissMessage()
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v7.0...');
+    console.log('🚀 Inicializando App (Orquestrador) v7.1...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -123,7 +126,6 @@
             
             this._handlers.get(event).sort((a, b) => b.priority - a.priority);
             
-            // Retorna função de remoção
             return () => this.off(event, handler);
         },
 
@@ -159,25 +161,21 @@
         },
 
         emit: function(event, data = {}) {
-            // Adiciona à fila
             this._queue.push({ event, data, timestamp: Date.now() });
             
-            // Limita tamanho da fila
             if (this._queue.length > this._maxQueueSize) {
                 this._queue.shift();
             }
             
-            // Processa imediatamente se não estiver processando
             if (!this._processing) {
                 this._processQueue();
             }
             
-            // Dispara via DOM também (para compatibilidade)
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
                 document.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
             } catch (e) {
-                // Ignora erros de dispatch
+                // Ignora
             }
         },
 
@@ -187,7 +185,6 @@
             
             this._processing = true;
             
-            // Processa até 10 eventos por vez
             const batch = this._queue.splice(0, 10);
             
             for (const item of batch) {
@@ -196,7 +193,6 @@
             
             this._processing = false;
             
-            // Se ainda tem eventos, processa mais
             if (this._queue.length > 0) {
                 setTimeout(() => this._processQueue(), 0);
             }
@@ -282,6 +278,12 @@
         recentAnalyses: [],
         totalAnalyses: 0,
         analysesToday: 0,
+        
+        // 🔥 NOVOS CAMPOS PARA SISTEMA DE MENSAGENS
+        userSegment: null,           // 'premium' | 'new' | 'regular'
+        currentMessage: null,         // { title, icon, color, message, action, message_id }
+        lastMessageId: null,          // ID da última mensagem exibida
+        uiContext: null,              // Dados de contexto da UI
         
         _listeners: [],
         _intervals: []
@@ -399,7 +401,6 @@
         },
 
         showNotification: (message, type = 'info') => {
-            // Tenta usar toastr
             if (window.toastr && window.toastr[type]) {
                 try {
                     window.toastr[type](message);
@@ -409,7 +410,6 @@
                 }
             }
             
-            // Fallback
             if (type === 'error' || type === 'warning') {
                 console.warn(`[${type}] ${message}`);
                 alert(`⚠️ ${message}`);
@@ -478,7 +478,7 @@
                             return;
                         }
                     } catch (e) {
-                        // Ignora erros na condição
+                        // Ignora
                     }
                     
                     if (Date.now() - startTime > timeout) {
@@ -491,7 +491,6 @@
             });
         },
 
-        // 🔥 VALIDAÇÃO DE CPF
         validateCPF: function(cpf) {
             const clean = String(cpf).replace(/\D/g, '');
             if (clean.length !== 11) return false;
@@ -611,7 +610,6 @@
             
             let response = await fetch(url, { ...options, headers });
             
-            // 🔥 Tratamento 401 - Token expirado
             if (response.status === 401) {
                 console.warn('⚠️ Token expirado, tentando refresh...');
                 
@@ -633,7 +631,6 @@
                 return null;
             }
             
-            // 🔥 Tratamento 429 - Rate Limit
             if (response.status === 429) {
                 const data = await response.json().catch(() => ({}));
                 const retryAfter = data.retry_after || 60;
@@ -650,7 +647,6 @@
                 return response;
             }
             
-            // 🔥 Tratamento 402 - Créditos insuficientes
             if (response.status === 402) {
                 const data = await response.json().catch(() => ({}));
                 console.warn('⚠️ Créditos insuficientes:', data);
@@ -679,13 +675,11 @@
         
         sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
         
-        // Limpa localStorage e cookies
         localStorage.clear();
         document.cookie.split(';').forEach(function(c) {
             document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
         });
         
-        // Atualiza estado
         StateManager.updateState({
             user: null,
             credits: 0,
@@ -704,7 +698,7 @@
     }
 
     // ==============================================
-    // 🔥 ROTEADOR (SEM CACHE PROBLEMÁTICO)
+    // 🔥 ROTEADOR
     // ==============================================
 
     const Router = {
@@ -1129,6 +1123,42 @@
             timeRemaining: Utils.getRateLimitTimeRemaining()
         }),
         
+        // 🔥 NOVO: Refresh de mensagem
+        refreshMessageContext: async function() {
+            try {
+                const token = localStorage.getItem('access_token');
+                if (!token) return null;
+                
+                const response = await fetch('/api/auth/session-status', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    StateManager.updateState({
+                        userSegment: data.segment || 'regular',
+                        currentMessage: data.message_config || null,
+                        lastMessageId: data.message_config?.message_id || null,
+                        uiContext: data.ui_context || null
+                    });
+                    
+                    window.dispatchEvent(new CustomEvent('message:context_updated', {
+                        detail: {
+                            segment: data.segment,
+                            message: data.message_config,
+                            ui_context: data.ui_context
+                        }
+                    }));
+                    
+                    return data;
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar mensagem:', e);
+            }
+            return null;
+        },
+        
         logout: handleUnauthorized
     };
 
@@ -1140,10 +1170,15 @@
         setup: function() {
             console.log('📡 Configurando gerenciador de eventos...');
             
-            // 🔥 ESCUTA EVENTOS DO payment.js
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
                 StateManager.updateCredits(data.credits || 0, data.isPremium || false);
+                // 🔥 Atualiza mensagem após mudança de créditos
+                setTimeout(() => {
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
+                }, 300);
             });
             
             document.addEventListener('premiumStatusUpdated', function(e) {
@@ -1157,6 +1192,12 @@
                     received_today: data.receivedDailyCreditToday || false,
                     credits_balance: data.creditsBalance || State.credits
                 });
+                // 🔥 Atualiza mensagem após mudança de status premium
+                setTimeout(() => {
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
+                }, 400);
             });
             
             document.addEventListener('paymentReady', function(e) {
@@ -1168,6 +1209,12 @@
                     if (window.appAuth?.loadUserCredits) {
                         window.appAuth.loadUserCredits();
                     }
+                    // 🔥 Atualiza mensagem após pagamento
+                    setTimeout(() => {
+                        if (window.appAuth?.refreshMessageContext) {
+                            window.appAuth.refreshMessageContext();
+                        }
+                    }, 500);
                 }, 300);
             });
             
@@ -1179,6 +1226,12 @@
                 if (detail.result?.credits_balance !== undefined) {
                     StateManager.updateCredits(detail.result.credits_balance);
                 }
+                // 🔥 Atualiza mensagem após análise
+                setTimeout(() => {
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
+                }, 300);
             });
             
             document.addEventListener('upload:completed', function(e) {
@@ -1186,6 +1239,12 @@
                 if (detail.credits_remaining !== undefined) {
                     StateManager.updateCredits(detail.credits_remaining);
                 }
+                // 🔥 Atualiza mensagem após upload
+                setTimeout(() => {
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
+                }, 300);
             });
 
             document.addEventListener('credits:insufficient', function(e) {
@@ -1221,6 +1280,12 @@
                         if (window.appAuth?.loadUserCredits) {
                             window.appAuth.loadUserCredits();
                         }
+                        // 🔥 Carrega mensagem após autenticação
+                        if (window.appAuth?.refreshMessageContext) {
+                            setTimeout(() => {
+                                window.appAuth.refreshMessageContext();
+                            }, 500);
+                        }
                     }, 500);
                 }
             });
@@ -1232,7 +1297,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW (SIMPLIFICADO)
+    // 🔥 GERENCIADOR DE PoW
     // ==============================================
 
     const Pow = {
@@ -1462,8 +1527,12 @@
                     UI.updateNavbar();
                     Auth.startSessionTimer();
                     
-                    // PoW é inicializado sob demanda (apenas no upload)
-                    // Não inicializa automaticamente
+                    // 🔥 Carrega mensagem após autenticação
+                    setTimeout(() => {
+                        if (window.appAuth?.refreshMessageContext) {
+                            window.appAuth.refreshMessageContext();
+                        }
+                    }, 500);
                 } else {
                     StateManager.updateState({
                         tokenValid: false,
@@ -1483,7 +1552,6 @@
             if (!window.appAuth) return;
             
             try {
-                // Aguarda payment.js carregar (de forma passiva)
                 await Utils.waitFor(() => {
                     return typeof window.loadPremiumStatus === 'function';
                 }, 5000, 200);
@@ -1548,31 +1616,25 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v7.0...');
+        console.log('🚀 Inicializando App (Orquestrador) v7.1...');
 
         try {
-            // 1. Resetar contador de reloads
             ReloadManager.reset();
 
-            // 2. Aguardar auth.js carregar (passivo)
             console.log('⏳ Aguardando auth.js carregar...');
             await Utils.waitFor(() => window.appAuth !== undefined, 5000, 200);
 
-            // 3. Verificar autenticação
             const isAuth = Utils.isAuthenticated();
             const currentPath = Utils.getCurrentPath();
 
-            // 4. Roteamento
             if (!Router.protect()) {
                 return;
             }
 
             console.log('✅ Rota verificada, continuando inicialização...');
 
-            // 5. Configurar EventManager
             EventManager.setup();
 
-            // 6. Sincronizar com auth.js
             if (window.appAuth) {
                 await Sync.syncAuth();
             } else {
@@ -1585,29 +1647,28 @@
                 }
             }
             
-            // 7. Sincronizar Rate Limit
             Sync.syncRateLimit();
 
-            // 8. Se estiver autenticado, sincroniza com payment e promoção
             if (isAuth) {
                 console.log('🔐 Usuário autenticado, sincronizando serviços...');
                 
-                // PoW NÃO é inicializado automaticamente - apenas sob demanda no upload
-                // Isso reduz carga desnecessária
-                
                 await Sync.syncPayment();
                 await Sync.syncPromotion();
+                
+                // 🔥 Carrega mensagem após sincronização
+                setTimeout(() => {
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
+                }, 800);
             }
 
-            // 9. Configurar UI global
             UI.setupModals();
             UI.updateNavbar();
             UI.updateRateLimitStatus();
 
-            // 10. Configurar navegação
             Router.setupNavigation();
 
-            // 11. Marcar como inicializado
             StateManager.updateState({
                 initialized: true,
                 isAppReady: true,
@@ -1617,7 +1678,6 @@
             window._appReadyFired = true;
             window._appInitialized = true;
 
-            // 12. DISPARAR EVENTO app:ready
             const appReadyData = {
                 isAuthenticated: isAuth,
                 user: State.user,
@@ -1635,30 +1695,33 @@
                 displayName: State.user?.name || 'Usuário',
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
+                userSegment: State.userSegment || 'regular',
                 isReady: true,
-                version: '7.0'
+                version: '7.1'
             };
 
             EventBus.emit('app:ready', appReadyData);
             window.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             
-            // Notifica payment.js
             window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { isReady: true, version: '7.0' }
+                detail: { isReady: true, version: '7.1' }
             }));
 
-            console.log('✅ App (Orquestrador) v7.0 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v7.1 inicializado com sucesso!');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
             console.log(`📌 Premium: ${State.isPremium}`);
             console.log(`📌 Créditos: ${State.creditsDisplay}`);
+            console.log(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
+            console.log(`📌 Mensagem: ${State.currentMessage?.message_id || 'Nenhuma'}`);
             console.log('🌉 window.appAuth centralizado');
             console.log('📦 AppUtils disponível');
             console.log('⚡ fetchWithAuth com refresh automático');
             console.log('🔄 Estado reativo via Proxy');
             console.log('📡 EventBus com fila de eventos');
+            console.log('📢 Sistema de mensagens inteligentes ativo');
             console.log('🔗 Integrado com auth.js, payment.js, dashboard.js');
 
         } catch (error) {
@@ -1677,18 +1740,16 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS (REDUZIDAS)
+    // 🔥 EXPORTAÇÕES GLOBAIS
     // ==============================================
 
     const App = {
-        // Essenciais
         CONFIG,
         State,
         StateManager,
         Utils,
         EventBus,
         
-        // Módulos
         Router,
         UI,
         Auth,
@@ -1696,7 +1757,6 @@
         Analysis,
         Sync,
         
-        // Inicialização
         init: initApp,
         isInitialized: function() {
             return !!(window._appInitialized && State.isAppReady);
@@ -1705,7 +1765,6 @@
             return State.isAppReady === true;
         },
         
-        // Métodos principais
         showNotification: Utils.showNotification,
         isAuthenticated: Utils.isAuthenticated,
         getCurrentUser: () => State.user,
@@ -1718,17 +1777,42 @@
         getDaysLeftPremium: () => State.daysLeftPremium,
         isTokenValid: () => State.tokenValid,
         
-        // Fetch
+        // 🔥 NOVOS MÉTODOS PARA MENSAGENS
+        getMessageContext: () => ({
+            segment: State.userSegment,
+            message: State.currentMessage,
+            uiContext: State.uiContext
+        }),
+        getUserSegment: () => State.userSegment,
+        hasActiveMessage: () => State.currentMessage !== null,
+        dismissMessage: (messageId) => {
+            if (messageId) {
+                State.lastMessageId = messageId;
+                const container = document.getElementById('messageContainer');
+                if (container) {
+                    container.style.display = 'none';
+                    container.innerHTML = '';
+                }
+                window.dispatchEvent(new CustomEvent('message:dismissed', {
+                    detail: { messageId }
+                }));
+            }
+        },
+        refreshMessage: async () => {
+            if (window.appAuth && typeof window.appAuth.refreshMessageContext === 'function') {
+                return await window.appAuth.refreshMessageContext();
+            }
+            return null;
+        },
+        
         fetchWithAuth: fetchWithAuth,
         refreshTokenSafely: refreshTokenSafely,
         
-        // PoW
         uploadWithPow: Pow.uploadWithPow,
         preparePowForUpload: Pow.prepareForUpload,
         getPowStats: Pow.getStats,
         isPowAvailable: Pow.isAvailable,
         
-        // Análises
         startAnalysis: Analysis.startAnalysis,
         updateAnalysisProgress: Analysis.updateProgress,
         completeAnalysis: Analysis.completeAnalysis,
@@ -1739,7 +1823,6 @@
         getAnalysesToday: Analysis.getAnalysesToday,
         clearAnalysisHistory: Analysis.clearHistory,
         
-        // Rate Limit
         isRateLimitBlocked: Utils.isRateLimitBlocked,
         getRateLimitTimeRemaining: Utils.getRateLimitTimeRemaining,
         getRateLimitRemainingAttempts: Utils.getRateLimitRemainingAttempts,
@@ -1753,12 +1836,10 @@
             };
         },
         
-        // Navegação
         navigate: Router.navigate,
         goBack: Utils.goBack,
         getQueryParam: Utils.getQueryParam,
         
-        // Loading
         showLoading: UI.showLoading,
         hideLoading: UI.hideLoading,
         updateLoadingProgress: UI.updateLoadingProgress,
@@ -1766,25 +1847,22 @@
         updateNavbar: UI.updateNavbar,
         updateRateLimitStatus: UI.updateRateLimitStatus,
         
-        // Utilitários
         escapeHtml: Utils.escapeHtml,
         formatDate: Utils.formatDate,
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
         validateCPF: Utils.validateCPF,
         
-        // Créditos (event-driven, sem polling)
         loadCredits: window.appAuth?.loadUserCredits || (() => {}),
         loadPremiumStatus: window.loadPremiumStatus || (() => {}),
         receiveDailyCredit: window.receiveDailyCredit || (() => {}),
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
         getCreditsBalance: () => State.credits,
         
-        // Logout
         logout: handleUnauthorized
     };
 
-    // 🔥 EXPORTAÇÕES GLOBAIS (REDUZIDAS - APENAS O ESSENCIAL)
+    // 🔥 EXPORTAÇÕES GLOBAIS
     window.App = App;
     window.app = App;
     window.autoAnalytics = App;
@@ -1794,7 +1872,6 @@
     window.__APP_CONFIG = CONFIG;
     window.AppUtils = AppUtils;
     
-    // 🔥 FUNÇÕES AUXILIARES ESSENCIAIS
     window.showNotification = Utils.showNotification;
     window.isAuthenticated = Utils.isAuthenticated;
     window.fetchWithAuth = fetchWithAuth;
@@ -1802,7 +1879,6 @@
     window.logout = handleUnauthorized;
     window.getCurrentUser = () => State.user;
     
-    // Funções do payment.js (expostas para compatibilidade)
     window.updateCreditsDisplay = UI.updateCredits;
     window.updateNavbar = UI.updateNavbar;
     window.updateRateLimitStatus = UI.updateRateLimitStatus;
@@ -1818,9 +1894,6 @@
     } else {
         window._appInitialized = true;
         
-        // 🔥 NÃO força reconhecimento de token - aguarda passivamente
-        // O token é verificado durante a inicialização normal
-        
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
@@ -1828,7 +1901,7 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v7.0 carregado!');
+    console.log('✅ app.js (Orquestrador) v7.1 carregado!');
     console.log('   🔥 REMOVIDO: forceAuthRecognition agressivo');
     console.log('   🔥 MELHORADO: StateManager com Proxy');
     console.log('   🔥 REMOVIDO: Credits Polling (event-driven)');
@@ -1836,5 +1909,8 @@
     console.log('   🔥 REDUZIDO: Exposição global');
     console.log('   🔥 UNIFICADO: EventBus com fila');
     console.log('   🔥 ADICIONADO: Lazy loading de módulos');
+    console.log('   📢 NOVO: Sistema de mensagens inteligentes');
+    console.log('   📢 NOVO: Campos userSegment, currentMessage, uiContext');
+    console.log('   📢 NOVO: Métodos getMessageContext(), refreshMessage(), dismissMessage()');
 
 })();

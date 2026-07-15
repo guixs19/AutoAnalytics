@@ -1,8 +1,8 @@
-// frontend/js/auth.js - VERSÃO 4.0 (ARQUITETURA REFATORADA)
+// frontend/js/auth.js - VERSÃO 4.1 (COM SISTEMA DE MENSAGENS)
 /**
- * Módulo de Autenticação - AutoAnalytics v4.0
+ * Módulo de Autenticação - AutoAnalytics v4.1
  * 
- * 🏗️ ARQUITETURA V4.0:
+ * 🏗️ ARQUITETURA V4.1:
  * 1. ✅ Sincronização total com __APP_STATE do app.js
  * 2. ✅ Atualização de #userName (ID) e .user-name (classe)
  * 3. ✅ Preservação do nome do usuário entre sessões
@@ -11,6 +11,15 @@
  * 6. ✅ Rate limiter com UI dinâmica
  * 7. ✅ Cookie sync para links HTML puros
  * 8. ✅ Refresh token com fila de requisições
+ * 9. 🔥 NOVO: Sistema de mensagens inteligentes
+ * 10. 🔥 NOVO: Carregamento de contexto de mensagem via /session-status
+ * 11. 🔥 NOVO: Atualização reativa de mensagens
+ * 
+ * 🔥 CORREÇÕES V4.1:
+ * - Adicionado loadMessageContext() para carregar mensagens do backend
+ * - Adicionado _updateMessageState() para sincronizar com __APP_STATE
+ * - Adicionado refreshMessageContext() para atualização manual
+ * - Integração com o sistema de segmentação de usuários
  * 
  * 🔥 CORREÇÕES V4.0:
  * - Nome do usuário agora aparece corretamente no index.html e planos.html
@@ -656,6 +665,9 @@
                             isAdmin: this.isAdmin()
                         }
                     }));
+                    
+                    // 🔥 CARREGA CONTEXTO DE MENSAGEM
+                    await this.loadMessageContext();
                     
                     this.startTokenMonitoring();
                     
@@ -1393,11 +1405,117 @@
                         this._syncWithGlobalState();
                         this.updateCreditsDisplay();
                         this._forceUIRefresh();
+                        
+                        // 🔥 Atualiza contexto de mensagem após mudança de créditos
+                        await this.refreshMessageContext();
                     }
                 }
             } catch (error) {
                 console.warn('⚠️ [Auth] Erro ao carregar créditos:', error);
             }
+        }
+
+        // ==============================================
+        // 🔥 SISTEMA DE MENSAGENS INTELIGENTES (NOVO V4.1)
+        // ==============================================
+
+        /**
+         * 🔥 Carrega o contexto de mensagem do backend
+         * Chamado automaticamente após login ou refresh
+         */
+        async loadMessageContext() {
+            try {
+                const token = localStorage.getItem('access_token');
+                if (!token) {
+                    console.log('ℹ️ [Auth] Sem token, pulando loadMessageContext');
+                    return null;
+                }
+                
+                // Usa fetch com auth se disponível
+                let response;
+                if (window.fetchWithAuth) {
+                    response = await window.fetchWithAuth('/api/auth/session-status');
+                } else {
+                    response = await fetch('/api/auth/session-status', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                }
+                
+                if (!response) return null;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('📢 [Auth] Contexto de mensagem carregado:', {
+                        segment: data.segment,
+                        message_id: data.message_config?.message_id,
+                        credits: data.credits,
+                        hasMessage: !!data.message_config
+                    });
+                    
+                    // 🔥 Atualiza o estado global com os dados da mensagem
+                    this._updateMessageState(data);
+                    
+                    return data;
+                } else if (response.status === 401) {
+                    console.warn('⚠️ [Auth] Token expirado ao carregar mensagem');
+                }
+            } catch (error) {
+                console.warn('⚠️ [Auth] Erro ao carregar contexto de mensagem:', error);
+            }
+            return null;
+        }
+
+        /**
+         * 🔥 Atualiza o estado global com informações de mensagem
+         */
+        _updateMessageState(data) {
+            if (!data) return;
+            
+            const stateManager = this._getStateManager();
+            if (!stateManager) {
+                console.warn('⚠️ [Auth] StateManager não disponível para mensagem');
+                return;
+            }
+            
+            // Prepara os dados da mensagem
+            const messageConfig = data.message_config || null;
+            const segment = data.segment || 'regular';
+            const uiContext = data.ui_context || null;
+            
+            // 🔥 Atualiza o estado global com todos os campos
+            const updates = {
+                userSegment: segment,
+                currentMessage: messageConfig,
+                lastMessageId: messageConfig?.message_id || null,
+                uiContext: uiContext
+            };
+            
+            // Se tiver dados de promoção, atualiza também
+            if (data.promotional) {
+                updates.hasPromotionalPrice = data.promotional.has_locked_price || false;
+                updates.promotionalPrice = data.promotional.locked_price || null;
+            }
+            
+            stateManager.updateState(updates);
+            
+            console.log(`📢 [Auth] Estado de mensagem atualizado: segment=${segment}, hasMessage=${!!messageConfig}`);
+            
+            // Dispara evento para o MessageRenderer
+            window.dispatchEvent(new CustomEvent('message:context_updated', {
+                detail: {
+                    segment: segment,
+                    message: messageConfig,
+                    ui_context: uiContext
+                }
+            }));
+        }
+
+        /**
+         * 🔥 Força atualização da mensagem (chamado após mudança de créditos)
+         */
+        async refreshMessageContext() {
+            console.log('🔄 [Auth] Atualizando contexto de mensagem...');
+            return this.loadMessageContext();
         }
 
         // ==============================================
@@ -1421,7 +1539,7 @@
         // ==============================================
 
         async init() {
-            console.log('🚀 [Auth v4.0] Inicializando...');
+            console.log('🚀 [Auth v4.1] Inicializando com sistema de mensagens...');
             
             this._initializing = true;
             this.initialized = true;
@@ -1464,9 +1582,10 @@
             // 🔥 4. Configura listeners
             this.setupAuthPageListeners();
             
-            // 🔥 5. Se autenticado, carrega créditos
+            // 🔥 5. Se autenticado, carrega créditos e contexto de mensagem
             if (this.isAuthenticated) {
                 await this.loadUserCredits();
+                await this.loadMessageContext(); // 🔥 NOVO: Carrega mensagem
                 this.startTokenMonitoring();
             }
             
@@ -1480,11 +1599,12 @@
             
             this._initializing = false;
             
-            console.log(`✅ [Auth v4.0] Inicializado. Autenticado: ${this.isAuthenticated}`);
+            console.log(`✅ [Auth v4.1] Inicializado. Autenticado: ${this.isAuthenticated}`);
             console.log(`👤 [Auth] Usuário: ${this.userData?.name || 'Não definido'}`);
             console.log(`👑 [Auth] Admin: ${this.isAdmin()}`);
             console.log(`⭐ [Auth] Premium: ${this.isPremium()}`);
             console.log(`💰 [Auth] Créditos: ${this.getCreditsDisplay()}`);
+            console.log(`📢 [Auth] Segmento: ${this.userData?.segment || 'Não definido'}`);
             
             // 🔥 8. Dispara evento de ready
             window.dispatchEvent(new CustomEvent('authReady', {
@@ -1493,7 +1613,8 @@
                     user: this.userData,
                     credits: this.getCredits(),
                     isPremium: this.isPremium(),
-                    isAdmin: this.isAdmin()
+                    isAdmin: this.isAdmin(),
+                    segment: this.userData?.segment || 'regular'
                 }
             }));
             
@@ -1503,6 +1624,13 @@
                     this._syncWithGlobalState();
                 }
             }, 500);
+            
+            // 🔥 10. Recarrega mensagem após 1s para garantir
+            setTimeout(() => {
+                if (this.isAuthenticated) {
+                    this.refreshMessageContext();
+                }
+            }, 1000);
         }
     }
 
@@ -1512,12 +1640,15 @@
 
     window.appAuth = new Auth();
 
-    console.log('✅ Auth carregado (v4.0 - Arquitetura Refatorada)');
+    console.log('✅ Auth carregado (v4.1 - Com Sistema de Mensagens)');
     console.log('   🔥 SINCRONIZADO com __APP_STATE');
     console.log('   🔥 ATUALIZA #userName (ID) e .user-name (classe)');
     console.log('   🔥 PRESERVA nome do usuário entre sessões');
     console.log('   🔥 FALLBACK: localStorage para dados do usuário');
     console.log('   🔥 EVENTOS: auth:state_changed, authLoginSuccess, authLogout');
+    console.log('   📢 NOVO: Sistema de mensagens inteligentes');
+    console.log('   📢 NOVO: loadMessageContext() para carregar mensagens');
+    console.log('   📢 NOVO: refreshMessageContext() para atualização manual');
     console.log(`   ✅ MAX_CREDITS_BALANCE: ${MAX_CREDITS_BALANCE}`);
     console.log(`   ✅ TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES}`);
     console.log(`   ✅ RATE LIMITER: ${RATE_LIMIT.LOGIN_MAX_ATTEMPTS} tentativas/${RATE_LIMIT.LOGIN_WINDOW_SECONDS}s`);

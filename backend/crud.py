@@ -1233,7 +1233,368 @@ def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> boo
     logger.info(f"🔓 Logout completo: {user.email}")
     
     return True
+# ==============================================
+# 🔥 SISTEMA DE MENSAGENS INTELIGENTES - SEGMENTAÇÃO DE USUÁRIO
+# ==============================================
 
+def count_user_analyses(db: Session, user_id: int) -> int:
+    """
+    🔥 Conta quantas análises o usuário já fez
+    Usado para determinar se é 'new' ou 'regular'
+    
+    Args:
+        db: Sessão do banco de dados
+        user_id: ID do usuário
+    
+    Returns:
+        Número total de análises do usuário
+    """
+    return db.query(models.Analysis).filter(
+        models.Analysis.user_id == user_id
+    ).count()
+
+
+def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    🔥 Calcula o segmento do usuário para o sistema de mensagens
+    
+    REGRAS DE SEGMENTAÇÃO:
+    - premium: Plano premium ativo (UserPlan.PREMIUM_MENSAL e não expirado)
+    - new: Criado há menos de 7 dias E nunca fez análise E tem 3 créditos
+    - regular: Todos os outros casos
+    
+    Args:
+        db: Sessão do banco de dados
+        user: Objeto do usuário
+    
+    Returns:
+        Dict com:
+        - segment: 'premium' | 'new' | 'regular'
+        - analyses_count: int
+        - days_since_creation: int
+        - is_premium: bool
+        - credits: int
+        - has_ever_used: bool
+    """
+    if not user:
+        return {
+            "segment": "regular",
+            "analyses_count": 0,
+            "days_since_creation": 0,
+            "is_premium": False,
+            "credits": 0,
+            "has_ever_used": False
+        }
+    
+    # 1. 🔥 VERIFICA SE É PREMIUM
+    is_premium = _is_premium_user(user)
+    
+    if is_premium:
+        logger.info(f"📊 [Segment] Usuário {user.email} é PREMIUM")
+        return {
+            "segment": "premium",
+            "analyses_count": 0,
+            "days_since_creation": 0,
+            "is_premium": True,
+            "credits": user.credits or 0,
+            "has_ever_used": True  # Premium já usou o sistema
+        }
+    
+    # 2. 🔥 VERIFICA SE É NOVO USUÁRIO
+    # Condições: criado há menos de 7 dias E nunca fez análise
+    analyses_count = count_user_analyses(db, user.id)
+    
+    # Calcula dias desde a criação (com timezone blindado)
+    days_since_creation = 999
+    if user.created_at:
+        # Remove timezone para comparação segura
+        created_naive = user.created_at.replace(tzinfo=None) if user.created_at.tzinfo else user.created_at
+        now_naive = _now_brasil().replace(tzinfo=None)
+        days_since_creation = (now_naive - created_naive).days
+    
+    # É novo se: menos de 7 dias, nunca fez análise, e tem 3 créditos (máximo inicial)
+    is_new = days_since_creation < 7 and analyses_count == 0 and user.credits == 3
+    
+    if is_new:
+        logger.info(f"📊 [Segment] Usuário {user.email} é NOVO (dias: {days_since_creation}, análises: {analyses_count})")
+        return {
+            "segment": "new",
+            "analyses_count": analyses_count,
+            "days_since_creation": days_since_creation,
+            "is_premium": False,
+            "credits": user.credits or 0,
+            "has_ever_used": False
+        }
+    
+    # 3. 🔥 USUÁRIO REGULAR
+    has_ever_used = analyses_count > 0 or user.credits < 3
+    
+    logger.info(f"📊 [Segment] Usuário {user.email} é REGULAR (dias: {days_since_creation}, análises: {analyses_count})")
+    return {
+        "segment": "regular",
+        "analyses_count": analyses_count,
+        "days_since_creation": days_since_creation,
+        "is_premium": False,
+        "credits": user.credits or 0,
+        "has_ever_used": has_ever_used
+    }
+
+
+def get_message_config(segment: str, credits: int, is_admin: bool = False) -> Dict[str, Any]:
+    """
+    🔥 Retorna a configuração de mensagem baseada no segmento e créditos
+    
+    Args:
+        segment: 'premium' | 'new' | 'regular'
+        credits: Saldo de créditos do usuário
+        is_admin: Se o usuário é administrador
+    
+    Returns:
+        Dict com configuração da mensagem:
+        - message_id: str (identificador único)
+        - title: str (título da mensagem)
+        - icon: str (ícone FontAwesome)
+        - color: str (cor: success, warning, info, danger, primary, premium)
+        - message: str (texto da mensagem)
+        - show_action: bool (se deve mostrar botão de ação)
+        - action_text: str (texto do botão)
+        - action_url: str (URL do botão)
+        - priority: int (0=baixa, 1=média, 2=alta)
+        - dismissible: bool (se o usuário pode fechar)
+    """
+    
+    # ==========================================
+    # 👑 ADMIN - Mensagem especial
+    # ==========================================
+    if is_admin:
+        return {
+            "message_id": "admin_welcome",
+            "title": "👑 Painel Administrativo",
+            "icon": "fa-crown",
+            "color": "premium",
+            "message": "Você tem acesso ilimitado a todas as funcionalidades do sistema.",
+            "show_action": True,
+            "action_text": "Ir para Dashboard",
+            "action_url": "/dashboard",
+            "priority": 0,
+            "dismissible": True
+        }
+    
+    # ==========================================
+    # ⭐ PREMIUM - Mensagens para usuários premium
+    # ==========================================
+    if segment == "premium":
+        if credits >= 3:
+            return {
+                "message_id": "premium_full",
+                "title": "🌟 Créditos no Máximo!",
+                "icon": "fa-star",
+                "color": "premium",
+                "message": "Seus créditos estão no máximo (3/3)! Use-os para não acumular e perder.",
+                "show_action": True,
+                "action_text": "Fazer Análise",
+                "action_url": "/dashboard",
+                "priority": 1,
+                "dismissible": True
+            }
+        elif credits == 2:
+            return {
+                "message_id": "premium_two",
+                "title": "⭐ Créditos Disponíveis",
+                "icon": "fa-star-half-alt",
+                "color": "premium",
+                "message": "Você tem 2 créditos. Use-os ou perca-os!",
+                "show_action": True,
+                "action_text": "Fazer Análise",
+                "action_url": "/dashboard",
+                "priority": 1,
+                "dismissible": True
+            }
+        elif credits == 1:
+            return {
+                "message_id": "premium_one",
+                "title": "✨ Último Crédito!",
+                "icon": "fa-star",
+                "color": "warning",
+                "message": "Depois de gastar, novos créditos serão gerados amanhã. 🎯",
+                "show_action": True,
+                "action_text": "Usar Agora",
+                "action_url": "/dashboard",
+                "priority": 2,
+                "dismissible": True
+            }
+        else:  # credits == 0
+            return {
+                "message_id": "premium_zero",
+                "title": "🔄 Créditos Esgotados",
+                "icon": "fa-sync",
+                "color": "info",
+                "message": "Todos os créditos gastos! Novos créditos estarão disponíveis amanhã. Volte amanhã! 🌅",
+                "show_action": True,
+                "action_text": "Ver Status",
+                "action_url": "/dashboard",
+                "priority": 1,
+                "dismissible": True
+            }
+    
+    # ==========================================
+    # 🆕 NOVO USUÁRIO - Mensagens para novos usuários
+    # ==========================================
+    if segment == "new":
+        if credits == 3:
+            return {
+                "message_id": "new_welcome",
+                "title": "👋 Bem-vindo ao AutoAnalytics!",
+                "icon": "fa-rocket",
+                "color": "success",
+                "message": "🎉 Você ganhou 3 créditos para testar o sistema. Faça sua primeira análise agora!",
+                "show_action": True,
+                "action_text": "🚀 Começar Análise",
+                "action_url": "/dashboard",
+                "priority": 2,
+                "dismissible": True
+            }
+        elif credits == 2:
+            return {
+                "message_id": "new_two",
+                "title": "⚡ Continue testando!",
+                "icon": "fa-bolt",
+                "color": "warning",
+                "message": "Você gastou 1 crédito! Agora você tem 2 créditos restantes. Não perca a chance! 💪",
+                "show_action": True,
+                "action_text": "Usar Crédito",
+                "action_url": "/dashboard",
+                "priority": 1,
+                "dismissible": True
+            }
+        elif credits == 1:
+            return {
+                "message_id": "new_one",
+                "title": "🔥 Último crédito!",
+                "icon": "fa-fire",
+                "color": "warning",
+                "message": "Use seu último crédito sabiamente e veja o poder do AutoAnalytics. ⚡",
+                "show_action": True,
+                "action_text": "Usar Agora",
+                "action_url": "/dashboard",
+                "priority": 2,
+                "dismissible": True
+            }
+        else:  # credits == 0
+            return {
+                "message_id": "new_zero",
+                "title": "🎉 Você testou o sistema!",
+                "icon": "fa-gem",
+                "color": "info",
+                "message": "Que bom que você testou o AutoAnalytics! 💎 Se quiser mais relatórios, não perca nossas promoções exclusivas.",
+                "show_action": True,
+                "action_text": "💎 Ver Planos",
+                "action_url": "/planos",
+                "priority": 2,
+                "dismissible": True
+            }
+    
+    # ==========================================
+    # 👤 USUÁRIO REGULAR - Mensagens para usuários regulares
+    # ==========================================
+    if credits > 0:
+        # Mensagem personalizada com plural/singular
+        credit_text = "crédito" if credits == 1 else "créditos"
+        return {
+            "message_id": f"regular_{credits}",
+            "title": "💰 Créditos Disponíveis",
+            "icon": "fa-coins",
+            "color": "info",
+            "message": f"Você tem {credits} {credit_text} disponíveis. Use-os antes que expirem! ⏰",
+            "show_action": True,
+            "action_text": "Usar Créditos",
+            "action_url": "/dashboard",
+            "priority": 1,
+            "dismissible": True
+        }
+    else:
+        return {
+            "message_id": "regular_zero",
+            "title": "🚀 Quer mais análises?",
+            "icon": "fa-crown",
+            "color": "primary",
+            "message": "Seus créditos acabaram! 😅 Assine o plano Premium e tenha análises ilimitadas. 🏆",
+            "show_action": True,
+            "action_text": "👑 Ver Planos Premium",
+            "action_url": "/planos",
+            "priority": 2,
+            "dismissible": True
+        }
+
+
+def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    🔥 Retorna o contexto completo do usuário para o sistema de mensagens
+    
+    Esta função combina calculate_user_segment() e get_message_config()
+    para fornecer tudo que o frontend precisa em uma única chamada.
+    
+    Args:
+        db: Sessão do banco de dados
+        user: Objeto do usuário
+    
+    Returns:
+        Dict com:
+        - segment: 'premium' | 'new' | 'regular'
+        - ui_context: Dados para a UI
+        - message_config: Configuração da mensagem
+    """
+    if not user:
+        return {
+            "segment": "regular",
+            "ui_context": {
+                "segment": "regular",
+                "credits": 0,
+                "max_credits": MAX_CREDITS_PREMIUM,
+                "is_premium": False,
+                "is_admin": False,
+                "display_name": "Usuário",
+                "workshop_name": "Oficina",
+                "credit_display": "0",
+                "analyses_count": 0,
+                "days_since_creation": 0
+            },
+            "message_config": get_message_config("regular", 0, False)
+        }
+    
+    # Calcula segmento
+    segment_data = calculate_user_segment(db, user)
+    segment = segment_data["segment"]
+    credits = user.credits or 0
+    is_premium = segment_data["is_premium"]
+    is_admin = user.is_admin
+    analyses_count = segment_data["analyses_count"]
+    days_since_creation = segment_data["days_since_creation"]
+    
+    # Busca configuração da mensagem
+    message_config = get_message_config(segment, credits, is_admin)
+    
+    # Constrói contexto da UI
+    ui_context = {
+        "segment": segment,
+        "credits": credits,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "is_premium": is_premium,
+        "is_admin": is_admin,
+        "display_name": user.name or "Usuário",
+        "workshop_name": user.workshop_name or "Oficina",
+        "credit_display": "∞" if is_admin else get_credits_display(user),
+        "analyses_count": analyses_count,
+        "days_since_creation": days_since_creation
+    }
+    
+    logger.info(f"📊 [Context] Usuário {user.email}: segment={segment}, credits={credits}, msg={message_config.get('message_id')}")
+    
+    return {
+        "segment": segment,
+        "ui_context": ui_context,
+        "message_config": message_config
+    }
 
 print("=" * 70)
 print("✅ crud.py carregado - TIMEZONE BLINDADO")
