@@ -1,22 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO 7.0 (OTIMIZADA E INTEGRADA)
+// frontend/js/dashboard.js - VERSÃO 7.1 (CORRIGIDO - CHART MANAGER)
 /**
- * Dashboard Module - AutoAnalytics v7.0
+ * Dashboard Module - AutoAnalytics v7.1
  * 
- * 🏗️ ARQUITETURA V7.0:
- * 1. ✅ REMOVIDO: Fallback próprio (usa app.js)
- * 2. ✅ REMOVIDO: Estado duplicado (usa __APP_STATE)
- * 3. ✅ OTIMIZADO: Gráficos mais leves (Chart.js com lazy rendering)
- * 4. ✅ MELHORADO: Animações com GSAP + CSS
- * 5. ✅ ADICIONADO: Virtual scrolling para histórico
- * 6. ✅ ADICIONADO: Debounce para eventos de resize
- * 7. ✅ OTIMIZADO: Upload com PoW sob demanda
- * 8. ✅ MELHORADO: Feedback visual com micro-interações
+ * 🏗️ ARQUITETURA V7.1:
+ * 1. 🔥 CORRIGIDO: ChartManager com retry inteligente
+ * 2. 🔥 MELHORADO: Detecção de container com MutationObserver
+ * 3. 🔥 ADICIONADO: Fallback com timeout
+ * 4. 🔥 OTIMIZADO: Criação sob demanda com lazy rendering
+ * 5. 🔥 ADICIONADO: Verificação de visibilidade do container
  */
 
 (function() {
     'use strict';
 
-    console.log('📦 [Dashboard v7.0] Carregando módulo otimizado...');
+    console.log('📦 [Dashboard v7.1] Carregando módulo corrigido...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -32,16 +29,21 @@
         MAX_CREDITS_BALANCE: 3,
         POW_ENABLED: true,
         
-        // 🔥 ANIMAÇÕES
+        // 🔥 CHART CONFIG
+        CHART_RETRY_ATTEMPTS: 10,
+        CHART_RETRY_DELAY: 300,
+        CHART_CONTAINER_TIMEOUT: 5000,
+        
+        // ANIMAÇÕES
         ANIMATION_DURATION: 0.6,
         STAGGER_DELAY: 0.08,
         CHART_ANIMATION_DURATION: 800,
         
-        // 🔥 TIMEOUTS
+        // TIMEOUTS
         WAIT_FOR_APP_TIMEOUT: 8000,
         WAIT_FOR_APP_INTERVAL: 200,
         
-        // 🔥 HISTÓRICO
+        // HISTÓRICO
         HISTORY_LIMIT: 50,
         VIRTUAL_SCROLL_ITEM_HEIGHT: 60,
         VIRTUAL_SCROLL_BUFFER: 5
@@ -58,6 +60,7 @@
         _initialized: false,
         _appReady: false,
         _chartInstance: null,
+        _chartData: null,
         _historyData: [],
         _visibleHistory: [],
         _scrollTop: 0,
@@ -69,9 +72,6 @@
     // ==============================================
 
     const Utils = {
-        /**
-         * Debounce para eventos de alta frequência
-         */
         debounce: function(fn, delay = 300) {
             let timer = null;
             return function(...args) {
@@ -83,9 +83,6 @@
             };
         },
 
-        /**
-         * Throttle para eventos de scroll
-         */
         throttle: function(fn, limit = 100) {
             let inThrottle = false;
             return function(...args) {
@@ -97,18 +94,12 @@
             };
         },
 
-        /**
-         * Formata tamanho de arquivo
-         */
         formatFileSize: function(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / 1048576).toFixed(1) + ' MB';
         },
 
-        /**
-         * Formata data relativa
-         */
         formatRelativeTime: function(date) {
             const now = new Date();
             const diff = now - new Date(date);
@@ -123,9 +114,6 @@
             return new Date(date).toLocaleDateString('pt-BR');
         },
 
-        /**
-         * Escapa HTML
-         */
         escapeHtml: function(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -133,31 +121,62 @@
             return div.innerHTML;
         },
 
-        /**
-         * Obtém cor baseada no score
-         */
         getScoreColor: function(score) {
             if (score >= 0.7) return '#48bb78';
             if (score >= 0.4) return '#f5a623';
             return '#f56565';
         },
 
-        /**
-         * Obtém ícone baseado no score
-         */
         getScoreIcon: function(score) {
             if (score >= 0.7) return '🚀';
             if (score >= 0.4) return '📈';
             return '🔄';
         },
 
-        /**
-         * Obtém label baseado no score
-         */
         getScoreLabel: function(score) {
             if (score >= 0.7) return 'Alto potencial';
             if (score >= 0.4) return 'Potencial médio';
             return 'Baixo potencial';
+        },
+        
+        // 🔥 NOVO: Aguarda elemento no DOM
+        waitForElement: function(selector, timeout = CONFIG.CHART_CONTAINER_TIMEOUT) {
+            return new Promise((resolve) => {
+                // Verifica se já existe
+                const existing = document.getElementById(selector) || document.querySelector(selector);
+                if (existing) {
+                    resolve(existing);
+                    return;
+                }
+                
+                // Aguarda com MutationObserver
+                const observer = new MutationObserver(() => {
+                    const el = document.getElementById(selector) || document.querySelector(selector);
+                    if (el) {
+                        observer.disconnect();
+                        resolve(el);
+                    }
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+                
+                // Timeout de segurança
+                setTimeout(() => {
+                    observer.disconnect();
+                    const el = document.getElementById(selector) || document.querySelector(selector);
+                    resolve(el || null);
+                }, timeout);
+            });
+        },
+        
+        // 🔥 NOVO: Verifica se elemento está visível
+        isElementVisible: function(element) {
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && element.offsetParent !== null;
         }
     };
 
@@ -177,9 +196,6 @@
             }
         },
 
-        /**
-         * Anima entrada de elementos
-         */
         fadeIn: function(element, options = {}) {
             const defaults = {
                 duration: CONFIG.ANIMATION_DURATION,
@@ -211,9 +227,6 @@
             }
         },
 
-        /**
-         * Anima sequência de elementos (stagger)
-         */
         staggerIn: function(elements, options = {}) {
             const defaults = {
                 duration: CONFIG.ANIMATION_DURATION,
@@ -248,9 +261,6 @@
             }
         },
 
-        /**
-         * Anima números (contagem)
-         */
         countUp: function(element, target, options = {}) {
             const defaults = {
                 duration: 1000,
@@ -273,14 +283,13 @@
                     }
                 });
             } else {
-                // Fallback: animação via requestAnimationFrame
                 const startTime = performance.now();
                 const startValue = opts.start;
 
                 function update() {
                     const elapsed = performance.now() - startTime;
                     const progress = Math.min(1, elapsed / opts.duration);
-                    const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+                    const eased = 1 - Math.pow(1 - progress, 3);
                     const current = startValue + (target - startValue) * eased;
                     element.textContent = opts.format(Math.round(current));
                     
@@ -292,16 +301,9 @@
             }
         },
 
-        /**
-         * Anima métricas em cards
-         */
         animateMetric: function(element, value, label) {
             if (!element) return;
-            
-            // Animação de entrada
             this.fadeIn(element, { y: 10, duration: 0.4 });
-            
-            // Animação do número
             const numberEl = element.querySelector('.metric-value');
             if (numberEl) {
                 this.countUp(numberEl, value, {
@@ -313,39 +315,152 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE GRÁFICOS (LEVE)
+    // 🔥 GERENCIADOR DE GRÁFICOS (CORRIGIDO)
     // ==============================================
 
     const ChartManager = {
         _instance: null,
         _container: null,
         _data: null,
+        _retryCount: 0,
+        _maxRetries: CONFIG.CHART_RETRY_ATTEMPTS,
+        _retryTimeout: null,
+        _initialized: false,
+        _pendingData: null,
+        _observer: null,
 
         /**
-         * Inicializa o gráfico
+         * 🔥 CORRIGIDO: Inicializa o gráfico com retry
          */
-        init: function(containerId) {
-            this._container = document.getElementById(containerId);
-            if (!this._container) {
-                console.warn('⚠️ [ChartManager] Container não encontrado:', containerId);
+        init: function(containerId, data = null) {
+            // Se já inicializado, apenas atualiza dados
+            if (this._initialized && this._instance) {
+                if (data) {
+                    this._data = data;
+                    this.update();
+                }
                 return;
             }
 
-            // Dados de exemplo (serão atualizados)
-            this._data = {
-                labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
-                values: [0, 0, 0, 0, 0, 0]
-            };
+            console.log(`📊 [ChartManager] Inicializando gráfico: #${containerId}`);
 
-            this._renderChart();
+            // Guarda dados pendentes
+            if (data) {
+                this._pendingData = data;
+            }
+
+            // Tenta encontrar o container
+            const container = document.getElementById(containerId);
+            
+            if (container && Utils.isElementVisible(container)) {
+                // Container encontrado e visível
+                this._container = container;
+                this._renderChart();
+                this._initialized = true;
+                this._retryCount = 0;
+                console.log('✅ [ChartManager] Gráfico inicializado com sucesso');
+                return;
+            }
+
+            // Se o container não está visível, tenta com retry
+            console.log(`⏳ [ChartManager] Container #${containerId} não encontrado, tentando retry...`);
+            this._retryWithDelay(containerId);
         },
 
         /**
-         * Renderiza o gráfico (Chart.js)
+         * 🔥 Retry com delay progressivo
+         */
+        _retryWithDelay: function(containerId) {
+            // Limpa timeout anterior
+            if (this._retryTimeout) {
+                clearTimeout(this._retryTimeout);
+                this._retryTimeout = null;
+            }
+
+            // Verifica se atingiu o limite de tentativas
+            if (this._retryCount >= this._maxRetries) {
+                console.warn(`⚠️ [ChartManager] Desistindo após ${this._maxRetries} tentativas para #${containerId}`);
+                
+                // Tenta com MutationObserver como fallback
+                this._setupMutationObserver(containerId);
+                return;
+            }
+
+            this._retryCount++;
+            
+            // Delay progressivo: 300ms, 500ms, 800ms, 1200ms...
+            const delay = CONFIG.CHART_RETRY_DELAY * (1 + (this._retryCount - 1) * 0.5);
+            
+            console.log(`🔄 [ChartManager] Tentativa ${this._retryCount}/${this._maxRetries} em ${delay}ms`);
+
+            this._retryTimeout = setTimeout(() => {
+                const container = document.getElementById(containerId);
+                
+                if (container && Utils.isElementVisible(container)) {
+                    this._container = container;
+                    this._renderChart();
+                    this._initialized = true;
+                    this._retryCount = 0;
+                    console.log('✅ [ChartManager] Gráfico inicializado após retry');
+                    return;
+                }
+
+                // Continua tentando
+                this._retryWithDelay(containerId);
+            }, delay);
+        },
+
+        /**
+         * 🔥 MutationObserver como fallback final
+         */
+        _setupMutationObserver: function(containerId) {
+            if (this._observer) {
+                this._observer.disconnect();
+            }
+
+            console.log(`👀 [ChartManager] Observando DOM pelo container #${containerId}`);
+
+            this._observer = new MutationObserver(() => {
+                const container = document.getElementById(containerId);
+                if (container && Utils.isElementVisible(container)) {
+                    this._observer.disconnect();
+                    this._observer = null;
+                    
+                    this._container = container;
+                    this._renderChart();
+                    this._initialized = true;
+                    console.log('✅ [ChartManager] Gráfico inicializado via MutationObserver');
+                }
+            });
+
+            this._observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            // Timeout de segurança
+            setTimeout(() => {
+                if (this._observer) {
+                    this._observer.disconnect();
+                    this._observer = null;
+                    console.warn(`⚠️ [ChartManager] Timeout aguardando #${containerId}`);
+                }
+            }, CONFIG.CHART_CONTAINER_TIMEOUT);
+        },
+
+        /**
+         * 🔥 Renderiza o gráfico (Chart.js)
          */
         _renderChart: function() {
+            if (!this._container) {
+                console.warn('⚠️ [ChartManager] Container vazio, não é possível renderizar');
+                return;
+            }
+
             if (typeof Chart === 'undefined') {
-                console.warn('⚠️ [ChartManager] Chart.js não carregado');
+                console.warn('⚠️ [ChartManager] Chart.js não carregado, aguardando...');
+                // Tenta carregar Chart.js dinamicamente
+                this._loadChartJS();
                 return;
             }
 
@@ -355,16 +470,23 @@
                 this._instance = null;
             }
 
+            // Prepara dados
+            const data = this._pendingData || this._data || {
+                labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+                values: [0, 0, 0, 0, 0, 0]
+            };
+            this._data = data;
+
             const ctx = this._container.getContext('2d');
             
-            // 🔥 Configuração otimizada para performance
+            // Configuração otimizada para performance
             this._instance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: this._data.labels,
+                    labels: data.labels,
                     datasets: [{
                         label: 'Análises',
-                        data: this._data.values,
+                        data: data.values,
                         borderColor: '#ff6b35',
                         backgroundColor: 'rgba(255, 107, 53, 0.05)',
                         borderWidth: 3,
@@ -431,17 +553,52 @@
                 }
             });
 
-            // 🔥 Anima entrada do gráfico
+            // Anima entrada do gráfico
             Animator.fadeIn(this._container, { y: 20, duration: 0.8 });
+
+            console.log('📊 [ChartManager] Gráfico renderizado com sucesso');
         },
 
         /**
-         * Atualiza dados do gráfico
+         * 🔥 Carrega Chart.js dinamicamente se necessário
+         */
+        _loadChartJS: function() {
+            // Verifica se já está carregando
+            if (document.querySelector('script[src*="chart.js"]')) {
+                // Aguarda o carregamento
+                const checkChart = setInterval(() => {
+                    if (typeof Chart !== 'undefined') {
+                        clearInterval(checkChart);
+                        this._renderChart();
+                    }
+                }, 200);
+                setTimeout(() => clearInterval(checkChart), 5000);
+                return;
+            }
+
+            console.log('📥 [ChartManager] Carregando Chart.js dinamicamente...');
+            
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            script.async = true;
+            script.onload = () => {
+                console.log('✅ [ChartManager] Chart.js carregado');
+                this._renderChart();
+            };
+            script.onerror = () => {
+                console.warn('⚠️ [ChartManager] Falha ao carregar Chart.js');
+            };
+            document.head.appendChild(script);
+        },
+
+        /**
+         * 🔥 Atualiza dados do gráfico
          */
         update: function(data) {
-            if (!this._instance) {
-                this._data = data || this._data;
-                this._renderChart();
+            // Se não inicializado, guarda dados e tenta inicializar
+            if (!this._initialized || !this._instance) {
+                this._pendingData = data || this._data;
+                this.init('analysisChart', this._pendingData);
                 return;
             }
 
@@ -451,13 +608,34 @@
 
             this._instance.data.labels = this._data.labels;
             this._instance.data.datasets[0].data = this._data.values;
-            this._instance.update('none'); // Atualização sem animação para performance
+            this._instance.update('none');
         },
 
         /**
-         * Adiciona ponto ao gráfico
+         * 🔥 Adiciona ponto ao gráfico
          */
         addPoint: function(label, value) {
+            // Se não inicializado, guarda dados pendentes
+            if (!this._initialized || !this._instance) {
+                if (!this._pendingData) {
+                    this._pendingData = {
+                        labels: [],
+                        values: []
+                    };
+                }
+                this._pendingData.labels.push(label);
+                this._pendingData.values.push(value);
+                
+                // Limita a 12 pontos
+                if (this._pendingData.labels.length > 12) {
+                    this._pendingData.labels.shift();
+                    this._pendingData.values.shift();
+                }
+                
+                this.init('analysisChart', this._pendingData);
+                return;
+            }
+
             this._data.labels.push(label);
             this._data.values.push(value);
 
@@ -471,13 +649,32 @@
         },
 
         /**
-         * Destroi o gráfico
+         * 🔥 Destroi o gráfico
          */
         destroy: function() {
+            if (this._retryTimeout) {
+                clearTimeout(this._retryTimeout);
+                this._retryTimeout = null;
+            }
+            if (this._observer) {
+                this._observer.disconnect();
+                this._observer = null;
+            }
             if (this._instance) {
                 this._instance.destroy();
                 this._instance = null;
             }
+            this._initialized = false;
+            this._retryCount = 0;
+            this._container = null;
+            console.log('🧹 [ChartManager] Destruído');
+        },
+
+        /**
+         * 🔥 Verifica se o gráfico está pronto
+         */
+        isReady: function() {
+            return this._initialized && this._instance !== null;
         }
     };
 
@@ -495,9 +692,6 @@
         _totalHeight: 0,
         _initialized: false,
 
-        /**
-         * Inicializa o gerenciador de histórico
-         */
         init: function(containerId) {
             this._container = document.getElementById(containerId);
             if (!this._container) {
@@ -507,14 +701,12 @@
 
             this._initialized = true;
             
-            // Configura scroll com throttle
             const onScroll = Utils.throttle(() => {
                 this._handleScroll();
             }, 50);
 
             this._container.addEventListener('scroll', onScroll);
 
-            // Resize com debounce
             const onResize = Utils.debounce(() => {
                 this._updateVisible();
             }, 200);
@@ -524,23 +716,16 @@
             console.log('✅ [HistoryManager] Inicializado com virtual scroll');
         },
 
-        /**
-         * Define os dados do histórico
-         */
         setData: function(data) {
             this._data = data || [];
             this._totalHeight = this._data.length * this._itemHeight;
             this._updateVisible();
             
-            // Animação de entrada
             if (this._data.length > 0) {
                 Animator.fadeIn(this._container, { y: 10, duration: 0.4 });
             }
         },
 
-        /**
-         * Atualiza itens visíveis baseado no scroll
-         */
         _updateVisible: function() {
             if (!this._container || !this._initialized) return;
 
@@ -559,9 +744,6 @@
             this._renderVisible(startIndex);
         },
 
-        /**
-         * Renderiza os itens visíveis
-         */
         _renderVisible: function(startIndex) {
             if (!this._container) return;
 
@@ -637,16 +819,10 @@
             this._container.innerHTML = html;
         },
 
-        /**
-         * Atualiza o scroll
-         */
         _handleScroll: function() {
             this._updateVisible();
         },
 
-        /**
-         * Adiciona item ao histórico
-         */
         addItem: function(item) {
             this._data.unshift(item);
             if (this._data.length > CONFIG.HISTORY_LIMIT) {
@@ -654,15 +830,11 @@
             }
             this._totalHeight = this._data.length * this._itemHeight;
             
-            // Se estiver no topo, atualiza visível
             if (this._scrollTop < this._itemHeight * 2) {
                 this._updateVisible();
             }
         },
 
-        /**
-         * Limpa o histórico
-         */
         clear: function() {
             this._data = [];
             this._visible = [];
@@ -675,9 +847,6 @@
     // 🔥 FUNÇÕES PRINCIPAIS
     // ==============================================
 
-    /**
-     * Aguarda app.js carregar
-     */
     function waitForApp(maxAttempts) {
         maxAttempts = maxAttempts || 40;
         return new Promise(function(resolve) {
@@ -716,16 +885,10 @@
         });
     }
 
-    /**
-     * Obtém status do app.js
-     */
     function getAppState() {
         return window.__APP_STATE || {};
     }
 
-    /**
-     * Obtém créditos formatados
-     */
     function getCreditsDisplay() {
         const state = getAppState();
         if (state.isAdmin) return '∞';
@@ -737,9 +900,6 @@
     // 🔥 UPLOAD E PROCESSAMENTO
     // ==============================================
 
-    /**
-     * Prepara PoW para upload
-     */
     async function preparePowForUpload() {
         if (!window.powClient) {
             console.log('⏳ [Dashboard] PoW client não disponível');
@@ -766,9 +926,6 @@
         }
     }
 
-    /**
-     * Processa upload de arquivos
-     */
     async function processUpload(files) {
         if (!files || files.length === 0) {
             showNotification('Selecione pelo menos um arquivo', 'warning');
@@ -844,7 +1001,6 @@
                 }
             }
             
-            // Upload normal
             const headers = { 'Authorization': `Bearer ${token}` };
             if (powSolution?.prefix && powSolution?.nonce) {
                 headers['X-PoW-Challenge'] = powSolution.prefix;
@@ -894,9 +1050,6 @@
         }
     }
 
-    /**
-     * Processa resposta do upload
-     */
     function handleUploadResponse(data, files) {
         showNotification(`✅ ${data.processed_files.length} arquivo(s) processado(s)!`, 'success');
         updateLoadingProgress(10, 'Analisando dados...');
@@ -905,7 +1058,6 @@
             startPolling(processed.process_id, processed.filename);
         }
         
-        // Atualiza créditos via app.js
         if (window.__APP_STATE_MANAGER) {
             window.__APP_STATE_MANAGER.updateCredits(
                 data.credits_balance || 0,
@@ -913,7 +1065,6 @@
             );
         }
         
-        // Limpa input
         const fileInput = document.getElementById('fileInput');
         if (fileInput) fileInput.value = '';
         document.getElementById('filePreviewContainer').innerHTML = '';
@@ -924,13 +1075,9 @@
             uploadBtn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i> Processando...`;
         }
         
-        // Atualiza métricas
         updateMetrics();
     }
 
-    /**
-     * Inicia polling de status
-     */
     async function startPolling(processId, filename) {
         let attempts = 0;
         const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;
@@ -974,7 +1121,6 @@
                         showNotification(`✅ Análise concluída: ${filename}`, 'success');
                         updateLoadingProgress(100, '✅ Análise concluída!');
                         
-                        // Dispara evento
                         window.dispatchEvent(new CustomEvent('analysis:success', {
                             detail: {
                                 processId,
@@ -983,7 +1129,6 @@
                             }
                         }));
                         
-                        // Adiciona ao estado
                         const analysisData = {
                             processId,
                             filename,
@@ -994,17 +1139,11 @@
                         
                         State.activeAnalyses.push(analysisData);
                         renderAnalysisCard(analysisData);
-                        
-                        // Adiciona ao histórico
                         HistoryManager.addItem(analysisData);
-                        
-                        // Atualiza gráfico
                         ChartManager.addPoint(
                             new Date().toLocaleDateString('pt-BR', { month: 'short' }),
                             State.activeAnalyses.length
                         );
-                        
-                        // Atualiza métricas
                         updateMetrics();
                         
                         const uploadBtn = document.getElementById('uploadButton');
@@ -1078,7 +1217,7 @@
                 <div class="card border-0 shadow-lg rounded-4 overflow-hidden" 
                      style="background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); 
                             border: 1px solid rgba(255,255,255,0.06);">
-                    
+                    <!-- ... conteúdo do card ... -->
                     <div class="card-header py-3 px-4" 
                          style="background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(247,147,30,0.08)); 
                                 border-bottom: 1px solid rgba(255,255,255,0.04);">
@@ -1114,7 +1253,6 @@
                     </div>
                     
                     <div class="card-body p-4">
-                        <!-- SCORE PRINCIPAL -->
                         <div class="row g-3 mb-4">
                             <div class="col-12">
                                 <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
@@ -1142,7 +1280,6 @@
                             </div>
                         </div>
                         
-                        <!-- MÉTRICAS -->
                         <div class="row g-3 mb-4">
                             <div class="col-md-3 col-6">
                                 <div class="p-3 rounded-4 text-center metric-box" 
@@ -1178,7 +1315,6 @@
                             </div>
                         </div>
                         
-                        <!-- DISTRIBUIÇÃO DE RISCO -->
                         <div class="row g-3 mb-3">
                             <div class="col-12">
                                 <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.12); border: 1px solid rgba(255,255,255,0.03);">
@@ -1212,7 +1348,6 @@
                             </div>
                         </div>
                         
-                        <!-- INSIGHTS -->
                         ${renderInsights(data)}
                         
                         <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.03);">
@@ -1235,20 +1370,16 @@
         
         container.insertAdjacentHTML('afterbegin', cardHTML);
         
-        // Anima o card
         const cardElement = document.getElementById(cardId);
         if (cardElement) {
             Animator.fadeIn(cardElement, { y: 20, duration: 0.5 });
             
-            // Anima métricas
             const metricBoxes = cardElement.querySelectorAll('.metric-box');
             Animator.staggerIn(metricBoxes, { y: 10, stagger: 0.1, duration: 0.4 });
             
-            // Anima barras de risco
             const riskBars = cardElement.querySelectorAll('.risk-bar');
             Animator.staggerIn(riskBars, { y: 10, stagger: 0.08, duration: 0.3 });
             
-            // Anima valores das métricas
             const metricValues = cardElement.querySelectorAll('.metric-value');
             const targets = [crescimento, economia, retencao, totalRegistros];
             metricValues.forEach((el, i) => {
@@ -1329,7 +1460,6 @@
         
         const creditsDisplay = getCreditsDisplay();
         
-        // Atualiza elementos
         const totalEl = document.getElementById('totalAnalises');
         const todayEl = document.getElementById('analisesHoje');
         const creditsEl = document.getElementById('creditsDisplay');
@@ -1485,7 +1615,6 @@
         html += `</div></div>`;
         container.innerHTML = html;
         
-        // Anima entrada
         const items = container.querySelectorAll('.file-preview-item');
         Animator.staggerIn(items, { y: -10, stagger: 0.05, duration: 0.3 });
         
@@ -1637,9 +1766,8 @@
             return;
         }
 
-        console.log('🚀 [Dashboard v7.0] Inicializando...');
+        console.log('🚀 [Dashboard v7.1] Inicializando...');
 
-        // Aguarda app.js
         const appReady = await waitForApp(40);
         
         if (!appReady) {
@@ -1653,29 +1781,18 @@
             console.warn('⚠️ [Dashboard] Token presente, prosseguindo com cautela...');
         }
 
-        // Inicializa animações
         Animator.init();
-
-        // Inicializa UI
         setupDragAndDrop();
         setupUploadForm();
 
-        // Inicializa gráfico (leve)
+        // 🔥 CORRIGIDO: Inicializa gráfico com retry
         ChartManager.init('analysisChart');
 
-        // Inicializa histórico (virtual scroll)
         HistoryManager.init('recentAnalyses');
-
-        // Carrega histórico
         await loadHistory();
-
-        // Sincroniza com app.js
         syncWithApp();
-
-        // Atualiza métricas
         updateMetrics();
 
-        // Inicia monitoramento
         setInterval(() => {
             syncWithApp();
             updateMetrics();
@@ -1683,27 +1800,22 @@
 
         State._initialized = true;
         
-        console.log('✅ [Dashboard v7.0] Inicializado com sucesso!');
+        console.log('✅ [Dashboard v7.1] Inicializado com sucesso!');
         console.log(`   📦 App.js integrado: ${appReady}`);
         console.log(`   📊 Créditos: ${getCreditsDisplay()}`);
-        console.log(`   📈 Gráfico: ${ChartManager._instance ? 'OK' : 'N/A'}`);
+        console.log(`   📈 Gráfico: ${ChartManager.isReady() ? 'OK' : 'N/A'}`);
         console.log(`   📋 Histórico: ${HistoryManager._data.length} itens`);
     }
 
-    /**
-     * Sincroniza com app.js
-     */
     function syncWithApp() {
         const state = getAppState();
         const app = window.App || {};
         
-        // Atualiza estado
         State.credits = state.credits || 0;
         State.isPremium = state.isPremium || false;
         State.isAdmin = state.isAdmin || false;
         State.userName = state.user?.name || state.displayName || 'Usuário';
         
-        // Atualiza UI
         updateCreditsDisplay();
         updateUserUI();
         updatePremiumStatusUI();
@@ -1766,8 +1878,6 @@
         }
         
         container.innerHTML = html;
-        
-        // Anima entrada
         Animator.fadeIn(container, { y: 10, duration: 0.4 });
     }
 
@@ -1775,14 +1885,12 @@
     // 🔥 EVENTOS
     // ==============================================
 
-    // Principal: aguarda app:ready
     document.addEventListener('app:ready', function(event) {
         console.log('📢 [Dashboard] app:ready recebido');
         State._appReady = true;
         initialize();
     });
 
-    // Fallback passivo
     document.addEventListener('DOMContentLoaded', function() {
         const token = localStorage.getItem('access_token');
         const isAuth = token && token !== 'undefined' && token !== 'null' && token.length > 10;
@@ -1809,7 +1917,6 @@
         }, 3000);
     });
 
-    // Eventos de créditos
     document.addEventListener('creditsUpdated', function(e) {
         const data = e.detail || {};
         updateCreditsDisplay();
@@ -1826,7 +1933,6 @@
         updateMetrics();
     });
 
-    // Eventos de análise
     document.addEventListener('analysis:success', function(e) {
         const detail = e.detail || {};
         const analysisData = {
@@ -1855,7 +1961,6 @@
         }
     });
 
-    // Eventos de logout
     document.addEventListener('auth:unauthorized', function() {
         console.log('🧹 [Dashboard] Limpando recursos...');
         State.pollingIntervals.forEach(clearInterval);
@@ -1870,10 +1975,10 @@
     // ==============================================
 
     (function injectStyles() {
-        if (document.getElementById('dashboardV70Styles')) return;
+        if (document.getElementById('dashboardV71Styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'dashboardV70Styles';
+        style.id = 'dashboardV71Styles';
         style.textContent = `
             .analysis-card {
                 animation: fadeInUp 0.5s ease-out;
@@ -1945,7 +2050,6 @@
                 background: rgba(255,255,255,0.03);
             }
             
-            /* Scrollbar personalizada */
             .timeline::-webkit-scrollbar,
             .history-scroll::-webkit-scrollbar {
                 width: 4px;
@@ -1968,10 +2072,12 @@
         document.head.appendChild(style);
     })();
 
-    console.log('✅ [Dashboard v7.0] Módulo carregado com sucesso!');
+    console.log('✅ [Dashboard v7.1] Módulo carregado com sucesso!');
+    console.log('   🔥 CORRIGIDO: ChartManager com retry inteligente');
+    console.log('   🔥 MELHORADO: Detecção de container com MutationObserver');
+    console.log('   🔥 ADICIONADO: Fallback com timeout');
     console.log('   🎬 Animações GSAP + CSS');
     console.log('   📊 Gráficos leves (Chart.js otimizado)');
     console.log('   📋 Virtual scroll para histórico');
-    console.log('   🔗 Totalmente integrado com app.js');
 
 })();
