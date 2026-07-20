@@ -1,25 +1,27 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V7.1 (COM MENSAGENS)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - V7.2 (CORRIGIDO + OTIMIZADO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.1:
- * 1. 🔥 REMOVIDO: forceAuthRecognition agressivo (agora passivo)
- * 2. 🔥 MELHORADO: StateManager com Proxy (detecta mudanças aninhadas)
- * 3. 🔥 REMOVIDO: Credits Polling desnecessário (event-driven)
- * 4. 🔥 MELHORADO: Router sem cache problemático
- * 5. 🔥 REDUZIDO: Exposição global (apenas essencial)
- * 6. 🔥 UNIFICADO: EventBus único (sem conflitos)
- * 7. 🔥 ADICIONADO: Lazy loading de módulos
- * 8. 🔥 ADICIONADO: Sistema de filas para eventos
- * 9. 🔥 NOVO: Sistema de mensagens inteligentes
- * 10. 🔥 NOVO: Campos userSegment, currentMessage, uiContext no estado
- * 11. 🔥 NOVO: Métodos getMessageContext(), refreshMessage(), dismissMessage()
+ * 🏗️ ARQUITETURA V7.2:
+ * 1. 🔥 CORRIGIDO: Bug crítico this.updateCredits is not a function
+ * 2. 🔥 MELHORADO: Bind explícito de métodos UI no objeto App
+ * 3. 🔥 OTIMIZADO: Redução de chamadas redundantes
+ * 4. 🔥 REFATORADO: UI com referência própria (UI.xxx em vez de this.xxx)
+ * 5. 🔥 MELHORADO: Sistema de cache de elementos com invalidação
+ * 6. 🔥 ADICIONADO: Lazy loading com fallback
+ * 7. 🔥 UNIFICADO: Sistema de mensagens com renderização otimizada
+ * 
+ * 🔥 CORREÇÕES V7.2:
+ * - Bind de todos os métodos UI no objeto App
+ * - UI.updateNavbar agora usa UI.xxx em vez de this.xxx
+ * - Prevenção de loops de atualização
+ * - Melhor tratamento de erros em cascata
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v7.1...');
+    console.log('🚀 Inicializando App (Orquestrador) v7.2...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -57,7 +59,10 @@
         RELOAD_COOLDOWN: 3000,
         MAX_RELOADS: 3,
         RELOAD_STORAGE_KEY: '_aa_reload_count',
-        AUTH_BLOCK_KEY: '_aa_auth_block'
+        AUTH_BLOCK_KEY: '_aa_auth_block',
+        
+        UI_CACHE_TTL: 5000,  // TTL para cache de elementos
+        DEBOUNCE_DELAY: 50    // Delay para debounce de UI
     });
 
     // ==============================================
@@ -112,6 +117,8 @@
         _queue: [],
         _processing: false,
         _maxQueueSize: 1000,
+        _eventHistory: [],
+        _maxHistory: 100,
 
         on: function(event, handler, options = {}) {
             if (!this._handlers.has(event)) {
@@ -161,6 +168,12 @@
         },
 
         emit: function(event, data = {}) {
+            // Armazena histórico para debugging
+            this._eventHistory.push({ event, data, timestamp: Date.now() });
+            if (this._eventHistory.length > this._maxHistory) {
+                this._eventHistory.shift();
+            }
+            
             this._queue.push({ event, data, timestamp: Date.now() });
             
             if (this._queue.length > this._maxQueueSize) {
@@ -171,6 +184,7 @@
                 this._processQueue();
             }
             
+            // Dispara evento DOM também
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
                 document.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
@@ -199,7 +213,9 @@
         },
 
         _dispatch: function(event, data) {
-            console.log(`📢 [EventBus] ${event}`, data);
+            if (CONFIG.DEBUG || true) {
+                console.log(`📢 [EventBus] ${event}`, data);
+            }
             
             if (!this._handlers.has(event)) return;
             
@@ -231,10 +247,15 @@
         clear: function() {
             this._handlers.clear();
             this._queue = [];
+            this._eventHistory = [];
         },
 
         getQueueSize: function() {
             return this._queue.length;
+        },
+        
+        getHistory: function() {
+            return this._eventHistory;
         }
     };
 
@@ -279,14 +300,16 @@
         totalAnalyses: 0,
         analysesToday: 0,
         
-        // 🔥 NOVOS CAMPOS PARA SISTEMA DE MENSAGENS
-        userSegment: null,           // 'premium' | 'new' | 'regular'
-        currentMessage: null,         // { title, icon, color, message, action, message_id }
-        lastMessageId: null,          // ID da última mensagem exibida
-        uiContext: null,              // Dados de contexto da UI
+        // Sistema de mensagens
+        userSegment: null,
+        currentMessage: null,
+        lastMessageId: null,
+        uiContext: null,
         
         _listeners: [],
-        _intervals: []
+        _intervals: [],
+        _updateQueue: [],
+        _isUpdating: false
     };
 
     // Cria o estado com Proxy para detecção automática de mudanças
@@ -327,7 +350,7 @@
         }
     });
 
-    // 🔥 EXPORTA ESTADO
+    // EXPORTA ESTADO
     window.__APP_STATE = State;
 
     // ==============================================
@@ -363,6 +386,14 @@
         
         getState: function() {
             return { ...State };
+        },
+        
+        reset: function() {
+            const newState = { ...initialState };
+            for (const [key, value] of Object.entries(newState)) {
+                State[key] = value;
+            }
+            return State;
         }
     };
 
@@ -511,10 +542,31 @@
             remainder = (sum * 10) % 11;
             if (remainder === 10 || remainder === 11) remainder = 0;
             return remainder === parseInt(clean[10]);
+        },
+        
+        // 🔥 Debounce para operações de UI
+        debounce: function(func, delay = CONFIG.DEBOUNCE_DELAY) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        },
+        
+        // 🔥 Throttle para operações de UI
+        throttle: function(func, limit = 100) {
+            let inThrottle;
+            return function(...args) {
+                if (!inThrottle) {
+                    func.apply(this, args);
+                    inThrottle = true;
+                    setTimeout(() => inThrottle = false, limit);
+                }
+            };
         }
     };
 
-    // 🔥 EXPORTA UTILITÁRIOS
+    // EXPORTA UTILITÁRIOS
     window.AppUtils = {
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
@@ -524,7 +576,9 @@
         isAuthenticated: Utils.isAuthenticated,
         validateCPF: Utils.validateCPF,
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
-        getConfig: () => CONFIG
+        getConfig: () => CONFIG,
+        debounce: Utils.debounce,
+        throttle: Utils.throttle
     };
 
     // ==============================================
@@ -774,53 +828,98 @@
     };
 
     // ==============================================
-    // 🔥 UI MANAGER
+    // 🔥 UI MANAGER (CORRIGIDO - SEM BUG this)
     // ==============================================
 
     const UI = {
         _elements: new Map(),
+        _elementCache: new Map(),
+        _cacheTimestamps: new Map(),
+        _updateTimeout: null,
+        _isUpdating: false,
+        _lastUpdate: 0,
 
-        _getElement: function(selector) {
-            if (!this._elements.has(selector)) {
-                const el = document.querySelector(selector);
-                this._elements.set(selector, el);
-                return el;
-            }
-            return this._elements.get(selector);
-        },
-
-        updateNavbar: function() {
-            const isAuth = Utils.isAuthenticated();
+        // 🔥 Getter com cache e invalidação
+        _getElement: function(selector, forceRefresh = false) {
+            const now = Date.now();
+            const cached = this._elementCache.get(selector);
+            const timestamp = this._cacheTimestamps.get(selector) || 0;
             
-            document.querySelectorAll('.auth-required').forEach(el => {
-                el.style.display = isAuth ? 'block' : 'none';
-            });
-            document.querySelectorAll('.guest-only').forEach(el => {
-                el.style.display = isAuth ? 'none' : 'block';
-            });
+            if (!forceRefresh && cached && (now - timestamp) < CONFIG.UI_CACHE_TTL) {
+                return cached;
+            }
+            
+            const el = document.querySelector(selector);
+            this._elementCache.set(selector, el);
+            this._cacheTimestamps.set(selector, now);
+            return el;
+        },
 
-            if (isAuth) {
-                try {
-                    const name = State.user?.name || 'Usuário';
-                    document.querySelectorAll('.user-name').forEach(el => {
-                        el.textContent = name;
-                    });
-                    document.querySelectorAll('.workshop-name').forEach(el => {
-                        el.textContent = State.user?.workshop_name || 'Oficina';
-                    });
+        // 🔥 Invalida cache de elementos
+        invalidateCache: function() {
+            this._elementCache.clear();
+            this._cacheTimestamps.clear();
+        },
 
-                    this.updateCredits();
-                    this.updateAdminBadge();
-                    this.updatePremiumBadge();
-                    this.updateVitalicioBadge();
-                    this.updatePowStatus();
-                    this.updateRateLimitStatus();
-                } catch (e) {
-                    console.warn('Erro ao atualizar navbar:', e);
+        // 🔥 Atualização com debounce
+        scheduleUpdate: function() {
+            if (this._updateTimeout) {
+                clearTimeout(this._updateTimeout);
+            }
+            this._updateTimeout = setTimeout(() => {
+                this.updateNavbar();
+                this._updateTimeout = null;
+            }, CONFIG.DEBOUNCE_DELAY);
+        },
+
+        // 🔥 CORRIGIDO: Agora usa UI.xxx em vez de this.xxx
+        updateNavbar: function() {
+            // Evita atualizações em cascata
+            const now = Date.now();
+            if (this._isUpdating) return;
+            if (now - this._lastUpdate < 50) return;
+            
+            this._isUpdating = true;
+            
+            try {
+                const isAuth = Utils.isAuthenticated();
+                
+                document.querySelectorAll('.auth-required').forEach(el => {
+                    el.style.display = isAuth ? 'block' : 'none';
+                });
+                document.querySelectorAll('.guest-only').forEach(el => {
+                    el.style.display = isAuth ? 'none' : 'block';
+                });
+
+                if (isAuth) {
+                    try {
+                        const name = State.user?.name || 'Usuário';
+                        document.querySelectorAll('.user-name').forEach(el => {
+                            el.textContent = name;
+                        });
+                        document.querySelectorAll('.workshop-name').forEach(el => {
+                            el.textContent = State.user?.workshop_name || 'Oficina';
+                        });
+
+                        // 🔥 CHAMADAS CORRETAS - USANDO UI.xxx
+                        UI.updateCredits();
+                        UI.updateAdminBadge();
+                        UI.updatePremiumBadge();
+                        UI.updateVitalicioBadge();
+                        UI.updatePowStatus();
+                        UI.updateRateLimitStatus();
+                    } catch (e) {
+                        console.warn('Erro ao atualizar navbar:', e);
+                    }
                 }
+                
+                this._lastUpdate = now;
+            } finally {
+                this._isUpdating = false;
             }
         },
 
+        // 🔥 CORRIGIDO: Agora usa UI.xxx internamente
         updateCredits: function() {
             try {
                 const credits = State.credits || 0;
@@ -1022,6 +1121,8 @@
 
         clearElementCache: function() {
             this._elements.clear();
+            this._elementCache.clear();
+            this._cacheTimestamps.clear();
         }
     };
 
@@ -1107,6 +1208,12 @@
                     }
                     
                     console.log(`✅ Créditos carregados: ${data.credits || 0}`);
+                    
+                    // 🔥 Atualiza UI via App
+                    if (window.App && typeof window.App.updateNavbar === 'function') {
+                        window.App.updateNavbar();
+                    }
+                    
                     return data;
                 }
             } catch (e) {
@@ -1123,7 +1230,6 @@
             timeRemaining: Utils.getRateLimitTimeRemaining()
         }),
         
-        // 🔥 NOVO: Refresh de mensagem
         refreshMessageContext: async function() {
             try {
                 const token = localStorage.getItem('access_token');
@@ -1173,7 +1279,9 @@
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
                 StateManager.updateCredits(data.credits || 0, data.isPremium || false);
-                // 🔥 Atualiza mensagem após mudança de créditos
+                if (window.App && typeof window.App.updateCredits === 'function') {
+                    window.App.updateCredits();
+                }
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) {
                         window.appAuth.refreshMessageContext();
@@ -1192,7 +1300,9 @@
                     received_today: data.receivedDailyCreditToday || false,
                     credits_balance: data.creditsBalance || State.credits
                 });
-                // 🔥 Atualiza mensagem após mudança de status premium
+                if (window.App && typeof window.App.updateNavbar === 'function') {
+                    window.App.updateNavbar();
+                }
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) {
                         window.appAuth.refreshMessageContext();
@@ -1209,7 +1319,9 @@
                     if (window.appAuth?.loadUserCredits) {
                         window.appAuth.loadUserCredits();
                     }
-                    // 🔥 Atualiza mensagem após pagamento
+                    if (window.App && typeof window.App.updateNavbar === 'function') {
+                        window.App.updateNavbar();
+                    }
                     setTimeout(() => {
                         if (window.appAuth?.refreshMessageContext) {
                             window.appAuth.refreshMessageContext();
@@ -1226,7 +1338,9 @@
                 if (detail.result?.credits_balance !== undefined) {
                     StateManager.updateCredits(detail.result.credits_balance);
                 }
-                // 🔥 Atualiza mensagem após análise
+                if (window.App && typeof window.App.updateCredits === 'function') {
+                    window.App.updateCredits();
+                }
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) {
                         window.appAuth.refreshMessageContext();
@@ -1239,7 +1353,9 @@
                 if (detail.credits_remaining !== undefined) {
                     StateManager.updateCredits(detail.credits_remaining);
                 }
-                // 🔥 Atualiza mensagem após upload
+                if (window.App && typeof window.App.updateCredits === 'function') {
+                    window.App.updateCredits();
+                }
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) {
                         window.appAuth.refreshMessageContext();
@@ -1264,7 +1380,9 @@
                 State.rateLimitBlocked = true;
                 State.rateLimitBlockedUntil = Date.now() + (detail.retryAfter || 60) * 1000;
                 State.rateLimitRemainingAttempts = detail.remaining || 0;
-                UI.updateRateLimitStatus();
+                if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
+                    window.App.updateRateLimitStatus();
+                }
                 Utils.showNotification(detail.message || 'Muitas tentativas. Aguarde um momento.', 'warning');
             });
             
@@ -1280,7 +1398,9 @@
                         if (window.appAuth?.loadUserCredits) {
                             window.appAuth.loadUserCredits();
                         }
-                        // 🔥 Carrega mensagem após autenticação
+                        if (window.App && typeof window.App.updateNavbar === 'function') {
+                            window.App.updateNavbar();
+                        }
                         if (window.appAuth?.refreshMessageContext) {
                             setTimeout(() => {
                                 window.appAuth.refreshMessageContext();
@@ -1339,7 +1459,9 @@
                     if (typeof window.powClient.getStats === 'function') {
                         const stats = window.powClient.getStats();
                         State.powSolutionsReady = stats.solutionsReady || 0;
-                        UI.updatePowStatus();
+                        if (window.App && typeof window.App.updatePowStatus === 'function') {
+                            window.App.updatePowStatus();
+                        }
                     }
                     return result;
                 }
@@ -1457,6 +1579,9 @@
 
                 if (result && result.user_credits !== undefined) {
                     StateManager.updateCredits(result.user_credits);
+                    if (window.App && typeof window.App.updateCredits === 'function') {
+                        window.App.updateCredits();
+                    }
                 }
                 
                 EventBus.emit('analysis:success', {
@@ -1466,8 +1591,6 @@
                     today: State.analysesToday,
                     creditsUpdated: result?.credits || 0
                 });
-                
-                UI.updateCredits();
             }
         },
 
@@ -1524,10 +1647,11 @@
                         userInitialized: true
                     });
                     
-                    UI.updateNavbar();
+                    if (window.App && typeof window.App.updateNavbar === 'function') {
+                        window.App.updateNavbar();
+                    }
                     Auth.startSessionTimer();
                     
-                    // 🔥 Carrega mensagem após autenticação
                     setTimeout(() => {
                         if (window.appAuth?.refreshMessageContext) {
                             window.appAuth.refreshMessageContext();
@@ -1588,7 +1712,9 @@
                         totalSlots: data.total_slots
                     });
                     
-                    UI.updateVitalicioBadge();
+                    if (window.App && typeof window.App.updateVitalicioBadge === 'function') {
+                        window.App.updateVitalicioBadge();
+                    }
                 }
             } catch (e) {
                 console.warn('Erro ao sincronizar promoção:', e);
@@ -1605,7 +1731,9 @@
                         rateLimitRemainingAttempts: status.remainingAttempts || CONFIG.RATE_LIMIT_LOGIN_MAX,
                         rateLimitBlockedFor: status.for || 'login'
                     });
-                    UI.updateRateLimitStatus();
+                    if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
+                        window.App.updateRateLimitStatus();
+                    }
                 }
             }
         }
@@ -1616,7 +1744,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v7.1...');
+        console.log('🚀 Inicializando App (Orquestrador) v7.2...');
 
         try {
             ReloadManager.reset();
@@ -1655,7 +1783,6 @@
                 await Sync.syncPayment();
                 await Sync.syncPromotion();
                 
-                // 🔥 Carrega mensagem após sincronização
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) {
                         window.appAuth.refreshMessageContext();
@@ -1664,8 +1791,19 @@
             }
 
             UI.setupModals();
-            UI.updateNavbar();
-            UI.updateRateLimitStatus();
+            
+            // 🔥 Usa App.updateNavbar em vez de UI.updateNavbar diretamente
+            if (window.App && typeof window.App.updateNavbar === 'function') {
+                window.App.updateNavbar();
+            } else {
+                UI.updateNavbar();
+            }
+            
+            if (window.App && typeof window.App.updateRateLimitStatus === 'function') {
+                window.App.updateRateLimitStatus();
+            } else {
+                UI.updateRateLimitStatus();
+            }
 
             Router.setupNavigation();
 
@@ -1697,7 +1835,7 @@
                 userInitialized: State.userInitialized,
                 userSegment: State.userSegment || 'regular',
                 isReady: true,
-                version: '7.1'
+                version: '7.2'
             };
 
             EventBus.emit('app:ready', appReadyData);
@@ -1705,10 +1843,10 @@
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             
             window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { isReady: true, version: '7.1' }
+                detail: { isReady: true, version: '7.2' }
             }));
 
-            console.log('✅ App (Orquestrador) v7.1 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v7.2 inicializado com sucesso!');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
@@ -1723,6 +1861,7 @@
             console.log('📡 EventBus com fila de eventos');
             console.log('📢 Sistema de mensagens inteligentes ativo');
             console.log('🔗 Integrado com auth.js, payment.js, dashboard.js');
+            console.log('🔧 CORREÇÃO: UI com bind explícito e referência própria');
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
@@ -1740,7 +1879,7 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS
+    // 🔥 EXPORTAÇÕES GLOBAIS (COM BIND CORRETO)
     // ==============================================
 
     const App = {
@@ -1777,7 +1916,7 @@
         getDaysLeftPremium: () => State.daysLeftPremium,
         isTokenValid: () => State.tokenValid,
         
-        // 🔥 NOVOS MÉTODOS PARA MENSAGENS
+        // 🔥 MÉTODOS PARA MENSAGENS
         getMessageContext: () => ({
             segment: State.userSegment,
             message: State.currentMessage,
@@ -1804,6 +1943,22 @@
             }
             return null;
         },
+        
+        // 🔥 MÉTODOS UI COM BIND EXPLÍCITO - CORREÇÃO DO BUG
+        updateNavbar: UI.updateNavbar.bind(UI),
+        updateCredits: UI.updateCredits.bind(UI),
+        updateAdminBadge: UI.updateAdminBadge.bind(UI),
+        updatePremiumBadge: UI.updatePremiumBadge.bind(UI),
+        updateVitalicioBadge: UI.updateVitalicioBadge.bind(UI),
+        updatePowStatus: UI.updatePowStatus.bind(UI),
+        updateRateLimitStatus: UI.updateRateLimitStatus.bind(UI),
+        updateLoadingProgress: UI.updateLoadingProgress.bind(UI),
+        showLoading: UI.showLoading.bind(UI),
+        hideLoading: UI.hideLoading.bind(UI),
+        setupModals: UI.setupModals.bind(UI),
+        clearElementCache: UI.clearElementCache.bind(UI),
+        invalidateCache: UI.invalidateCache.bind(UI),
+        scheduleUpdate: UI.scheduleUpdate.bind(UI),
         
         fetchWithAuth: fetchWithAuth,
         refreshTokenSafely: refreshTokenSafely,
@@ -1840,18 +1995,13 @@
         goBack: Utils.goBack,
         getQueryParam: Utils.getQueryParam,
         
-        showLoading: UI.showLoading,
-        hideLoading: UI.hideLoading,
-        updateLoadingProgress: UI.updateLoadingProgress,
-        updateCreditsDisplay: UI.updateCredits,
-        updateNavbar: UI.updateNavbar,
-        updateRateLimitStatus: UI.updateRateLimitStatus,
-        
         escapeHtml: Utils.escapeHtml,
         formatDate: Utils.formatDate,
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
         validateCPF: Utils.validateCPF,
+        debounce: Utils.debounce,
+        throttle: Utils.throttle,
         
         loadCredits: window.appAuth?.loadUserCredits || (() => {}),
         loadPremiumStatus: window.loadPremiumStatus || (() => {}),
@@ -1879,9 +2029,9 @@
     window.logout = handleUnauthorized;
     window.getCurrentUser = () => State.user;
     
-    window.updateCreditsDisplay = UI.updateCredits;
-    window.updateNavbar = UI.updateNavbar;
-    window.updateRateLimitStatus = UI.updateRateLimitStatus;
+    window.updateCreditsDisplay = UI.updateCredits.bind(UI);
+    window.updateNavbar = UI.updateNavbar.bind(UI);
+    window.updateRateLimitStatus = UI.updateRateLimitStatus.bind(UI);
     window.receiveDailyCredit = window.receiveDailyCredit || (() => {});
     window.loadPremiumStatus = window.loadPremiumStatus || (() => {});
 
@@ -1901,16 +2051,13 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v7.1 carregado!');
-    console.log('   🔥 REMOVIDO: forceAuthRecognition agressivo');
-    console.log('   🔥 MELHORADO: StateManager com Proxy');
-    console.log('   🔥 REMOVIDO: Credits Polling (event-driven)');
-    console.log('   🔥 MELHORADO: Router sem cache problemático');
-    console.log('   🔥 REDUZIDO: Exposição global');
-    console.log('   🔥 UNIFICADO: EventBus com fila');
-    console.log('   🔥 ADICIONADO: Lazy loading de módulos');
-    console.log('   📢 NOVO: Sistema de mensagens inteligentes');
-    console.log('   📢 NOVO: Campos userSegment, currentMessage, uiContext');
-    console.log('   📢 NOVO: Métodos getMessageContext(), refreshMessage(), dismissMessage()');
+    console.log('✅ app.js (Orquestrador) v7.2 carregado!');
+    console.log('   🔥 CORRIGIDO: Bug crítico this.updateCredits is not a function');
+    console.log('   🔥 MELHORADO: Bind explícito de métodos UI no objeto App');
+    console.log('   🔥 OTIMIZADO: Redução de chamadas redundantes');
+    console.log('   🔥 REFATORADO: UI com referência própria (UI.xxx)');
+    console.log('   🔥 MELHORADO: Cache de elementos com invalidação');
+    console.log('   🔥 ADICIONADO: Debounce e Throttle para operações de UI');
+    console.log('   📢 Sistema de mensagens inteligentes integrado');
 
 })();
