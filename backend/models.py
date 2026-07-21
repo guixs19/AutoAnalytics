@@ -1,4 +1,9 @@
-# backend/models.py - VERSÃO SINCRONIZADA COM CRUD.PY
+# backend/models.py - VERSÃO ATUALIZADA COM CAMPOS POW
+"""
+Models - AutoAnalytics
+Versão: 2.0 - Com suporte a PoW e métricas avançadas
+"""
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
 from sqlalchemy.orm import relationship
 from datetime import datetime, date, timedelta, timezone
@@ -7,7 +12,7 @@ import enum
 from backend.database import Base
 from backend.security import hasher
 
-# 🔥 DEFINIR FUSO HORÁRIO DE BRASÍLIA (UTC-3) - MESMO DO CRUD.PY
+# 🔥 FUSO HORÁRIO DE BRASÍLIA (UTC-3)
 TZ_BRASIL = timezone(timedelta(hours=-3))
 
 def _now_brasil() -> datetime:
@@ -55,7 +60,6 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     
-    # 🔥 SINCRONIZADO: usa _now_brasil() em vez de datetime.utcnow()
     created_at = Column(DateTime, default=_now_brasil)
     last_login = Column(DateTime, onupdate=_now_brasil)
     
@@ -71,7 +75,7 @@ class User(Base):
     premium_activated_at = Column(DateTime, nullable=True)
     premium_expires_at = Column(Date, nullable=True)
     
-    # 🔥 CAMPOS PARA PROMOÇÃO BRONZE
+    # Promoção
     promotional_price_locked = Column(Boolean, default=False)
     promotional_price = Column(Float, nullable=True)
     purchased_at_promotion = Column(DateTime, nullable=True)
@@ -88,6 +92,7 @@ class User(Base):
     payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
     daily_credits = relationship("DailyCreditLog", back_populates="user", cascade="all, delete-orphan")
     
+    # ===== MÉTODOS =====
     def verify_password(self, password: str) -> bool:
         return hasher.verify_password(password, self.hashed_password)
     
@@ -110,31 +115,29 @@ class User(Base):
     def add_credits(self, amount: int):
         self.credits += amount
         self.total_purchased += amount
-        self.last_payment_date = _now_brasil()  # 🔥 SINCRONIZADO
+        self.last_payment_date = _now_brasil()
     
     def is_premium(self) -> bool:
         if self.plan != UserPlan.PREMIUM_MENSAL:
             return False
         if not self.premium_expires_at:
             return False
-        return self.premium_expires_at >= _today_brasil()  # 🔥 SINCRONIZADO
+        return self.premium_expires_at >= _today_brasil()
     
     def get_premium_days_left(self) -> int:
         if not self.is_premium():
             return 0
-        return (self.premium_expires_at - _today_brasil()).days  # 🔥 SINCRONIZADO
+        return (self.premium_expires_at - _today_brasil()).days
     
     def get_premium_progress(self) -> float:
         if not self.premium_activated_at or not self.premium_expires_at:
             return 0
-        
         total_days = 30
-        days_passed = (_today_brasil() - self.premium_activated_at.date()).days  # 🔥 SINCRONIZADO
+        days_passed = (_today_brasil() - self.premium_activated_at.date()).days
         if days_passed < 0:
             days_passed = 0
         elif days_passed > total_days:
             days_passed = total_days
-        
         return round((days_passed / total_days) * 100, 1)
     
     def get_current_price(self) -> float:
@@ -142,19 +145,19 @@ class User(Base):
             return self.promotional_price
         return 97.00
     
-    # ===== MÉTODOS PARA REFRESH TOKEN =====
+    # Refresh Token
     def set_refresh_token(self, token: str, jti: str, expires_days: int = 7):
         self.refresh_token = token
         self.refresh_token_jti = jti
-        self.refresh_token_expires = _now_brasil() + timedelta(days=expires_days)  # 🔥 SINCRONIZADO
+        self.refresh_token_expires = _now_brasil() + timedelta(days=expires_days)
         self.refresh_token_revoked = False
-        self.last_refresh_at = _now_brasil()  # 🔥 SINCRONIZADO
+        self.last_refresh_at = _now_brasil()
     
     def validate_refresh_token(self, token: str) -> bool:
         return (
             self.refresh_token == token and
             self.refresh_token_expires and
-            self.refresh_token_expires > _now_brasil() and  # 🔥 SINCRONIZADO
+            self.refresh_token_expires > _now_brasil() and
             not self.refresh_token_revoked
         )
     
@@ -189,7 +192,6 @@ class Payment(Base):
     description = Column(String)
     payment_metadata = Column(JSON, default={})
     
-    # 🔥 SINCRONIZADO: usa _now_brasil()
     created_at = Column(DateTime, default=_now_brasil)
     updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
     approved_at = Column(DateTime, nullable=True)
@@ -223,12 +225,12 @@ class DailyCreditLog(Base):
     payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
     
     credits_added = Column(Integer, default=1)
-    date = Column(Date, default=_today_brasil)  # 🔥 SINCRONIZADO
+    date = Column(Date, default=_today_brasil)
     day_number = Column(Integer)
     total_after = Column(Integer)
     source = Column(String, default="daily_upload")
     
-    created_at = Column(DateTime, default=_now_brasil)  # 🔥 SINCRONIZADO
+    created_at = Column(DateTime, default=_now_brasil)
     
     user = relationship("User", back_populates="daily_credits")
     payment = relationship("Payment", back_populates="daily_credit_logs")
@@ -246,10 +248,15 @@ class DailyCreditLog(Base):
         }
 
 
+# ==============================================
+# 🔥🔥🔥 ANALYSIS - VERSÃO ATUALIZADA COM POW
+# ==============================================
+
 class Analysis(Base):
     __tablename__ = 'analyses'
     __table_args__ = {'extend_existing': True}
     
+    # ===== CAMPOS EXISTENTES =====
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     filename = Column(String)
@@ -261,19 +268,140 @@ class Analysis(Base):
     ai_report = Column(Text)
     report_path = Column(String)
     
-    # 🔥 SINCRONIZADO: usa _now_brasil()
     uploaded_at = Column(DateTime, default=_now_brasil)
     processed_at = Column(DateTime, nullable=True)
     
     user = relationship("User", back_populates="analyses")
+    
+    # ==========================================
+    # 🔥🔥🔥 NOVOS CAMPOS - POW E SEGURANÇA
+    # ==========================================
+    
+    # PoW (Proof of Work)
+    pow_challenge = Column(String(64), nullable=True, comment="Desafio PoW usado no upload")
+    pow_nonce = Column(String(64), nullable=True, comment="Nonce PoW usado no upload")
+    pow_difficulty = Column(Integer, default=4, comment="Dificuldade do PoW (número de zeros)")
+    pow_verified = Column(Boolean, default=False, comment="PoW foi verificado pelo backend")
+    pow_verified_at = Column(DateTime, nullable=True, comment="Data da verificação PoW")
+    pow_algorithm = Column(String(20), default="SHA-256", comment="Algoritmo usado")
+    
+    # Segurança
+    client_ip = Column(String(45), nullable=True, comment="IP do cliente")
+    user_agent = Column(String(255), nullable=True, comment="User Agent do cliente")
+    rate_limit_applied = Column(Boolean, default=False, comment="Rate limit foi aplicado")
+    
+    # Métricas de performance
+    processing_time_ms = Column(Integer, nullable=True, comment="Tempo total de processamento em ms")
+    pow_solve_time_ms = Column(Integer, nullable=True, comment="Tempo de resolução do PoW em ms")
+    upload_time_ms = Column(Integer, nullable=True, comment="Tempo de upload em ms")
+    
+    # Métricas de ML
+    encoding_used = Column(String(20), nullable=True, comment="Encoding detectado no arquivo")
+    model_used = Column(String(50), nullable=True, comment="Modelo ML utilizado")
+    confidence_score = Column(Float, nullable=True, comment="Score de confiança do modelo")
+    
+    # Métricas de dados
+    total_rows = Column(Integer, default=0, comment="Total de linhas processadas")
+    total_columns = Column(Integer, default=0, comment="Total de colunas processadas")
+    numeric_columns = Column(Integer, default=0, comment="Colunas numéricas")
+    categorical_columns = Column(Integer, default=0, comment="Colunas categóricas")
+    
+    # Resultados
+    predictions_summary = Column(JSON, nullable=True, comment="Resumo das predições")
+    insights = Column(JSON, nullable=True, comment="Insights gerados")
+    recommendations = Column(JSON, nullable=True, comment="Recomendações geradas")
+    
+    # ===== MÉTODOS =====
+    
+    def set_pow_data(self, challenge: str, nonce: str, difficulty: int = 4):
+        """Define dados do PoW"""
+        self.pow_challenge = challenge
+        self.pow_nonce = nonce
+        self.pow_difficulty = difficulty
+        self.pow_algorithm = "SHA-256"
+    
+    def verify_pow(self):
+        """Marca o PoW como verificado"""
+        self.pow_verified = True
+        self.pow_verified_at = _now_brasil()
+    
+    def set_processing_metrics(self, metrics: dict):
+        """Define métricas de processamento"""
+        if 'processing_time_ms' in metrics:
+            self.processing_time_ms = metrics['processing_time_ms']
+        if 'pow_solve_time_ms' in metrics:
+            self.pow_solve_time_ms = metrics['pow_solve_time_ms']
+        if 'upload_time_ms' in metrics:
+            self.upload_time_ms = metrics['upload_time_ms']
+        if 'encoding_used' in metrics:
+            self.encoding_used = metrics['encoding_used']
+        if 'model_used' in metrics:
+            self.model_used = metrics['model_used']
+        if 'confidence_score' in metrics:
+            self.confidence_score = metrics['confidence_score']
+    
+    def set_data_metrics(self, data: dict):
+        """Define métricas dos dados"""
+        if 'total_rows' in data:
+            self.total_rows = data['total_rows']
+        if 'total_columns' in data:
+            self.total_columns = data['total_columns']
+        if 'numeric_columns' in data:
+            self.numeric_columns = data['numeric_columns']
+        if 'categorical_columns' in data:
+            self.categorical_columns = data['categorical_columns']
+    
+    def set_results(self, results: dict):
+        """Define resultados da análise"""
+        if 'predictions_summary' in results:
+            self.predictions_summary = results['predictions_summary']
+        if 'insights' in results:
+            self.insights = results['insights']
+        if 'recommendations' in results:
+            self.recommendations = results['recommendations']
+    
+    def to_dict(self):
+        """Converte para dicionário com todos os campos"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "filename": self.filename,
+            "analysis_type": self.analysis_type,
+            "status": self.status,
+            "ai_used": self.ai_used,
+            "rows_processed": self.rows_processed,
+            "columns_processed": self.columns_processed,
+            "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
+            "processed_at": self.processed_at.isoformat() if self.processed_at else None,
+            # PoW
+            "pow_verified": self.pow_verified,
+            "pow_difficulty": self.pow_difficulty,
+            "pow_algorithm": self.pow_algorithm,
+            # Segurança
+            "client_ip": self.client_ip,
+            "rate_limit_applied": self.rate_limit_applied,
+            # Métricas
+            "processing_time_ms": self.processing_time_ms,
+            "encoding_used": self.encoding_used,
+            "model_used": self.model_used,
+            "confidence_score": self.confidence_score,
+            # Dados
+            "total_rows": self.total_rows,
+            "total_columns": self.total_columns,
+            "numeric_columns": self.numeric_columns,
+            "categorical_columns": self.categorical_columns,
+            # Resultados
+            "predictions_summary": self.predictions_summary,
+            "insights": self.insights,
+            "recommendations": self.recommendations,
+        }
 
 
 # ==============================================
-# 🔥 MODELO: PROMOTION CONTROL (VAGAS BRONZE)
+# 🔥 PROMOTION CONTROL
 # ==============================================
 
 class PromotionControl(Base):
-    """Controle de vagas promocionais do plano Bronze"""
     __tablename__ = 'promotion_control'
     __table_args__ = {'extend_existing': True}
     
@@ -284,7 +412,6 @@ class PromotionControl(Base):
     regular_price = Column(Float, default=149.90)
     is_active = Column(Boolean, default=True)
     
-    # 🔥 SINCRONIZADO: usa _now_brasil()
     created_at = Column(DateTime, default=_now_brasil)
     updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
     
@@ -300,27 +427,26 @@ class PromotionControl(Base):
     def use_slot(self) -> bool:
         if self.has_available_slots():
             self.used_slots += 1
-            self.updated_at = _now_brasil()  # 🔥 SINCRONIZADO
+            self.updated_at = _now_brasil()
             return True
         return False
     
     def reset_promotion(self):
         self.used_slots = 0
         self.is_active = True
-        self.updated_at = _now_brasil()  # 🔥 SINCRONIZADO
+        self.updated_at = _now_brasil()
 
 
 # ==============================================
-# 🔥 MODELO: BLACKLISTED TOKEN - CORRIGIDO
+# 🔥 BLACKLISTED TOKEN
 # ==============================================
 
 class BlacklistedToken(Base):
-    """Guarda os tokens invalidados/revogados no banco de dados como fallback do Redis"""
     __tablename__ = 'blacklisted_tokens'
     
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String(512), unique=True, index=True, nullable=False)
-    jti = Column(String(255), unique=True, index=True, nullable=True)  # 🔥 ADICIONE ESTA LINHA
+    jti = Column(String(255), unique=True, index=True, nullable=True)
     blacklisted_at = Column(DateTime, default=_now_brasil, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     
@@ -328,5 +454,15 @@ class BlacklistedToken(Base):
         return f"<BlacklistedToken jti={self.jti[:8] if self.jti else 'None'}... expires={self.expires_at}>"
 
 
-print("✅ models.py carregado - Datetimes sincronizados com UTC-3 (Brasília)")
-print("   ✅ BlacklistedToken com campo jti adicionado")
+# ==============================================
+# 🔥 PRINTS DE CARREGAMENTO
+# ==============================================
+
+print("=" * 70)
+print("🔥 models.py v2.0 carregado - COM SUPORTE A POW")
+print("   ✅ Analysis com campos PoW")
+print("   ✅ Analysis com métricas de performance")
+print("   ✅ Analysis com dados de segurança")
+print("   ✅ Analysis com métricas de ML")
+print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
+print("=" * 70)
