@@ -1347,25 +1347,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS (APP PRIMEIRO - ORDEM CRÍTICA) -->
-    <!-- ============================================== -->
-    
-    <!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL - DEVE CARREGAR PRIMEIRO) -->
-    <script src="/static/js/app.js?ver=7.0.0"></script>
-    
-    <!-- 2️⃣ POW - v3.3 (DEPENDE DO APP) -->
-    <script src="/static/js/pow-client.js?ver=3.3.0"></script>
-    
-    <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
-    <script src="/static/js/auth.js?ver=3.1.0"></script>
-    
-    <!-- 4️⃣ PAYMENT - v7.0 (DEPENDE DO APP) -->
-    <script src="/static/js/payment.js?ver=7.0.0"></script>
-    
-    <!-- 5️⃣ DASHBOARD - v6.3 (DEPENDE DO APP) -->
-    <script src="/static/js/dashboard.js?ver=6.3.0"></script>
+   <!-- ============================================== -->
+<!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CORRETA) -->
+<!-- ============================================== -->
 
+<!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL) -->
+
+<script src="/static/js/app.js?ver=7.0.0"></script>
+
+<!-- 2️⃣ POW - v4.0 (REFATORADO - SEM BUGS) -->
+<script src="/static/js/pow-client.js?ver=4.0.0"></script>
+
+<!-- 3️⃣ AUTH - v4.1 -->
+<script src="/static/js/auth.js?ver=4.1.0"></script>
+
+<!-- 4️⃣ PAYMENT - v7.1 -->
+<script src="/static/js/payment.js?ver=7.1.0"></script>
+
+<!-- 5️⃣ DASHBOARD - v7.2 (INTEGRADO COM POW) -->
+<script src="/static/js/dashboard.js?ver=7.2.0"></script>
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (PASSIVO) -->
     <!-- ============================================== -->
