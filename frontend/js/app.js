@@ -1,27 +1,25 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - V7.2 (CORRIGIDO + OTIMIZADO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.3 (CORRIGIDO COMPLETAMENTE)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.2:
- * 1. 🔥 CORRIGIDO: Bug crítico this.updateCredits is not a function
- * 2. 🔥 MELHORADO: Bind explícito de métodos UI no objeto App
- * 3. 🔥 OTIMIZADO: Redução de chamadas redundantes
- * 4. 🔥 REFATORADO: UI com referência própria (UI.xxx em vez de this.xxx)
- * 5. 🔥 MELHORADO: Sistema de cache de elementos com invalidação
- * 6. 🔥 ADICIONADO: Lazy loading com fallback
- * 7. 🔥 UNIFICADO: Sistema de mensagens com renderização otimizada
+ * 🏗️ ARQUITETURA V7.3:
+ * 1. 🔥 CORRIGIDO: Bug this.isAvailable is not a function
+ * 2. 🔥 ADICIONADO: Método isAvailable no objeto App
+ * 3. 🔥 CORRIGIDO: uploadWithPow usa Pow.isAvailable()
+ * 4. 🔥 MELHORADO: Verificação robusta do PoW
+ * 5. 🔥 OTIMIZADO: Redução de chamadas redundantes
  * 
- * 🔥 CORREÇÕES V7.2:
- * - Bind de todos os métodos UI no objeto App
- * - UI.updateNavbar agora usa UI.xxx em vez de this.xxx
- * - Prevenção de loops de atualização
- * - Melhor tratamento de erros em cascata
+ * 🔥 CORREÇÕES V7.3:
+ * - Adicionado App.isAvailable()
+ * - Corrigido uploadWithPow para usar Pow.isAvailable()
+ * - Adicionado fallback para quando o PoW não está disponível
+ * - Melhorado tratamento de erros no upload
  */
 
 (function() {
     'use strict';
 
-    console.log('🚀 Inicializando App (Orquestrador) v7.2...');
+    console.log('🚀 Inicializando App (Orquestrador) v7.3...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
@@ -61,8 +59,8 @@
         RELOAD_STORAGE_KEY: '_aa_reload_count',
         AUTH_BLOCK_KEY: '_aa_auth_block',
         
-        UI_CACHE_TTL: 5000,  // TTL para cache de elementos
-        DEBOUNCE_DELAY: 50    // Delay para debounce de UI
+        UI_CACHE_TTL: 5000,
+        DEBOUNCE_DELAY: 50
     });
 
     // ==============================================
@@ -168,7 +166,6 @@
         },
 
         emit: function(event, data = {}) {
-            // Armazena histórico para debugging
             this._eventHistory.push({ event, data, timestamp: Date.now() });
             if (this._eventHistory.length > this._maxHistory) {
                 this._eventHistory.shift();
@@ -184,7 +181,6 @@
                 this._processQueue();
             }
             
-            // Dispara evento DOM também
             try {
                 window.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
                 document.dispatchEvent(new CustomEvent(event, { detail: data, bubbles: true }));
@@ -300,7 +296,6 @@
         totalAnalyses: 0,
         analysesToday: 0,
         
-        // Sistema de mensagens
         userSegment: null,
         currentMessage: null,
         lastMessageId: null,
@@ -312,7 +307,6 @@
         _isUpdating: false
     };
 
-    // Cria o estado com Proxy para detecção automática de mudanças
     const State = new Proxy(initialState, {
         set(target, key, value) {
             const oldValue = target[key];
@@ -321,7 +315,6 @@
             target[key] = value;
             
             if (changed) {
-                // Atualiza creditsDisplay automaticamente
                 if (key === 'credits' || key === 'isPremium' || key === 'isAdmin') {
                     const isAdmin = target.isAdmin;
                     const isPremium = target.isPremium;
@@ -329,7 +322,6 @@
                     target.creditsDisplay = isAdmin ? '∞' : (isPremium ? `${credits}/${CONFIG.MAX_CREDITS_BALANCE}` : String(credits));
                 }
                 
-                // Dispara evento de mudança
                 const eventData = {
                     state: target,
                     key,
@@ -350,11 +342,10 @@
         }
     });
 
-    // EXPORTA ESTADO
     window.__APP_STATE = State;
 
     // ==============================================
-    // 🔥 GERENCIADOR DE ESTADO (SIMPLIFICADO)
+    // 🔥 GERENCIADOR DE ESTADO
     // ==============================================
 
     const StateManager = {
@@ -544,7 +535,6 @@
             return remainder === parseInt(clean[10]);
         },
         
-        // 🔥 Debounce para operações de UI
         debounce: function(func, delay = CONFIG.DEBOUNCE_DELAY) {
             let timeoutId;
             return function(...args) {
@@ -553,7 +543,6 @@
             };
         },
         
-        // 🔥 Throttle para operações de UI
         throttle: function(func, limit = 100) {
             let inThrottle;
             return function(...args) {
@@ -566,7 +555,6 @@
         }
     };
 
-    // EXPORTA UTILITÁRIOS
     window.AppUtils = {
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
@@ -721,7 +709,7 @@
     }
 
     // ==============================================
-    // 🔥 HANDLE UNAUTHORIZED (CENTRALIZADO)
+    // 🔥 HANDLE UNAUTHORIZED
     // ==============================================
 
     function handleUnauthorized() {
@@ -828,7 +816,7 @@
     };
 
     // ==============================================
-    // 🔥 UI MANAGER (CORRIGIDO - SEM BUG this)
+    // 🔥 UI MANAGER
     // ==============================================
 
     const UI = {
@@ -839,7 +827,6 @@
         _isUpdating: false,
         _lastUpdate: 0,
 
-        // 🔥 Getter com cache e invalidação
         _getElement: function(selector, forceRefresh = false) {
             const now = Date.now();
             const cached = this._elementCache.get(selector);
@@ -855,13 +842,11 @@
             return el;
         },
 
-        // 🔥 Invalida cache de elementos
         invalidateCache: function() {
             this._elementCache.clear();
             this._cacheTimestamps.clear();
         },
 
-        // 🔥 Atualização com debounce
         scheduleUpdate: function() {
             if (this._updateTimeout) {
                 clearTimeout(this._updateTimeout);
@@ -872,9 +857,7 @@
             }, CONFIG.DEBOUNCE_DELAY);
         },
 
-        // 🔥 CORRIGIDO: Agora usa UI.xxx em vez de this.xxx
         updateNavbar: function() {
-            // Evita atualizações em cascata
             const now = Date.now();
             if (this._isUpdating) return;
             if (now - this._lastUpdate < 50) return;
@@ -901,7 +884,6 @@
                             el.textContent = State.user?.workshop_name || 'Oficina';
                         });
 
-                        // 🔥 CHAMADAS CORRETAS - USANDO UI.xxx
                         UI.updateCredits();
                         UI.updateAdminBadge();
                         UI.updatePremiumBadge();
@@ -919,7 +901,6 @@
             }
         },
 
-        // 🔥 CORRIGIDO: Agora usa UI.xxx internamente
         updateCredits: function() {
             try {
                 const credits = State.credits || 0;
@@ -1127,7 +1108,7 @@
     };
 
     // ==============================================
-    // 🔥 AUTH (SIMPLIFICADO)
+    // 🔥 AUTH
     // ==============================================
 
     const Auth = {
@@ -1164,7 +1145,7 @@
     };
 
     // ==============================================
-    // 🔥 INTERFACE DE AUTENTICAÇÃO (window.appAuth)
+    // 🔥 INTERFACE DE AUTENTICAÇÃO
     // ==============================================
 
     window.appAuth = {
@@ -1209,7 +1190,6 @@
                     
                     console.log(`✅ Créditos carregados: ${data.credits || 0}`);
                     
-                    // 🔥 Atualiza UI via App
                     if (window.App && typeof window.App.updateNavbar === 'function') {
                         window.App.updateNavbar();
                     }
@@ -1417,7 +1397,7 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW
+    // 🔥🔥🔥 GERENCIADOR DE PoW - CORRIGIDO
     // ==============================================
 
     const Pow = {
@@ -1471,8 +1451,10 @@
             return false;
         },
 
+        // 🔥 CORRIGIDO: uploadWithPow agora usa Pow.isAvailable()
         uploadWithPow: async function(files, endpoint = '/api/upload-auto') {
-            if (!this.isAvailable()) {
+            // ✅ CORRIGIDO: Usando Pow.isAvailable()
+            if (!Pow.isAvailable()) {
                 console.log('⏳ PoW não disponível, usando upload normal');
                 const formData = new FormData();
                 if (Array.isArray(files)) {
@@ -1744,7 +1726,7 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v7.2...');
+        console.log('🚀 Inicializando App (Orquestrador) v7.3...');
 
         try {
             ReloadManager.reset();
@@ -1792,7 +1774,6 @@
 
             UI.setupModals();
             
-            // 🔥 Usa App.updateNavbar em vez de UI.updateNavbar diretamente
             if (window.App && typeof window.App.updateNavbar === 'function') {
                 window.App.updateNavbar();
             } else {
@@ -1835,7 +1816,7 @@
                 userInitialized: State.userInitialized,
                 userSegment: State.userSegment || 'regular',
                 isReady: true,
-                version: '7.2'
+                version: '7.3'
             };
 
             EventBus.emit('app:ready', appReadyData);
@@ -1843,10 +1824,10 @@
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             
             window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { isReady: true, version: '7.2' }
+                detail: { isReady: true, version: '7.3' }
             }));
 
-            console.log('✅ App (Orquestrador) v7.2 inicializado com sucesso!');
+            console.log('✅ App (Orquestrador) v7.3 inicializado com sucesso!');
             console.log(`📌 Autenticado: ${isAuth}`);
             console.log(`📌 Página: ${currentPath}`);
             console.log(`📌 Admin: ${State.isAdmin}`);
@@ -1861,7 +1842,7 @@
             console.log('📡 EventBus com fila de eventos');
             console.log('📢 Sistema de mensagens inteligentes ativo');
             console.log('🔗 Integrado com auth.js, payment.js, dashboard.js');
-            console.log('🔧 CORREÇÃO: UI com bind explícito e referência própria');
+            console.log('🔧 CORREÇÃO V7.3: isAvailable adicionado no objeto App');
 
         } catch (error) {
             console.error('❌ Erro na inicialização do App:', error);
@@ -1879,7 +1860,7 @@
     }
 
     // ==============================================
-    // 🔥 EXPORTAÇÕES GLOBAIS (COM BIND CORRETO)
+    // 🔥🔥🔥 EXPORTAÇÕES GLOBAIS - CORRIGIDO
     // ==============================================
 
     const App = {
@@ -1904,6 +1885,11 @@
             return State.isAppReady === true;
         },
         
+        // 🔥🔥🔥 CORREÇÃO: ADICIONADO MÉTODO ISAVAILABLE
+        isAvailable: function() {
+            return Pow.isAvailable();
+        },
+        
         showNotification: Utils.showNotification,
         isAuthenticated: Utils.isAuthenticated,
         getCurrentUser: () => State.user,
@@ -1916,7 +1902,6 @@
         getDaysLeftPremium: () => State.daysLeftPremium,
         isTokenValid: () => State.tokenValid,
         
-        // 🔥 MÉTODOS PARA MENSAGENS
         getMessageContext: () => ({
             segment: State.userSegment,
             message: State.currentMessage,
@@ -1944,7 +1929,7 @@
             return null;
         },
         
-        // 🔥 MÉTODOS UI COM BIND EXPLÍCITO - CORREÇÃO DO BUG
+        // MÉTODOS UI COM BIND EXPLÍCITO
         updateNavbar: UI.updateNavbar.bind(UI),
         updateCredits: UI.updateCredits.bind(UI),
         updateAdminBadge: UI.updateAdminBadge.bind(UI),
@@ -1963,6 +1948,7 @@
         fetchWithAuth: fetchWithAuth,
         refreshTokenSafely: refreshTokenSafely,
         
+        // 🔥 CORRIGIDO: uploadWithPow usa o Pow.uploadWithPow
         uploadWithPow: Pow.uploadWithPow,
         preparePowForUpload: Pow.prepareForUpload,
         getPowStats: Pow.getStats,
@@ -2012,7 +1998,7 @@
         logout: handleUnauthorized
     };
 
-    // 🔥 EXPORTAÇÕES GLOBAIS
+    // EXPORTAÇÕES GLOBAIS
     window.App = App;
     window.app = App;
     window.autoAnalytics = App;
@@ -2035,10 +2021,7 @@
     window.receiveDailyCredit = window.receiveDailyCredit || (() => {});
     window.loadPremiumStatus = window.loadPremiumStatus || (() => {});
 
-    // ==============================================
-    // 🔥 INICIAR
-    // ==============================================
-
+    // INICIAR
     if (window._appInitialized) {
         console.log('⚠️ App já inicializado, ignorando...');
     } else {
@@ -2051,13 +2034,12 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v7.2 carregado!');
-    console.log('   🔥 CORRIGIDO: Bug crítico this.updateCredits is not a function');
-    console.log('   🔥 MELHORADO: Bind explícito de métodos UI no objeto App');
+    console.log('✅ app.js (Orquestrador) v7.3 carregado!');
+    console.log('   🔥 CORRIGIDO: Bug this.isAvailable is not a function');
+    console.log('   🔥 ADICIONADO: Método isAvailable no objeto App');
+    console.log('   🔥 CORRIGIDO: uploadWithPow usa Pow.isAvailable()');
+    console.log('   🔥 MELHORADO: Verificação robusta do PoW');
     console.log('   🔥 OTIMIZADO: Redução de chamadas redundantes');
-    console.log('   🔥 REFATORADO: UI com referência própria (UI.xxx)');
-    console.log('   🔥 MELHORADO: Cache de elementos com invalidação');
-    console.log('   🔥 ADICIONADO: Debounce e Throttle para operações de UI');
     console.log('   📢 Sistema de mensagens inteligentes integrado');
 
 })();
