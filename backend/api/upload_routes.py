@@ -1,10 +1,11 @@
-# backend/api/upload_routes.py - VERSÃO COMPLETA COM RATE LIMITER + PoW
+# backend/api/upload_routes.py - VERSÃO ATUALIZADA v2.0
 """
-Rotas para upload e processamento de arquivos
-🔥 INTEGRADO COM ML PIPELINE (preprocessing.py)
-🔥 SUPORTE A MÚLTIPLOS ARQUIVOS (até 3 por vez)
-🔥 VERIFICAÇÃO DE CRÉDITOS E PoW
-🔥 RATE LIMITER (Proteção contra abuso)
+🔥 Rotas para upload e processamento de arquivos
+✅ INTEGRADO COM POW_ROUTES.PY V2.0
+✅ SUPORTE A MÚLTIPLOS ARQUIVOS (até 3 por vez)
+✅ VERIFICAÇÃO DE CRÉDITOS E PoW
+✅ RATE LIMITER (Proteção contra abuso)
+✅ MÉTRICAS DE POW SALVAS NO BANCO
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
@@ -27,8 +28,8 @@ from backend.services.credits_consumer import can_perform_analysis, consume_anal
 # 🔥🔥🔥 RATE LIMITER
 from backend.security import rate_limiter
 
-# 🔥🔥🔥 PoW
-from backend.api.pow_routes import validate_pow_request, pow_service
+# 🔥🔥🔥 PoW (NOVA VERSÃO)
+from backend.api.pow_routes import validate_pow_request, pow_service, PoWConfig
 
 # 🔥🔥🔥 ML Pipeline
 from backend.preprocessing import process_file_content, pipeline
@@ -77,7 +78,64 @@ def validate_credits(user, total_files: int) -> Dict[str, Any]:
 
 
 # ==============================================
-# 🔥 PROCESSAMENTO ML COM PIPELINE (CORRIGIDO)
+# 🔥 FUNÇÃO: CRIAR ANÁLISE COM POW METRICS
+# ==============================================
+
+def create_analysis_with_pow_metrics(
+    db: Session,
+    user_id: int,
+    filename: str,
+    file_size: int,
+    analysis_type: str,
+    ai_model: str,
+    request: Request,
+    pow_valid: bool,
+    pow_difficulty: int,
+    client_ip: str,
+    user_agent: Optional[str] = None,
+) -> models.Analysis:
+    """
+    🔥 Cria uma análise com métricas de PoW
+    """
+    # 🔥 Obter dados do PoW dos headers
+    nonce = request.headers.get(PoWConfig.HEADER_NONCE)
+    challenge = request.headers.get(PoWConfig.HEADER_CHALLENGE)
+    
+    # 🔥 Criar análise
+    analysis = models.Analysis(
+        user_id=user_id,
+        filename=filename,
+        file_size=file_size,
+        analysis_type=analysis_type,
+        ai_model=ai_model,
+        status="pending",
+        uploaded_at=datetime.now(),
+        # 🔥 Dados do PoW
+        pow_challenge=challenge,
+        pow_nonce=nonce,
+        pow_difficulty=pow_difficulty,
+        pow_verified=pow_valid,
+        pow_verified_at=datetime.now() if pow_valid else None,
+        pow_algorithm=PoWConfig.ALGORITHM,
+        # 🔥 Segurança
+        client_ip=client_ip,
+        user_agent=user_agent[:255] if user_agent else None,
+        rate_limit_applied=False,  # Será atualizado se necessário
+        # 🔥 Métricas de tempo (serão atualizadas depois)
+        processing_time_ms=None,
+        upload_time_ms=None,
+    )
+    
+    db.add(analysis)
+    db.commit()
+    db.refresh(analysis)
+    
+    logger.info(f"📊 Análise criada: {filename} (ID: {analysis.id}) - PoW: {pow_valid}")
+    return analysis
+
+
+# ==============================================
+# 🔥 PROCESSAMENTO ML COM PIPELINE
 # ==============================================
 
 async def process_single_file_with_pipeline(
@@ -89,7 +147,6 @@ async def process_single_file_with_pipeline(
 ) -> Dict[str, Any]:
     """
     🔥 Processa um único arquivo com o ML Pipeline
-    Usa o preprocessing.py
     """
     try:
         # 1. Processar com o pipeline
@@ -182,7 +239,7 @@ async def process_multiple_files_with_ml(files_to_process: List[tuple], user_id:
 
 
 # ==============================================
-# 🔥 UPLOAD COM RATE LIMITER + PoW (COMPLETO)
+# 🔥 UPLOAD COM RATE LIMITER + PoW (V2.0)
 # ==============================================
 
 @router.post("/upload-auto")
@@ -206,14 +263,22 @@ async def upload_auto(
     2. ✅ Rate Limiter (bloqueia abuso)
     3. ✅ Verifica créditos
     4. ✅ Processa com ML Pipeline
-    5. ✅ Retorna resultados
+    5. ✅ Retorna resultados com métricas de PoW
     """
     client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent")
     start_time = time.time()
+    
+    # 🔥 Obter dados do PoW dos headers
+    pow_nonce = request.headers.get(PoWConfig.HEADER_NONCE)
+    pow_challenge = request.headers.get(PoWConfig.HEADER_CHALLENGE)
+    pow_difficulty = request.headers.get(PoWConfig.HEADER_COMPLEXITY, PoWConfig.DEFAULT_DIFFICULTY)
     
     logger.info(f"📤 [UPLOAD] Requisição de {current_user.email} | IP: {client_ip}")
     logger.info(f"   📁 Arquivos: {len(files)}")
     logger.info(f"   🔐 PoW validado: {pow_valid}")
+    logger.info(f"   🔐 PoW difficulty: {pow_difficulty}")
+    logger.info(f"   🔐 PoW challenge: {pow_challenge[:8] if pow_challenge else 'N/A'}...")
     
     # ==============================================
     # 🔥 1. VALIDA QUANTIDADE DE ARQUIVOS
@@ -308,6 +373,7 @@ async def upload_auto(
     arquivos_processados = []
     arquivos_com_erro = []
     files_to_process = []
+    analyses_created = []
     
     for idx, file in enumerate(files):
         try:
@@ -337,18 +403,35 @@ async def upload_auto(
                 })
                 continue
             
-            # Criar registro
-            analysis_id = str(uuid.uuid4())[:8]
+            # 🔥 Criar análise com métricas de PoW
+            analysis = create_analysis_with_pow_metrics(
+                db=db,
+                user_id=current_user.id,
+                filename=file.filename,
+                file_size=len(content),
+                analysis_type=analysis_type,
+                ai_model=ai_model,
+                request=request,
+                pow_valid=pow_valid,
+                pow_difficulty=int(pow_difficulty) if pow_difficulty else PoWConfig.DEFAULT_DIFFICULTY,
+                client_ip=client_ip,
+                user_agent=user_agent,
+            )
+            analyses_created.append(analysis)
+            
+            # Criar ID de processo
+            process_id = str(uuid.uuid4())[:8]
             timestamp = datetime.now()
             
-            processing_status[analysis_id] = {
-                "process_id": analysis_id,
+            processing_status[process_id] = {
+                "process_id": process_id,
                 "status": "uploaded",
                 "progress": 10,
                 "filename": file.filename,
                 "file_size": len(content),
                 "user_id": current_user.id,
                 "user_email": current_user.email,
+                "analysis_id": analysis.id,
                 "created_at": timestamp.isoformat(),
                 "analysis_type": analysis_type,
                 "ai_model": ai_model,
@@ -363,19 +446,22 @@ async def upload_auto(
                     "user_limit": RATE_LIMIT_UPLOAD_PER_USER,
                     "window_seconds": RATE_LIMIT_WINDOW_SECONDS
                 },
-                "pow_validated": True,
-                "pow_difficulty": request.headers.get("X-PoW-Complexity", 4)
+                "pow_validated": pow_valid,
+                "pow_difficulty": int(pow_difficulty) if pow_difficulty else 4,
+                "pow_challenge": pow_challenge,
+                "pow_nonce": pow_nonce,
             }
             
-            files_to_process.append((analysis_id, content, file.filename))
+            files_to_process.append((process_id, content, file.filename))
             
             arquivos_processados.append({
                 "filename": file.filename,
-                "process_id": analysis_id,
+                "process_id": process_id,
+                "analysis_id": analysis.id,
                 "status": "processing"
             })
             
-            logger.info(f"✅ Arquivo {idx+1}/{total_arquivos} aceito: {file.filename}")
+            logger.info(f"✅ Arquivo {idx+1}/{total_arquivos} aceito: {file.filename} (análise ID: {analysis.id})")
             
         except Exception as e:
             logger.error(f"❌ Erro ao processar arquivo {file.filename}: {e}")
@@ -407,6 +493,9 @@ async def upload_auto(
     pipeline_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
     encoding_stats = pipeline.get_encoding_stats() if hasattr(pipeline, 'get_encoding_stats') else {}
     
+    # 🔥 Estatísticas do PoW
+    pow_stats = pow_service.get_stats() if hasattr(pow_service, 'get_stats') else {}
+    
     return {
         "success": len(arquivos_com_erro) == 0,
         "message": f"Processado {len(arquivos_processados)} de {total_arquivos} arquivo(s). ML Pipeline iniciado.",
@@ -432,14 +521,20 @@ async def upload_auto(
         },
         # 🔥 INFORMAÇÕES DE SEGURANÇA
         "security": {
-            "pow_validated": True,
-            "pow_difficulty": request.headers.get("X-PoW-Complexity", 4),
+            "pow_validated": pow_valid,
+            "pow_difficulty": int(pow_difficulty) if pow_difficulty else 4,
+            "pow_algorithm": PoWConfig.ALGORITHM,
+            "pow_challenge": pow_challenge[:8] + "..." if pow_challenge else None,
             "rate_limit": {
                 "ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
                 "user_limit": RATE_LIMIT_UPLOAD_PER_USER,
                 "window_seconds": RATE_LIMIT_WINDOW_SECONDS
             },
-            "client_ip": client_ip
+            "client_ip": client_ip,
+            "pow_stats": {
+                "total_challenges_verified": pow_stats.get("challenges", {}).get("verified", 0),
+                "replay_attacks_blocked": pow_stats.get("challenges", {}).get("replay_attacks_blocked", 0),
+            }
         },
         # 🔥 ESTATÍSTICAS DE ENCODING
         "encoding_stats": encoding_stats,
@@ -500,6 +595,7 @@ async def get_analyses_history(
                 "has_insights": bool(data.get("insights")),
                 # 🔥 NOVO
                 "pow_validated": data.get("pow_validated", False),
+                "pow_difficulty": data.get("pow_difficulty"),
                 "rate_limit_info": data.get("rate_limit", {})
             })
     
@@ -546,6 +642,7 @@ async def get_analysis_result(
     return {
         "success": True,
         "process_id": process_id,
+        "analysis_id": status_data.get("analysis_id"),
         "filename": status_data.get("filename"),
         "analysis_info": status_data.get("analysis_info", {}),
         "prediction_stats": status_data.get("prediction_stats", {}),
@@ -558,6 +655,7 @@ async def get_analysis_result(
         # 🔥 NOVO
         "rate_limit_info": status_data.get("rate_limit", {}),
         "pow_validated": status_data.get("pow_validated", False),
+        "pow_difficulty": status_data.get("pow_difficulty"),
         "processing_time_ms": status_data.get("processing_time_ms")
     }
 
@@ -589,6 +687,11 @@ async def get_pipeline_status(
             "upload_ip_limit": RATE_LIMIT_UPLOAD_PER_IP,
             "upload_user_limit": RATE_LIMIT_UPLOAD_PER_USER,
             "window_seconds": RATE_LIMIT_WINDOW_SECONDS
+        },
+        "pow": {
+            "enabled": True,
+            "default_difficulty": PoWConfig.DEFAULT_DIFFICULTY,
+            "algorithm": PoWConfig.ALGORITHM,
         }
     }
 
@@ -619,6 +722,12 @@ async def get_security_stats(
         if enc:
             encoding_counts[enc] = encoding_counts.get(enc, 0) + 1
     
+    # 🔥 Estatísticas de PoW
+    pow_stats = pow_service.get_stats() if hasattr(pow_service, 'get_stats') else {}
+    
+    # 🔥 Contar análises com PoW validado
+    pow_validated_count = len([p for p in processing_status.values() if p.get('pow_validated') == True])
+    
     return {
         "success": True,
         "total_analyses": total_analyses,
@@ -635,17 +744,21 @@ async def get_security_stats(
         },
         "pow": {
             "enabled": True,
-            "difficulty": 4,
-            "algorithm": "SHA-256"
+            "default_difficulty": PoWConfig.DEFAULT_DIFFICULTY,
+            "algorithm": PoWConfig.ALGORITHM,
+            "total_validated": pow_stats.get("challenges", {}).get("verified", 0),
+            "analyses_with_pow": pow_validated_count,
+            "replay_attacks_blocked": pow_stats.get("challenges", {}).get("replay_attacks_blocked", 0),
         },
         "timestamp": datetime.now().isoformat()
     }
 
 
 print("=" * 60)
-print("🔥 upload_routes.py - VERSÃO COMPLETA COM SEGURANÇA")
+print("🔥 upload_routes.py - VERSÃO V2.0 COM INTEGRAÇÃO POW")
 print(f"   🚦 Rate Limiter: {RATE_LIMIT_UPLOAD_PER_IP}/IP + {RATE_LIMIT_UPLOAD_PER_USER}/usuário em {RATE_LIMIT_WINDOW_SECONDS}s")
-print("   🔐 PoW: SHA-256 com dificuldade 4 (bloqueia bots)")
+print(f"   🔐 PoW: {PoWConfig.ALGORITHM} com dificuldade adaptativa")
 print("   🧠 ML Pipeline: Encoding automático + RandomForest/Ensemble/AutoML")
 print("   📁 Limites: 3 arquivos, 200KB cada")
+print("   📊 Métricas de PoW salvas no banco")
 print("=" * 60)
