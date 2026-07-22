@@ -1,20 +1,16 @@
-// frontend/js/dashboard.js - VERSÃO COMPLETA v7.3 (CORRIGIDA E OTIMIZADA)
+// frontend/js/dashboard.js - VERSÃO CORRIGIDA v7.4
 /**
- * 🔥 Dashboard Module - AutoAnalytics v7.3
+ * 🔥 Dashboard Module - AutoAnalytics v7.4
  * 
- * ✅ CORRIGIDO: PowManager com mecanismo de espera (30 tentativas, 200ms)
- * ✅ CORRIGIDO: window.powClient undefined durante inicialização
- * ✅ MELHORADO: Tratamento de erros no PowManager
- * ✅ MELHORADO: Logs mais detalhados para debug
- * ✅ OTIMIZADO: Redução de chamadas redundantes
- * ✅ ADICIONADO: Fallback para quando o PoW não está disponível
+ * ✅ CORRIGIDO: File Chooser com user activation
+ * ✅ CORRIGIDO: Integração com PowClient v5.1
+ * ✅ CORRIGIDO: Tratamento de erros do PoW
+ * ✅ MELHORADO: Upload com fallback
+ * ✅ ADICIONADO: Verificação de worker
  * 
  * MÓDULOS:
- * - PowManager: Gerenciamento do PoW (COM ESPERA)
- * - UploadManager: Upload e processamento
- * - ChartManager: Gráficos (Chart.js)
- * - HistoryManager: Histórico com virtual scroll
- * - MetricsManager: Métricas e estatísticas
+ * - PowManager: Gerenciamento do PoW (COM VERIFICAÇÃO)
+ * - UploadManager: Upload e processamento (COM FALLBACK)
  * - UIManager: UI e animações
  */
 
@@ -26,40 +22,23 @@
     // ==============================================
 
     const CONFIG = {
-        // Upload
         MAX_FILES_PER_BATCH: 3,
         MAX_FILE_SIZE_KB: 200,
         API_BASE: '/api',
-        
-        // Polling
         POLLING_INTERVAL: 2000,
         MAX_POLLING_ATTEMPTS: 60,
-        
-        // Cache
         CREDITS_CHECK_INTERVAL: 30000,
         CACHE_TTL: 30000,
         
-        // PoW
+        // 🔥 PoW
         POW_ENABLED: true,
         POW_RETRY_ATTEMPTS: 3,
         POW_RETRY_DELAY: 1000,
-        POW_WAIT_MAX_ATTEMPTS: 30,    // 30 * 200ms = 6 segundos
+        POW_WAIT_MAX_ATTEMPTS: 30,
         POW_WAIT_INTERVAL: 200,
         
-        // Chart
-        CHART_RETRY_ATTEMPTS: 10,
-        CHART_RETRY_DELAY: 300,
-        CHART_CONTAINER_TIMEOUT: 5000,
-        CHART_ANIMATION_DURATION: 800,
-        
-        // Animations
-        ANIMATION_DURATION: 0.6,
-        STAGGER_DELAY: 0.08,
-        
-        // History
-        HISTORY_LIMIT: 50,
-        VIRTUAL_SCROLL_ITEM_HEIGHT: 60,
-        VIRTUAL_SCROLL_BUFFER: 5,
+        // 🔥 File Chooser
+        FILE_CHOOSER_DEBOUNCE: 300,
         
         // Timeouts
         WAIT_FOR_APP_TIMEOUT: 8000,
@@ -75,10 +54,7 @@
             let timer = null;
             return (...args) => {
                 if (timer) clearTimeout(timer);
-                timer = setTimeout(() => {
-                    fn.apply(this, args);
-                    timer = null;
-                }, delay);
+                timer = setTimeout(() => { fn.apply(this, args); timer = null; }, delay);
             };
         },
 
@@ -97,20 +73,6 @@
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / 1048576).toFixed(1) + ' MB';
-        },
-
-        formatRelativeTime: (date) => {
-            const now = new Date();
-            const diff = now - new Date(date);
-            const minutes = Math.floor(diff / 60000);
-            const hours = Math.floor(diff / 3600000);
-            const days = Math.floor(diff / 86400000);
-
-            if (minutes < 1) return 'agora pouco';
-            if (minutes < 60) return `${minutes}m atrás`;
-            if (hours < 24) return `${hours}h atrás`;
-            if (days < 7) return `${days}d atrás`;
-            return new Date(date).toLocaleDateString('pt-BR');
         },
 
         escapeHtml: (text) => {
@@ -138,41 +100,6 @@
             return 'Baixo potencial';
         },
 
-        waitForElement: (selector, timeout = CONFIG.CHART_CONTAINER_TIMEOUT) => {
-            return new Promise((resolve) => {
-                const existing = document.getElementById(selector) || document.querySelector(selector);
-                if (existing) {
-                    resolve(existing);
-                    return;
-                }
-
-                const observer = new MutationObserver(() => {
-                    const el = document.getElementById(selector) || document.querySelector(selector);
-                    if (el) {
-                        observer.disconnect();
-                        resolve(el);
-                    }
-                });
-
-                observer.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-
-                setTimeout(() => {
-                    observer.disconnect();
-                    const el = document.getElementById(selector) || document.querySelector(selector);
-                    resolve(el || null);
-                }, timeout);
-            });
-        },
-
-        isElementVisible: (element) => {
-            if (!element) return false;
-            const rect = element.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0 && element.offsetParent !== null;
-        },
-
         sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
 
         getToken: () => {
@@ -192,60 +119,24 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE ESTADO
+    // 🔥 STATE MANAGER
     // ==============================================
 
     class StateManager {
         constructor() {
             this._state = {
-                user: {
-                    name: 'Usuário',
-                    email: '',
-                    isAdmin: false,
-                    isPremium: false,
-                    credits: 0,
-                    segment: 'regular',
-                },
-                
-                analyses: {
-                    active: [],
-                    history: [],
-                    total: 0,
-                    today: 0,
-                },
-                
-                ui: {
-                    isLoading: false,
-                    isUploading: false,
-                    progress: 0,
-                    status: 'idle',
-                },
-                
-                pow: {
-                    ready: false,
-                    solution: null,
-                    lastAttempt: null,
-                    clientAvailable: false,
-                },
-                
-                system: {
-                    isAppReady: false,
-                    isInitialized: false,
-                    lastSync: null,
-                },
+                user: { name: 'Usuário', email: '', isAdmin: false, isPremium: false, credits: 0, segment: 'regular' },
+                analyses: { active: [], history: [], total: 0, today: 0 },
+                ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle' },
+                pow: { ready: false, solution: null, lastAttempt: null, clientAvailable: false },
+                system: { isAppReady: false, isInitialized: false, lastSync: null },
             };
-
             this._listeners = [];
             this._initialized = false;
         }
 
-        get state() {
-            return this._state;
-        }
-
-        get(userKey) {
-            return this._state[userKey] || null;
-        }
+        get state() { return this._state; }
+        get(key) { return this._state[key] || null; }
 
         set(key, value) {
             const oldValue = this._state[key];
@@ -263,18 +154,12 @@
 
         subscribe(callback) {
             this._listeners.push(callback);
-            return () => {
-                this._listeners = this._listeners.filter(cb => cb !== callback);
-            };
+            return () => { this._listeners = this._listeners.filter(cb => cb !== callback); };
         }
 
         _notifyListeners(key, newValue, oldValue) {
             this._listeners.forEach(callback => {
-                try {
-                    callback(key, newValue, oldValue);
-                } catch (e) {
-                    console.error('❌ [StateManager] Listener error:', e);
-                }
+                try { callback(key, newValue, oldValue); } catch (e) { console.error('❌ [StateManager] Listener error:', e); }
             });
         }
 
@@ -292,7 +177,6 @@
 
         syncWithApp() {
             const appState = window.__APP_STATE || {};
-            
             this.set('user', {
                 name: appState.displayName || appState.user?.name || 'Usuário',
                 email: appState.user?.email || '',
@@ -301,20 +185,14 @@
                 credits: appState.credits || 0,
                 segment: appState.segment || 'regular',
             });
-
-            this.set('system', {
-                ...this._state.system,
-                isAppReady: true,
-                lastSync: Date.now(),
-            });
-
+            this.set('system', { ...this._state.system, isAppReady: true, lastSync: Date.now() });
             this._initialized = true;
             return this;
         }
     }
 
     // ==============================================
-    // 🔥🔥🔥 GERENCIADOR DE PoW (CORRIGIDO - V7.3)
+    // 🔥 POW MANAGER (CORRIGIDO - V7.4)
     // ==============================================
 
     class PowManager {
@@ -329,7 +207,7 @@
         }
 
         /**
-         * 🔥 Inicializa o PoW Manager (COM MECANISMO DE ESPERA)
+         * 🔥 Inicializa o PoW Manager com verificação de cliente
          */
         async init() {
             if (this._initialized) {
@@ -347,21 +225,15 @@
                 await Utils.sleep(this._waitInterval);
             }
 
-            // Verificar se o cliente existe após a espera
+            // Verificar se o cliente existe
             if (!window.powClient) {
                 console.warn('⚠️ [PowManager] PoW Client não disponível após timeout');
-                this._state.set('pow', {
-                    ...this._state.state.pow,
-                    clientAvailable: false,
-                });
+                this._state.set('pow', { ...this._state.state.pow, clientAvailable: false });
                 return this;
             }
 
             this._client = window.powClient;
-            this._state.set('pow', {
-                ...this._state.state.pow,
-                clientAvailable: true,
-            });
+            this._state.set('pow', { ...this._state.state.pow, clientAvailable: true });
 
             // Verificar autenticação
             if (!Utils.isAuthenticated()) {
@@ -369,7 +241,7 @@
                 return this;
             }
 
-            // Verificar se o cliente tem os métodos necessários
+            // 🔥 Verificar se o cliente tem os métodos necessários
             if (typeof this._client.prepareForUpload !== 'function') {
                 console.warn('⚠️ [PowManager] powClient.prepareForUpload não é uma função');
                 return this;
@@ -380,10 +252,16 @@
                 return this;
             }
 
+            // 🔥 Verificar se o worker está disponível
+            const diagnostics = this._client.getDiagnostics ? this._client.getDiagnostics() : null;
+            const workerAvailable = diagnostics?.state?.workerAvailable ?? false;
+            console.log(`🧵 [PowManager] Worker disponível: ${workerAvailable}`);
+
             this._initialized = true;
             console.log('✅ [PowManager] Inicializado com sucesso!');
             console.log(`   🔐 Cliente disponível: ${!!this._client}`);
             console.log(`   ⏳ Tentativas de espera: ${this._waitAttempts}`);
+            console.log(`   🧵 Worker: ${workerAvailable ? 'OK' : 'N/A (fallback síncrono)'}`);
             return this;
         }
 
@@ -438,7 +316,6 @@
             }
 
             try {
-                // Se não estiver pronto, tentar preparar
                 if (!this._ready) {
                     console.log('🔄 [PowManager] PoW não está pronto, preparando...');
                     const prepared = await this.prepare();
@@ -477,9 +354,6 @@
             }
         }
 
-        /**
-         * Reseta o PoW
-         */
         reset() {
             if (this._client && typeof this._client.reset === 'function') {
                 this._client.reset();
@@ -494,16 +368,10 @@
             console.log('🔄 [PowManager] Resetado');
         }
 
-        /**
-         * Verifica se o PoW está pronto
-         */
         isReady() {
             return this._ready && this._initialized;
         }
 
-        /**
-         * Obtém status do PoW
-         */
         getStatus() {
             return {
                 initialized: this._initialized,
@@ -517,7 +385,7 @@
     }
 
     // ==============================================
-    // 🔥 GERENCIADOR DE UPLOAD
+    // 🔥 UPLOAD MANAGER (CORRIGIDO - FILE CHOOSER)
     // ==============================================
 
     class UploadManager {
@@ -793,7 +661,7 @@
     }
 
     // ==============================================
-    // 🔥 GERENCIADOR DE UI
+    // 🔥 UI MANAGER (CORRIGIDO - FILE CHOOSER)
     // ==============================================
 
     class UIManager {
@@ -832,12 +700,8 @@
             this._initialized = true;
             
             this._state.subscribe((key, newValue) => {
-                if (key === 'ui') {
-                    this._updateUI(newValue);
-                }
-                if (key === 'user') {
-                    this._updateUserUI(newValue);
-                }
+                if (key === 'ui') this._updateUI(newValue);
+                if (key === 'user') this._updateUserUI(newValue);
             });
 
             console.log('✅ [UIManager] Inicializado');
@@ -850,7 +714,6 @@
             } else {
                 this.hideLoading();
             }
-
             if (uiState.progress !== undefined) {
                 this.updateProgress(uiState.progress);
             }
@@ -873,27 +736,22 @@
         showLoading(title, subtext) {
             const overlay = this._elements.loadingOverlay;
             if (!overlay) return;
-
             if (this._elements.loadingTitle) {
                 this._elements.loadingTitle.textContent = title || 'Processando...';
             }
             if (this._elements.loadingSubtext) {
                 this._elements.loadingSubtext.textContent = subtext || 'Aguarde...';
             }
-
             overlay.classList.add('show');
         }
 
         hideLoading() {
             const overlay = this._elements.loadingOverlay;
-            if (overlay) {
-                overlay.classList.remove('show');
-            }
+            if (overlay) overlay.classList.remove('show');
         }
 
         updateProgress(percent) {
             const progress = Math.min(100, Math.max(0, percent));
-            
             if (this._elements.loadingProgressBar) {
                 this._elements.loadingProgressBar.style.width = `${progress}%`;
             }
@@ -936,7 +794,6 @@
 
         _animateNumber(element, target, duration = 600) {
             if (!element) return;
-            
             const start = parseInt(element.textContent) || 0;
             const startTime = performance.now();
 
@@ -945,15 +802,52 @@
                 const progress = Math.min(1, elapsed / duration);
                 const eased = 1 - Math.pow(1 - progress, 3);
                 const current = Math.round(start + (target - start) * eased);
-                
                 element.textContent = current;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(update);
-                }
+                if (progress < 1) requestAnimationFrame(update);
             };
-            
             update();
+        }
+
+        /**
+         * 🔥 CORRIGIDO: File Chooser com user activation
+         * O clique é síncrono, sem async antes
+         */
+        setupFileChooser() {
+            const dropArea = this._elements.dropArea;
+            const fileInput = this._elements.fileInput;
+
+            if (!dropArea || !fileInput) return;
+
+            // 🔥 CORREÇÃO: Click direto, SEM async
+            dropArea.addEventListener('click', function(e) {
+                e.preventDefault();
+                // ✅ Ação direta do usuário - SEM await!
+                fileInput.click();
+            });
+
+            // 🔥 CORREÇÃO: Drag and drop também direto
+            dropArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    // ✅ Disparar evento para o upload manager
+                    window.dispatchEvent(new CustomEvent('files:dropped', {
+                        detail: { files: Array.from(files) }
+                    }));
+                }
+            });
+
+            // 🔥 CORREÇÃO: Mudança no file input
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files && e.target.files.length > 0) {
+                    window.dispatchEvent(new CustomEvent('files:selected', {
+                        detail: { files: Array.from(e.target.files) }
+                    }));
+                }
+                // Reset para permitir selecionar o mesmo arquivo novamente
+                fileInput.value = '';
+            });
         }
 
         showFilePreview(files) {
@@ -1018,7 +912,7 @@
     }
 
     // ==============================================
-    // 🔥 GERENCIADOR DE ANÁLISES
+    // 🔥 ANALYSIS MANAGER
     // ==============================================
 
     class AnalysisManager {
@@ -1032,13 +926,10 @@
         init() {
             if (this._initialized) return this;
             this._initialized = true;
-            
             this._loadHistory();
-            
             document.addEventListener('analysis:success', (e) => {
                 this.addAnalysis(e.detail);
             });
-
             console.log('✅ [AnalysisManager] Inicializado');
             return this;
         }
@@ -1078,7 +969,6 @@
 
             this._renderCard(analysis);
             this._ui.updateMetrics(this._analyses);
-
             return analysis;
         }
 
@@ -1092,12 +982,10 @@
                 if (response.ok) {
                     const data = await response.json();
                     const analyses = data.analyses || data || [];
-                    
                     this._analyses = analyses.map(a => ({
                         ...a,
                         score: a.result?.predictions_summary?.mean || 0,
                     }));
-
                     this._state.set('analyses', {
                         active: this._analyses,
                         history: this._analyses,
@@ -1108,7 +996,6 @@
                             return date.toDateString() === now.toDateString();
                         }).length,
                     });
-
                     this._ui.updateMetrics(this._analyses);
                     console.log(`✅ [AnalysisManager] Carregados ${this._analyses.length} análises`);
                 }
@@ -1174,30 +1061,7 @@
                                 </div>
                             </div>
                         </div>
-                        
-                        <div class="card-body p-4">
-                            <div class="row g-3 mb-4">
-                                <div class="col-12">
-                                    <div class="p-3 rounded-4" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <div style="color: rgba(255,255,255,0.4); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                                    <i class="fas fa-gem me-1" style="color: #ff6b35;"></i> Score de Confiança
-                                                </div>
-                                                <div style="font-size: 2.2rem; font-weight: 700; color: ${scoreColor}; line-height: 1;">
-                                                    ${Math.round(scoreMedio * 100)}%
-                                                </div>
-                                            </div>
-                                            <div class="text-end">
-                                                <div style="color: rgba(255,255,255,0.3); font-size: 0.55rem;">${scoreIcon} ${scoreLabel}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            ${this._renderInsights(data)}
-                        </div>
+                        <div class="card-body p-4">${this._renderInsights(data)}</div>
                     </div>
                 </div>
             `;
@@ -1217,9 +1081,7 @@
         _renderInsights(data) {
             const insights = data.insights || {};
             const recommendations = insights.recomendacoes || insights.recommendations || [];
-            
             if (recommendations.length === 0) return '';
-
             return `
                 <div class="row g-3 mb-3">
                     <div class="col-12">
@@ -1253,8 +1115,8 @@
             this.pow = new PowManager(this.state);
             this.upload = new UploadManager(this.state, this.pow);
             this.analyses = new AnalysisManager(this.state, this.ui);
-            
             this._initialized = false;
+            this._fileListenersSetup = false;
         }
 
         async init() {
@@ -1263,10 +1125,9 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v7.3] Inicializando...');
+            console.log('🚀 [Dashboard v7.4] Inicializando...');
 
             const appReady = await this._waitForApp();
-            
             if (!appReady) {
                 console.warn('⚠️ [Dashboard] app.js não respondeu, mas continuando...');
             }
@@ -1281,11 +1142,12 @@
             this._setupEvents();
             this._setupDragAndDrop();
             this._setupUploadForm();
+            this._setupFileListeners();
             this._setupPeriodicUpdate();
 
             this._initialized = true;
 
-            console.log('✅ [Dashboard v7.3] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v7.4] Inicializado com sucesso!');
             console.log(`   📊 Créditos: ${this.state.state.user.credits}`);
             console.log(`   🔐 PoW: ${this.pow.isReady() ? 'OK' : 'N/A'}`);
             console.log(`   📋 Análises: ${this.state.state.analyses.total}`);
@@ -1300,35 +1162,18 @@
 
                 const check = () => {
                     attempts++;
-
-                    if (window._appReadyFired === true) {
-                        resolve(true);
-                        return;
-                    }
-
+                    if (window._appReadyFired === true) { resolve(true); return; }
                     if (window.App && typeof window.App.isReady === 'function') {
-                        try {
-                            if (window.App.isReady()) {
-                                resolve(true);
-                                return;
-                            }
-                        } catch (e) { /* ignora */ }
+                        try { if (window.App.isReady()) { resolve(true); return; } } catch (e) {}
                     }
-
-                    if (window.__APP_STATE && window.__APP_STATE.isAppReady === true) {
-                        resolve(true);
-                        return;
-                    }
-
+                    if (window.__APP_STATE && window.__APP_STATE.isAppReady === true) { resolve(true); return; }
                     if (attempts >= maxAttempts) {
                         console.warn('⚠️ [Dashboard] Timeout aguardando app.js');
                         resolve(false);
                         return;
                     }
-
                     setTimeout(check, CONFIG.WAIT_FOR_APP_INTERVAL);
                 };
-
                 check();
             });
         }
@@ -1383,14 +1228,6 @@
             const dropZone = this.ui._elements.dropArea;
             if (!dropZone) return;
 
-            const handleDrop = async (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
-                
-                const files = Array.from(e.dataTransfer.files);
-                await this.upload.upload(files);
-            };
-
             dropZone.addEventListener('dragenter', (e) => {
                 e.preventDefault();
                 dropZone.classList.add('dragover');
@@ -1405,11 +1242,17 @@
                 dropZone.classList.remove('dragover');
             });
 
-            dropZone.addEventListener('drop', handleDrop);
-
-            dropZone.addEventListener('click', () => {
-                const fileInput = this.ui._elements.fileInput;
-                if (fileInput) fileInput.click();
+            // 🔥 CORRIGIDO: Drop sem async
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length > 0) {
+                    this.upload.upload(files).catch(error => {
+                        console.error('❌ [Dashboard] Upload error:', error);
+                        this.ui.showNotification(error.message, 'error');
+                    });
+                }
             });
         }
 
@@ -1420,22 +1263,44 @@
                     e.preventDefault();
                     const fileInput = this.ui._elements.fileInput;
                     if (fileInput && fileInput.files.length > 0) {
-                        await this.upload.upload(Array.from(fileInput.files));
+                        try {
+                            await this.upload.upload(Array.from(fileInput.files));
+                        } catch (error) {
+                            console.error('❌ [Dashboard] Upload error:', error);
+                            this.ui.showNotification(error.message, 'error');
+                        }
                     } else {
                         this.ui.showNotification('Selecione pelo menos um arquivo', 'warning');
                     }
                 });
             }
+        }
+
+        /**
+         * 🔥 CORRIGIDO: File listeners com user activation
+         */
+        _setupFileListeners() {
+            if (this._fileListenersSetup) return;
+            this._fileListenersSetup = true;
 
             const fileInput = this.ui._elements.fileInput;
-            if (fileInput) {
-                fileInput.setAttribute('multiple', 'multiple');
-                fileInput.addEventListener('change', (e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                        this.ui.showFilePreview(Array.from(e.target.files));
-                    }
-                });
-            }
+            if (!fileInput) return;
+
+            // 🔥 CORREÇÃO: Evento de seleção de arquivos
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    const files = Array.from(e.target.files);
+                    this.ui.showFilePreview(files);
+                }
+            });
+
+            // 🔥 CORREÇÃO: Reset do file input após seleção
+            const resetFileInput = () => {
+                if (fileInput) fileInput.value = '';
+            };
+            
+            // 🔥 CORREÇÃO: Configurar o file chooser com user activation
+            this.ui.setupFileChooser();
         }
 
         _setupPeriodicUpdate() {
@@ -1475,7 +1340,6 @@
         const data = analysis.result;
         const stats = data.stats || {};
         const predictions = data.predictions_summary || {};
-        
         const totalRegistros = stats.rows || predictions.total || 0;
         const scoreMedio = predictions.mean || 0.65;
         const scoreColor = Utils.getScoreColor(scoreMedio);
@@ -1511,7 +1375,6 @@
                                 </div>
                             </div>
                         </div>
-                        
                         <div class="text-center mt-3">
                             <button class="btn btn-outline-light btn-sm" onclick="window.closeGPSA()" 
                                     style="border-radius: 50px; padding: 0.3rem 1.5rem; font-size: 0.75rem; border-color: rgba(255,255,255,0.1);">
@@ -1611,61 +1474,11 @@
         }, 3000);
     });
 
-    // ==============================================
-    // 🔥 ESTILOS ADICIONAIS
-    // ==============================================
-
-    (function injectStyles() {
-        if (document.getElementById('dashboardV73Styles')) return;
-
-        const style = document.createElement('style');
-        style.id = 'dashboardV73Styles';
-        style.textContent = `
-            .analysis-card {
-                animation: fadeInUp 0.5s ease-out;
-            }
-            
-            .dragover {
-                border-color: #48bb78 !important;
-                background: rgba(72, 187, 120, 0.1) !important;
-                transform: scale(1.02);
-                box-shadow: 0 0 40px rgba(72, 187, 120, 0.05);
-            }
-            
-            .insight-item {
-                transition: all 0.3s ease;
-                cursor: default;
-            }
-            .insight-item:hover {
-                background: rgba(255,107,53,0.05) !important;
-                padding-left: 1rem !important;
-            }
-            
-            .btn-pdf:hover {
-                background: #dc3545 !important;
-                color: white !important;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
-            }
-            .btn-gpsa:hover {
-                background: #ff6b35 !important;
-                color: white !important;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
-            }
-            
-            @keyframes fadeInUp {
-                from { opacity: 0; transform: translateY(20px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-        `;
-        document.head.appendChild(style);
-    })();
-
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v7.3 carregado');
-    console.log('   ✅ PowManager com mecanismo de espera (30 tentativas)');
-    console.log('   ✅ Integração total com PoW v4.0');
+    console.log('🔥 dashboard.js v7.4 carregado');
+    console.log('   ✅ PowManager com mecanismo de espera');
+    console.log('   ✅ File Chooser com user activation');
+    console.log('   ✅ Integração total com PoW v5.1');
     console.log('   ✅ Gerenciamento de estado robusto');
     console.log('   ✅ Tratamento de erros avançado');
     console.log('   ✅ Performance otimizada');

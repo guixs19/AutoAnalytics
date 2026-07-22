@@ -1,26 +1,28 @@
-// frontend/js/pow-worker.js - Web Worker para resolver PoW v1.0
+// frontend/js/pow-worker.js - Web Worker para resolver PoW v2.0
 /**
  * 🔥 PoW Worker - Resolve desafios SHA-256 em thread separada
  * 
- * ✅ NÃO BLOQUEIA A UI
- * ✅ USA CRYPTO.SUBTLE (nativo do navegador)
- * ✅ COM PROGRESSO E LOGS
+ * ✅ SEM localStorage, SEM cookies, SEM document (100% isolado)
+ * ✅ Puramente matemático (apenas crypto.subtle)
+ * ✅ COM PROGRESSO E LOGS (via postMessage)
  * ✅ TRATAMENTO DE ERROS ROBUSTO
+ * ✅ FALLBACK AUTOMÁTICO (frontend)
  * 
  * Recebe do frontend:
  * { 
  *   prefix: string,        // Desafio a ser resolvido (32 caracteres hex)
  *   complexity: number,    // Dificuldade (número de zeros no prefixo)
- *   timestamp: number,     // Timestamp do desafio
- *   expires_in: number     // Tempo de expiração em segundos
+ *   timestamp: number,     // Timestamp do desafio (opcional)
+ *   expires_in: number     // Tempo de expiração em segundos (opcional)
  * }
  * 
  * Retorna para o frontend:
  * { 
- *   nonce: string,         // Nonce encontrado
- *   timeMs: number,        // Tempo de execução em ms
  *   success: boolean,      // Status da operação
- *   attempts: number       // Número de tentativas realizadas
+ *   nonce: string,         // Nonce encontrado (se sucesso)
+ *   timeMs: number,        // Tempo de execução em ms
+ *   attempts: number,      // Número de tentativas realizadas
+ *   error: string          // Mensagem de erro (se falha)
  * }
  */
 
@@ -31,19 +33,19 @@
 const WORKER_CONFIG = {
     MAX_ATTEMPTS: 1000000,        // 1 milhão de tentativas (segurança)
     PROGRESS_INTERVAL: 10000,      // Log a cada 10.000 tentativas
-    MAX_TIMEOUT: 60000,            // Timeout máximo de 60 segundos
+    PROGRESS_REPORT: true,         // Envia progresso para o frontend
 };
 
 // ==============================================
-// 🔥 FUNÇÃO PRINCIPAL
+// 🔥 FUNÇÃO PRINCIPAL - RECEBE MENSAGENS
 // ==============================================
 
-self.onmessage = async function (e) {
+self.onmessage = async function(e) {
     // 🔥 Valida os dados recebidos
     if (!e.data || typeof e.data !== 'object') {
         self.postMessage({
-            error: 'Dados inválidos recebidos',
-            success: false
+            success: false,
+            error: 'Dados inválidos recebidos'
         });
         return;
     }
@@ -53,8 +55,8 @@ self.onmessage = async function (e) {
     // 🔥 Valida o prefixo
     if (!prefix || typeof prefix !== 'string' || prefix.length !== 32) {
         self.postMessage({
-            error: 'Prefixo inválido (deve ser uma string hex de 32 caracteres)',
-            success: false
+            success: false,
+            error: 'Prefixo inválido (deve ser uma string hex de 32 caracteres)'
         });
         return;
     }
@@ -62,20 +64,20 @@ self.onmessage = async function (e) {
     // 🔥 Valida a complexidade
     if (!complexity || typeof complexity !== 'number' || complexity < 3 || complexity > 6) {
         self.postMessage({
-            error: 'Complexidade inválida (deve ser entre 3 e 6)',
-            success: false
+            success: false,
+            error: 'Complexidade inválida (deve ser entre 3 e 6)'
         });
         return;
     }
 
-    // 🔥 Verifica se o desafio não está expirado
+    // 🔥 Verifica se o desafio não está expirado (opcional)
     if (timestamp && expires_in) {
         const now = Date.now();
         const challengeAge = (now - timestamp) / 1000;
         if (challengeAge > expires_in) {
             self.postMessage({
-                error: `Desafio expirado (${Math.round(challengeAge)}s > ${expires_in}s)`,
-                success: false
+                success: false,
+                error: `Desafio expirado (${Math.round(challengeAge)}s > ${expires_in}s)`
             });
             return;
         }
@@ -96,14 +98,17 @@ async function resolveChallenge(prefix, complexity) {
     const startTime = Date.now();
     const maxAttempts = WORKER_CONFIG.MAX_ATTEMPTS;
     const progressInterval = WORKER_CONFIG.PROGRESS_INTERVAL;
-    let lastProgressLog = 0;
+    let lastProgressReport = 0;
 
     try {
-        // 🔥 Log inicial
-        console.log(`🧵 [Worker] 🔐 Iniciando busca por nonce`);
-        console.log(`   - Prefixo: ${prefix.substring(0, 8)}...${prefix.substring(24)}`);
-        console.log(`   - Dificuldade: ${complexity} (${target}...)`);
-        console.log(`   - Máximo de tentativas: ${maxAttempts.toLocaleString()}`);
+        // 🔥 Envia status inicial
+        self.postMessage({
+            type: 'progress',
+            status: 'started',
+            message: `Iniciando busca por nonce (dificuldade: ${complexity})`,
+            complexity: complexity,
+            maxAttempts: maxAttempts
+        });
 
         // 🔥 Loop principal
         while (nonce < maxAttempts) {
@@ -121,84 +126,99 @@ async function resolveChallenge(prefix, complexity) {
             // 🔥 Verifica se encontrou
             if (hashHex.startsWith(target)) {
                 const timeMs = Date.now() - startTime;
-                console.log(`🧵 [Worker] ✅ Nonce encontrado!`);
-                console.log(`   - Nonce: ${nonce}`);
-                console.log(`   - Hash: ${hashHex.substring(0, 20)}...`);
-                console.log(`   - Tempo: ${timeMs}ms`);
-                console.log(`   - Tentativas: ${(nonce + 1).toLocaleString()}`);
-
+                
+                // 🔥 Envia resultado de sucesso
                 self.postMessage({
+                    success: true,
                     nonce: String(nonce),
                     timeMs: timeMs,
-                    success: true,
                     attempts: nonce + 1,
-                    hash: hashHex
+                    hash: hashHex,
+                    type: 'result'
                 });
+                
                 return;
             }
 
             nonce++;
 
-            // 🔥 Log de progresso
-            if (nonce % progressInterval === 0 && nonce > 0) {
+            // 🔥 Envia progresso periódico (se habilitado)
+            if (WORKER_CONFIG.PROGRESS_REPORT && 
+                nonce - lastProgressReport >= progressInterval) {
+                lastProgressReport = nonce;
                 const elapsed = Date.now() - startTime;
-                const rate = Math.round(nonce / (elapsed / 1000));
-                console.log(`🧵 [Worker] 🔄 Progresso: ${nonce.toLocaleString()}/${maxAttempts.toLocaleString()} (${rate} tentativas/segundo)`);
+                const rate = elapsed > 0 ? Math.round(nonce / (elapsed / 1000)) : 0;
+                
+                self.postMessage({
+                    type: 'progress',
+                    status: 'progress',
+                    attempts: nonce,
+                    maxAttempts: maxAttempts,
+                    percent: Math.round((nonce / maxAttempts) * 100),
+                    rate: rate,
+                    elapsedMs: elapsed
+                });
             }
         }
 
         // 🔥 Se chegou aqui, não encontrou
-        console.error(`🧵 [Worker] ❌ Nonce não encontrado após ${maxAttempts.toLocaleString()} tentativas`);
+        const timeMs = Date.now() - startTime;
         self.postMessage({
-            error: `Não foi possível encontrar nonce após ${maxAttempts.toLocaleString()} tentativas`,
             success: false,
+            error: `Não foi possível encontrar nonce após ${maxAttempts.toLocaleString()} tentativas`,
             attempts: maxAttempts,
-            timeMs: Date.now() - startTime
+            timeMs: timeMs,
+            type: 'result'
         });
 
     } catch (error) {
         // 🔥 Erro inesperado
-        console.error(`🧵 [Worker] ❌ Erro durante a execução:`, error);
         self.postMessage({
-            error: `Erro no worker: ${error.message || 'Desconhecido'}`,
             success: false,
-            stack: error.stack
+            error: `Erro no worker: ${error.message || 'Desconhecido'}`,
+            stack: error.stack,
+            type: 'error'
         });
     }
 }
 
 // ==============================================
-// 🔥 LISTENERS ADICIONAIS (OPCIONAIS)
+// 🔥 LISTENER PARA CANCELAMENTO
 // ==============================================
 
-// 🔥 Listener para cancelamento (se o frontend enviar 'cancel')
 self.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'cancel') {
-        console.log('🧵 [Worker] ⏹️ Cancelamento solicitado');
+        self.postMessage({
+            type: 'cancel',
+            success: false,
+            message: 'Cálculo cancelado pelo usuário'
+        });
         self.close();
     }
 });
 
-// 🔥 Listener para erro global
+// ==============================================
+// 🔥 LISTENER PARA ERRO GLOBAL
+// ==============================================
+
 self.addEventListener('error', function(e) {
-    console.error('🧵 [Worker] ❌ Erro global:', e.message);
-    // Não fechamos automaticamente, deixamos o fluxo principal lidar
+    self.postMessage({
+        success: false,
+        error: `Erro global no worker: ${e.message || 'Desconhecido'}`,
+        type: 'error'
+    });
 });
 
 // ==============================================
 // 🔥 INICIALIZAÇÃO
 // ==============================================
 
-console.log('🧵 [Worker] ════════════════════════════════════════');
-console.log('🧵 [Worker] 🔥 PoW Worker v1.0 carregado!');
-console.log(`🧵 [Worker]    - Máximo de tentativas: ${WORKER_CONFIG.MAX_ATTEMPTS.toLocaleString()}`);
-console.log(`🧵 [Worker]    - Intervalo de progresso: ${WORKER_CONFIG.PROGRESS_INTERVAL.toLocaleString()} tentativas`);
-console.log(`🧵 [Worker]    - Timeout máximo: ${WORKER_CONFIG.MAX_TIMEOUT / 1000}s`);
-console.log('🧵 [Worker] ════════════════════════════════════════');
+// Log silencioso (não usa console no worker em produção)
+// O frontend saberá que o worker está pronto quando receber mensagens
 
-// ==============================================
-// 🔥 EXPORTAÇÃO (se necessário para módulos)
-// ==============================================
-
-// Nota: Workers não usam export, o código acima é executado diretamente
-// O arquivo é carregado via new Worker('/js/pow-worker.js')
+// Apenas sinaliza que está pronto (opcional)
+self.postMessage({
+    type: 'ready',
+    status: 'ready',
+    message: 'PoW Worker v2.0 pronto para uso'
+});
