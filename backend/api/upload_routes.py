@@ -11,7 +11,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, List, Any
 import logging
 import os
 import uuid
