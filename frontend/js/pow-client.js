@@ -1,4 +1,4 @@
-// frontend/js/pow-client.js - VERSÃO COMPLETA v5.1
+// frontend/js/pow-client.js - VERSÃO v5.1 (CORREÇÃO URL)
 /**
  * 🔥 Proof of Work Client - Versão 5.1
  * 
@@ -12,6 +12,7 @@
  * ✅ TRATAMENTO DE ERROS AVANÇADO
  * ✅ WORKER COM VERIFICAÇÃO PRÉVIA
  * ✅ FALLBACK AUTOMÁTICO EM CASO DE FALHA
+ * ✅ 🔥 URL ABSOLUTA /api/pow/challenge
  * 
  * CONECTADO COM: pow_routes.py (backend)
  * 
@@ -30,31 +31,31 @@
 const POW_CONFIG = {
     // 🔥 Dificuldade e TTL
     DEFAULT_DIFFICULTY: 4,
-    CHALLENGE_TTL: 300,
-    CACHE_TTL: 30000,
+    CHALLENGE_TTL: 300, // 5 minutos
+    CACHE_TTL: 30000, // 30 segundos
     
     // 🔥 Retry e Timeout
     MAX_RETRIES: 3,
-    RETRY_DELAY: 1000,
-    MAX_BACKOFF: 10000,
-    WORKER_TIMEOUT: 30000,
+    RETRY_DELAY: 1000, // 1 segundo
+    MAX_BACKOFF: 10000, // 10 segundos
+    WORKER_TIMEOUT: 30000, // 30 segundos
     MAX_NONCE_ATTEMPTS: 1000000,
     
-    // 🔥 Endpoints
+    // 🔥 Endpoints (CORRIGIDO: URLs absolutas)
     API_BASE: window.location.hostname.includes('localhost')
         ? 'http://localhost:8000/api'
         : '/api',
-    CHALLENGE_ENDPOINT: '/pow/challenge',
-    UPLOAD_ENDPOINT: '/upload-auto',
-    WORKER_URL: '/static/js/pow-worker.js',
+    CHALLENGE_ENDPOINT: '/pow/challenge',   // ✅ Resulta em: /api/pow/challenge
+    UPLOAD_ENDPOINT: '/upload-auto',         // ✅ Resulta em: /api/upload-auto
+    WORKER_URL: '/static/js/pow-worker.js',  // ✅ Resulta em: /static/js/pow-worker.js
     
     // 🔥 Limites
-    MAX_CHALLENGE_AGE: 300000,
+    MAX_CHALLENGE_AGE: 300000, // 5 minutos
     MIN_DIFFICULTY: 3,
     MAX_DIFFICULTY: 6,
     
     // 🔥 Logging
-    LOG_LEVEL: 'info',
+    LOG_LEVEL: 'info', // debug, info, warn, error
     MAX_LOG_HISTORY: 100,
 };
 
@@ -639,6 +640,7 @@ class PowClient {
         }
     }
 
+    // 🔥 CORRIGIDO: Agora usa URL absoluta /api/pow/challenge
     async _getChallenge() {
         this.logger.debug('📡 Solicitando desafio PoW ao backend...');
         this._metrics.totalRequests++;
@@ -652,8 +654,12 @@ class PowClient {
         const startTime = Date.now();
 
         try {
+            // 🔥 URL absoluta garantida
+            const url = `${this.config.API_BASE}${this.config.CHALLENGE_ENDPOINT}`;
+            this.logger.debug(`   🔗 URL: ${url}`);
+
             const response = await fetch(
-                `${this.config.API_BASE}${this.config.CHALLENGE_ENDPOINT}`,
+                url,
                 {
                     method: 'GET',
                     headers: {
@@ -687,7 +693,7 @@ class PowClient {
             }
 
             if (response.status === 404) {
-                throw new Error('Serviço PoW indisponível. Verifique o backend.');
+                throw new Error(`Serviço PoW indisponível (404). URL: ${url}`);
             }
 
             if (!response.ok) {
@@ -1191,6 +1197,7 @@ console.log('   ✅ Verificação prévia do Worker (fetch HEAD)');
 console.log('   ✅ Tratamento de erros avançado');
 console.log('   ✅ Métricas e diagnóstico detalhados');
 console.log('   ✅ Logging estruturado');
+console.log('   ✅ URL absoluta: /api/pow/challenge');
 console.log('   📡 window.powClient disponível imediatamente');
 console.log('   🔍 Use window.getPowDiagnostics() para debug');
 console.log('=' .repeat(60));

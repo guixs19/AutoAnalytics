@@ -1,11 +1,13 @@
-// frontend/js/dashboard.js - VERSÃO CORRIGIDA v7.4
+// frontend/js/dashboard.js - VERSÃO COMPLETA v7.4 (CORRIGIDA)
 /**
  * 🔥 Dashboard Module - AutoAnalytics v7.4
  * 
  * ✅ CORRIGIDO: File Chooser com user activation
  * ✅ CORRIGIDO: Integração com PowClient v5.1
+ * ✅ CORRIGIDO: URLs absolutas com /api/
  * ✅ CORRIGIDO: Tratamento de erros do PoW
  * ✅ MELHORADO: Upload com fallback
+ * ✅ ADICIONADO: Helper buildApiUrl global
  * ✅ ADICIONADO: Verificação de worker
  * 
  * MÓDULOS:
@@ -44,6 +46,40 @@
         WAIT_FOR_APP_TIMEOUT: 8000,
         WAIT_FOR_APP_INTERVAL: 200,
     };
+
+    // ==============================================
+    // 🔥 HELPER GLOBAL DE API
+    // ==============================================
+
+    /**
+     * 🔥 Constrói URL absoluta para API
+     * Garante que todas as chamadas usem /api/ corretamente
+     * 
+     * @param {string} path - Caminho da API (ex: 'upload-auto', '/pow/challenge')
+     * @returns {string} - URL absoluta (ex: '/api/upload-auto', '/api/pow/challenge')
+     */
+    function buildApiUrl(path) {
+        if (!path) return '/api';
+        
+        // Garante que o path sempre comece com /
+        const cleanPath = path.startsWith('/') ? path : '/' + path;
+        
+        // Evita duplicar /api/api/
+        if (cleanPath.startsWith('/api/')) {
+            return cleanPath;
+        }
+        
+        return '/api' + cleanPath;
+    }
+
+    // 🔥 Expor helper globalmente
+    if (typeof window !== 'undefined') {
+        window.buildApiUrl = buildApiUrl;
+        
+        if (window.AppUtils) {
+            window.AppUtils.buildApiUrl = buildApiUrl;
+        }
+    }
 
     // ==============================================
     // 🔥 UTILITÁRIOS
@@ -385,7 +421,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD MANAGER (CORRIGIDO - FILE CHOOSER)
+    // 🔥 UPLOAD MANAGER (CORRIGIDO - URLs Absolutas)
     // ==============================================
 
     class UploadManager {
@@ -524,8 +560,14 @@
             }
         }
 
+        /**
+         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
+         */
         async _doUpload(headers, formData) {
-            const response = await fetch(`${CONFIG.API_BASE}/upload-auto`, {
+            const url = buildApiUrl('upload-auto');
+            console.log(`📤 [UploadManager] URL: ${url}`);
+            
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: headers,
                 body: formData,
@@ -563,6 +605,9 @@
             return data;
         }
 
+        /**
+         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
+         */
         startPolling(processId, filename) {
             let attempts = 0;
             const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;
@@ -572,7 +617,9 @@
 
                 try {
                     const token = Utils.getToken();
-                    const response = await fetch(`${CONFIG.API_BASE}/status/${processId}`, {
+                    const url = buildApiUrl(`status/${processId}`);
+                    
+                    const response = await fetch(url, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
 
@@ -620,10 +667,15 @@
             this._pollingIntervals.push(interval);
         }
 
+        /**
+         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
+         */
         async _handleComplete(processId, filename) {
             try {
                 const token = Utils.getToken();
-                const response = await fetch(`${CONFIG.API_BASE}/analysis/${processId}`, {
+                const url = buildApiUrl(`analysis/${processId}`);
+                
+                const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -810,7 +862,6 @@
 
         /**
          * 🔥 CORRIGIDO: File Chooser com user activation
-         * O clique é síncrono, sem async antes
          */
         setupFileChooser() {
             const dropArea = this._elements.dropArea;
@@ -821,7 +872,6 @@
             // 🔥 CORREÇÃO: Click direto, SEM async
             dropArea.addEventListener('click', function(e) {
                 e.preventDefault();
-                // ✅ Ação direta do usuário - SEM await!
                 fileInput.click();
             });
 
@@ -831,7 +881,6 @@
                 dropArea.classList.remove('dragover');
                 const files = e.dataTransfer.files;
                 if (files.length > 0) {
-                    // ✅ Disparar evento para o upload manager
                     window.dispatchEvent(new CustomEvent('files:dropped', {
                         detail: { files: Array.from(files) }
                     }));
@@ -845,7 +894,6 @@
                         detail: { files: Array.from(e.target.files) }
                     }));
                 }
-                // Reset para permitir selecionar o mesmo arquivo novamente
                 fileInput.value = '';
             });
         }
@@ -912,7 +960,7 @@
     }
 
     // ==============================================
-    // 🔥 ANALYSIS MANAGER
+    // 🔥 ANALYSIS MANAGER (CORRIGIDO - URLs Absolutas)
     // ==============================================
 
     class AnalysisManager {
@@ -972,10 +1020,16 @@
             return analysis;
         }
 
+        /**
+         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
+         */
         async _loadHistory() {
             try {
                 const token = Utils.getToken();
-                const response = await fetch(`${CONFIG.API_BASE}/analyses/history`, {
+                const url = buildApiUrl('analyses/history');
+                console.log(`📋 [AnalysisManager] Carregando histórico: ${url}`);
+                
+                const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -1242,7 +1296,6 @@
                 dropZone.classList.remove('dragover');
             });
 
-            // 🔥 CORRIGIDO: Drop sem async
             dropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 dropZone.classList.remove('dragover');
@@ -1286,7 +1339,6 @@
             const fileInput = this.ui._elements.fileInput;
             if (!fileInput) return;
 
-            // 🔥 CORREÇÃO: Evento de seleção de arquivos
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files && e.target.files.length > 0) {
                     const files = Array.from(e.target.files);
@@ -1294,12 +1346,6 @@
                 }
             });
 
-            // 🔥 CORREÇÃO: Reset do file input após seleção
-            const resetFileInput = () => {
-                if (fileInput) fileInput.value = '';
-            };
-            
-            // 🔥 CORREÇÃO: Configurar o file chooser com user activation
             this.ui.setupFileChooser();
         }
 
@@ -1478,6 +1524,8 @@
     console.log('🔥 dashboard.js v7.4 carregado');
     console.log('   ✅ PowManager com mecanismo de espera');
     console.log('   ✅ File Chooser com user activation');
+    console.log('   ✅ URLs absolutas com /api/');
+    console.log('   ✅ Helper buildApiUrl global');
     console.log('   ✅ Integração total com PoW v5.1');
     console.log('   ✅ Gerenciamento de estado robusto');
     console.log('   ✅ Tratamento de erros avançado');

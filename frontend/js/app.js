@@ -1,52 +1,63 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.3 (CORRIGIDO COMPLETAMENTE)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.4 (REFATORADO)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.3:
- * 1. 🔥 CORRIGIDO: Bug this.isAvailable is not a function
- * 2. 🔥 ADICIONADO: Método isAvailable no objeto App
- * 3. 🔥 CORRIGIDO: uploadWithPow usa Pow.isAvailable()
- * 4. 🔥 MELHORADO: Verificação robusta do PoW
- * 5. 🔥 OTIMIZADO: Redução de chamadas redundantes
+ * 🏗️ ARQUITETURA V7.4:
+ * 1. 🔥 CORRIGIDO: URLs absolutas com /api/
+ * 2. 🔥 ADICIONADO: Helper buildApiUrl global
+ * 3. 🔥 MELHORADO: Estrutura modular do Pow
+ * 4. 🔥 OTIMIZADO: Cache e performance
+ * 5. 🔥 ADICIONADO: Logging estruturado
+ * 6. 🔥 CORRIGIDO: Tratamento de erros avançado
  * 
- * 🔥 CORREÇÕES V7.3:
- * - Adicionado App.isAvailable()
- * - Corrigido uploadWithPow para usar Pow.isAvailable()
- * - Adicionado fallback para quando o PoW não está disponível
- * - Melhorado tratamento de erros no upload
+ * 🔥 CORREÇÕES V7.4:
+ * - URLs absolutas em todas as chamadas fetch
+ * - buildApiUrl para evitar duplicação
+ * - Pow manager com fallback robusto
+ * - Melhor tratamento de rate limit
+ * - Cache com invalidação automática
  */
 
 (function() {
     'use strict';
-
-    console.log('🚀 Inicializando App (Orquestrador) v7.3...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES GLOBAIS
     // ==============================================
 
     const CONFIG = Object.freeze({
+        // App
+        VERSION: '7.4.0',
+        
+        // Upload
         MAX_FILES: 3,
         MAX_FILE_SIZE_KB: 200,
+        
+        // Créditos
         MAX_CREDITS_BALANCE: 3,
         INITIAL_FREE_CREDITS: 3,
         
+        // Preços
         PROMOTIONAL_PRICE: 97.00,
         REGULAR_PRICE: 149.90,
         TOTAL_PROMOTIONAL_SLOTS: 100,
         DAYS_PREMIUM: 30,
         
+        // Token
         TOKEN_EXPIRY_MINUTES: 15,
         SESSION_TIMEOUT: 15 * 60 * 1000,
         
+        // Rate Limit
         RATE_LIMIT_LOGIN_MAX: 5,
         RATE_LIMIT_LOGIN_WINDOW: 900,
         RATE_LIMIT_REGISTER_MAX: 5,
         RATE_LIMIT_REGISTER_WINDOW: 3600,
         
+        // PoW
         POW_STOCK_SIZE: 2,
         API_BASE: '/api',
         
+        // Rotas
         ROUTES: {
             PROTECTED: ['/', '/dashboard', '/planos', '/checkout'],
             PUBLIC: ['/login', '/register'],
@@ -54,14 +65,103 @@
             LOGIN: '/login'
         },
         
+        // UI
+        UI_CACHE_TTL: 5000,
+        DEBOUNCE_DELAY: 50,
+        
+        // Reload
         RELOAD_COOLDOWN: 3000,
         MAX_RELOADS: 3,
         RELOAD_STORAGE_KEY: '_aa_reload_count',
         AUTH_BLOCK_KEY: '_aa_auth_block',
         
-        UI_CACHE_TTL: 5000,
-        DEBOUNCE_DELAY: 50
+        // 🔥 Novas configurações
+        API_RETRY_ATTEMPTS: 3,
+        API_RETRY_DELAY: 1000,
+        MAX_API_RETRY_DELAY: 10000,
     });
+
+    // ==============================================
+    // 🔥 HELPER GLOBAL DE API (NOVO)
+    // ==============================================
+
+    /**
+     * 🔥 Constrói URL absoluta para API
+     * Garante que todas as chamadas usem /api/ corretamente
+     * 
+     * @param {string} path - Caminho da API (ex: 'upload-auto', '/pow/challenge')
+     * @returns {string} - URL absoluta (ex: '/api/upload-auto', '/api/pow/challenge')
+     */
+    function buildApiUrl(path) {
+        if (!path) return '/api';
+        
+        // Garante que o path sempre comece com /
+        const cleanPath = path.startsWith('/') ? path : '/' + path;
+        
+        // Evita duplicar /api/api/
+        if (cleanPath.startsWith('/api/')) {
+            return cleanPath;
+        }
+        
+        return '/api' + cleanPath;
+    }
+
+    // ==============================================
+    // 🔥 LOGGER ESTRUTURADO (NOVO)
+    // ==============================================
+
+    const Logger = {
+        levels: { debug: 0, info: 1, warn: 2, error: 3 },
+        level: 'info',
+        prefix: '[App]',
+        enabled: true,
+        history: [],
+        maxHistory: 100,
+
+        _shouldLog(level) {
+            return this.enabled && this.levels[level] >= this.levels[this.level];
+        },
+
+        _format(level, message, args) {
+            const timestamp = new Date().toISOString().substring(11, 19);
+            const logMessage = `${timestamp} ${this.prefix} ${message}`;
+            
+            this.history.push({ timestamp: Date.now(), level, message, args });
+            if (this.history.length > this.maxHistory) this.history.shift();
+            
+            return logMessage;
+        },
+
+        debug(message, ...args) {
+            if (!this._shouldLog('debug')) return;
+            console.debug(this._format('debug', message, args), ...args);
+        },
+
+        info(message, ...args) {
+            if (!this._shouldLog('info')) return;
+            console.log(this._format('info', message, args), ...args);
+        },
+
+        warn(message, ...args) {
+            if (!this._shouldLog('warn')) return;
+            console.warn(this._format('warn', message, args), ...args);
+        },
+
+        error(message, ...args) {
+            if (!this._shouldLog('error')) return;
+            console.error(this._format('error', message, args), ...args);
+        },
+
+        setLevel(level) {
+            if (this.levels[level] !== undefined) {
+                this.level = level;
+            }
+        },
+
+        getHistory() {
+            return this.history;
+        }
+    };
 
     // ==============================================
     // 🔥 GERENCIADOR DE RELOAD (ANTI-LOOP)
@@ -75,13 +175,13 @@
             const now = Date.now();
             
             if (now - this._lastReload < CONFIG.RELOAD_COOLDOWN) {
-                console.warn('⛔ Cooldown ativo, evitando reload');
+                Logger.warn('⛔ Cooldown ativo, evitando reload');
                 return false;
             }
             
             let storedCount = parseInt(sessionStorage.getItem(CONFIG.RELOAD_STORAGE_KEY) || '0');
             if (storedCount >= CONFIG.MAX_RELOADS) {
-                console.error('❌ Número máximo de reloads atingido. Redirecionando para login.');
+                Logger.error('❌ Número máximo de reloads atingido. Redirecionando para login.');
                 sessionStorage.removeItem(CONFIG.RELOAD_STORAGE_KEY);
                 window.location.replace('/login');
                 return false;
@@ -107,7 +207,7 @@
     };
 
     // ==============================================
-    // 🔥 EVENT BUS UNIFICADO (COM FILA)
+    // 🔥 EVENT BUS UNIFICADO (OTIMIZADO)
     // ==============================================
 
     const EventBus = {
@@ -209,10 +309,6 @@
         },
 
         _dispatch: function(event, data) {
-            if (CONFIG.DEBUG || true) {
-                console.log(`📢 [EventBus] ${event}`, data);
-            }
-            
             if (!this._handlers.has(event)) return;
             
             const handlers = this._handlers.get(event);
@@ -223,7 +319,7 @@
                 try {
                     handler(data);
                 } catch (e) {
-                    console.error(`❌ Erro no handler do evento ${event}:`, e);
+                    Logger.error(`❌ Erro no handler do evento ${event}:`, e);
                 }
                 if (once) {
                     toRemove.push(i);
@@ -256,7 +352,7 @@
     };
 
     // ==============================================
-    // 🔥 ESTADO GLOBAL (COM PROXY)
+    // 🔥 ESTADO GLOBAL (COM PROXY + PERSISTÊNCIA)
     // ==============================================
 
     const initialState = {
@@ -307,6 +403,22 @@
         _isUpdating: false
     };
 
+    // 🔥 Carregar estado salvo
+    try {
+        const savedState = localStorage.getItem('__APP_STATE_PERSIST');
+        if (savedState) {
+            const parsed = JSON.parse(savedState);
+            const persistKeys = ['user', 'credits', 'isPremium', 'isAdmin', 'creditsDisplay'];
+            persistKeys.forEach(key => {
+                if (parsed[key] !== undefined) {
+                    initialState[key] = parsed[key];
+                }
+            });
+        }
+    } catch (e) {
+        // Ignora erro
+    }
+
     const State = new Proxy(initialState, {
         set(target, key, value) {
             const oldValue = target[key];
@@ -332,6 +444,20 @@
                 
                 EventBus.emit('app:state_changed', eventData);
                 window.dispatchEvent(new CustomEvent('app:state_changed', { detail: eventData }));
+                
+                // 🔥 Persistir estado (apenas chaves selecionadas)
+                try {
+                    const persistKeys = ['user', 'credits', 'isPremium', 'isAdmin', 'creditsDisplay'];
+                    const toSave = {};
+                    persistKeys.forEach(k => {
+                        if (target[k] !== undefined) {
+                            toSave[k] = target[k];
+                        }
+                    });
+                    localStorage.setItem('__APP_STATE_PERSIST', JSON.stringify(toSave));
+                } catch (e) {
+                    // Ignora
+                }
             }
             
             return true;
@@ -384,6 +510,11 @@
             for (const [key, value] of Object.entries(newState)) {
                 State[key] = value;
             }
+            try {
+                localStorage.removeItem('__APP_STATE_PERSIST');
+            } catch (e) {
+                // Ignora
+            }
             return State;
         }
     };
@@ -428,17 +559,17 @@
                     window.toastr[type](message);
                     return true;
                 } catch (e) {
-                    console.warn('⚠️ Toastr falhou:', e);
+                    Logger.warn('⚠️ Toastr falhou:', e);
                 }
             }
             
             if (type === 'error' || type === 'warning') {
-                console.warn(`[${type}] ${message}`);
+                Logger.warn(`[${type}] ${message}`);
                 alert(`⚠️ ${message}`);
                 return true;
             }
             
-            console.log(`[${type}] ${message}`);
+            Logger.info(`[${type}] ${message}`);
             return true;
         },
 
@@ -491,7 +622,7 @@
         getRateLimitRemainingAttempts: () => State.rateLimitRemainingAttempts,
 
         waitFor: (condition, timeout = 10000, interval = 200) => {
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const startTime = Date.now();
                 const check = () => {
                     try {
@@ -552,10 +683,30 @@
                     setTimeout(() => inThrottle = false, limit);
                 }
             };
-        }
+        },
+        
+        // 🔥 NOVO: Retry com backoff
+        retry: async function(fn, attempts = CONFIG.API_RETRY_ATTEMPTS, delay = CONFIG.API_RETRY_DELAY) {
+            let lastError;
+            for (let i = 0; i < attempts; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    lastError = error;
+                    if (i < attempts - 1) {
+                        const backoff = Math.min(delay * Math.pow(2, i), CONFIG.MAX_API_RETRY_DELAY);
+                        await Utils.sleep(backoff);
+                    }
+                }
+            }
+            throw lastError;
+        },
+        
+        sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms))
     };
 
     window.AppUtils = {
+        buildApiUrl: buildApiUrl,
         sanitizeNumber: Utils.sanitizeNumber,
         formatCreditsDisplay: Utils.formatCreditsDisplay,
         escapeHtml: Utils.escapeHtml,
@@ -566,8 +717,13 @@
         getMaxCredits: () => CONFIG.MAX_CREDITS_BALANCE,
         getConfig: () => CONFIG,
         debounce: Utils.debounce,
-        throttle: Utils.throttle
+        throttle: Utils.throttle,
+        retry: Utils.retry,
+        sleep: Utils.sleep,
     };
+
+    // 🔥 Expor buildApiUrl globalmente
+    window.buildApiUrl = buildApiUrl;
 
     // ==============================================
     // 🔥 FETCH UNIFICADO (COM REFRESH AUTOMÁTICO)
@@ -586,11 +742,12 @@
             try {
                 const refreshToken = localStorage.getItem('refresh_token');
                 if (!refreshToken) {
-                    console.warn('⚠️ Sem refresh token disponível');
+                    Logger.warn('⚠️ Sem refresh token disponível');
                     return false;
                 }
                 
-                const response = await fetch('/api/auth/refresh', {
+                const url = buildApiUrl('/auth/refresh');
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ refresh_token: refreshToken })
@@ -610,16 +767,16 @@
                             localStorage.setItem('user_email', data.user.email || '');
                         }
                         
-                        console.log('✅ Token renovado com sucesso!');
+                        Logger.info('✅ Token renovado com sucesso!');
                         EventBus.emit('auth:token_refreshed', { message: 'Token renovado automaticamente' });
                         return true;
                     }
                 }
                 
-                console.warn('⚠️ Falha ao renovar token');
+                Logger.warn('⚠️ Falha ao renovar token');
                 return false;
             } catch (error) {
-                console.error('❌ Erro ao renovar token:', error);
+                Logger.error('❌ Erro ao renovar token:', error);
                 return false;
             } finally {
                 _isRefreshing = false;
@@ -631,10 +788,13 @@
     }
 
     async function fetchWithAuth(url, options = {}) {
+        // 🔥 Garantir URL absoluta
+        const finalUrl = buildApiUrl(url);
+        
         try {
             const token = localStorage.getItem('access_token');
             if (!token) {
-                console.warn('⚠️ fetchWithAuth: sem token');
+                Logger.warn('⚠️ fetchWithAuth: sem token');
                 EventBus.emit('auth:unauthorized', { message: 'Token não encontrado' });
                 return null;
             }
@@ -650,24 +810,24 @@
                 delete headers['Content-Type'];
             }
             
-            let response = await fetch(url, { ...options, headers });
+            let response = await fetch(finalUrl, { ...options, headers });
             
             if (response.status === 401) {
-                console.warn('⚠️ Token expirado, tentando refresh...');
+                Logger.warn('⚠️ Token expirado, tentando refresh...');
                 
                 const refreshed = await refreshTokenSafely();
                 if (refreshed) {
                     const newToken = localStorage.getItem('access_token');
                     if (newToken) {
                         headers['Authorization'] = `Bearer ${newToken}`;
-                        response = await fetch(url, { ...options, headers });
+                        response = await fetch(finalUrl, { ...options, headers });
                         if (response.ok) {
                             return response;
                         }
                     }
                 }
                 
-                console.error('❌ Falha ao renovar token, redirecionando para login');
+                Logger.error('❌ Falha ao renovar token, redirecionando para login');
                 EventBus.emit('auth:unauthorized', { message: 'Sessão expirada', redirect: true });
                 handleUnauthorized();
                 return null;
@@ -691,7 +851,7 @@
             
             if (response.status === 402) {
                 const data = await response.json().catch(() => ({}));
-                console.warn('⚠️ Créditos insuficientes:', data);
+                Logger.warn('⚠️ Créditos insuficientes:', data);
                 EventBus.emit('credits:insufficient', {
                     message: data.message || 'Créditos insuficientes',
                     credits_available: data.credits_available || 0,
@@ -702,8 +862,8 @@
             
             return response;
         } catch (error) {
-            console.error('❌ fetchWithAuth error:', error);
-            EventBus.emit('fetch:error', { url, error: error.message, options });
+            Logger.error('❌ fetchWithAuth error:', error);
+            EventBus.emit('fetch:error', { url: finalUrl, error: error.message, options });
             return null;
         }
     }
@@ -713,7 +873,7 @@
     // ==============================================
 
     function handleUnauthorized() {
-        console.error('❌ [Orquestrador] Sessão inválida ou expirada.');
+        Logger.error('❌ [Orquestrador] Sessão inválida ou expirada.');
         
         sessionStorage.setItem(CONFIG.AUTH_BLOCK_KEY, String(Date.now()));
         
@@ -762,13 +922,13 @@
             const isAuth = Utils.isAuthenticated();
             
             if (this.isProtected() && !isAuth) {
-                console.log('🔒 Rota protegida - redirecionando para login');
+                Logger.info('🔒 Rota protegida - redirecionando para login');
                 Utils.redirectTo(CONFIG.ROUTES.LOGIN);
                 return false;
             }
 
             if (this.isPublic() && isAuth) {
-                console.log('✅ Usuário já logado - redirecionando para dashboard');
+                Logger.info('✅ Usuário já logado - redirecionando para dashboard');
                 Utils.redirectTo(CONFIG.ROUTES.HOME);
                 return false;
             }
@@ -816,7 +976,7 @@
     };
 
     // ==============================================
-    // 🔥 UI MANAGER
+    // 🔥 UI MANAGER (OTIMIZADO)
     // ==============================================
 
     const UI = {
@@ -845,6 +1005,7 @@
         invalidateCache: function() {
             this._elementCache.clear();
             this._cacheTimestamps.clear();
+            Logger.debug('🧹 Cache de UI invalidado');
         },
 
         scheduleUpdate: function() {
@@ -891,7 +1052,7 @@
                         UI.updatePowStatus();
                         UI.updateRateLimitStatus();
                     } catch (e) {
-                        console.warn('Erro ao atualizar navbar:', e);
+                        Logger.warn('Erro ao atualizar navbar:', e);
                     }
                 }
                 
@@ -928,7 +1089,7 @@
                 });
 
             } catch (e) {
-                console.warn('Erro ao atualizar créditos:', e);
+                Logger.warn('Erro ao atualizar créditos:', e);
             }
         },
 
@@ -998,7 +1159,7 @@
                     }
                 }
             } catch (e) {
-                console.warn('Erro ao atualizar status PoW:', e);
+                Logger.warn('Erro ao atualizar status PoW:', e);
             }
         },
 
@@ -1057,7 +1218,7 @@
                 
                 overlay.classList.add('show');
             } else {
-                console.log('⏳ Loading:', message);
+                Logger.info('⏳ Loading:', message);
             }
         },
 
@@ -1108,7 +1269,7 @@
     };
 
     // ==============================================
-    // 🔥 AUTH
+    // 🔥 AUTH (OTIMIZADO)
     // ==============================================
 
     const Auth = {
@@ -1122,10 +1283,10 @@
 
             if (!Utils.isAuthenticated()) return;
 
-            console.log(`⏰ Timer de sessão: ${CONFIG.SESSION_TIMEOUT/60000} minutos`);
+            Logger.info(`⏰ Timer de sessão: ${CONFIG.SESSION_TIMEOUT/60000} minutos`);
 
             this._sessionTimeout = setTimeout(() => {
-                console.log('⏰ Sessão expirada por inatividade');
+                Logger.warn('⏰ Sessão expirada por inatividade');
                 Utils.showNotification('⏰ Sessão expirada por inatividade. Faça login novamente.', 'warning');
                 handleUnauthorized();
             }, CONFIG.SESSION_TIMEOUT);
@@ -1167,7 +1328,8 @@
         
         loadUserCredits: async function() {
             try {
-                const response = await fetchWithAuth('/api/auth/me');
+                const url = buildApiUrl('/auth/me');
+                const response = await fetchWithAuth(url);
                 if (response?.ok) {
                     const data = await response.json();
                     
@@ -1188,7 +1350,7 @@
                         } catch (e) {}
                     }
                     
-                    console.log(`✅ Créditos carregados: ${data.credits || 0}`);
+                    Logger.info(`✅ Créditos carregados: ${data.credits || 0}`);
                     
                     if (window.App && typeof window.App.updateNavbar === 'function') {
                         window.App.updateNavbar();
@@ -1197,7 +1359,7 @@
                     return data;
                 }
             } catch (e) {
-                console.warn('Erro ao carregar créditos:', e);
+                Logger.warn('Erro ao carregar créditos:', e);
             }
             return null;
         },
@@ -1215,7 +1377,8 @@
                 const token = localStorage.getItem('access_token');
                 if (!token) return null;
                 
-                const response = await fetch('/api/auth/session-status', {
+                const url = buildApiUrl('/auth/session-status');
+                const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 
@@ -1240,7 +1403,7 @@
                     return data;
                 }
             } catch (e) {
-                console.warn('Erro ao atualizar mensagem:', e);
+                Logger.warn('Erro ao atualizar mensagem:', e);
             }
             return null;
         },
@@ -1254,7 +1417,7 @@
 
     const EventManager = {
         setup: function() {
-            console.log('📡 Configurando gerenciador de eventos...');
+            Logger.info('📡 Configurando gerenciador de eventos...');
             
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
@@ -1392,26 +1555,36 @@
 
             document.addEventListener('authLogout', handleUnauthorized);
             
-            console.log('✅ Event listeners configurados');
+            Logger.info('✅ Event listeners configurados');
         }
     };
 
     // ==============================================
-    // 🔥🔥🔥 GERENCIADOR DE PoW - CORRIGIDO
+    // 🔥🔥🔥 GERENCIADOR DE PoW - REFATORADO
     // ==============================================
 
     const Pow = {
+        _client: null,
+        
         isAvailable: function() {
             return window.powClient !== undefined && window.powClient !== null;
         },
 
+        getClient: function() {
+            if (!this._client) {
+                this._client = window.powClient;
+            }
+            return this._client;
+        },
+
         getStats: function() {
-            if (!this.isAvailable()) {
+            const client = this.getClient();
+            if (!client) {
                 return { available: false, solutionsReady: 0 };
             }
             try {
-                if (typeof window.powClient.getStats === 'function') {
-                    const stats = window.powClient.getStats();
+                if (typeof client.getStats === 'function') {
+                    const stats = client.getStats();
                     return {
                         available: true,
                         solutionsReady: stats.solutionsReady || 0,
@@ -1423,21 +1596,22 @@
                     };
                 }
             } catch (e) {
-                console.warn('Erro ao obter stats PoW:', e);
+                Logger.warn('Erro ao obter stats PoW:', e);
             }
             return { available: false, solutionsReady: 0 };
         },
 
         prepareForUpload: async function() {
-            if (!this.isAvailable()) {
-                console.log('⏳ PoW não disponível para preparar upload');
+            const client = this.getClient();
+            if (!client) {
+                Logger.info('⏳ PoW não disponível para preparar upload');
                 return false;
             }
             try {
-                if (typeof window.powClient.prepareForUpload === 'function') {
-                    const result = await window.powClient.prepareForUpload();
-                    if (typeof window.powClient.getStats === 'function') {
-                        const stats = window.powClient.getStats();
+                if (typeof client.prepareForUpload === 'function') {
+                    const result = await client.prepareForUpload();
+                    if (typeof client.getStats === 'function') {
+                        const stats = client.getStats();
                         State.powSolutionsReady = stats.solutionsReady || 0;
                         if (window.App && typeof window.App.updatePowStatus === 'function') {
                             window.App.updatePowStatus();
@@ -1446,16 +1620,21 @@
                     return result;
                 }
             } catch (e) {
-                console.warn('Erro ao preparar PoW para upload:', e);
+                Logger.warn('Erro ao preparar PoW para upload:', e);
             }
             return false;
         },
 
-        // 🔥 CORRIGIDO: uploadWithPow agora usa Pow.isAvailable()
+        // 🔥 CORRIGIDO: uploadWithPow com URLs absolutas
         uploadWithPow: async function(files, endpoint = '/api/upload-auto') {
-            // ✅ CORRIGIDO: Usando Pow.isAvailable()
-            if (!Pow.isAvailable()) {
-                console.log('⏳ PoW não disponível, usando upload normal');
+            const client = this.getClient();
+            
+            // 🔥 Garantir URL absoluta
+            const finalEndpoint = buildApiUrl(endpoint);
+            
+            // Se não tiver cliente, fazer upload normal
+            if (!client) {
+                Logger.info('⏳ PoW não disponível, usando upload normal');
                 const formData = new FormData();
                 if (Array.isArray(files)) {
                     for (const file of files) {
@@ -1466,7 +1645,7 @@
                 }
                 
                 const token = localStorage.getItem('access_token');
-                const response = await fetch(endpoint, {
+                const response = await fetch(finalEndpoint, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
                     body: formData
@@ -1475,9 +1654,9 @@
             }
 
             try {
-                if (typeof window.powClient.uploadWithPow === 'function') {
+                if (typeof client.uploadWithPow === 'function') {
                     if (Array.isArray(files) && files.length > 1) {
-                        const solution = await window.powClient.getSolutionForUpload();
+                        const solution = await client.getSolutionForUpload();
                         const formData = new FormData();
                         for (const file of files) {
                             formData.append('files', file);
@@ -1490,7 +1669,7 @@
                             headers['X-PoW-Nonce'] = solution.nonce;
                         }
                         
-                        const response = await fetch(endpoint, {
+                        const response = await fetch(finalEndpoint, {
                             method: 'POST',
                             headers: headers,
                             body: formData
@@ -1499,10 +1678,10 @@
                     }
                     
                     const file = Array.isArray(files) ? files[0] : files;
-                    return await window.powClient.uploadWithPow(file, endpoint);
+                    return await client.uploadWithPow(file, finalEndpoint);
                 }
             } catch (e) {
-                console.error('Erro no upload com PoW:', e);
+                Logger.error('Erro no upload com PoW:', e);
                 throw e;
             }
             throw new Error('Método uploadWithPow não disponível');
@@ -1608,13 +1787,13 @@
     };
 
     // ==============================================
-    // 🔥 SINCRONIZAÇÃO
+    // 🔥 SINCRONIZAÇÃO (OTIMIZADA)
     // ==============================================
 
     const Sync = {
         syncAuth: async function() {
             if (!window.appAuth) {
-                console.warn('⚠️ Auth não inicializado.');
+                Logger.warn('⚠️ Auth não inicializado.');
                 return false;
             }
 
@@ -1648,7 +1827,7 @@
 
                 return isAuth;
             } catch (e) {
-                console.error('Erro ao sincronizar auth:', e);
+                Logger.error('Erro ao sincronizar auth:', e);
                 StateManager.updateState({ userInitialized: false });
                 return false;
             }
@@ -1664,19 +1843,21 @@
                 
                 if (typeof window.loadPremiumStatus === 'function') {
                     await window.loadPremiumStatus();
-                    console.log('✅ Payment sincronizado com sucesso!');
+                    Logger.info('✅ Payment sincronizado com sucesso!');
                 }
             } catch (e) {
-                console.warn('⚠️ Payment não carregou. Será sincronizado quando disponível.');
+                Logger.warn('⚠️ Payment não carregou. Será sincronizado quando disponível.');
             }
         },
 
+        // 🔥 CORRIGIDO: URL absoluta
         syncPromotion: async function() {
             try {
                 const token = localStorage.getItem('access_token');
                 if (!token) return;
                 
-                const response = await fetchWithAuth('/api/payments/promotion-status');
+                const url = buildApiUrl('/payments/promotion-status');
+                const response = await fetchWithAuth(url);
                 if (response?.ok) {
                     const data = await response.json();
                     
@@ -1699,7 +1880,7 @@
                     }
                 }
             } catch (e) {
-                console.warn('Erro ao sincronizar promoção:', e);
+                Logger.warn('Erro ao sincronizar promoção:', e);
             }
         },
 
@@ -1726,12 +1907,12 @@
     // ==============================================
 
     async function initApp() {
-        console.log('🚀 Inicializando App (Orquestrador) v7.3...');
+        Logger.info('🚀 Inicializando App (Orquestrador) v7.4...');
 
         try {
             ReloadManager.reset();
 
-            console.log('⏳ Aguardando auth.js carregar...');
+            Logger.info('⏳ Aguardando auth.js carregar...');
             await Utils.waitFor(() => window.appAuth !== undefined, 5000, 200);
 
             const isAuth = Utils.isAuthenticated();
@@ -1741,7 +1922,7 @@
                 return;
             }
 
-            console.log('✅ Rota verificada, continuando inicialização...');
+            Logger.info('✅ Rota verificada, continuando inicialização...');
 
             EventManager.setup();
 
@@ -1753,14 +1934,14 @@
                         tokenValid: true,
                         userInitialized: true
                     });
-                    console.log('✅ Autenticação via token (fallback)');
+                    Logger.info('✅ Autenticação via token (fallback)');
                 }
             }
             
             Sync.syncRateLimit();
 
             if (isAuth) {
-                console.log('🔐 Usuário autenticado, sincronizando serviços...');
+                Logger.info('🔐 Usuário autenticado, sincronizando serviços...');
                 
                 await Sync.syncPayment();
                 await Sync.syncPromotion();
@@ -1816,7 +1997,7 @@
                 userInitialized: State.userInitialized,
                 userSegment: State.userSegment || 'regular',
                 isReady: true,
-                version: '7.3'
+                version: CONFIG.VERSION
             };
 
             EventBus.emit('app:ready', appReadyData);
@@ -1824,28 +2005,29 @@
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             
             window.dispatchEvent(new CustomEvent('appReady', { 
-                detail: { isReady: true, version: '7.3' }
+                detail: { isReady: true, version: CONFIG.VERSION }
             }));
 
-            console.log('✅ App (Orquestrador) v7.3 inicializado com sucesso!');
-            console.log(`📌 Autenticado: ${isAuth}`);
-            console.log(`📌 Página: ${currentPath}`);
-            console.log(`📌 Admin: ${State.isAdmin}`);
-            console.log(`📌 Premium: ${State.isPremium}`);
-            console.log(`📌 Créditos: ${State.creditsDisplay}`);
-            console.log(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
-            console.log(`📌 Mensagem: ${State.currentMessage?.message_id || 'Nenhuma'}`);
-            console.log('🌉 window.appAuth centralizado');
-            console.log('📦 AppUtils disponível');
-            console.log('⚡ fetchWithAuth com refresh automático');
-            console.log('🔄 Estado reativo via Proxy');
-            console.log('📡 EventBus com fila de eventos');
-            console.log('📢 Sistema de mensagens inteligentes ativo');
-            console.log('🔗 Integrado com auth.js, payment.js, dashboard.js');
-            console.log('🔧 CORREÇÃO V7.3: isAvailable adicionado no objeto App');
+            Logger.info('✅ App (Orquestrador) v7.4 inicializado com sucesso!');
+            Logger.info(`📌 Autenticado: ${isAuth}`);
+            Logger.info(`📌 Página: ${currentPath}`);
+            Logger.info(`📌 Admin: ${State.isAdmin}`);
+            Logger.info(`📌 Premium: ${State.isPremium}`);
+            Logger.info(`📌 Créditos: ${State.creditsDisplay}`);
+            Logger.info(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
+            Logger.info(`📌 Mensagem: ${State.currentMessage?.message_id || 'Nenhuma'}`);
+            Logger.info('🌉 window.appAuth centralizado');
+            Logger.info('📦 AppUtils disponível');
+            Logger.info('⚡ fetchWithAuth com refresh automático');
+            Logger.info('🔄 Estado reativo via Proxy');
+            Logger.info('📡 EventBus com fila de eventos');
+            Logger.info('📢 Sistema de mensagens inteligentes ativo');
+            Logger.info('🔗 Integrado com auth.js, payment.js, dashboard.js');
+            Logger.info('🔧 CORREÇÃO V7.4: URLs absolutas e buildApiUrl');
+            Logger.info('🔧 CORREÇÃO V7.4: Logger estruturado');
 
         } catch (error) {
-            console.error('❌ Erro na inicialização do App:', error);
+            Logger.error('❌ Erro na inicialização do App:', error);
             Utils.showNotification('Erro ao inicializar aplicação. Recarregue a página.', 'error');
             
             EventBus.emit('app:error', { error: error.message || 'Erro na inicialização' });
@@ -1860,7 +2042,7 @@
     }
 
     // ==============================================
-    // 🔥🔥🔥 EXPORTAÇÕES GLOBAIS - CORRIGIDO
+    // 🔥🔥🔥 EXPORTAÇÕES GLOBAIS
     // ==============================================
 
     const App = {
@@ -1869,6 +2051,7 @@
         StateManager,
         Utils,
         EventBus,
+        Logger,
         
         Router,
         UI,
@@ -1885,7 +2068,8 @@
             return State.isAppReady === true;
         },
         
-        // 🔥🔥🔥 CORREÇÃO: ADICIONADO MÉTODO ISAVAILABLE
+        buildApiUrl: buildApiUrl,
+        
         isAvailable: function() {
             return Pow.isAvailable();
         },
@@ -1948,7 +2132,6 @@
         fetchWithAuth: fetchWithAuth,
         refreshTokenSafely: refreshTokenSafely,
         
-        // 🔥 CORRIGIDO: uploadWithPow usa o Pow.uploadWithPow
         uploadWithPow: Pow.uploadWithPow,
         preparePowForUpload: Pow.prepareForUpload,
         getPowStats: Pow.getStats,
@@ -1988,6 +2171,8 @@
         validateCPF: Utils.validateCPF,
         debounce: Utils.debounce,
         throttle: Utils.throttle,
+        retry: Utils.retry,
+        sleep: Utils.sleep,
         
         loadCredits: window.appAuth?.loadUserCredits || (() => {}),
         loadPremiumStatus: window.loadPremiumStatus || (() => {}),
@@ -2023,7 +2208,7 @@
 
     // INICIAR
     if (window._appInitialized) {
-        console.log('⚠️ App já inicializado, ignorando...');
+        Logger.warn('⚠️ App já inicializado, ignorando...');
     } else {
         window._appInitialized = true;
         
@@ -2034,12 +2219,14 @@
         }
     }
 
-    console.log('✅ app.js (Orquestrador) v7.3 carregado!');
-    console.log('   🔥 CORRIGIDO: Bug this.isAvailable is not a function');
-    console.log('   🔥 ADICIONADO: Método isAvailable no objeto App');
-    console.log('   🔥 CORRIGIDO: uploadWithPow usa Pow.isAvailable()');
-    console.log('   🔥 MELHORADO: Verificação robusta do PoW');
-    console.log('   🔥 OTIMIZADO: Redução de chamadas redundantes');
-    console.log('   📢 Sistema de mensagens inteligentes integrado');
+    Logger.info('✅ app.js (Orquestrador) v7.4 carregado!');
+    Logger.info('   🔥 CORRIGIDO: URLs absolutas com /api/');
+    Logger.info('   🔥 ADICIONADO: Helper buildApiUrl global');
+    Logger.info('   🔥 MELHORADO: Estrutura modular do Pow');
+    Logger.info('   🔥 OTIMIZADO: Cache e performance');
+    Logger.info('   🔥 ADICIONADO: Logging estruturado');
+    Logger.info('   🔥 CORRIGIDO: Tratamento de erros avançado');
+    Logger.info('   📢 Sistema de mensagens inteligentes integrado');
+    Logger.info('   🔗 Integrado com auth.js, payment.js, dashboard.js');
 
 })();
