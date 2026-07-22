@@ -9,7 +9,7 @@
  * ✅ RETRY AUTOMÁTICO COM BACKOFF
  * ✅ FALLBACK SÍNCRONO
  * ✅ DIAGNÓSTICO COMPLETO
- * ✅ TRATAMENTO DE ERROS AVANÇADO
+ * ✅ TRATAMAAENTO DE ERROS AVANÇADO
  * 
  * CONECTADO COM: pow_routes.py (backend)
  * 
@@ -1437,15 +1437,4 @@ console.log('   📡 window.powClient disponível imediatamente');
 console.log('   🔍 Use window.getPowDiagnostics() para debug');
 console.log('=' .repeat(60));
 
-// ==============================================
-// 🔥 EXPORTAÇÕES
-// ==============================================
 
-export { 
-    PowClient, 
-    powClientInstance, 
-    PowUtils, 
-    PowValidators, 
-    PowLogger,
-    POW_CONFIG 
-};
