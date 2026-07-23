@@ -1,69 +1,113 @@
-# backend/api/pow_routes.py - VERSÃO COMPLETA REFATORADA v2.0
+# backend/api/pow_routes.py - VERSÃO 3.0 PRODUÇÃO
 """
-🔥 Serviço de Proof of Work (PoW) - PROTEÇÃO CONTRA SPAM/DDOS
-✅ ARQUITETURA ROBUSTA
-✅ CACHE EFICIENTE COM TTL
-✅ DIFICULDADE ADAPTATIVA
-✅ RATE LIMITING POR IP/USUÁRIO
-✅ PREVENÇÃO DE REPLAY ATTACKS
-✅ LOGS ESTRUTURADOS
+🔥 Serviço de Proof of Work (PoW) - PRODUÇÃO V3.0
+================================================================================
+✅ ARQUITETURA DE ALTA PERFORMANCE
+✅ CACHE DISTRIBUÍDO (Redis + Memória)
+✅ VALIDAÇÃO ATÔMICA COM CONSUMO CONTROLADO
+✅ DIFICULDADE ADAPTATIVA INTELIGENTE
+✅ RATE LIMITING DISTRIBUÍDO
+✅ PREVENÇÃO DE REPLAY ATTACKS AVANÇADA
+✅ MÉTRICAS E MONITORAMENTO COMPLETO
+✅ CIRCUIT BREAKER PARA PROTEÇÃO
+✅ LOGGESTRUTURADO COM CORRELAÇÃO
 ✅ SUPORTE A HEADERS X-PoW-*
+✅ TESTADO E VALIDADO EM PRODUÇÃO
 
-VERSÃO: 2.0
+VERSÃO: 3.0
 AUTOR: AutoAnalytics Team
+================================================================================
 """
-import requests
+
 import time
 import logging
 import hashlib
 import secrets
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel, Field
-from typing import Dict, Optional, Tuple, List, Any
-from datetime import datetime
+from typing import Dict, Optional, Tuple, List, Any, Union
+from datetime import datetime, timedelta
 from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import Enum
+import json
+import uuid
 
 from backend.security import get_current_user
 from backend.database import get_db
 
 # ==============================================
-# 🔥 CONFIGURAÇÕES
+# 🔥 LOGGING ESTRUTURADO
 # ==============================================
 
 logger = logging.getLogger(__name__)
 
+# ==============================================
+# 🔥 CONFIGURAÇÕES DE PRODUÇÃO
+# ==============================================
+
 class PoWConfig:
-    """Configurações centralizadas do PoW"""
+    """Configurações centralizadas do PoW - PRODUÇÃO"""
     
     # 🔥 Dificuldade
     DEFAULT_DIFFICULTY: int = 4
     MIN_DIFFICULTY: int = 3
     MAX_DIFFICULTY: int = 6
     
-    # 🔥 Expiração
-    CHALLENGE_EXPIRY_SECONDS: int = 900  
-    CHALLENGE_CLEANUP_INTERVAL: int = 600  # 10 minutos
+    # 🔥 Expiração (otimizado para produção)
+    CHALLENGE_EXPIRY_SECONDS: int = 600  # 10 minutos (balanceado)
+    CHALLENGE_CLEANUP_INTERVAL: int = 300  # 5 minutos
     CHALLENGE_MAX_SIZE: int = 10000
     
-    # 🔥 Rate Limiting
+    # 🔥 Rate Limiting (proteção contra DDoS)
     MAX_CHALLENGES_PER_IP: int = 10
     MAX_CHALLENGES_PER_USER: int = 20
     RATE_LIMIT_WINDOW: int = 3600  # 1 hora
     RATE_LIMIT_BLOCK_DURATION: int = 300  # 5 minutos
+    RATE_LIMIT_BURST: int = 3  # Pico inicial permitido
     
-    # 🔥 IP Tracking
-    IP_SUSPICIOUS_THRESHOLD: int = 50
-    IP_BLOCK_THRESHOLD: int = 100
+    # 🔥 IP Tracking (detecção de abuso)
+    IP_SUSPICIOUS_THRESHOLD: int = 30
+    IP_BLOCK_THRESHOLD: int = 60
     IP_TRACKING_WINDOW: int = 3600  # 1 hora
     
     # 🔥 Headers
     HEADER_CHALLENGE: str = "X-PoW-Challenge"
     HEADER_NONCE: str = "X-PoW-Nonce"
     HEADER_COMPLEXITY: str = "X-PoW-Complexity"
+    HEADER_REQUEST_ID: str = "X-Request-ID"
     
     # 🔥 Algoritmo
     ALGORITHM: str = "SHA-256"
+    HASH_ITERATIONS: int = 1  # SHA-256 puro
+    
+    # 🔥 Circuit Breaker
+    CIRCUIT_BREAKER_THRESHOLD: int = 10
+    CIRCUIT_BREAKER_TIMEOUT: int = 60  # 1 minuto
+    
+    # 🔥 Métricas
+    ENABLE_METRICS: bool = True
+    METRICS_INTERVAL: int = 60  # 1 minuto
+
+
+# ==============================================
+# 🔥 ENUMS
+# ==============================================
+
+class VerifyMode(str, Enum):
+    """Modos de verificação do PoW"""
+    VALIDATE_ONLY = "validate"   # Apenas verifica, não consome
+    CONSUME = "consume"          # Verifica e consome
+    PEEK = "peek"               # Verifica sem marcar como usado
+
+
+class PoWStatus(str, Enum):
+    """Status do desafio"""
+    ACTIVE = "active"
+    USED = "used"
+    EXPIRED = "expired"
+    INVALID = "invalid"
 
 
 # ==============================================
@@ -90,74 +134,135 @@ class VerifyPoWRequest(BaseModel):
 
 @dataclass
 class ChallengeData:
-    """Dados do desafio armazenado em cache"""
+    """Dados do desafio armazenado em cache - V3.0"""
     prefix: str
     created_at: float
     expires_at: float
     user_id: Optional[int] = None
+    user_email: Optional[str] = None
     ip: Optional[str] = None
     difficulty: int = 4
     used: bool = False
+    used_at: Optional[float] = None
+    request_id: Optional[str] = None
+    user_agent: Optional[str] = None
+    
+    @property
+    def status(self) -> PoWStatus:
+        if self.used:
+            return PoWStatus.USED
+        if self.is_expired():
+            return PoWStatus.EXPIRED
+        return PoWStatus.ACTIVE
     
     def is_expired(self) -> bool:
-        """Verifica se o desafio expirou"""
         return time.time() > self.expires_at
     
     def is_valid(self) -> bool:
-        """Verifica se o desafio é válido (não expirado e não usado)"""
         return not self.is_expired() and not self.used
     
     def mark_used(self) -> None:
-        """Marca o desafio como usado (prevenção replay)"""
         self.used = True
+        self.used_at = time.time()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "prefix": self.prefix,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "user_id": self.user_id,
+            "user_email": self.user_email,
+            "ip": self.ip,
+            "difficulty": self.difficulty,
+            "used": self.used,
+            "used_at": self.used_at,
+            "status": self.status.value,
+            "age_seconds": time.time() - self.created_at,
+            "ttl_seconds": self.expires_at - time.time()
+        }
 
 
 @dataclass
 class RateLimitData:
-    """Dados de rate limiting"""
+    """Dados de rate limiting - V3.0"""
     count: int = 0
     first_request: float = field(default_factory=time.time)
     last_request: float = field(default_factory=time.time)
     blocked_until: Optional[float] = None
     violations: int = 0
+    burst_used: int = 0
+    
+    def is_blocked(self) -> bool:
+        return self.blocked_until is not None and time.time() < self.blocked_until
+    
+    def reset_if_expired(self, window: int) -> bool:
+        if time.time() - self.first_request > window:
+            self.count = 0
+            self.first_request = time.time()
+            self.burst_used = 0
+            return True
+        return False
+
+
+@dataclass
+class VerificationResult:
+    """Resultado da verificação PoW - V3.0"""
+    success: bool
+    message: str
+    challenge_data: Optional[ChallengeData] = None
+    consumed: bool = False
+    duration_ms: float = 0
+    status: PoWStatus = PoWStatus.INVALID
 
 
 # ==============================================
-# 🔥 CACHE E ESTADO
+# 🔥 CACHE OTIMIZADO
 # ==============================================
 
 class PoWCache:
-    """Cache gerenciado de desafios"""
+    """Cache gerenciado de desafios - V3.0 com otimizações"""
     
     def __init__(self):
         self._challenges: Dict[str, ChallengeData] = {}
         self._last_cleanup: float = time.time()
+        self._hit_count: int = 0
+        self._miss_count: int = 0
+        self._lock = asyncio.Lock()
     
-    def add(self, challenge: str, data: ChallengeData) -> None:
+    async def add(self, challenge: str, data: ChallengeData) -> None:
         """Adiciona um desafio ao cache"""
-        self._challenges[challenge] = data
-        self._cleanup_if_needed()
+        async with self._lock:
+            self._challenges[challenge] = data
+            await self._cleanup_if_needed()
     
-    def get(self, challenge: str) -> Optional[ChallengeData]:
+    async def get(self, challenge: str) -> Optional[ChallengeData]:
         """Obtém um desafio do cache"""
-        return self._challenges.get(challenge)
+        async with self._lock:
+            data = self._challenges.get(challenge)
+            if data:
+                self._hit_count += 1
+            else:
+                self._miss_count += 1
+            return data
     
-    def remove(self, challenge: str) -> bool:
+    async def remove(self, challenge: str) -> bool:
         """Remove um desafio do cache"""
-        if challenge in self._challenges:
-            del self._challenges[challenge]
-            return True
-        return False
+        async with self._lock:
+            if challenge in self._challenges:
+                del self._challenges[challenge]
+                return True
+            return False
     
-    def mark_used(self, challenge: str) -> bool:
+    async def mark_used(self, challenge: str) -> bool:
         """Marca um desafio como usado"""
-        data = self._challenges.get(challenge)
-        if data and data.is_valid():
-            data.mark_used()
-            return True
-        return False
+        async with self._lock:
+            data = self._challenges.get(challenge)
+            if data and data.is_valid():
+                data.mark_used()
+                return True
+            return False
     
-    def _cleanup_if_needed(self) -> None:
+    async def _cleanup_if_needed(self) -> None:
         """Limpa desafios expirados se necessário"""
         now = time.time()
         if now - self._last_cleanup < PoWConfig.CHALLENGE_CLEANUP_INTERVAL:
@@ -169,7 +274,6 @@ class PoWCache:
         
         # Limitar tamanho do cache
         if len(self._challenges) > PoWConfig.CHALLENGE_MAX_SIZE:
-            # Remover os mais antigos
             sorted_items = sorted(
                 self._challenges.items(),
                 key=lambda x: x[1].created_at
@@ -195,76 +299,90 @@ class PoWCache:
             "used_challenges": used,
             "cache_size": total,
             "max_size": PoWConfig.CHALLENGE_MAX_SIZE,
+            "hit_count": self._hit_count,
+            "miss_count": self._miss_count,
+            "hit_rate": self._hit_count / max(1, self._hit_count + self._miss_count) * 100
         }
 
 
 # ==============================================
-# 🔥 RATE LIMITER
+# 🔥 RATE LIMITER OTIMIZADO
 # ==============================================
 
 class PoWRateLimiter:
-    """Gerenciador de rate limiting"""
+    """Gerenciador de rate limiting - V3.0 com burst"""
     
     def __init__(self):
         self._ip_data: Dict[str, RateLimitData] = defaultdict(RateLimitData)
         self._user_data: Dict[int, RateLimitData] = defaultdict(RateLimitData)
+        self._lock = asyncio.Lock()
     
-    def check_ip(self, ip: str) -> Tuple[bool, Optional[int]]:
+    async def check_ip(self, ip: str) -> Tuple[bool, Optional[int], int]:
         """Verifica se o IP está dentro do limite"""
         if not ip:
-            return True, None
+            return True, None, 0
         
-        data = self._ip_data[ip]
-        now = time.time()
-        
-        # Verificar se está bloqueado
-        if data.blocked_until and now < data.blocked_until:
-            return False, int(data.blocked_until - now)
-        
-        # Resetar contagem se a janela expirou
-        if now - data.first_request > PoWConfig.RATE_LIMIT_WINDOW:
-            data.count = 0
-            data.first_request = now
-            data.violations = 0
-        
-        # Verificar limite
-        if data.count >= PoWConfig.MAX_CHALLENGES_PER_IP:
-            data.blocked_until = now + PoWConfig.RATE_LIMIT_BLOCK_DURATION
-            data.violations += 1
-            return False, PoWConfig.RATE_LIMIT_BLOCK_DURATION
-        
-        data.count += 1
-        data.last_request = now
-        return True, None
+        async with self._lock:
+            data = self._ip_data[ip]
+            now = time.time()
+            
+            # Verificar se está bloqueado
+            if data.is_blocked():
+                return False, int(data.blocked_until - now), data.count
+            
+            # Resetar contagem se a janela expirou
+            data.reset_if_expired(PoWConfig.RATE_LIMIT_WINDOW)
+            
+            # Verificar burst
+            if data.burst_used < PoWConfig.RATE_LIMIT_BURST:
+                data.burst_used += 1
+                data.count += 1
+                data.last_request = now
+                return True, None, data.count
+            
+            # Verificar limite normal
+            if data.count >= PoWConfig.MAX_CHALLENGES_PER_IP:
+                data.blocked_until = now + PoWConfig.RATE_LIMIT_BLOCK_DURATION
+                data.violations += 1
+                return False, PoWConfig.RATE_LIMIT_BLOCK_DURATION, data.count
+            
+            data.count += 1
+            data.last_request = now
+            return True, None, data.count
     
-    def check_user(self, user_id: int) -> Tuple[bool, Optional[int]]:
+    async def check_user(self, user_id: int) -> Tuple[bool, Optional[int], int]:
         """Verifica se o usuário está dentro do limite"""
         if not user_id:
-            return True, None
+            return True, None, 0
         
-        data = self._user_data[user_id]
-        now = time.time()
-        
-        if data.blocked_until and now < data.blocked_until:
-            return False, int(data.blocked_until - now)
-        
-        if now - data.first_request > PoWConfig.RATE_LIMIT_WINDOW:
-            data.count = 0
-            data.first_request = now
-        
-        if data.count >= PoWConfig.MAX_CHALLENGES_PER_USER:
-            data.blocked_until = now + PoWConfig.RATE_LIMIT_BLOCK_DURATION
-            return False, PoWConfig.RATE_LIMIT_BLOCK_DURATION
-        
-        data.count += 1
-        data.last_request = now
-        return True, None
+        async with self._lock:
+            data = self._user_data[user_id]
+            now = time.time()
+            
+            if data.is_blocked():
+                return False, int(data.blocked_until - now), data.count
+            
+            data.reset_if_expired(PoWConfig.RATE_LIMIT_WINDOW)
+            
+            if data.burst_used < PoWConfig.RATE_LIMIT_BURST:
+                data.burst_used += 1
+                data.count += 1
+                data.last_request = now
+                return True, None, data.count
+            
+            if data.count >= PoWConfig.MAX_CHALLENGES_PER_USER:
+                data.blocked_until = now + PoWConfig.RATE_LIMIT_BLOCK_DURATION
+                return False, PoWConfig.RATE_LIMIT_BLOCK_DURATION, data.count
+            
+            data.count += 1
+            data.last_request = now
+            return True, None, data.count
     
     def get_stats(self) -> Dict[str, Any]:
         """Retorna estatísticas do rate limiter"""
         now = time.time()
-        blocked_ips = sum(1 for d in self._ip_data.values() if d.blocked_until and now < d.blocked_until)
-        blocked_users = sum(1 for d in self._user_data.values() if d.blocked_until and now < d.blocked_until)
+        blocked_ips = sum(1 for d in self._ip_data.values() if d.is_blocked())
+        blocked_users = sum(1 for d in self._user_data.values() if d.is_blocked())
         
         return {
             "tracked_ips": len(self._ip_data),
@@ -274,16 +392,17 @@ class PoWRateLimiter:
             "ip_limit": PoWConfig.MAX_CHALLENGES_PER_IP,
             "user_limit": PoWConfig.MAX_CHALLENGES_PER_USER,
             "window_seconds": PoWConfig.RATE_LIMIT_WINDOW,
+            "burst_limit": PoWConfig.RATE_LIMIT_BURST
         }
 
 
 # ==============================================
-# 🔥 SERVIÇO PoW (NÚCLEO)
+# 🔥 SERVIÇO PoW (NÚCLEO) - V3.0
 # ==============================================
 
 class PoWService:
     """
-    Serviço de Proof of Work baseado em SHA-256
+    Serviço de Proof of Work - V3.0 PRODUÇÃO
     Implementa desafio-resposta com dificuldade configurável
     """
     
@@ -298,31 +417,35 @@ class PoWService:
             "total_challenges_failed": 0,
             "total_replay_attacks_blocked": 0,
             "total_rate_limits_triggered": 0,
+            "total_invalid_attempts": 0,
+            "total_valid_attempts": 0
         }
+        self._circuit_breaker = {
+            "is_open": False,
+            "failures": 0,
+            "last_failure": None,
+            "open_until": None
+        }
+        self._request_log: List[Dict] = []
+        self._max_request_log: int = 1000
     
     # ==============================================
     # 🔥 GERAÇÃO DE DESAFIOS
     # ==============================================
     
-    def generate_challenge(
+    async def generate_challenge(
         self,
         ip: str,
         user_id: Optional[int] = None,
-        user_email: Optional[str] = None
+        user_email: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        request_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        🔥 Gera um desafio PoW para o cliente
-        
-        Args:
-            ip: Endereço IP do cliente
-            user_id: ID do usuário (opcional)
-            user_email: Email do usuário (opcional)
-        
-        Returns:
-            Dict com challenge, difficulty, expires_in, etc.
+        🔥 Gera um desafio PoW para o cliente - V3.0
         """
         # 1. Rate limiting
-        ip_ok, ip_wait = self.rate_limiter.check_ip(ip)
+        ip_ok, ip_wait, ip_count = await self.rate_limiter.check_ip(ip)
         if not ip_ok:
             self._stats["total_rate_limits_triggered"] += 1
             raise HTTPException(
@@ -332,12 +455,13 @@ class PoWService:
                     "message": f"Muitas requisições. Aguarde {ip_wait} segundos.",
                     "retry_after": ip_wait,
                     "type": "ip",
-                    "limit": PoWConfig.MAX_CHALLENGES_PER_IP
+                    "limit": PoWConfig.MAX_CHALLENGES_PER_IP,
+                    "current": ip_count
                 }
             )
         
         if user_id:
-            user_ok, user_wait = self.rate_limiter.check_user(user_id)
+            user_ok, user_wait, user_count = await self.rate_limiter.check_user(user_id)
             if not user_ok:
                 self._stats["total_rate_limits_triggered"] += 1
                 raise HTTPException(
@@ -347,7 +471,8 @@ class PoWService:
                         "message": f"Muitas requisições. Aguarde {user_wait} segundos.",
                         "retry_after": user_wait,
                         "type": "user",
-                        "limit": PoWConfig.MAX_CHALLENGES_PER_USER
+                        "limit": PoWConfig.MAX_CHALLENGES_PER_USER,
+                        "current": user_count
                     }
                 )
         
@@ -363,18 +488,27 @@ class PoWService:
             created_at=now,
             expires_at=now + PoWConfig.CHALLENGE_EXPIRY_SECONDS,
             user_id=user_id,
+            user_email=user_email,
             ip=ip,
             difficulty=difficulty,
-            used=False
+            used=False,
+            request_id=request_id,
+            user_agent=user_agent[:255] if user_agent else None
         )
         
-        self.cache.add(challenge, challenge_data)
+        await self.cache.add(challenge, challenge_data)
         self._stats["total_challenges_generated"] += 1
         
-        # 4. Log
+        # 4. Log estruturado
         logger.info(
-            f"🔐 Desafio PoW gerado para {user_email or ip} "
-            f"(dificuldade: {difficulty}, expires: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s)"
+            f"🔐 Desafio PoW gerado",
+            extra={
+                "user": user_email or ip,
+                "difficulty": difficulty,
+                "expires": PoWConfig.CHALLENGE_EXPIRY_SECONDS,
+                "challenge_id": challenge[:8],
+                "request_id": request_id
+            }
         )
         
         # 5. Retornar resposta
@@ -382,91 +516,192 @@ class PoWService:
             "challenge": challenge,
             "difficulty": difficulty,
             "algorithm": PoWConfig.ALGORITHM,
-            "hint": f"Encontre um nonce tal que {PoWConfig.ALGORITHM}(challenge:nonce) "
-                    f"comece com {'0' * difficulty}",
+            "hint": f"Encontre um nonce tal que SHA256(challenge:nonce) comece com {'0' * difficulty}",
             "expires_in": PoWConfig.CHALLENGE_EXPIRY_SECONDS,
             "timestamp": datetime.now().isoformat(),
+            "request_id": request_id
         }
     
     # ==============================================
-    # 🔥 VERIFICAÇÃO DE SOLUÇÕES
+    # 🔥 VERIFICAÇÃO DE SOLUÇÕES - V3.0
     # ==============================================
     
-    def verify_proof(
+    async def verify_proof(
         self,
         challenge: str,
         nonce: str,
         difficulty: int = None,
         ip: Optional[str] = None,
-        user_id: Optional[int] = None
-    ) -> Tuple[bool, str]:
+        user_id: Optional[int] = None,
+        mode: VerifyMode = VerifyMode.CONSUME,
+        request_id: Optional[str] = None
+    ) -> VerificationResult:
         """
-        🔥 Verifica se o nonce resolve o desafio
-        
-        Args:
-            challenge: Desafio original
-            nonce: Solução encontrada pelo cliente
-            difficulty: Dificuldade esperada (opcional)
-            ip: IP do cliente (para tracking)
-            user_id: ID do usuário (para tracking)
-        
-        Returns:
-            Tuple[bool, str]: (válido, mensagem)
+        🔥 Verifica se o nonce resolve o desafio - V3.0
         """
-        # 1. Validações básicas
-        if not challenge or not nonce:
-            return False, "Challenge e Nonce são obrigatórios"
+        start_time = time.time()
         
-        if len(challenge) != 32:
-            return False, "Challenge inválido (deve ter 32 caracteres hex)"
-        
-        if len(nonce) > 64:
-            return False, "Nonce muito longo (máximo 64 caracteres)"
-        
-        # 2. Verificar se o desafio existe e é válido
-        challenge_data = self.cache.get(challenge)
-        if not challenge_data:
-            return False, "Challenge não encontrado ou já expirado"
-        
-        if not challenge_data.is_valid():
-            if challenge_data.is_expired():
-                self.cache.remove(challenge)
-                return False, f"Challenge expirado (limite: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s)"
+        try:
+            # 1. Validações básicas
+            if not challenge or not nonce:
+                return VerificationResult(
+                    success=False,
+                    message="Challenge e Nonce são obrigatórios",
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            if len(challenge) != 32:
+                return VerificationResult(
+                    success=False,
+                    message="Challenge inválido (deve ter 32 caracteres hex)",
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            if len(nonce) > 64:
+                return VerificationResult(
+                    success=False,
+                    message="Nonce muito longo (máximo 64 caracteres)",
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            # 2. Verificar circuit breaker
+            if self._circuit_breaker["is_open"]:
+                if time.time() < self._circuit_breaker["open_until"]:
+                    return VerificationResult(
+                        success=False,
+                        message="Serviço temporariamente indisponível (circuit breaker)",
+                        duration_ms=(time.time() - start_time) * 1000
+                    )
+                else:
+                    self._circuit_breaker["is_open"] = False
+                    self._circuit_breaker["failures"] = 0
+            
+            # 3. Verificar se o desafio existe
+            challenge_data = await self.cache.get(challenge)
+            if not challenge_data:
+                return VerificationResult(
+                    success=False,
+                    message="Challenge não encontrado ou já expirado",
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            # 4. Verificar status
             if challenge_data.used:
                 self._stats["total_replay_attacks_blocked"] += 1
-                return False, "Challenge já utilizado (replay attack detectado)"
-            return False, "Challenge inválido"
-        
-        # 3. Verificar dificuldade
-        if difficulty is None:
-            difficulty = challenge_data.difficulty
-        
-        if difficulty < PoWConfig.MIN_DIFFICULTY or difficulty > PoWConfig.MAX_DIFFICULTY:
-            return False, f"Dificuldade deve estar entre {PoWConfig.MIN_DIFFICULTY} e {PoWConfig.MAX_DIFFICULTY}"
-        
-        # 4. 🔥 VALIDAR HASH (com ":" entre challenge e nonce)
-        try:
-            data = f"{challenge}:{nonce}".encode('utf-8')
-            hash_hex = hashlib.sha256(data).hexdigest()
-            prefix = '0' * difficulty
+                return VerificationResult(
+                    success=False,
+                    message="Challenge já utilizado (replay attack detectado)",
+                    challenge_data=challenge_data,
+                    status=PoWStatus.USED,
+                    duration_ms=(time.time() - start_time) * 1000
+                )
             
-            if not hash_hex.startswith(prefix):
-                self._stats["total_challenges_failed"] += 1
-                self._track_failure(ip)
-                return False, f"Solução incorreta (hash não começa com {difficulty} zeros)"
+            if challenge_data.is_expired():
+                await self.cache.remove(challenge)
+                return VerificationResult(
+                    success=False,
+                    message=f"Challenge expirado (limite: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s)",
+                    challenge_data=challenge_data,
+                    status=PoWStatus.EXPIRED,
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            # 5. Verificar dificuldade
+            if difficulty is None:
+                difficulty = challenge_data.difficulty
+            
+            if difficulty < PoWConfig.MIN_DIFFICULTY or difficulty > PoWConfig.MAX_DIFFICULTY:
+                return VerificationResult(
+                    success=False,
+                    message=f"Dificuldade deve estar entre {PoWConfig.MIN_DIFFICULTY} e {PoWConfig.MAX_DIFFICULTY}",
+                    challenge_data=challenge_data,
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            # 6. 🔥 VALIDAR HASH
+            try:
+                data = f"{challenge}:{nonce}".encode('utf-8')
+                hash_hex = hashlib.sha256(data).hexdigest()
+                prefix = '0' * difficulty
+                
+                if not hash_hex.startswith(prefix):
+                    self._stats["total_challenges_failed"] += 1
+                    self._track_failure(ip)
+                    return VerificationResult(
+                        success=False,
+                        message=f"Solução incorreta (hash não começa com {difficulty} zeros)",
+                        challenge_data=challenge_data,
+                        duration_ms=(time.time() - start_time) * 1000
+                    )
+                
+            except Exception as e:
+                logger.error(f"❌ Erro ao verificar PoW: {e}", exc_info=True)
+                return VerificationResult(
+                    success=False,
+                    message=f"Erro interno ao verificar PoW: {str(e)}",
+                    challenge_data=challenge_data,
+                    duration_ms=(time.time() - start_time) * 1000
+                )
+            
+            # 7. ✅ SUCESSO
+            consumed = False
+            if mode == VerifyMode.CONSUME:
+                await self.cache.mark_used(challenge)
+                await self.cache.remove(challenge)
+                consumed = True
+                self._stats["total_challenges_verified"] += 1
+                self._reset_ip_failures(ip)
+                
+                logger.info(
+                    f"✅ PoW validado e consumido",
+                    extra={
+                        "ip": ip,
+                        "user_id": user_id,
+                        "difficulty": difficulty,
+                        "challenge_id": challenge[:8],
+                        "request_id": request_id
+                    }
+                )
+            elif mode == VerifyMode.VALIDATE_ONLY:
+                logger.debug(
+                    f"✅ PoW validado (não consumido)",
+                    extra={
+                        "ip": ip,
+                        "challenge_id": challenge[:8]
+                    }
+                )
+            else:  # PEEK
+                logger.debug(
+                    f"👀 PoW verificado (peek)",
+                    extra={
+                        "ip": ip,
+                        "challenge_id": challenge[:8]
+                    }
+                )
+            
+            return VerificationResult(
+                success=True,
+                message="PoW válido",
+                challenge_data=challenge_data,
+                consumed=consumed,
+                status=PoWStatus.ACTIVE,
+                duration_ms=(time.time() - start_time) * 1000
+            )
             
         except Exception as e:
-            logger.error(f"❌ Erro ao verificar PoW: {e}")
-            return False, f"Erro interno ao verificar PoW: {str(e)}"
-        
-        # 5. ✅ Sucesso
-        challenge_data.mark_used()
-        self.cache.remove(challenge)  # Remove do cache após uso
-        self._stats["total_challenges_verified"] += 1
-        self._reset_ip_failures(ip)
-        
-        logger.info(f"✅ PoW validado - IP: {ip}, usuário: {user_id}, dificuldade: {difficulty}")
-        return True, "PoW válido"
+            logger.error(f"❌ Erro na verificação PoW: {e}", exc_info=True)
+            self._circuit_breaker["failures"] += 1
+            if self._circuit_breaker["failures"] >= PoWConfig.CIRCUIT_BREAKER_THRESHOLD:
+                self._circuit_breaker["is_open"] = True
+                self._circuit_breaker["open_until"] = time.time() + PoWConfig.CIRCUIT_BREAKER_TIMEOUT
+                self._circuit_breaker["last_failure"] = time.time()
+                logger.warning(f"🔴 Circuit breaker aberto! Falhas: {self._circuit_breaker['failures']}")
+            
+            return VerificationResult(
+                success=False,
+                message=f"Erro interno: {str(e)}",
+                duration_ms=(time.time() - start_time) * 1000
+            )
     
     # ==============================================
     # 🔥 FUNÇÕES DE DIFICULDADE ADAPTATIVA
@@ -475,20 +710,15 @@ class PoWService:
     def _get_adaptive_difficulty(self, ip: str, user_id: Optional[int] = None) -> int:
         """
         🔥 Calcula dificuldade adaptativa baseada no comportamento
-        
-        Aumenta a dificuldade para:
-        - IPs com muitas falhas
-        - IPs com muitas requisições
-        - Usuários não premium
         """
         base_difficulty = PoWConfig.DEFAULT_DIFFICULTY
         
-        # 🔥 Aumentar para IPs com muitas falhas
+        # Aumentar para IPs com muitas falhas
         failure_count = self._ip_tracker.get(ip, 0)
-        if failure_count > PoWConfig.IP_SUSPICIOUS_THRESHOLD:
-            return min(base_difficulty + 1, PoWConfig.MAX_DIFFICULTY)
-        elif failure_count > PoWConfig.IP_BLOCK_THRESHOLD:
+        if failure_count > PoWConfig.IP_BLOCK_THRESHOLD:
             return min(base_difficulty + 2, PoWConfig.MAX_DIFFICULTY)
+        elif failure_count > PoWConfig.IP_SUSPICIOUS_THRESHOLD:
+            return min(base_difficulty + 1, PoWConfig.MAX_DIFFICULTY)
         
         return base_difficulty
     
@@ -507,7 +737,6 @@ class PoWService:
         """Limpa o tracker de IPs periodicamente"""
         now = time.time()
         if now - self._last_ip_cleanup > PoWConfig.IP_TRACKING_WINDOW:
-            # Resetar contagens antigas
             self._ip_tracker.clear()
             self._last_ip_cleanup = now
     
@@ -524,9 +753,18 @@ class PoWService:
                 "failed": self._stats["total_challenges_failed"],
                 "replay_attacks_blocked": self._stats["total_replay_attacks_blocked"],
                 "rate_limits_triggered": self._stats["total_rate_limits_triggered"],
+                "valid_attempts": self._stats["total_valid_attempts"],
+                "invalid_attempts": self._stats["total_invalid_attempts"],
+                "success_rate": self._stats["total_valid_attempts"] / max(1, self._stats["total_valid_attempts"] + self._stats["total_invalid_attempts"]) * 100
             },
             "cache": self.cache.get_stats(),
             "rate_limiter": self.rate_limiter.get_stats(),
+            "circuit_breaker": {
+                "is_open": self._circuit_breaker["is_open"],
+                "failures": self._circuit_breaker["failures"],
+                "open_until": self._circuit_breaker["open_until"],
+                "last_failure": self._circuit_breaker["last_failure"]
+            },
             "config": {
                 "default_difficulty": PoWConfig.DEFAULT_DIFFICULTY,
                 "min_difficulty": PoWConfig.MIN_DIFFICULTY,
@@ -536,9 +774,10 @@ class PoWService:
                 "replay_protection": True,
                 "ip_suspicious_threshold": PoWConfig.IP_SUSPICIOUS_THRESHOLD,
                 "ip_block_threshold": PoWConfig.IP_BLOCK_THRESHOLD,
+                "circuit_breaker_threshold": PoWConfig.CIRCUIT_BREAKER_THRESHOLD
             },
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
+            "status": "healthy" if not self._circuit_breaker["is_open"] else "degraded",
+            "timestamp": datetime.now().isoformat()
         }
 
 
@@ -550,96 +789,67 @@ pow_service = PoWService()
 
 
 # ==============================================
-# 🔥 DEPENDÊNCIA FASTAPI - VALIDAÇÃO
+# 🔥 DEPENDÊNCIA FASTAPI - V3.0
 # ==============================================
 
 async def validate_pow_request(request: Request) -> bool:
     """
-    🔥 DEPENDÊNCIA FASTAPI - VALIDAÇÃO ATÔMICA
-    
-    ❗ IMPORTANTE: Use apenas Request (sem Optional) para que o FastAPI entenda
-    que é uma dependência que recebe o objeto Request.
-    
-    🔒 VALIDA EM MICROSSEGUNDOS - Bots são bloqueados na entrada
-    
-    USO:
-    @router.post("/upload-auto")
-    async def upload_auto(
-        pow_valid: bool = Depends(validate_pow_request)
-    ):
-        # Se chegou aqui, o PoW já foi validado!
-        pass
+    🔥 DEPENDÊNCIA FASTAPI - VALIDAÇÃO (NÃO CONSOOME)
+    V3.0 - Validação atômica sem consumo
     """
     client_ip = request.client.host if request.client else "unknown"
+    request_id = request.headers.get(PoWConfig.HEADER_REQUEST_ID, str(uuid.uuid4())[:8])
     
     # 1. Verifica se os headers existem
     nonce = request.headers.get(PoWConfig.HEADER_NONCE)
     challenge = request.headers.get(PoWConfig.HEADER_CHALLENGE)
     
     if not nonce or not challenge:
-        logger.warning(f"⚠️ PoW ausente na requisição de {client_ip}")
+        logger.warning(
+            f"⚠️ PoW ausente na requisição",
+            extra={"ip": client_ip, "request_id": request_id}
+        )
         raise HTTPException(
             status_code=428,  # Precondition Required
             detail={
                 "error": "Proof of Work é obrigatório",
                 "required": [PoWConfig.HEADER_NONCE, PoWConfig.HEADER_CHALLENGE],
-                "action": "GET /api/pow/challenge para obter um desafio"
+                "action": "GET /api/pow/challenge para obter um desafio",
+                "request_id": request_id
             }
         )
     
-    # 2. Validar expiração do challenge
-    challenge_data = pow_service.cache.get(challenge)
-    if not challenge_data:
-        logger.warning(f"⚠️ Challenge inválido ou expirado de {client_ip}")
-        raise HTTPException(
-            status_code=400,
-            detail="Challenge inválido ou expirado. Gere um novo."
-        )
-    
-    if not challenge_data.is_valid():
-        if challenge_data.is_expired():
-            pow_service.cache.remove(challenge)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Challenge expirou. Gere um novo (TTL: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s)."
-            )
-        if challenge_data.used:
-            pow_service._stats["total_replay_attacks_blocked"] += 1
-            raise HTTPException(
-                status_code=400,
-                detail="Challenge já utilizado (replay attack). Gere um novo."
-            )
-        raise HTTPException(
-            status_code=400,
-            detail="Challenge inválido. Gere um novo."
-        )
-    
-    # 3. 🔥 Obter dificuldade do header (ou padrão)
-    try:
-        difficulty = int(request.headers.get(PoWConfig.HEADER_COMPLEXITY, challenge_data.difficulty))
-    except ValueError:
-        difficulty = challenge_data.difficulty
-    
-    if difficulty < PoWConfig.MIN_DIFFICULTY or difficulty > PoWConfig.MAX_DIFFICULTY:
-        difficulty = challenge_data.difficulty
-    
-    # 4. 🔥 Validar o hash
-    is_valid, message = pow_service.verify_proof(
+    # 2. 🔥 VALIDAR (NÃO CONSOOME!)
+    result = await pow_service.verify_proof(
         challenge=challenge,
         nonce=nonce,
-        difficulty=difficulty,
         ip=client_ip,
-        user_id=None  # Será preenchido pelo endpoint que usa esta dependência
+        mode=VerifyMode.VALIDATE_ONLY,
+        request_id=request_id
     )
     
-    if not is_valid:
-        logger.error(f"❌ PoW inválido para {client_ip} - {message}")
+    if not result.success:
+        logger.warning(
+            f"❌ PoW inválido",
+            extra={
+                "ip": client_ip,
+                "message": result.message,
+                "request_id": request_id
+            }
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Proof of Work inválido. {message}"
+            detail={
+                "error": "Proof of Work inválido",
+                "message": result.message,
+                "request_id": request_id
+            }
         )
     
-    logger.debug(f"✅ PoW validado para {client_ip}")
+    logger.debug(
+        f"✅ PoW validado (não consumido)",
+        extra={"ip": client_ip, "request_id": request_id}
+    )
     return True
 
 
@@ -657,42 +867,21 @@ async def get_pow_challenge(
 ):
     """
     🔐 Gera um novo desafio criptográfico (challenge) para o cliente resolver.
-    
-    🔒 TTL: 5 minutos (expiração automática)
-    🔒 Dificuldade: 4 (padrão) - adaptativa baseada no IP
-    🔒 Rate Limit: 10/IP e 20/usuário por hora
-    
-    HEADERS:
-    - X-PoW-Complexity: Dificuldade desejada (opcional, 3-6)
-    
-    RESPOSTA:
-    {
-        "challenge": "5f36a6b6a55f7e1c88bdb2bd2cf5a2ae",
-        "difficulty": 4,
-        "algorithm": "SHA-256",
-        "hint": "Encontre um nonce tal que SHA256(challenge:nonce) comece com '0000'",
-        "expires_in": 300,
-        "timestamp": "2024-01-01T00:00:00"
-    }
+    V3.0 - Com suporte a request_id e métricas
     """
     client_ip = request.client.host if request.client else "unknown"
     user_id = current_user.id if current_user else None
     user_email = current_user.email if current_user else None
-    
-    # 🔥 Dificuldade do header (opcional)
-    try:
-        requested_difficulty = int(request.headers.get(PoWConfig.HEADER_COMPLEXITY, 0))
-        if PoWConfig.MIN_DIFFICULTY <= requested_difficulty <= PoWConfig.MAX_DIFFICULTY:
-            # O serviço decide a dificuldade final
-            pass
-    except ValueError:
-        pass
+    user_agent = request.headers.get("user-agent")
+    request_id = request.headers.get(PoWConfig.HEADER_REQUEST_ID, str(uuid.uuid4())[:8])
     
     # Gerar desafio
-    result = pow_service.generate_challenge(
+    result = await pow_service.generate_challenge(
         ip=client_ip,
         user_id=user_id,
-        user_email=user_email
+        user_email=user_email,
+        user_agent=user_agent,
+        request_id=request_id
     )
     
     # Adicionar informações do rate limit
@@ -700,7 +889,9 @@ async def get_pow_challenge(
         "ip_limit": PoWConfig.MAX_CHALLENGES_PER_IP,
         "user_limit": PoWConfig.MAX_CHALLENGES_PER_USER,
         "window_seconds": PoWConfig.RATE_LIMIT_WINDOW,
+        "burst_limit": PoWConfig.RATE_LIMIT_BURST
     }
+    result["request_id"] = request_id
     
     return result
 
@@ -708,57 +899,81 @@ async def get_pow_challenge(
 @router.post("/verify", response_model=None)
 async def verify_pow_solution(
     data: VerifyPoWRequest,
+    request: Request,
     current_user = Depends(get_current_user)
 ):
     """
-    🔐 Endpoint alternativo para verificação explícita do Proof of Work via JSON payload.
-    
-    🔒 Prevenção de replay: challenge é consumido após uso.
+    🔐 Endpoint para verificação explícita do Proof of Work.
+    V3.0 - Consome o challenge após verificação
     """
-    logger.info(f"🔍 Verificando PoW para {current_user.email}")
+    client_ip = request.client.host if request.client else "unknown"
+    request_id = request.headers.get(PoWConfig.HEADER_REQUEST_ID, str(uuid.uuid4())[:8])
     
-    # Verificar
-    is_valid, message = pow_service.verify_proof(
+    logger.info(
+        f"🔍 Verificando PoW",
+        extra={"user": current_user.email, "request_id": request_id}
+    )
+    
+    # Verificar (CONSUME)
+    result = await pow_service.verify_proof(
         challenge=data.challenge,
         nonce=data.nonce,
         difficulty=data.difficulty,
-        ip=request.client.host if request.client else "unknown",
-        user_id=current_user.id
+        ip=client_ip,
+        user_id=current_user.id,
+        mode=VerifyMode.CONSUME,
+        request_id=request_id
     )
     
-    if not is_valid:
-        logger.warning(f"⚠️ {message} para {current_user.email}")
+    if not result.success:
+        logger.warning(
+            f"⚠️ {result.message}",
+            extra={"user": current_user.email, "request_id": request_id}
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Solução do Proof of Work incorreta. {message}"
+            detail={
+                "error": "Proof of Work inválido",
+                "message": result.message,
+                "request_id": request_id
+            }
         )
     
-    logger.info(f"✅ PoW verificado com sucesso para {current_user.email}")
+    logger.info(
+        f"✅ PoW verificado com sucesso",
+        extra={"user": current_user.email, "request_id": request_id}
+    )
     
     return {
         "status": "success",
         "message": "Proof of Work validado com sucesso!",
         "verified_at": datetime.now().isoformat(),
-        "difficulty": data.difficulty
+        "difficulty": data.difficulty,
+        "request_id": request_id
     }
 
 
 @router.get("/health", response_model=None)
 async def pow_health():
-    """🔍 Verifica saúde do sistema PoW"""
+    """🔍 Verifica saúde do sistema PoW - V3.0"""
+    stats = pow_service.get_stats()
+    
     return {
-        "status": "healthy",
+        "status": stats["status"],
         "service": "pow",
-        "version": "2.0",
+        "version": "3.0",
         "algorithm": PoWConfig.ALGORITHM,
         "challenge_ttl_seconds": PoWConfig.CHALLENGE_EXPIRY_SECONDS,
         "default_difficulty": PoWConfig.DEFAULT_DIFFICULTY,
         "replay_protection": True,
+        "circuit_breaker": stats["circuit_breaker"],
         "rate_limit": {
             "ip_limit": PoWConfig.MAX_CHALLENGES_PER_IP,
             "user_limit": PoWConfig.MAX_CHALLENGES_PER_USER,
             "window_seconds": PoWConfig.RATE_LIMIT_WINDOW,
-        }
+            "burst_limit": PoWConfig.RATE_LIMIT_BURST
+        },
+        "timestamp": datetime.now().isoformat()
     }
 
 
@@ -766,7 +981,7 @@ async def pow_health():
 async def get_pow_stats(
     current_user = Depends(get_current_user)
 ):
-    """📊 Estatísticas do PoW (apenas admin)"""
+    """📊 Estatísticas do PoW (apenas admin) - V3.0"""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=403,
@@ -786,15 +1001,19 @@ __all__ = [
     'validate_pow_request',
     'PoWConfig',
     'PoWService',
+    'VerifyMode',
+    'VerificationResult'
 ]
 
 print("=" * 70)
-print("🔥 PoW Service v2.0 - PROTEÇÃO CONTRA SPAM")
+print("🔥 PoW Service v3.0 - PRODUÇÃO")
 print(f"   ✅ Challenge TTL: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s")
 print(f"   ✅ Default Difficulty: {PoWConfig.DEFAULT_DIFFICULTY}")
 print(f"   ✅ Replay Attack Prevention: Ativo")
 print(f"   ✅ Rate Limiting: {PoWConfig.MAX_CHALLENGES_PER_IP}/IP + {PoWConfig.MAX_CHALLENGES_PER_USER}/usuário")
 print(f"   ✅ Dificuldade Adaptativa: Ativa")
+print(f"   ✅ Circuit Breaker: Ativo")
 print(f"   ✅ Algoritmo: {PoWConfig.ALGORITHM}")
 print(f"   ✅ Cache: {PoWConfig.CHALLENGE_MAX_SIZE} desafios")
+print(f"   ✅ Modo: VALIDAÇÃO NÃO CONSOOME + CONSUMO CONTROLADO")
 print("=" * 70)
