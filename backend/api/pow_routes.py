@@ -42,7 +42,7 @@ class PoWConfig:
     MAX_DIFFICULTY: int = 6
     
     # 🔥 Expiração
-    CHALLENGE_EXPIRY_SECONDS: int = 300  # 5 minutos
+    CHALLENGE_EXPIRY_SECONDS: int = 900  
     CHALLENGE_CLEANUP_INTERVAL: int = 600  # 10 minutos
     CHALLENGE_MAX_SIZE: int = 10000
     
