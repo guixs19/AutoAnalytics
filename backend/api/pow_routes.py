@@ -12,7 +12,7 @@
 VERSÃO: 2.0
 AUTOR: AutoAnalytics Team
 """
-
+import requests
 import time
 import logging
 import hashlib
