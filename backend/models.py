@@ -248,10 +248,12 @@ class DailyCreditLog(Base):
         }
 
 
+
 # ==============================================
 # 🔥🔥🔥 ANALYSIS - VERSÃO ATUALIZADA COM POW
 # ==============================================
-
+               
+               
 class Analysis(Base):
     __tablename__ = 'analyses'
     __table_args__ = {'extend_existing': True}
@@ -260,6 +262,7 @@ class Analysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     filename = Column(String)
+    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")
     analysis_type = Column(String)
     status = Column(String, default="pending")
     ai_used = Column(Boolean, default=False)
