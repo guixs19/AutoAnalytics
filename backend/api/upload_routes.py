@@ -1,4 +1,4 @@
-# backend/api/upload_routes.py - VERSÃO 3.0 MELHORADA
+# backend/api/upload_routes.py - VERSÃO 3.1 CORRIGIDA
 """
 🔥 Rotas para upload e processamento de arquivos
 ✅ INTEGRADO COM POW_ROUTES.PY V3.0
@@ -8,6 +8,8 @@
 ✅ MÉTRICAS DE POW SALVAS NO BANCO
 ✅ CÓDIGO MODULAR E OTIMIZADO
 ✅ TRATAMENTO DE ERROS ROBUSTO
+✅ CORRIGIDO: asyncio.run() removido (usando await)
+✅ CORRIGIDO: validate_file agora é assíncrona
 """
 
 # ==============================================
@@ -194,11 +196,14 @@ class ProcessingStatusManager:
 processing_status = ProcessingStatusManager()
 
 # ==============================================
-# 🔥 UTILITÁRIOS
+# 🔥 UTILITÁRIOS (VERSÃO CORRIGIDA - ASSÍNCRONA)
 # ==============================================
 
-def validate_file(file: UploadFile, idx: int) -> Optional[UploadFileInfo]:
-    """Valida um arquivo e retorna suas informações"""
+async def validate_file(file: UploadFile, idx: int) -> Optional[UploadFileInfo]:
+    """
+    🔥 Valida um arquivo e retorna suas informações (VERSÃO ASSÍNCRONA)
+    CORRIGIDO: usa await em vez de asyncio.run()
+    """
     try:
         # Validar nome
         if not file.filename:
@@ -221,8 +226,8 @@ def validate_file(file: UploadFile, idx: int) -> Optional[UploadFileInfo]:
                 error=f"Formato não suportado. Use: {', '.join(UploadConfig.ALLOWED_EXTENSIONS)}"
             )
         
-        # Validar tamanho
-        content = asyncio.run(file.read())
+        # 🔥 CORREÇÃO: usar await em vez de asyncio.run()
+        content = await file.read()
         file_size = len(content)
         
         if file_size > UploadConfig.MAX_FILE_SIZE:
@@ -604,15 +609,15 @@ async def upload_auto(
     logger.info(f"✅ Créditos OK: {credit_check['message']}")
     
     # ==============================================
-    # 🔥 4. PROCESSAMENTO DOS ARQUIVOS
+    # 🔥 4. PROCESSAMENTO DOS ARQUIVOS (CORRIGIDO)
     # ==============================================
     
     batch_result = UploadBatchResult(total_files=total_files)
     pow_difficulty = request.headers.get(PoWConfig.HEADER_COMPLEXITY, PoWConfig.DEFAULT_DIFFICULTY)
     
     for idx, file in enumerate(files):
-        # Validar arquivo
-        file_info = validate_file(file, idx)
+        # 🔥 CORREÇÃO: usar await
+        file_info = await validate_file(file, idx)
         
         if file_info.error:
             batch_result.rejected_files.append(file_info)
@@ -884,14 +889,6 @@ async def get_security_stats(
     # Estatísticas de processamento
     processing_stats = processing_status.get_stats()
     
-    # Contar análises com PoW validado
-    pow_validated_count = 0
-    encoding_counts = {}
-    
-    # Nota: Isso é assíncrono, mas como é admin, podemos fazer sync
-    import asyncio
-    # Simples contagem baseada nos status em memória
-    
     return {
         "success": True,
         "processing": processing_stats,
@@ -915,7 +912,7 @@ async def get_security_stats(
 # ==============================================
 
 print("=" * 70)
-print("🔥 upload_routes.py - VERSÃO 3.0 MELHORADA")
+print("🔥 upload_routes.py - VERSÃO 3.1 CORRIGIDA")
 print(f"   🚦 Rate Limiter: {UploadConfig.RATE_LIMIT_UPLOAD_PER_IP}/IP + {UploadConfig.RATE_LIMIT_UPLOAD_PER_USER}/usuário em {UploadConfig.RATE_LIMIT_WINDOW_SECONDS}s")
 print(f"   🔐 PoW: {PoWConfig.ALGORITHM} com dificuldade adaptativa")
 print(f"   🧠 ML Pipeline: Encoding automático + RandomForest/Ensemble/AutoML")
@@ -923,4 +920,6 @@ print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadCon
 print(f"   📊 Métricas de PoW salvas no banco")
 print(f"   ⏰ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   📦 Extensões: {', '.join(UploadConfig.ALLOWED_EXTENSIONS)}")
+print(f"   ✅ CORRIGIDO: validate_file é assíncrona (usa await)")
+print(f"   ✅ CORRIGIDO: asyncio.run() removido")
 print("=" * 70)
