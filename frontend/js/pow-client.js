@@ -1,186 +1,57 @@
-// frontend/js/pow-client.js - VERSÃO v5.1 (CORREÇÃO URL)
+// frontend/js/pow-client.js - VERSÃO v6.0 (CORREÇÃO COMPLETA)
 /**
- * 🔥 Proof of Work Client - Versão 5.1
+ * 🔥 Proof of Work Client - Versão 6.0
  * 
- * ✅ ARQUITETURA MODULAR
- * ✅ INICIALIZAÇÃO AUTOMÁTICA
- * ✅ GESTÃO DE ESTADO ROBUSTA
- * ✅ CACHE INTELIGENTE COM TTL
- * ✅ RETRY AUTOMÁTICO COM BACKOFF
- * ✅ FALLBACK SÍNCRONO ROBUSTO
- * ✅ DIAGNÓSTICO COMPLETO
- * ✅ TRATAMENTO DE ERROS AVANÇADO
- * ✅ WORKER COM VERIFICAÇÃO PRÉVIA
- * ✅ FALLBACK AUTOMÁTICO EM CASO DE FALHA
- * ✅ 🔥 URL ABSOLUTA /api/pow/challenge
+ * ✅ CORRIGIDO: Validação de expires_in aceita até 1800s (30 min)
+ * ✅ CORRIGIDO: Sincronização com backend (TTL 900s)
+ * ✅ OTIMIZADO: Cache com invalidação inteligente
+ * ✅ MELHORADO: Logging estruturado com níveis
+ * ✅ ADICIONADO: Fallback automático para desafios expirados
+ * ✅ ADICIONADO: Diagnóstico detalhado
+ * ✅ ADICIONADO: Métricas de performance
  * 
- * CONECTADO COM: pow_routes.py (backend)
- * 
- * FLUXO:
- * 1. Inicialização automática → window.powClient disponível
- * 2. GET /api/pow/challenge → { challenge, difficulty, expires_in }
- * 3. Resolve SHA-256 com Web Worker (fallback síncrono)
- * 4. Upload com headers: X-PoW-Challenge, X-PoW-Nonce
- * 5. Validação no backend (validate_pow_request)
+ * CONECTADO COM: pow_routes.py (backend TTL: 900s)
  */
 
 // ==============================================
-// 🔥 CONFIGURAÇÕES
+// 🔥 CONFIGURAÇÕES (SINCRONIZADAS COM BACKEND)
 // ==============================================
 
 const POW_CONFIG = {
-    // 🔥 Dificuldade e TTL
+    // 🔥 Dificuldade e TTL (sincronizado com backend)
     DEFAULT_DIFFICULTY: 4,
-    CHALLENGE_TTL: 300, // 5 minutos
-    CACHE_TTL: 30000, // 30 segundos
+    CHALLENGE_TTL: 900, // 15 minutos (combinado com backend)
+    CACHE_TTL: 60000, // 60 segundos para cache da solução
     
     // 🔥 Retry e Timeout
     MAX_RETRIES: 3,
-    RETRY_DELAY: 1000, // 1 segundo
-    MAX_BACKOFF: 10000, // 10 segundos
-    WORKER_TIMEOUT: 30000, // 30 segundos
-    MAX_NONCE_ATTEMPTS: 1000000,
+    RETRY_DELAY: 1000,
+    MAX_BACKOFF: 10000,
+    WORKER_TIMEOUT: 60000, // 60 segundos
+    MAX_NONCE_ATTEMPTS: 2000000, // 2 milhões
     
-    // 🔥 Endpoints (CORRIGIDO: URLs absolutas)
+    // 🔥 Endpoints
     API_BASE: window.location.hostname.includes('localhost')
         ? 'http://localhost:8000/api'
         : '/api',
-    CHALLENGE_ENDPOINT: '/pow/challenge',   // ✅ Resulta em: /api/pow/challenge
-    UPLOAD_ENDPOINT: '/upload-auto',         // ✅ Resulta em: /api/upload-auto
-    WORKER_URL: '/static/js/pow-worker.js',  // ✅ Resulta em: /static/js/pow-worker.js
+    CHALLENGE_ENDPOINT: '/pow/challenge',
+    UPLOAD_ENDPOINT: '/upload-auto',
+    WORKER_URL: '/static/js/pow-worker.js',
     
-    // 🔥 Limites
-    MAX_CHALLENGE_AGE: 300000, // 5 minutos
+    // 🔥 Limites (sincronizados com backend)
+    MAX_CHALLENGE_AGE: 900000, // 15 minutos em ms
     MIN_DIFFICULTY: 3,
     MAX_DIFFICULTY: 6,
+    MIN_EXPIRES_IN: 30,
+    MAX_EXPIRES_IN: 1800, // 🔥 CORRIGIDO: aceita até 30 minutos
     
     // 🔥 Logging
-    LOG_LEVEL: 'info', // debug, info, warn, error
+    LOG_LEVEL: 'info',
     MAX_LOG_HISTORY: 100,
 };
 
 // ==============================================
-// 🔥 UTILITÁRIOS
-// ==============================================
-
-const PowUtils = {
-    sanitizeString: (str) => {
-        if (!str) return '';
-        if (typeof str !== 'string') str = String(str);
-        const escapeMap = {
-            '&': '&amp;', '<': '&lt;', '>': '&gt;',
-            '"': '&quot;', "'": '&#39;', '`': '&#96;',
-            '/': '&#47;', '=': '&#61;', '(': '&#40;',
-            ')': '&#41;', ';': '&#59;', '\n': '\\n',
-            '\r': '\\r', '\t': '\\t'
-        };
-        return str.replace(/[&<>"'`/=();\n\r\t]/g, m => escapeMap[m] || m).slice(0, 1000);
-    },
-
-    sanitizeNumber: (value, defaultValue = 0) => {
-        if (value === undefined || value === null) return defaultValue;
-        const num = parseFloat(String(value).replace(/[^0-9.]/g, ''));
-        return isNaN(num) ? defaultValue : num;
-    },
-
-    sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
-    
-    getToken: () => {
-        try {
-            const token = localStorage.getItem('access_token');
-            if (!token || token === 'undefined' || token === 'null') return null;
-            return PowUtils.sanitizeString(token);
-        } catch (e) {
-            return null;
-        }
-    },
-
-    getRefreshToken: () => {
-        try {
-            const token = localStorage.getItem('refresh_token');
-            if (!token || token === 'undefined' || token === 'null') return null;
-            return PowUtils.sanitizeString(token);
-        } catch (e) {
-            return null;
-        }
-    },
-
-    isAuthenticated: () => {
-        const token = PowUtils.getToken();
-        return token !== null && token.length > 10;
-    },
-
-    parseJson: async (response) => {
-        try {
-            const text = await response.text();
-            return JSON.parse(text);
-        } catch (e) {
-            return null;
-        }
-    },
-
-    calculateBackoff: (attempt, baseDelay = 1000) => {
-        return Math.min(baseDelay * Math.pow(2, attempt - 1), POW_CONFIG.MAX_BACKOFF);
-    },
-
-    isJsonResponse: (response) => {
-        const contentType = response.headers.get('content-type') || '';
-        return contentType.includes('application/json');
-    },
-
-    isHtmlResponse: (text) => {
-        return text.trim().startsWith('<');
-    },
-
-    generateId: () => {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    }
-};
-
-// ==============================================
-// 🔥 VALIDAÇÕES
-// ==============================================
-
-const PowValidators = {
-    isValidChallenge: (challenge) => {
-        if (!challenge || typeof challenge !== 'object') return false;
-        if (!challenge.challenge || typeof challenge.challenge !== 'string') return false;
-        if (challenge.challenge.length !== 32) return false;
-        if (!challenge.difficulty || typeof challenge.difficulty !== 'number') return false;
-        if (challenge.difficulty < POW_CONFIG.MIN_DIFFICULTY || 
-            challenge.difficulty > POW_CONFIG.MAX_DIFFICULTY) return false;
-        if (!challenge.expires_in || typeof challenge.expires_in !== 'number') return false;
-        if (challenge.expires_in < 30 || challenge.expires_in > 600) return false;
-        return true;
-    },
-
-    isValidSolution: (solution) => {
-        if (!solution || typeof solution !== 'object') return false;
-        if (!solution.nonce || typeof solution.nonce !== 'string') return false;
-        if (solution.nonce.length === 0 || solution.nonce.length > 64) return false;
-        if (!solution.prefix || typeof solution.prefix !== 'string') return false;
-        if (solution.prefix.length !== 32) return false;
-        if (!solution.complexity || typeof solution.complexity !== 'number') return false;
-        if (solution.complexity < POW_CONFIG.MIN_DIFFICULTY || 
-            solution.complexity > POW_CONFIG.MAX_DIFFICULTY) return false;
-        return true;
-    },
-
-    isNonceValid: (nonce) => {
-        return nonce && typeof nonce === 'string' && nonce.length > 0 && nonce.length <= 64;
-    },
-
-    isFileValid: (file) => {
-        if (!file) return false;
-        if (!file.name || typeof file.name !== 'string') return false;
-        if (!file.size || typeof file.size !== 'number') return false;
-        if (file.size <= 0) return false;
-        return true;
-    }
-};
-
-// ==============================================
-// 🔥 LOGGER
+// 🔥 LOGGER MELHORADO
 // ==============================================
 
 class PowLogger {
@@ -191,6 +62,12 @@ class PowLogger {
         this.maxHistory = POW_CONFIG.MAX_LOG_HISTORY;
         this.enabled = true;
         this.prefix = '[PoW Client]';
+        this.colors = {
+            debug: '#6c757d',
+            info: '#17a2b8',
+            warn: '#ffc107',
+            error: '#dc3545'
+        };
     }
 
     _shouldLog(level) {
@@ -200,9 +77,25 @@ class PowLogger {
     _formatMessage(level, message, args) {
         const timestamp = new Date().toISOString().substring(11, 19);
         const logMessage = `${timestamp} ${this.prefix} ${message}`;
-        this.history.push({ timestamp: Date.now(), level, message, args: args.length > 0 ? args : undefined });
-        if (this.history.length > this.maxHistory) this.history.shift();
+        
+        this.history.push({
+            timestamp: Date.now(),
+            level,
+            message,
+            args: args.length > 0 ? args : undefined
+        });
+        
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        }
+        
         return logMessage;
+    }
+
+    _logWithStyle(level, message, args, style) {
+        if (!this._shouldLog(level)) return;
+        const formatted = this._formatMessage(level, message, args);
+        console.log(`%c${formatted}`, style, ...args);
     }
 
     debug(message, ...args) {
@@ -231,7 +124,76 @@ class PowLogger {
 }
 
 // ==============================================
-// 🔥 CLASSE PRINCIPAL - PowClient
+// 🔥 VALIDAÇÕES CORRIGIDAS
+// ==============================================
+
+const PowValidators = {
+    /**
+     * 🔥 CORRIGIDO: Valida desafio com limites expandidos
+     */
+    isValidChallenge: (challenge) => {
+        if (!challenge || typeof challenge !== 'object') {
+            return false;
+        }
+        
+        // Validar challenge string
+        if (!challenge.challenge || typeof challenge.challenge !== 'string') {
+            return false;
+        }
+        if (challenge.challenge.length !== 32) {
+            return false;
+        }
+        
+        // Validar difficulty
+        if (!challenge.difficulty || typeof challenge.difficulty !== 'number') {
+            return false;
+        }
+        if (challenge.difficulty < POW_CONFIG.MIN_DIFFICULTY || 
+            challenge.difficulty > POW_CONFIG.MAX_DIFFICULTY) {
+            return false;
+        }
+        
+        // 🔥 CORRIGIDO: Validar expires_in com limite maior
+        if (!challenge.expires_in || typeof challenge.expires_in !== 'number') {
+            return false;
+        }
+        if (challenge.expires_in < POW_CONFIG.MIN_EXPIRES_IN || 
+            challenge.expires_in > POW_CONFIG.MAX_EXPIRES_IN) {
+            return false;
+        }
+        
+        return true;
+    },
+
+    isValidSolution: (solution) => {
+        if (!solution || typeof solution !== 'object') return false;
+        if (!solution.nonce || typeof solution.nonce !== 'string') return false;
+        if (solution.nonce.length === 0 || solution.nonce.length > 64) return false;
+        if (!solution.prefix || typeof solution.prefix !== 'string') return false;
+        if (solution.prefix.length !== 32) return false;
+        if (!solution.complexity || typeof solution.complexity !== 'number') return false;
+        if (solution.complexity < POW_CONFIG.MIN_DIFFICULTY || 
+            solution.complexity > POW_CONFIG.MAX_DIFFICULTY) return false;
+        return true;
+    },
+
+    isNonceValid: (nonce) => {
+        return nonce && typeof nonce === 'string' && nonce.length > 0 && nonce.length <= 64;
+    },
+
+    isFileValid: (file) => {
+        if (!file) return false;
+        if (!file.name || typeof file.name !== 'string') return false;
+        if (!file.size || typeof file.size !== 'number') return false;
+        if (file.size <= 0) return false;
+        const allowedExtensions = ['.csv', '.xlsx', '.xls', '.tsv'];
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        return allowedExtensions.includes(ext);
+    }
+};
+
+// ==============================================
+// 🔥 CLASSE PRINCIPAL - PowClient v6.0
 // ==============================================
 
 class PowClient {
@@ -239,8 +201,9 @@ class PowClient {
         this.config = { ...POW_CONFIG, ...config };
         this.logger = new PowLogger(this.config.LOG_LEVEL);
 
+        // Estado
         this._state = {
-            id: PowUtils.generateId(),
+            id: this._generateId(),
             isInitialized: false,
             isSolving: false,
             isReady: false,
@@ -249,16 +212,21 @@ class PowClient {
             createdAt: Date.now(),
             workerChecked: false,
             workerAvailable: false,
+            isAuthenticated: false,
+            version: '6.0'
         };
 
+        // Cache
         this._cache = {
             solution: null,
             challenge: null,
             solvedAt: null,
             expiresAt: null,
             isValid: false,
+            used: false
         };
 
+        // Métricas
         this._metrics = {
             totalRequests: 0,
             successfulRequests: 0,
@@ -275,15 +243,16 @@ class PowClient {
             lastSolveTime: 0,
             maxSolveTime: 0,
             minSolveTime: Infinity,
-            lastResponse: { status: null, contentType: null, preview: null, timestamp: null, duration: 0 },
             errorCount: 0,
             lastError: null,
-            errorHistory: [],
             workerAttempts: 0,
             workerFailures: 0,
             syncFallbackUsed: 0,
+            cacheHits: 0,
+            cacheMisses: 0
         };
 
+        // Segurança
         this._security = {
             totalAttempts: 0,
             successfulAttempts: 0,
@@ -292,18 +261,10 @@ class PowClient {
             lastSuccess: null,
             consecutiveFailures: 0,
             isLocked: false,
-            lockUntil: null,
-        };
-
-        this._retry = {
-            count: 0,
-            maxRetries: this.config.MAX_RETRIES,
-            baseDelay: this.config.RETRY_DELAY,
-            backoff: 1,
+            lockUntil: null
         };
 
         this._worker = null;
-        this._workerPromise = null;
         this._cleanupFunctions = [];
 
         this._init();
@@ -314,15 +275,17 @@ class PowClient {
     // ==============================================
 
     _init() {
-        this.logger.info('🚀 PoW Client v5.1 inicializado');
+        this.logger.info('🚀 PoW Client v6.0 inicializado');
         this.logger.info(`   📦 ID: ${this._state.id}`);
         this.logger.info(`   📦 Cache TTL: ${this.config.CACHE_TTL}ms`);
         this.logger.info(`   🔑 API: ${this.config.API_BASE}${this.config.CHALLENGE_ENDPOINT}`);
+        this.logger.info(`   🔒 TTL Challenge: ${this.config.CHALLENGE_TTL}s`);
         this.logger.info(`   🔒 Modo: sob demanda (só no upload)`);
         
         this._state.isInitialized = true;
         this._setupEventListeners();
         this._checkWorkerAvailability();
+        this._updateAuthStatus();
         
         this.logger.info('   🔍 Diagnóstico: ativo');
     }
@@ -368,9 +331,13 @@ class PowClient {
     }
 
     // ==============================================
-    // 🔥 MÉTODOS PÚBLICOS
+    // 🔥 MÉTODOS PÚBLICOS PRINCIPAIS
     // ==============================================
 
+    /**
+     * 🔥 PREPARA O POW PARA UPLOAD
+     * Retorna true se o PoW está pronto, false caso contrário
+     */
     async prepareForUpload() {
         this.logger.debug('🔄 Preparando PoW para upload...');
         
@@ -385,11 +352,15 @@ class PowClient {
             return false;
         }
 
+        // 🔥 Verificar cache válido
         if (this._hasValidCache()) {
             this.logger.info('⚡ PoW em cache (válido)');
+            this._metrics.cacheHits++;
             this._metrics.solutionsCached++;
             return true;
         }
+
+        this._metrics.cacheMisses++;
 
         if (this._state.isSolving) {
             this.logger.debug('⏳ PoW já está sendo calculado...');
@@ -399,6 +370,10 @@ class PowClient {
         return await this._calculateSolution();
     }
 
+    /**
+     * 🔥 OBTÉM A SOLUÇÃO POW PARA UPLOAD
+     * Retorna a solução ou lança erro
+     */
     async getSolutionForUpload() {
         this.logger.debug('🔑 Obtendo solução PoW para upload...');
         
@@ -410,30 +385,42 @@ class PowClient {
             throw new Error('PoW bloqueado temporariamente. Tente novamente em alguns segundos.');
         }
 
-        if (this._hasValidCache() && this._cache.solution) {
+        // 🔥 Verificar cache válido
+        if (this._hasValidCache() && this._cache.solution && !this._cache.used) {
             const solution = { ...this._cache.solution };
-            this._cache.solution = null;
-            this._cache.isValid = false;
+            this._cache.used = true;
             this._metrics.solutionsUsed++;
             this.logger.info(`⚡ Usando PoW em cache (difficulty: ${solution.complexity})`);
             return solution;
         }
 
+        // Se estiver calculando, aguardar
         if (this._state.isSolving) {
             this.logger.debug('⏳ Aguardando cálculo do PoW...');
             const result = await this._waitForSolving();
-            if (result && this._cache.solution) {
+            if (result && this._cache.solution && !this._cache.used) {
                 const solution = { ...this._cache.solution };
-                this._cache.solution = null;
-                this._cache.isValid = false;
+                this._cache.used = true;
                 this._metrics.solutionsUsed++;
                 return solution;
             }
         }
 
-        return await this._calculateSolution(true);
+        // 🔥 Forçar novo cálculo
+        const success = await this._calculateSolution(true);
+        if (success && this._cache.solution && !this._cache.used) {
+            const solution = { ...this._cache.solution };
+            this._cache.used = true;
+            this._metrics.solutionsUsed++;
+            return solution;
+        }
+
+        throw new Error('Não foi possível obter solução PoW');
     }
 
+    /**
+     * 🔥 UPLOAD COM POW
+     */
     async uploadWithPow(files, endpoint = this.config.UPLOAD_ENDPOINT, options = {}) {
         const fileArray = Array.isArray(files) ? files : [files];
         this.logger.info(`📤 Iniciando upload com PoW: ${fileArray.length} arquivo(s)`);
@@ -462,13 +449,12 @@ class PowClient {
 
         const formData = new FormData();
         for (const file of fileArray) {
-            const safeFilename = PowUtils.sanitizeString(file.name);
+            const safeFilename = this._sanitizeString(file.name);
             formData.append('files', file, safeFilename);
         }
         formData.append('analysis_type', options.analysis_type || 'auto');
-        formData.append('ai_model', options.ai_model || 'auto');
 
-        const token = PowUtils.getToken();
+        const token = this._getToken();
         if (!token) {
             throw new Error('Token de autenticação não encontrado');
         }
@@ -476,20 +462,40 @@ class PowClient {
         return await this._uploadWithRetry(formData, token, solution, endpoint);
     }
 
+    /**
+     * 🔥 RESETA O CLIENTE
+     */
     reset() {
         this._cache.solution = null;
         this._cache.challenge = null;
         this._cache.solvedAt = null;
         this._cache.expiresAt = null;
         this._cache.isValid = false;
+        this._cache.used = false;
         this._state.isSolving = false;
         this._state.lastError = null;
         this._state.isReady = false;
-        this._retry.count = 0;
-        this._retry.backoff = 1;
+        this._security.consecutiveFailures = 0;
         this._cleanupWorker();
         this.logger.info('🔄 PoW resetado');
     }
+
+    /**
+     * 🔥 LIMPA O CACHE
+     */
+    clearCache() {
+        this._cache.solution = null;
+        this._cache.challenge = null;
+        this._cache.solvedAt = null;
+        this._cache.expiresAt = null;
+        this._cache.isValid = false;
+        this._cache.used = false;
+        this.logger.info('🧹 Cache do PoW limpo');
+    }
+
+    // ==============================================
+    // 🔥 ESTATÍSTICAS E DIAGNÓSTICO
+    // ==============================================
 
     getStats() {
         return {
@@ -503,20 +509,25 @@ class PowClient {
                 lastSuccess: this._state.lastSuccess,
                 age: Date.now() - this._state.createdAt,
                 workerAvailable: this._state.workerAvailable,
+                version: this._state.version
             },
             cache: {
                 hasSolution: this._cache.solution !== null,
                 hasChallenge: this._cache.challenge !== null,
                 age: this._cache.solvedAt ? Date.now() - this._cache.solvedAt : null,
                 isValid: this._cache.isValid,
+                used: this._cache.used,
+                ttl: this.config.CACHE_TTL
             },
             metrics: this._metrics,
             security: this._security,
             config: {
                 cacheTTL: this.config.CACHE_TTL,
+                challengeTTL: this.config.CHALLENGE_TTL,
                 maxRetries: this.config.MAX_RETRIES,
                 workerTimeout: this.config.WORKER_TIMEOUT,
                 defaultDifficulty: this.config.DEFAULT_DIFFICULTY,
+                maxExpiresIn: this.config.MAX_EXPIRES_IN
             }
         };
     }
@@ -532,7 +543,43 @@ class PowClient {
             logHistory: this.logger.getHistory().slice(-10),
             timestamp: new Date().toISOString(),
             uptime: this._state.isInitialized ? Date.now() - this._state.createdAt : null,
+            health: this._checkHealth()
         };
+    }
+
+    _checkHealth() {
+        const issues = [];
+        const warnings = [];
+
+        if (!this._state.isAuthenticated) {
+            issues.push('Não autenticado');
+        }
+
+        if (this._state.isSolving && Date.now() - this._state.createdAt > 60000) {
+            warnings.push('Cálculo em andamento há mais de 60s');
+        }
+
+        if (this._security.consecutiveFailures > 3) {
+            warnings.push(`${this._security.consecutiveFailures} falhas consecutivas`);
+        }
+
+        return {
+            status: issues.length === 0 ? 'healthy' : 'unhealthy',
+            issues,
+            warnings,
+            recommendations: this._getRecommendations(issues, warnings)
+        };
+    }
+
+    _getRecommendations(issues, warnings) {
+        const recs = [];
+        if (issues.includes('Não autenticado')) {
+            recs.push('Faça login para usar o PoW');
+        }
+        if (warnings.some(w => w.includes('falhas consecutivas'))) {
+            recs.push('Reset o cliente com window.powClient.reset()');
+        }
+        return recs;
     }
 
     // ==============================================
@@ -545,8 +592,48 @@ class PowClient {
     }
 
     _updateAuthStatus() {
-        this._state.isAuthenticated = PowUtils.isAuthenticated();
+        this._state.isAuthenticated = !!this._getToken();
         return this._state.isAuthenticated;
+    }
+
+    _getToken() {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token || token === 'undefined' || token === 'null') return null;
+            return this._sanitizeString(token);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _getRefreshToken() {
+        try {
+            const token = localStorage.getItem('refresh_token');
+            if (!token || token === 'undefined' || token === 'null') return null;
+            return this._sanitizeString(token);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _sanitizeString(str) {
+        if (!str) return '';
+        if (typeof str !== 'string') str = String(str);
+        return str.replace(/[&<>"'`/=();\n\r\t]/g, m => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;',
+            '"': '&quot;', "'": '&#39;', '`': '&#96;',
+            '/': '&#47;', '=': '&#61;', '(': '&#40;',
+            ')': '&#41;', ';': '&#59;', '\n': '\\n',
+            '\r': '\\r', '\t': '\\t'
+        })[m] || m).slice(0, 1000);
+    }
+
+    _generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    }
+
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     _isLocked() {
@@ -569,30 +656,39 @@ class PowClient {
         if (!this._cache.solution) return false;
         if (!this._cache.solvedAt) return false;
         if (!this._cache.isValid) return false;
+        if (this._cache.used) return false;
+        
         const age = Date.now() - this._cache.solvedAt;
         const isValid = age < this.config.CACHE_TTL;
+        
         if (!isValid) {
             this.logger.debug(`⏳ Cache expirado (${age}ms > ${this.config.CACHE_TTL}ms)`);
             this._cache.solution = null;
             this._cache.challenge = null;
             this._cache.solvedAt = null;
             this._cache.isValid = false;
+            this._cache.used = false;
         }
+        
         return isValid;
     }
 
     async _waitForSolving(timeout = 30000) {
         const start = Date.now();
         while (this._state.isSolving && (Date.now() - start) < timeout) {
-            await PowUtils.sleep(100);
+            await this._sleep(100);
         }
         if (this._state.isSolving) {
             this.logger.warn('⏰ Timeout aguardando cálculo do PoW');
             this._state.isSolving = false;
             return false;
         }
-        return this._cache.solution !== null && this._cache.isValid;
+        return this._cache.solution !== null && this._cache.isValid && !this._cache.used;
     }
+
+    // ==============================================
+    // 🔥 CÁLCULO DO POW
+    // ==============================================
 
     async _calculateSolution(force = false) {
         if (this._state.isSolving && !force) {
@@ -620,9 +716,12 @@ class PowClient {
                 this._cache.challenge = challenge;
                 this._cache.solvedAt = Date.now();
                 this._cache.isValid = true;
+                this._cache.used = false;
                 this._metrics.solutionsCalculated++;
                 this._state.lastSuccess = Date.now();
                 this._state.isReady = true;
+                this._security.consecutiveFailures = 0;
+                
                 this.logger.info(`✅ PoW pronto (difficulty: ${solution.complexity}, time: ${solution.timeMs || '?'}ms)`);
                 this._state.isSolving = false;
                 return true;
@@ -640,13 +739,12 @@ class PowClient {
         }
     }
 
-    // 🔥 CORRIGIDO: Agora usa URL absoluta /api/pow/challenge
     async _getChallenge() {
         this.logger.debug('📡 Solicitando desafio PoW ao backend...');
         this._metrics.totalRequests++;
         this._metrics.challengesRequested++;
 
-        const token = PowUtils.getToken();
+        const token = this._getToken();
         if (!token) {
             throw new Error('Não autenticado');
         }
@@ -654,31 +752,21 @@ class PowClient {
         const startTime = Date.now();
 
         try {
-            // 🔥 URL absoluta garantida
             const url = `${this.config.API_BASE}${this.config.CHALLENGE_ENDPOINT}`;
             this.logger.debug(`   🔗 URL: ${url}`);
 
-            const response = await fetch(
-                url,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Cache-Control': 'no-cache',
-                        'Accept': 'application/json',
-                    },
-                    credentials: 'include',
-                }
-            );
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json',
+                },
+                credentials: 'include',
+            });
 
             const duration = Date.now() - startTime;
-            const contentType = response.headers.get('content-type') || '';
-            this._metrics.lastResponse.status = response.status;
-            this._metrics.lastResponse.contentType = contentType;
-            this._metrics.lastResponse.timestamp = Date.now();
-            this._metrics.lastResponse.duration = duration;
-
-            this.logger.debug(`📡 Resposta: status=${response.status}, contentType=${contentType}, duration=${duration}ms`);
+            this.logger.debug(`📡 Resposta: status=${response.status}, duration=${duration}ms`);
 
             if (response.status === 401) {
                 this._handleAuthError();
@@ -686,39 +774,26 @@ class PowClient {
             }
 
             if (response.status === 429) {
-                const data = await PowUtils.parseJson(response);
+                const data = await this._parseJson(response);
                 const retryAfter = data?.retry_after || 60;
                 this._lock(retryAfter * 1000);
                 throw new Error(`Rate limit: ${data?.detail || 'Muitas requisições'}`);
             }
 
-            if (response.status === 404) {
-                throw new Error(`Serviço PoW indisponível (404). URL: ${url}`);
-            }
-
             if (!response.ok) {
-                const data = await PowUtils.parseJson(response);
+                const data = await this._parseJson(response);
                 throw new Error(data?.detail || `HTTP ${response.status}`);
             }
 
-            if (!PowUtils.isJsonResponse(response)) {
-                const text = await response.text();
-                const preview = text.substring(0, 200);
-                this._metrics.lastResponse.preview = preview;
-                if (PowUtils.isHtmlResponse(text)) {
-                    throw new Error('Servidor retornou HTML. Verifique o proxy/reverse proxy.');
-                }
-                throw new Error(`Resposta não é JSON: ${preview}...`);
-            }
-
-            const data = await PowUtils.parseJson(response);
+            const data = await this._parseJson(response);
             if (!data) {
                 throw new Error('JSON inválido recebido');
             }
 
+            // 🔥 CORRIGIDO: Validação com limites expandidos
             if (!PowValidators.isValidChallenge(data)) {
                 this.logger.error('❌ Desafio inválido:', data);
-                throw new Error('Desafio inválido recebido do servidor');
+                throw new Error(`Desafio inválido: expires_in=${data.expires_in} (max: ${POW_CONFIG.MAX_EXPIRES_IN}s)`);
             }
 
             this._metrics.successfulRequests++;
@@ -740,14 +815,11 @@ class PowClient {
         }
     }
 
-    /**
-     * 🔥 CORRIGIDO: Resolve o desafio com fallback robusto
-     */
     async _solveChallenge(challenge) {
         this.logger.info(`🔐 Resolvendo PoW (difficulty: ${challenge.difficulty})...`);
         const startTime = Date.now();
 
-        // 1. Tentar com Web Worker (se disponível)
+        // 1. Tentar com Web Worker
         if (this._state.workerAvailable && this._isWorkerAvailable()) {
             try {
                 const result = await this._solveWithWorker(challenge);
@@ -759,7 +831,6 @@ class PowClient {
             } catch (workerError) {
                 this._metrics.workerFailures++;
                 this.logger.warn(`⚠️ Erro no Worker (${workerError.message}). Usando fallback síncrono...`);
-                // CONTINUA PARA O FALLBACK
             }
         } else {
             this.logger.info('🧵 Worker indisponível, usando fallback síncrono diretamente...');
@@ -779,15 +850,73 @@ class PowClient {
         }
     }
 
-    /**
-     * 🔥 CORRIGIDO: Worker com verificação e fallback
-     */
+    async _solveSync(challenge) {
+        if (!crypto.subtle) {
+            throw new Error('Web Crypto API não disponível. Use um navegador moderno.');
+        }
+
+        const prefix = challenge.challenge;
+        const complexity = challenge.difficulty;
+        const target = '0'.repeat(complexity);
+        const maxAttempts = this.config.MAX_NONCE_ATTEMPTS;
+
+        const encoder = new TextEncoder();
+        let nonce = 0;
+
+        this.logger.debug(`🔐 Tentando encontrar nonce (max: ${maxAttempts})...`);
+
+        while (nonce < maxAttempts) {
+            if (this._state.isSolving === false) {
+                throw new Error('Cálculo cancelado');
+            }
+
+            const data = `${prefix}:${nonce}`;
+            const encoded = encoder.encode(data);
+
+            try {
+                const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const hashHex = hashArray
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+                if (hashHex.startsWith(target)) {
+                    return {
+                        nonce: String(nonce),
+                        prefix: prefix,
+                        complexity: complexity,
+                        solvedAt: Date.now(),
+                        timeMs: 0,
+                        sync: true,
+                    };
+                }
+            } catch (e) {
+                // Ignorar erro e continuar
+            }
+
+            nonce++;
+
+            if (nonce % 10000 === 0) {
+                this.logger.debug(`🔐 Tentativas: ${nonce}/${maxAttempts}`);
+            }
+        }
+
+        throw new Error(`Não foi possível encontrar nonce após ${maxAttempts} tentativas`);
+    }
+
+    _isWorkerAvailable() {
+        try {
+            return typeof Worker !== 'undefined';
+        } catch (e) {
+            return false;
+        }
+    }
+
     _solveWithWorker(challenge) {
         return new Promise((resolve, reject) => {
             try {
                 this._metrics.workerAttempts++;
                 
-                // Verificar se o worker existe
                 fetch(this.config.WORKER_URL, { method: 'HEAD' })
                     .then(response => {
                         if (!response.ok) {
@@ -835,7 +964,7 @@ class PowClient {
                             }
 
                             const solution = {
-                                nonce: PowUtils.sanitizeString(data.nonce),
+                                nonce: this._sanitizeString(data.nonce),
                                 prefix: challenge.challenge,
                                 complexity: challenge.difficulty,
                                 solvedAt: Date.now(),
@@ -855,14 +984,12 @@ class PowClient {
                             resolve(solution);
                         };
 
-                        // 🔥 CORREÇÃO CRÍTICA: onerror com FALLBACK SÍNCRONO
                         worker.onerror = (error) => {
                             clearTimeout(timeoutId);
                             worker.terminate();
                             this._worker = null;
                             
-                            this.logger.warn(`⚠️ Worker error (${error.message || 'desconhecido'}). Usando fallback síncrono...`);
-                            
+                            this.logger.warn(`⚠️ Worker error. Usando fallback síncrono...`);
                             this._solveSync(challenge)
                                 .then(resolve)
                                 .catch(fallbackError => {
@@ -883,61 +1010,6 @@ class PowClient {
         });
     }
 
-    async _solveSync(challenge) {
-        if (!crypto.subtle) {
-            throw new Error('Web Crypto API não disponível. Use um navegador moderno.');
-        }
-
-        const prefix = challenge.challenge;
-        const complexity = challenge.difficulty;
-        const target = '0'.repeat(complexity);
-        const maxAttempts = this.config.MAX_NONCE_ATTEMPTS;
-
-        const encoder = new TextEncoder();
-        let nonce = 0;
-
-        this.logger.debug(`🔐 Tentando encontrar nonce (max: ${maxAttempts})...`);
-
-        while (nonce < maxAttempts) {
-            if (this._state.isSolving === false) {
-                throw new Error('Cálculo cancelado');
-            }
-
-            const data = `${prefix}:${nonce}`;
-            const encoded = encoder.encode(data);
-
-            try {
-                const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                const hashHex = hashArray
-                    .map(b => b.toString(16).padStart(2, '0'))
-                    .join('');
-
-                if (hashHex.startsWith(target)) {
-                    this.logger.debug(`✅ Nonce encontrado: ${nonce}`);
-                    return {
-                        nonce: String(nonce),
-                        prefix: prefix,
-                        complexity: complexity,
-                        solvedAt: Date.now(),
-                        timeMs: 0,
-                        sync: true,
-                    };
-                }
-            } catch (e) {
-                // Ignorar erro e continuar
-            }
-
-            nonce++;
-
-            if (nonce % 1000 === 0) {
-                this.logger.debug(`🔐 Tentativas: ${nonce}/${maxAttempts}`);
-            }
-        }
-
-        throw new Error(`Não foi possível encontrar nonce após ${maxAttempts} tentativas`);
-    }
-
     _updateSolveMetrics(startTime) {
         const timeMs = Date.now() - startTime;
         this._metrics.lastSolveTime = timeMs;
@@ -949,6 +1021,10 @@ class PowClient {
         if (timeMs < this._metrics.minSolveTime) this._metrics.minSolveTime = timeMs;
     }
 
+    // ==============================================
+    // 🔥 UPLOAD COM RETRY
+    // ==============================================
+
     async _uploadWithRetry(formData, token, solution, endpoint) {
         const maxRetries = this.config.MAX_RETRIES;
         let lastError = null;
@@ -956,7 +1032,7 @@ class PowClient {
 
         while (attempt < maxRetries) {
             attempt++;
-            const backoff = PowUtils.calculateBackoff(attempt);
+            const backoff = Math.min(1000 * Math.pow(2, attempt - 1), this.config.MAX_BACKOFF);
             
             try {
                 this.logger.debug(`📤 Tentativa ${attempt}/${maxRetries}`);
@@ -978,70 +1054,33 @@ class PowClient {
 
                 if (response.status === 428) {
                     this.logger.warn('⚠️ PoW expirado (428), recalculando...');
-                    this.reset();
+                    this.clearCache();
                     const newSolution = await this.getSolutionForUpload();
                     if (!newSolution) {
                         throw new Error('Não foi possível obter nova solução PoW');
                     }
-                    const retryResponse = await fetch(
-                        `${this.config.API_BASE}${endpoint}`,
-                        {
-                            method: 'POST',
-                            headers: {
-                                'X-PoW-Challenge': newSolution.prefix,
-                                'X-PoW-Nonce': newSolution.nonce,
-                                'Authorization': `Bearer ${token}`,
-                                'Accept': 'application/json',
-                            },
-                            body: formData,
-                            credentials: 'include',
-                        }
-                    );
-                    if (retryResponse.status === 428) {
-                        throw new Error('PoW expirado novamente. Tente novamente.');
-                    }
-                    if (!retryResponse.ok) {
-                        const errorData = await PowUtils.parseJson(retryResponse);
-                        throw new Error(errorData?.detail || `HTTP ${retryResponse.status}`);
-                    }
-                    const data = await retryResponse.json();
-                    this.logger.info('✅ Upload com PoW (retry) concluído');
-                    return data;
+                    solution = newSolution;
+                    continue;
                 }
 
                 if (response.status === 401) {
                     this.logger.warn('⚠️ Token expirado, tentando refresh...');
                     const refreshed = await this._refreshToken();
                     if (refreshed) {
-                        const newToken = PowUtils.getToken();
-                        const retryResponse = await fetch(
-                            `${this.config.API_BASE}${endpoint}`,
-                            {
-                                method: 'POST',
-                                headers: {
-                                    'X-PoW-Challenge': solution.prefix,
-                                    'X-PoW-Nonce': solution.nonce,
-                                    'Authorization': `Bearer ${newToken}`,
-                                    'Accept': 'application/json',
-                                },
-                                body: formData,
-                                credentials: 'include',
-                            }
-                        );
-                        if (retryResponse.ok) {
-                            const data = await retryResponse.json();
-                            this.logger.info('✅ Upload com novo token concluído');
-                            return data;
+                        const newToken = this._getToken();
+                        if (newToken) {
+                            token = newToken;
+                            continue;
                         }
                     }
                     throw new Error('Sessão expirada. Faça login novamente.');
                 }
 
                 if (response.status === 429) {
-                    const data = await PowUtils.parseJson(response);
+                    const data = await this._parseJson(response);
                     const retryAfter = data?.retry_after || 60;
                     this.logger.warn(`⚠️ Rate limit, aguardando ${retryAfter}s...`);
-                    await PowUtils.sleep(retryAfter * 1000);
+                    await this._sleep(retryAfter * 1000);
                     continue;
                 }
 
@@ -1051,7 +1090,7 @@ class PowClient {
                     return data;
                 }
 
-                const errorData = await PowUtils.parseJson(response);
+                const errorData = await this._parseJson(response);
                 throw new Error(errorData?.detail || `HTTP ${response.status}: ${response.statusText}`);
 
             } catch (error) {
@@ -1059,7 +1098,7 @@ class PowClient {
                 this.logger.error(`❌ Tentativa ${attempt} falhou:`, error.message);
                 if (attempt < maxRetries) {
                     this.logger.debug(`⏳ Aguardando ${backoff}ms antes de tentar novamente...`);
-                    await PowUtils.sleep(backoff);
+                    await this._sleep(backoff);
                 }
             }
         }
@@ -1067,17 +1106,24 @@ class PowClient {
         throw new Error(`Upload falhou após ${maxRetries} tentativas: ${lastError?.message || 'Erro desconhecido'}`);
     }
 
+    // ==============================================
+    // 🔥 UTILITÁRIOS
+    // ==============================================
+
     async _refreshToken() {
         try {
-            const refreshToken = PowUtils.getRefreshToken();
+            const refreshToken = this._getRefreshToken();
             if (!refreshToken) return false;
+            
             const response = await fetch('/api/auth/refresh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refresh_token: refreshToken }),
                 credentials: 'include',
             });
+            
             if (!response.ok) return false;
+            
             const data = await response.json();
             if (data.access_token) {
                 localStorage.setItem('access_token', data.access_token);
@@ -1092,19 +1138,12 @@ class PowClient {
         }
     }
 
-    _isWorkerAvailable() {
+    async _parseJson(response) {
         try {
-            return typeof Worker !== 'undefined';
+            const text = await response.text();
+            return JSON.parse(text);
         } catch (e) {
-            return false;
-        }
-    }
-
-    _cleanupWorker() {
-        if (this._worker) {
-            try { this._worker.terminate(); } catch (e) {}
-            this._worker = null;
-            this._workerPromise = null;
+            return null;
         }
     }
 
@@ -1123,9 +1162,14 @@ class PowClient {
         this._state.lastError = errorMsg;
         this._metrics.errorCount++;
         this._metrics.lastError = { message: errorMsg, context, timestamp: Date.now() };
-        this._metrics.errorHistory.push({ message: errorMsg, context, timestamp: Date.now() });
-        if (this._metrics.errorHistory.length > 10) this._metrics.errorHistory.shift();
         this.logger.error(`❌ [${context}] ${errorMsg}`);
+    }
+
+    _cleanupWorker() {
+        if (this._worker) {
+            try { this._worker.terminate(); } catch (e) {}
+            this._worker = null;
+        }
     }
 
     _cleanup() {
@@ -1146,30 +1190,18 @@ class PowClient {
 // ==============================================
 
 const powClientInstance = new PowClient();
-powClientInstance._state._initTime = Date.now();
 
 if (typeof window !== 'undefined') {
     window.powClient = powClientInstance;
     window.Pow = powClientInstance;
     window.PowClient = powClientInstance;
-    window.PowClientInstance = powClientInstance;
     
     window.initPowClient = function(options = {}) {
         if (options.logLevel) powClientInstance.logger.setLevel(options.logLevel);
-        if (!powClientInstance._isAuthenticated()) {
-            console.log('⏳ PoW: aguardando autenticação...');
-            return powClientInstance;
-        }
-        console.log('✅ PoW Client inicializado (modo sob demanda)');
+        console.log('✅ PoW Client v6.0 inicializado');
         console.log(`   🔍 Use window.powClient.getDiagnostics() para debug`);
         console.log(`   📊 Use window.powClient.getStats() para estatísticas`);
         return powClientInstance;
-    };
-    
-    window.stopPowClient = function() {
-        powClientInstance.reset();
-        powClientInstance._state.isInitialized = false;
-        console.log('⏹️ PoW Client parado');
     };
     
     window.getPowDiagnostics = function() {
@@ -1180,24 +1212,23 @@ if (typeof window !== 'undefined') {
         return powClientInstance.getStats();
     };
     
-    console.log('✅ PoW Client v5.1 global disponível');
+    console.log('✅ PoW Client v6.0 global disponível');
     console.log('   🔍 Use window.powClient.getDiagnostics() para debug');
     console.log('   📊 Use window.powClient.getStats() para estatísticas');
-    console.log('   📡 window.powClient, window.Pow e window.PowClient disponíveis');
+    console.log('   🔄 Compatível com backend TTL: 900s');
 }
 
+// ==============================================
+// 🔥 MENSAGEM DE INICIALIZAÇÃO
+// ==============================================
+
 console.log('=' .repeat(60));
-console.log('🔥 pow-client.js v5.1 carregado');
-console.log('   ✅ Inicialização automática (instância global)');
-console.log('   ✅ Arquitetura modular e organizada');
-console.log('   ✅ Cache inteligente com TTL');
-console.log('   ✅ Retry automático com backoff exponencial');
-console.log('   ✅ Fallback síncrono robusto (worker.onerror)');
-console.log('   ✅ Verificação prévia do Worker (fetch HEAD)');
-console.log('   ✅ Tratamento de erros avançado');
-console.log('   ✅ Métricas e diagnóstico detalhados');
-console.log('   ✅ Logging estruturado');
-console.log('   ✅ URL absoluta: /api/pow/challenge');
-console.log('   📡 window.powClient disponível imediatamente');
+console.log('🔥 pow-client.js v6.0 carregado');
+console.log('   ✅ CORRIGIDO: Validação expires_in (max: 1800s)');
+console.log('   ✅ CORRIGIDO: Sincronizado com backend (TTL: 900s)');
+console.log('   ✅ OTIMIZADO: Cache com invalidação inteligente');
+console.log('   ✅ ADICIONADO: Diagnóstico de saúde');
+console.log('   ✅ ADICIONADO: Métricas de performance');
+console.log('   📡 window.powClient disponível');
 console.log('   🔍 Use window.getPowDiagnostics() para debug');
 console.log('=' .repeat(60));
