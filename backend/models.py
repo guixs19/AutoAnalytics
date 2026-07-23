@@ -1,10 +1,10 @@
-# backend/models.py - VERSÃO ATUALIZADA COM CAMPOS POW
+# backend/models.py - VERSÃO 2.1 COMPLETA
 """
-Models - AutoAnalytics
-Versão: 2.0 - Com suporte a PoW e métricas avançadas
+🔥 Models - AutoAnalytics
+Versão: 2.1 - Com suporte a PoW, métricas e todas as colunas necessárias
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime, date, timedelta, timezone
 import enum
@@ -248,11 +248,9 @@ class DailyCreditLog(Base):
         }
 
 
-
 # ==============================================
-# 🔥🔥🔥 ANALYSIS - VERSÃO ATUALIZADA COM POW
+# 🔥🔥🔥 ANALYSIS - VERSÃO 2.1 COMPLETA
 # ==============================================
-               
                
 class Analysis(Base):
     __tablename__ = 'analyses'
@@ -261,15 +259,15 @@ class Analysis(Base):
     # ===== CAMPOS EXISTENTES =====
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    filename = Column(String)
-    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")
-    analysis_type = Column(String)
+    filename = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")  # ✅ JÁ EXISTE
+    analysis_type = Column(String, nullable=False, default="auto")
     status = Column(String, default="pending")
     ai_used = Column(Boolean, default=False)
     rows_processed = Column(Integer, default=0)
     columns_processed = Column(Integer, default=0)
-    ai_report = Column(Text)
-    report_path = Column(String)
+    ai_report = Column(Text, nullable=True)
+    report_path = Column(String, nullable=True)
     
     uploaded_at = Column(DateTime, default=_now_brasil)
     processed_at = Column(DateTime, nullable=True)
@@ -277,7 +275,7 @@ class Analysis(Base):
     user = relationship("User", back_populates="analyses")
     
     # ==========================================
-    # 🔥🔥🔥 NOVOS CAMPOS - POW E SEGURANÇA
+    # 🔥🔥🔥 CAMPOS POW E SEGURANÇA
     # ==========================================
     
     # PoW (Proof of Work)
@@ -369,6 +367,7 @@ class Analysis(Base):
             "id": self.id,
             "user_id": self.user_id,
             "filename": self.filename,
+            "file_size": self.file_size,
             "analysis_type": self.analysis_type,
             "status": self.status,
             "ai_used": self.ai_used,
@@ -457,15 +456,10 @@ class BlacklistedToken(Base):
         return f"<BlacklistedToken jti={self.jti[:8] if self.jti else 'None'}... expires={self.expires_at}>"
 
 
-# ==============================================
-# 🔥 PRINTS DE CARREGAMENTO
-# ==============================================
-
 print("=" * 70)
-print("🔥 models.py v2.0 carregado - COM SUPORTE A POW")
+print("🔥 models.py v2.1 carregado - COMPLETO")
 print("   ✅ Analysis com campos PoW")
+print("   ✅ Analysis com file_size")
 print("   ✅ Analysis com métricas de performance")
-print("   ✅ Analysis com dados de segurança")
-print("   ✅ Analysis com métricas de ML")
 print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
 print("=" * 70)

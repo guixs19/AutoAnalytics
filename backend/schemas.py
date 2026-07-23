@@ -1,11 +1,15 @@
-# backend/schemas.py - VERSÃO CORRIGIDA (com default_factory e timezone)
+# backend/schemas.py - VERSÃO 2.1 COMPLETA
+"""
+🔥 Schemas - AutoAnalytics
+Versão: 2.1 - Com suporte a PoW e todos os campos
+"""
 
-from pydantic import BaseModel, EmailStr, Field, validator, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
-# 🔥 Definir fuso horário de Brasília (UTC-3) - mesmo do models.py
+# 🔥 Fuso horário de Brasília (UTC-3)
 TZ_BRASIL = timezone(timedelta(hours=-3))
 
 def _now_brasil() -> datetime:
@@ -35,6 +39,7 @@ class AnalysisType(str, Enum):
     SERVICOS = "servicos"
     ESTOQUE = "estoque"
     FINANCEIRO = "financeiro"
+    AUTO = "auto"
 
 class AIModel(str, Enum):
     FLOWISE = "flowise"
@@ -48,7 +53,7 @@ class UserPlan(str, Enum):
 
 
 # ==============================================
-# USER SCHEMAS (COMPLETOS)
+# USER SCHEMAS
 # ==============================================
 
 class UserBase(BaseModel):
@@ -158,6 +163,142 @@ class UserStats(BaseModel):
 
 
 # ==============================================
+# ANALYSIS SCHEMAS (COMPLETOS)
+# ==============================================
+
+class AnalysisBase(BaseModel):
+    filename: str
+    file_size: Optional[int] = None  # ✅ ADICIONADO
+    analysis_type: str = "auto"
+
+
+class AnalysisCreate(AnalysisBase):
+    user_id: Optional[int] = None
+    ai_model: AIModel = AIModel.FLOWISE
+
+
+class AnalysisUpdate(BaseModel):
+    status: Optional[str] = None
+    ai_used: Optional[bool] = None
+    rows_processed: Optional[int] = None
+    columns_processed: Optional[int] = None
+    ai_report: Optional[str] = None
+    report_path: Optional[str] = None
+    processed_at: Optional[datetime] = None
+    # Campos PoW
+    pow_challenge: Optional[str] = None
+    pow_nonce: Optional[str] = None
+    pow_difficulty: Optional[int] = None
+    pow_verified: Optional[bool] = None
+    pow_verified_at: Optional[datetime] = None
+    pow_algorithm: Optional[str] = None
+    # Segurança
+    client_ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    rate_limit_applied: Optional[bool] = None
+    # Métricas
+    processing_time_ms: Optional[int] = None
+    pow_solve_time_ms: Optional[int] = None
+    upload_time_ms: Optional[int] = None
+    encoding_used: Optional[str] = None
+    model_used: Optional[str] = None
+    confidence_score: Optional[float] = None
+    # Dados
+    total_rows: Optional[int] = None
+    total_columns: Optional[int] = None
+    numeric_columns: Optional[int] = None
+    categorical_columns: Optional[int] = None
+    # Resultados
+    predictions_summary: Optional[Dict[str, Any]] = None
+    insights: Optional[Dict[str, Any]] = None
+    recommendations: Optional[List[str]] = None
+
+
+class AnalysisResponse(AnalysisBase):
+    id: int
+    user_id: Optional[int] = None
+    status: str = "pending"
+    ai_used: bool = False
+    rows_processed: int = 0
+    columns_processed: int = 0
+    ai_report: Optional[str] = None
+    report_path: Optional[str] = None
+    uploaded_at: datetime
+    processed_at: Optional[datetime] = None
+    
+    # PoW e Segurança
+    pow_verified: bool = False
+    pow_difficulty: int = 4
+    pow_algorithm: Optional[str] = "SHA-256"
+    client_ip: Optional[str] = None
+    rate_limit_applied: bool = False
+    
+    # Métricas
+    processing_time_ms: Optional[int] = None
+    encoding_used: Optional[str] = None
+    model_used: Optional[str] = None
+    confidence_score: Optional[float] = None
+    
+    # Dados
+    total_rows: int = 0
+    total_columns: int = 0
+    numeric_columns: int = 0
+    categorical_columns: int = 0
+    
+    # Resultados
+    predictions_summary: Optional[Dict[str, Any]] = None
+    insights: Optional[Dict[str, Any]] = None
+    recommendations: Optional[List[str]] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# ==============================================
+# UPLOAD & PROCESSING SCHEMAS (COMPLETOS)
+# ==============================================
+
+class FileUpload(BaseModel):
+    analysis_type: str = "auto"
+    ai_model: AIModel = AIModel.FLOWISE
+
+
+class ProcessingStatus(BaseModel):
+    process_id: str
+    status: str
+    progress: int = 0
+    message: Optional[str] = None
+    analysis_id: Optional[int] = None
+    error: Optional[str] = None
+    filename: Optional[str] = None
+    file_size: Optional[int] = None
+
+
+class AnalysisResult(BaseModel):
+    process_id: str
+    status: str = "completed"
+    analysis_id: int
+    filename: str
+    file_size: Optional[int] = None
+    summary: Optional[dict] = None
+    ai_response: Optional[dict] = None
+    predictions: Optional[list] = None
+    ai_used: bool = False
+    download_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now_brasil)
+
+
+class UploadResponse(BaseModel):
+    message: str
+    analysis_id: int
+    filename: str
+    file_size: Optional[int] = None
+    status: str
+    process_id: Optional[str] = None
+    credits_remaining: Optional[int] = None
+
+
+# ==============================================
 # PREMIUM SCHEMAS
 # ==============================================
 
@@ -216,98 +357,6 @@ class PremiumSummary(BaseModel):
 
 
 # ==============================================
-# PROMOTION SCHEMAS (VAGAS BRONZE - VITALÍCIO)
-# ==============================================
-
-class PromotionControlBase(BaseModel):
-    total_slots: int = 100
-    used_slots: int = 0
-    promotional_price: float = 97.00
-    regular_price: float = 149.90
-    is_active: bool = True
-
-
-class PromotionControlCreate(PromotionControlBase):
-    pass
-
-
-class PromotionControlUpdate(BaseModel):
-    total_slots: Optional[int] = None
-    used_slots: Optional[int] = None
-    promotional_price: Optional[float] = None
-    regular_price: Optional[float] = None
-    is_active: Optional[bool] = None
-
-
-class PromotionControlResponse(PromotionControlBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
-    remaining_slots: int
-    has_available_slots: bool
-    current_price: float
-    
-    class Config:
-        from_attributes = True
-
-
-class PromotionStatus(BaseModel):
-    is_active: bool
-    remaining_slots: int
-    total_slots: int
-    used_slots: int
-    promotional_price: float
-    regular_price: float
-    current_price: float
-    price_saved: float
-    percentage_off: float
-    slots_percentage: float
-    has_available_slots: bool
-    is_vitalicio: bool = True
-
-
-# ==============================================
-# TOKEN SCHEMAS
-# ==============================================
-
-class Token(BaseModel):
-    access_token: str
-    refresh_token: Optional[str] = None
-    token_type: str = "bearer"
-    user_name: str
-    user_email: str
-    workshop_name: Optional[str] = None
-    role: UserRole
-    is_admin: bool = False
-    plan: UserPlan = UserPlan.BASICO
-    credits: int = 0
-    promotional_price_locked: bool = False
-    current_price: Optional[float] = None
-
-
-class TokenData(BaseModel):
-    email: Optional[str] = None
-    role: Optional[str] = None
-    is_admin: Optional[bool] = False
-
-
-class TokenRefresh(BaseModel):
-    refresh_token: str
-
-
-class PasswordChange(BaseModel):
-    current_password: str
-    new_password: str = Field(..., min_length=6)
-
-    @field_validator('new_password')
-    @classmethod
-    def validate_new_password(cls, v):
-        if len(v) < 6:
-            raise ValueError('Nova senha deve ter pelo menos 6 caracteres')
-        return v
-
-
-# ==============================================
 # PAYMENT SCHEMAS
 # ==============================================
 
@@ -362,83 +411,95 @@ class PixPaymentResponse(BaseModel):
 
 
 # ==============================================
-# ANALYSIS SCHEMAS
+# TOKEN SCHEMAS
 # ==============================================
 
-class AnalysisBase(BaseModel):
-    filename: str
-    analysis_type: AnalysisType = AnalysisType.CLIENTES
+class Token(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    user_name: str
+    user_email: str
+    workshop_name: Optional[str] = None
+    role: UserRole
+    is_admin: bool = False
+    plan: UserPlan = UserPlan.BASICO
+    credits: int = 0
+    promotional_price_locked: bool = False
+    current_price: Optional[float] = None
 
 
-class AnalysisCreate(AnalysisBase):
-    user_id: Optional[int] = None
-    ai_model: AIModel = AIModel.FLOWISE
+class TokenData(BaseModel):
+    email: Optional[str] = None
+    role: Optional[str] = None
+    is_admin: Optional[bool] = False
 
 
-class AnalysisResponse(AnalysisBase):
+class TokenRefresh(BaseModel):
+    refresh_token: str
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Nova senha deve ter pelo menos 6 caracteres')
+        return v
+
+
+# ==============================================
+# PROMOTION SCHEMAS
+# ==============================================
+
+class PromotionControlBase(BaseModel):
+    total_slots: int = 100
+    used_slots: int = 0
+    promotional_price: float = 97.00
+    regular_price: float = 149.90
+    is_active: bool = True
+
+
+class PromotionControlCreate(PromotionControlBase):
+    pass
+
+
+class PromotionControlUpdate(BaseModel):
+    total_slots: Optional[int] = None
+    used_slots: Optional[int] = None
+    promotional_price: Optional[float] = None
+    regular_price: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
+class PromotionControlResponse(PromotionControlBase):
     id: int
-    user_id: Optional[int] = None
-    status: str = "pending"
-    ai_used: bool = False
-    rows_processed: int = 0
-    columns_processed: int = 0
-    ai_report: Optional[str] = None
-    report_path: Optional[str] = None
-    uploaded_at: datetime
-    processed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    remaining_slots: int
+    has_available_slots: bool
+    current_price: float
     
     class Config:
         from_attributes = True
 
 
-class AnalysisUpdate(BaseModel):
-    status: Optional[str] = None
-    ai_used: Optional[bool] = None
-    rows_processed: Optional[int] = None
-    columns_processed: Optional[int] = None
-    ai_report: Optional[str] = None
-    report_path: Optional[str] = None
-    processed_at: Optional[datetime] = None
-
-
-class UploadResponse(BaseModel):
-    message: str
-    analysis_id: int
-    filename: str
-    status: str
-    process_id: Optional[str] = None
-    credits_remaining: Optional[int] = None
-
-
-# ==============================================
-# UPLOAD & PROCESSING SCHEMAS
-# ==============================================
-
-class FileUpload(BaseModel):
-    analysis_type: AnalysisType = AnalysisType.CLIENTES
-    ai_model: AIModel = AIModel.FLOWISE
-
-
-class ProcessingStatus(BaseModel):
-    process_id: str
-    status: str
-    progress: int = 0
-    message: Optional[str] = None
-    analysis_id: Optional[int] = None
-    error: Optional[str] = None
-
-
-class AnalysisResult(BaseModel):
-    process_id: str
-    status: str = "completed"
-    analysis_id: int
-    filename: str
-    summary: Optional[dict] = None
-    ai_response: Optional[dict] = None
-    predictions: Optional[list] = None
-    ai_used: bool = False
-    download_url: Optional[str] = None
-    created_at: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
+class PromotionStatus(BaseModel):
+    is_active: bool
+    remaining_slots: int
+    total_slots: int
+    used_slots: int
+    promotional_price: float
+    regular_price: float
+    current_price: float
+    price_saved: float
+    percentage_off: float
+    slots_percentage: float
+    has_available_slots: bool
+    is_vitalicio: bool = True
 
 
 # ==============================================
@@ -495,7 +556,7 @@ class FileInfo(BaseModel):
     filename: str
     size: int
     extension: str
-    uploaded_at: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
+    uploaded_at: datetime = Field(default_factory=_now_brasil)
 
 
 class FileProcessResult(BaseModel):
@@ -516,7 +577,7 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     code: int = 400
-    timestamp: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
+    timestamp: datetime = Field(default_factory=_now_brasil)
 
 
 class ValidationError(BaseModel):
@@ -531,7 +592,7 @@ class ValidationError(BaseModel):
 
 class HealthCheck(BaseModel):
     status: str
-    timestamp: datetime = Field(default_factory=_now_brasil)  # 🔥 CORRIGIDO
+    timestamp: datetime = Field(default_factory=_now_brasil)
     version: str
     database: str
     frontend: Dict[str, bool]
@@ -548,7 +609,7 @@ class SystemInfo(BaseModel):
 
 
 # ==============================================
-# PRICE SCHEMAS (para exibição no frontend)
+# PRICE SCHEMAS
 # ==============================================
 
 class PriceInfo(BaseModel):
@@ -563,4 +624,7 @@ class PriceInfo(BaseModel):
     savings_percentage: float
 
 
-print("✅ schemas.py carregado - CORRIGIDO: default_factory com UTC-3")
+print("✅ schemas.py v2.1 carregado - COMPLETO")
+print("   ✅ Analysis schemas com file_size")
+print("   ✅ Analysis schemas com PoW")
+print("   ✅ default_factory com UTC-3")
