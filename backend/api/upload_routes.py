@@ -1,4 +1,4 @@
-# backend/api/upload_routes.py - VERSÃO 4.0 OTIMIZADA
+# backend/api/upload_routes.py - VERSÃO 4.1 CORRIGIDA
 """
 🚀 ROTAS DE UPLOAD OTIMIZADAS PARA ALTO DESEMPENHO
 ================================================================================
@@ -14,6 +14,8 @@
 ✅ Validação antecipada sem carregar arquivo inteiro na memória
 ✅ Rate limiting distribuído
 ✅ PoW com cache de desafios
+✅ CORRIGIDO: processing_status definido globalmente
+✅ CORRIGIDO: get_analyses_history usa banco de dados
 ================================================================================
 """
 
@@ -74,10 +76,10 @@ class UploadConfig:
     }
     
     # Rate Limiter otimizado
-    RATE_LIMIT_UPLOAD_PER_IP = 20  # Aumentado
+    RATE_LIMIT_UPLOAD_PER_IP = 20
     RATE_LIMIT_UPLOAD_PER_USER = 10
     RATE_LIMIT_WINDOW_SECONDS = 60
-    RATE_LIMIT_BURST = 5  # Permite pico inicial
+    RATE_LIMIT_BURST = 5
     
     # Timeouts e retry
     PROCESSING_TIMEOUT_SECONDS = 300
@@ -86,8 +88,8 @@ class UploadConfig:
     RETRY_BACKOFF_FACTOR = 2
     
     # Performance
-    MAX_CONCURRENT_PROCESSING = 3  # Semáforo
-    CHUNK_SIZE = 8192  # 8KB para streaming
+    MAX_CONCURRENT_PROCESSING = 3
+    CHUNK_SIZE = 8192
     CACHE_TTL_SECONDS = 300
     QUEUE_MAX_SIZE = 100
     
@@ -99,6 +101,7 @@ class UploadConfig:
     ENABLE_METRICS = True
     METRICS_INTERVAL = 60
 
+
 # ==============================================
 # 🔥 MODELOS DE DADOS OTIMIZADOS
 # ==============================================
@@ -108,6 +111,7 @@ class ProcessingPriority(Enum):
     HIGH = 0
     NORMAL = 1
     LOW = 2
+
 
 @dataclass
 class UploadFileInfo:
@@ -137,10 +141,10 @@ class UploadFileInfo:
     
     @property
     def hash(self) -> str:
-        """Cache do hash para evitar recálculo"""
         if self._hash is None:
             self._hash = hashlib.md5(self.content).hexdigest()
         return self._hash
+
 
 @dataclass
 class ProcessingJob:
@@ -152,6 +156,7 @@ class ProcessingJob:
     retry_count: int = 0
     created_at: float = field(default_factory=time.time)
     max_retries: int = UploadConfig.MAX_RETRIES
+
 
 # ==============================================
 # 🔥 CACHE INTELIGENTE
@@ -167,41 +172,34 @@ class ProcessingCache:
         self._lock = asyncio.Lock()
     
     async def get(self, key: str) -> Optional[Dict[str, Any]]:
-        """Obtém do cache se válido"""
         async with self._lock:
             if key not in self._cache:
                 return None
-            
             data, timestamp = self._cache[key]
             if time.time() - timestamp > self._ttl:
                 del self._cache[key]
                 return None
-            
             return data
     
     async def set(self, key: str, value: Dict[str, Any]) -> None:
-        """Armazena no cache"""
         async with self._lock:
             if len(self._cache) >= self._max_size:
-                # LRU: remove o mais antigo
                 oldest = min(self._cache.items(), key=lambda x: x[1][1])
                 del self._cache[oldest[0]]
-            
             self._cache[key] = (value, time.time())
     
     async def invalidate(self, key: str) -> None:
-        """Invalida uma entrada"""
         async with self._lock:
             if key in self._cache:
                 del self._cache[key]
     
     def get_stats(self) -> Dict[str, Any]:
-        """Estatísticas do cache"""
         return {
             "size": len(self._cache),
             "max_size": self._max_size,
             "ttl": self._ttl
         }
+
 
 # ==============================================
 # 🔥 GERENCIADOR DE STATUS OTIMIZADO
@@ -218,11 +216,9 @@ class ProcessingStatusManager:
         self._metrics = defaultdict(int)
     
     async def create(self, process_id: str, data: Dict[str, Any]) -> None:
-        """Cria um novo status"""
         async with self._lock:
             if len(self._status) >= self._max_items:
                 await self._cleanup()
-            
             self._status[process_id] = {
                 "process_id": process_id,
                 "status": "uploaded",
@@ -235,27 +231,19 @@ class ProcessingStatusManager:
             self._metrics["created"] += 1
     
     async def update(self, process_id: str, updates: Dict[str, Any]) -> bool:
-        """Atualiza status com cache invalidation"""
         async with self._lock:
             if process_id not in self._status:
                 return False
-            
             self._status[process_id].update(updates)
             self._status[process_id]["updated_at"] = datetime.now().isoformat()
-            
-            # Invalida cache
             await self._cache.invalidate(f"status:{process_id}")
-            
             return True
     
     async def get(self, process_id: str) -> Optional[Dict[str, Any]]:
-        """Obtém status com cache"""
-        # Tenta cache primeiro
         cache_key = f"status:{process_id}"
         cached = await self._cache.get(cache_key)
         if cached:
             return cached
-        
         async with self._lock:
             status = self._status.get(process_id)
             if status:
@@ -263,7 +251,6 @@ class ProcessingStatusManager:
             return status
     
     async def get_user_analyses(self, user_email: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Obtém análises de um usuário com paginação"""
         async with self._lock:
             analyses = []
             for data in self._status.values():
@@ -278,18 +265,14 @@ class ProcessingStatusManager:
                         "encoding_used": data.get("encoding_used"),
                         "pow_validated": data.get("pow_validated", False),
                     })
-            
             analyses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             return analyses[:limit]
     
     async def _cleanup(self) -> None:
-        """Limpa status antigos com critérios inteligentes"""
-        # Remove os mais antigos, mas mantém os que estão em processamento
         sorted_items = sorted(
             self._status.items(),
             key=lambda x: x[1].get("created_at", "")
         )
-        
         to_remove = len(self._status) - self._max_items + 50
         removed = 0
         for process_id, data in sorted_items:
@@ -300,7 +283,6 @@ class ProcessingStatusManager:
                 removed += 1
     
     def get_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas detalhadas"""
         return {
             "total_items": len(self._status),
             "max_items": self._max_items,
@@ -313,6 +295,15 @@ class ProcessingStatusManager:
             "metrics": dict(self._metrics),
             "cache": self._cache.get_stats()
         }
+
+
+# ==============================================
+# 🔥🔥🔥 INSTÂNCIA GLOBAL (CORREÇÃO IMPORTANTE!)
+# ==============================================
+
+# ✅ CORREÇÃO: Instância global do gerenciador de status
+processing_status = ProcessingStatusManager()
+
 
 # ==============================================
 # 🔥 CIRCUIT BREAKER
@@ -332,11 +323,9 @@ class CircuitBreaker:
         self._lock = asyncio.Lock()
     
     async def call(self, func, *args, **kwargs):
-        """Executa função com proteção do circuit breaker"""
         async with self._lock:
             if self.is_open:
                 if time.time() - self.last_failure_time > self.timeout:
-                    # Tentar fechar o circuito
                     self.is_open = False
                     self.failures = 0
                     logger.info(f"🔒 Circuit breaker {self.name} fechado novamente")
@@ -345,10 +334,8 @@ class CircuitBreaker:
                         status_code=503,
                         detail=f"Serviço indisponível. Circuit breaker {self.name} aberto."
                     )
-        
         try:
             result = await func(*args, **kwargs)
-            # Sucesso: resetar contador
             async with self._lock:
                 self.failures = 0
             return result
@@ -360,6 +347,7 @@ class CircuitBreaker:
                     self.is_open = True
                     logger.error(f"🔴 Circuit breaker {self.name} aberto após {self.failures} falhas")
             raise
+
 
 # ==============================================
 # 🔥 PROCESSADOR DE ML OTIMIZADO
@@ -376,7 +364,6 @@ class MLProcessor:
     
     @classmethod
     async def start_workers(cls, num_workers: int = 2):
-        """Inicia workers para processamento em background"""
         for i in range(num_workers):
             worker = asyncio.create_task(cls._worker_loop(f"worker-{i}"))
             cls._workers.append(worker)
@@ -384,19 +371,16 @@ class MLProcessor:
     
     @classmethod
     async def _worker_loop(cls, worker_name: str):
-        """Loop principal do worker"""
         while True:
             try:
                 job: ProcessingJob = await cls._queue.get()
                 logger.info(f"👷 {worker_name} processando: {job.file_info.filename}")
                 
-                # Processar com circuit breaker
                 result = await cls._circuit_breaker.call(
                     cls._process_file_with_timeout,
                     job
                 )
                 
-                # Atualizar status final
                 if result.get("success"):
                     await processing_status.update(job.file_info.process_id, {
                         "status": "completed",
@@ -421,7 +405,6 @@ class MLProcessor:
     @classmethod
     async def submit_job(cls, file_info: UploadFileInfo, user_id: int, user_email: str, 
                          priority: ProcessingPriority = ProcessingPriority.NORMAL):
-        """Submete um job para processamento"""
         job = ProcessingJob(
             file_info=file_info,
             user_id=user_id,
@@ -429,14 +412,12 @@ class MLProcessor:
             priority=priority
         )
         
-        # Verificar cache primeiro
         cache_key = f"result:{file_info.hash}"
         cached_result = await cls._results_cache.get(cache_key)
         if cached_result:
             logger.info(f"📦 Resultado em cache para {file_info.filename}")
             return cached_result
         
-        # Adicionar à fila
         await cls._queue.put(job)
         logger.info(f"📥 Job enfileirado: {file_info.filename} (prioridade: {priority.name})")
         
@@ -444,7 +425,6 @@ class MLProcessor:
     
     @classmethod
     async def _process_file_with_timeout(cls, job: ProcessingJob) -> Dict[str, Any]:
-        """Processa arquivo com timeout e retry"""
         try:
             return await asyncio.wait_for(
                 cls._process_file_async(job),
@@ -461,10 +441,8 @@ class MLProcessor:
     
     @classmethod
     async def _process_file_async(cls, job: ProcessingJob) -> Dict[str, Any]:
-        """Processamento assíncrono de arquivo"""
         file_info = job.file_info
         
-        # Atualizar status
         await processing_status.update(file_info.process_id, {
             "status": "processing",
             "progress": 20,
@@ -473,14 +451,11 @@ class MLProcessor:
         })
         
         try:
-            # 🔥 CORREÇÃO: Processar com await
             result = await process_file_content(file_info.content, file_info.filename)
             
-            # Cache do resultado
             cache_key = f"result:{file_info.hash}"
             await cls._results_cache.set(cache_key, result)
             
-            # Consumir crédito
             await cls._consume_credit(job.user_id, file_info.process_id)
             
             return {"success": True, "result": result}
@@ -492,7 +467,6 @@ class MLProcessor:
     
     @staticmethod
     async def _consume_credit(user_id: int, process_id: str) -> None:
-        """Consume crédito de forma assíncrona"""
         from backend.database import SessionLocal
         from backend.models import User
         
@@ -511,7 +485,6 @@ class MLProcessor:
     
     @classmethod
     def get_stats(cls) -> Dict[str, Any]:
-        """Estatísticas do processador"""
         return {
             "queue_size": cls._queue.qsize(),
             "workers_running": len(cls._workers),
@@ -522,6 +495,7 @@ class MLProcessor:
             },
             "cache": cls._results_cache.get_stats()
         }
+
 
 # ==============================================
 # 🔥 RATE LIMITER OTIMIZADO
@@ -537,21 +511,17 @@ class RateLimiterOptimized:
         self._lock = asyncio.Lock()
     
     async def check_rate_limit(self, key: str, limit: int, window: Optional[int] = None) -> bool:
-        """Verifica rate limit com janela deslizante"""
         window = window or self._window_size
         now = time.time()
         cutoff = now - window
         
         async with self._lock:
-            # Limpar entradas antigas
             self._limits[key] = [t for t in self._limits[key] if t > cutoff]
             
-            # Verificar burst permitido
             if len(self._limits[key]) < self._burst:
                 self._limits[key].append(now)
                 return True
             
-            # Verificar limite normal
             if len(self._limits[key]) < limit:
                 self._limits[key].append(now)
                 return True
@@ -559,7 +529,6 @@ class RateLimiterOptimized:
             return False
     
     async def get_remaining(self, key: str, limit: int, window: Optional[int] = None) -> int:
-        """Obtém tentativas restantes"""
         window = window or self._window_size
         now = time.time()
         cutoff = now - window
@@ -569,7 +538,9 @@ class RateLimiterOptimized:
             remaining = max(0, limit - len(self._limits[key]))
             return remaining
 
+
 rate_limiter_optimized = RateLimiterOptimized()
+
 
 # ==============================================
 # 🔥 UTILITÁRIOS OTIMIZADOS
@@ -577,7 +548,6 @@ rate_limiter_optimized = RateLimiterOptimized()
 
 @asynccontextmanager
 async def timed_operation(operation_name: str):
-    """Context manager para medir tempo de operação"""
     start = time.time()
     try:
         yield
@@ -585,12 +555,9 @@ async def timed_operation(operation_name: str):
         duration = (time.time() - start) * 1000
         logger.debug(f"⏱️ {operation_name} levou {duration:.2f}ms")
 
+
 async def validate_file_optimized(file: UploadFile, idx: int) -> Optional[UploadFileInfo]:
-    """
-    🔥 Validação otimizada - lê em chunks para evitar sobrecarga de memória
-    """
     try:
-        # Validar nome
         if not file.filename:
             return UploadFileInfo(
                 filename=f"arquivo_{idx}",
@@ -600,7 +567,6 @@ async def validate_file_optimized(file: UploadFile, idx: int) -> Optional[Upload
                 error="Arquivo sem nome"
             )
         
-        # Validar extensão
         file_ext = os.path.splitext(file.filename)[1].lower()
         if file_ext not in UploadConfig.ALLOWED_EXTENSIONS:
             return UploadFileInfo(
@@ -611,7 +577,6 @@ async def validate_file_optimized(file: UploadFile, idx: int) -> Optional[Upload
                 error=f"Formato não suportado. Use: {', '.join(UploadConfig.ALLOWED_EXTENSIONS)}"
             )
         
-        # 🔥 CORREÇÃO: Ler em chunks para melhor performance
         content = bytearray()
         total_size = 0
         chunk = await file.read(UploadConfig.CHUNK_SIZE)
@@ -638,7 +603,6 @@ async def validate_file_optimized(file: UploadFile, idx: int) -> Optional[Upload
                 error="Arquivo vazio"
             )
         
-        # ✅ Arquivo válido
         return UploadFileInfo(
             filename=file.filename,
             content=bytes(content),
@@ -657,8 +621,8 @@ async def validate_file_optimized(file: UploadFile, idx: int) -> Optional[Upload
             error=str(e)
         )
 
+
 def validate_credits_optimized(user: models.User, total_files: int) -> Dict[str, Any]:
-    """Valida créditos de forma otimizada"""
     if user.is_admin:
         return {
             "valid": True,
@@ -667,7 +631,6 @@ def validate_credits_optimized(user: models.User, total_files: int) -> Dict[str,
             "message": "Admin - créditos ilimitados"
         }
     
-    # Verificação rápida
     if user.credits < total_files:
         return {
             "valid": False,
@@ -683,6 +646,7 @@ def validate_credits_optimized(user: models.User, total_files: int) -> Dict[str,
         "message": f"Créditos suficientes: {user.credits}"
     }
 
+
 def create_analysis_record_optimized(
     db: Session,
     user_id: int,
@@ -694,7 +658,6 @@ def create_analysis_record_optimized(
     client_ip: str,
     user_agent: Optional[str] = None,
 ) -> models.Analysis:
-    """Cria registro de análise com batch insert otimizado"""
     
     nonce = request.headers.get(PoWConfig.HEADER_NONCE)
     challenge = request.headers.get(PoWConfig.HEADER_CHALLENGE)
@@ -726,6 +689,7 @@ def create_analysis_record_optimized(
     
     return analysis
 
+
 # ==============================================
 # 🔥 ROTA PRINCIPAL OTIMIZADA
 # ==============================================
@@ -741,25 +705,9 @@ async def upload_auto_optimized(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """
-    🚀 UPLOAD OTIMIZADO COM PROCESSAMENTO PARALELO
-    
-    FLUXO OTIMIZADO:
-    1. ✅ PoW validado com cache
-    2. ✅ Rate Limiter com janela deslizante
-    3. ✅ Verificação de créditos otimizada
-    4. ✅ Validação de arquivos em streaming
-    5. ✅ Enfileiramento para processamento paralelo
-    6. ✅ Resposta imediata com status
-    7. ✅ Processamento em background com workers
-    """
     start_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent")
-    
-    # ==============================================
-    # 🔥 1. VALIDAÇÕES INICIAIS OTIMIZADAS
-    # ==============================================
     
     total_files = len(files)
     if total_files == 0:
@@ -773,11 +721,7 @@ async def upload_auto_optimized(
     
     logger.info(f"📤 [UPLOAD] Requisição de {current_user.email} | IP: {client_ip} | Arquivos: {total_files}")
     
-    # ==============================================
-    # 🔥 2. RATE LIMITER OTIMIZADO
-    # ==============================================
-    
-    # Rate limit por IP com janela deslizante
+    # Rate limit por IP
     ip_key = f"upload_ip:{client_ip}"
     if not await rate_limiter_optimized.check_rate_limit(ip_key, UploadConfig.RATE_LIMIT_UPLOAD_PER_IP):
         remaining = await rate_limiter_optimized.get_remaining(ip_key, UploadConfig.RATE_LIMIT_UPLOAD_PER_IP)
@@ -807,10 +751,7 @@ async def upload_auto_optimized(
             }
         )
     
-    # ==============================================
-    # 🔥 3. VERIFICAÇÃO DE CRÉDITOS
-    # ==============================================
-    
+    # Verificação de créditos
     credit_check = validate_credits_optimized(current_user, total_files)
     if not credit_check["valid"]:
         raise HTTPException(
@@ -822,10 +763,6 @@ async def upload_auto_optimized(
                 "credits_needed": credit_check["credits_needed"]
             }
         )
-    
-    # ==============================================
-    # 🔥 4. PROCESSAMENTO PARALELO DE ARQUIVOS
-    # ==============================================
     
     accepted_files: List[UploadFileInfo] = []
     rejected_files: List[UploadFileInfo] = []
@@ -848,7 +785,6 @@ async def upload_auto_optimized(
             continue
         
         try:
-            # Criar registro no banco (batch)
             analysis = create_analysis_record_optimized(
                 db=db,
                 user_id=current_user.id,
@@ -864,7 +800,6 @@ async def upload_auto_optimized(
             file_info.analysis_id = analysis.id
             analyses_created.append(analysis.id)
             
-            # Criar status em memória
             await processing_status.create(file_info.process_id, {
                 "filename": file_info.filename,
                 "file_size": file_info.file_size,
@@ -889,12 +824,8 @@ async def upload_auto_optimized(
             file_info.error = str(e)
             rejected_files.append(file_info)
     
-    # ==============================================
-    # 🔥 5. ENFILEIRAMENTO PARA PROCESSAMENTO
-    # ==============================================
-    
+    # Enfileirar jobs
     if accepted_files:
-        # Enfileirar jobs para processamento paralelo
         for file_info in accepted_files:
             await MLProcessor.submit_job(
                 file_info=file_info,
@@ -906,13 +837,8 @@ async def upload_auto_optimized(
         
         logger.info(f"📥 {len(jobs_submitted)} jobs enfileirados para processamento")
     
-    # ==============================================
-    # 🔥 6. RESPOSTA OTIMIZADA
-    # ==============================================
-    
     processing_time_ms = (time.time() - start_time) * 1000
     
-    # Estatísticas de performance
     ml_stats = MLProcessor.get_stats()
     status_stats = processing_status.get_stats()
     pow_stats = pow_service.get_stats() if hasattr(pow_service, 'get_stats') else {}
@@ -979,8 +905,9 @@ async def upload_auto_optimized(
         "timestamp": datetime.now().isoformat()
     }
 
+
 # ==============================================
-# 🔥 ROTAS DE MONITORAMENTO
+# 🔥 ROTAS DE MONITORAMENTO (CORRIGIDAS)
 # ==============================================
 
 @router.get("/status/{process_id}")
@@ -998,63 +925,201 @@ async def get_status_optimized(
     
     return status_data
 
+
 @router.get("/analyses/history")
 async def get_analyses_history_optimized(
     current_user = Depends(get_current_active_user),
     limit: int = 10,
-    status_filter: Optional[str] = None
+    status_filter: Optional[str] = None,
+    db: Session = Depends(get_db)  # ✅ CORRIGIDO: adicionado db
 ):
-    """Histórico com filtros"""
-    analyses = await processing_status.get_user_analyses(current_user.email, limit)
+    """
+    🔥 CORRIGIDO: Retorna histórico de análises do usuário usando o banco de dados
+    """
+    from backend.models import Analysis
     
-    if status_filter:
-        analyses = [a for a in analyses if a.get("status") == status_filter]
-    
-    return {
-        "success": True,
-        "total": len(analyses),
-        "analyses": analyses,
-        "filters": {
-            "status": status_filter,
-            "limit": limit
+    try:
+        # Query base
+        query = db.query(Analysis).filter(Analysis.user_id == current_user.id)
+        
+        # Aplicar filtro de status se fornecido
+        if status_filter:
+            query = query.filter(Analysis.status == status_filter)
+        
+        # Ordenar e limitar
+        analyses = query.order_by(Analysis.uploaded_at.desc()).limit(limit).all()
+        
+        # Converter para dicionário
+        result = []
+        for analysis in analyses:
+            result.append({
+                "id": analysis.id,
+                "process_id": f"analysis-{analysis.id}",
+                "filename": analysis.filename,
+                "file_size": analysis.file_size,
+                "status": analysis.status,
+                "progress": 100 if analysis.status == "completed" else 50 if analysis.status == "processing" else 0,
+                "created_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+                "completed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+                "encoding_used": analysis.encoding_used,
+                "pow_validated": analysis.pow_verified,
+                "analysis_type": analysis.analysis_type,
+                "rows_processed": analysis.rows_processed,
+                "model_used": analysis.model_used,
+                "confidence_score": analysis.confidence_score,
+            })
+        
+        return {
+            "success": True,
+            "total": len(result),
+            "analyses": result,
+            "filters": {
+                "status": status_filter,
+                "limit": limit
+            },
+            "source": "database"
         }
-    }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar histórico do banco: {e}")
+        
+        # Fallback: tentar usar processing_status se disponível
+        try:
+            analyses = await processing_status.get_user_analyses(current_user.email, limit)
+            
+            if status_filter:
+                analyses = [a for a in analyses if a.get("status") == status_filter]
+            
+            return {
+                "success": True,
+                "total": len(analyses),
+                "analyses": analyses,
+                "filters": {
+                    "status": status_filter,
+                    "limit": limit
+                },
+                "source": "memory"
+            }
+        except:
+            # Retornar lista vazia se ambos falharem
+            return {
+                "success": True,
+                "total": 0,
+                "analyses": [],
+                "message": "Nenhuma análise encontrada",
+                "filters": {
+                    "status": status_filter,
+                    "limit": limit
+                },
+                "source": "empty"
+            }
+
 
 @router.get("/analysis/result/{process_id}")
 async def get_analysis_result_optimized(
     process_id: str,
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)  # ✅ CORRIGIDO: adicionado db
 ):
-    """Retorna resultado com cache"""
-    status_data = await processing_status.get(process_id)
-    if not status_data:
-        raise HTTPException(status_code=404, detail="Análise não encontrada")
+    """Retorna resultado completo de uma análise"""
+    from backend.models import Analysis
     
-    if status_data.get("user_email") != current_user.email and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    
-    if status_data.get("status") != "completed":
+    try:
+        # Tentar extrair ID do process_id
+        analysis_id = None
+        if process_id.startswith("analysis-"):
+            try:
+                analysis_id = int(process_id.split("-")[1])
+            except:
+                pass
+        
+        # Buscar análise
+        query = db.query(Analysis).filter(Analysis.user_id == current_user.id)
+        
+        if analysis_id:
+            query = query.filter(Analysis.id == analysis_id)
+        else:
+            query = query.filter(Analysis.filename.contains(process_id))
+        
+        analysis = query.first()
+        
+        if not analysis:
+            # Fallback para status manager
+            status_data = await processing_status.get(process_id)
+            if status_data:
+                if status_data.get("user_email") != current_user.email and not current_user.is_admin:
+                    raise HTTPException(status_code=403, detail="Acesso negado")
+                
+                if status_data.get("status") != "completed":
+                    return {
+                        "success": False,
+                        "message": "Análise ainda não concluída",
+                        "status": status_data.get("status"),
+                        "progress": status_data.get("progress", 0)
+                    }
+                
+                return {
+                    "success": True,
+                    "process_id": process_id,
+                    "analysis_id": status_data.get("analysis_id"),
+                    "filename": status_data.get("filename"),
+                    "analysis_info": status_data.get("analysis_info", {}),
+                    "prediction_stats": status_data.get("prediction_stats", {}),
+                    "insights": status_data.get("insights", {}),
+                    "recommendations": status_data.get("recommendations", []),
+                    "completed_at": status_data.get("completed_at"),
+                    "credit_consumed": status_data.get("credit_consumed", False),
+                    "encoding_used": status_data.get("encoding_used"),
+                    "pow_validated": status_data.get("pow_validated", False)
+                }
+            
+            raise HTTPException(status_code=404, detail="Análise não encontrada")
+        
+        # Verificar acesso
+        if analysis.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+        
+        # Verificar status
+        if analysis.status != "completed":
+            return {
+                "success": False,
+                "message": "Análise ainda não concluída",
+                "status": analysis.status,
+                "progress": 50 if analysis.status == "processing" else 0
+            }
+        
         return {
-            "success": False,
-            "message": "Análise ainda não concluída",
-            "status": status_data.get("status"),
-            "progress": status_data.get("progress", 0)
+            "success": True,
+            "process_id": process_id,
+            "analysis_id": analysis.id,
+            "filename": analysis.filename,
+            "file_size": analysis.file_size,
+            "analysis_info": {
+                "rows_processed": analysis.rows_processed,
+                "columns_detected": analysis.total_columns,
+                "numeric_columns": analysis.numeric_columns,
+                "categorical_columns": analysis.categorical_columns,
+                "model_used": analysis.model_used,
+                "encoding_used": analysis.encoding_used,
+            },
+            "prediction_stats": analysis.predictions_summary or {},
+            "insights": analysis.insights or {},
+            "recommendations": analysis.recommendations or [],
+            "completed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+            "credit_consumed": True,
+            "encoding_used": analysis.encoding_used,
+            "pow_validated": analysis.pow_verified,
+            "pow_difficulty": analysis.pow_difficulty,
+            "confidence_score": analysis.confidence_score,
+            "status": analysis.status
         }
-    
-    return {
-        "success": True,
-        "process_id": process_id,
-        "analysis_id": status_data.get("analysis_id"),
-        "filename": status_data.get("filename"),
-        "analysis_info": status_data.get("analysis_info", {}),
-        "prediction_stats": status_data.get("prediction_stats", {}),
-        "insights": status_data.get("insights", {}),
-        "recommendations": status_data.get("recommendations", []),
-        "completed_at": status_data.get("completed_at"),
-        "credit_consumed": status_data.get("credit_consumed", False),
-        "encoding_used": status_data.get("encoding_used"),
-        "pow_validated": status_data.get("pow_validated", False)
-    }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar resultado: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar análise: {str(e)}")
+
 
 @router.get("/system/stats")
 async def get_system_stats(
@@ -1081,6 +1146,7 @@ async def get_system_stats(
         }
     }
 
+
 # ==============================================
 # 🔥 INICIALIZAÇÃO
 # ==============================================
@@ -1091,8 +1157,9 @@ async def startup_event():
     await MLProcessor.start_workers(num_workers=2)
     logger.info("🚀 Sistema de upload otimizado inicializado")
 
+
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 4.0 OTIMIZADA")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 4.1 CORRIGIDA")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🚦 Rate Limiter: {UploadConfig.RATE_LIMIT_UPLOAD_PER_IP}/IP + {UploadConfig.RATE_LIMIT_UPLOAD_PER_USER}/usuário")
@@ -1102,4 +1169,6 @@ print(f"   🔒 Circuit Breaker: {UploadConfig.CIRCUIT_BREAKER_THRESHOLD} falhas
 print(f"   ⏰ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   📊 Fila: {UploadConfig.QUEUE_MAX_SIZE} jobs")
 print(f"   🔐 PoW: {PoWConfig.ALGORITHM} com dificuldade adaptativa")
+print(f"   ✅ CORRIGIDO: processing_status definido globalmente")
+print(f"   ✅ CORRIGIDO: get_analyses_history usa banco de dados")
 print("=" * 80)
