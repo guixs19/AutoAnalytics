@@ -5,8 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoAnalytics - IA para Mecânicos</title>
     
+    <!-- ============================================== -->
+    <!-- 🔥 CDN BIBLIOTECAS -->
+    <!-- ============================================== -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+    
     <style>
-        /* ===== RESET E BASE ===== */
+        /* ==============================================
+                   RESET E BASE
+                ============================================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -19,22 +30,19 @@
         }
         body.app-ready { opacity: 1; }
 
-        /* ===== SCROLLBAR ===== */
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.4); border-radius: 10px; }
-
-        /* ===== NAVBAR ===== */
+        /* ==============================================
+                   NAVBAR
+                ============================================== */
         .navbar-modern {
-            background: rgba(255, 255, 255, 0.97);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12);
-            padding: 0.5rem 0;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            padding: 0.6rem 0;
             position: fixed;
             width: 100%;
             top: 0;
             z-index: 1000;
-            border-bottom: 3px solid rgba(255, 107, 53, 0.4);
+            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
         }
         .navbar-modern .container {
             display: flex;
@@ -44,7 +52,7 @@
             gap: 0.5rem;
         }
         .brand-text {
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             font-weight: 900;
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             -webkit-background-clip: text;
@@ -63,21 +71,20 @@
         .user-name-display {
             font-weight: 600;
             color: #2d3748;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             display: flex;
             align-items: center;
             gap: 0.3rem;
         }
         .user-name-display i { color: #ff6b35; }
 
-        /* CRÉDITOS EM DESTAQUE */
         .credits-badge-nav {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            padding: 0.25rem 0.9rem;
+            padding: 0.3rem 1rem;
             border-radius: 50px;
             color: white;
             font-weight: 700;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             box-shadow: 0 4px 15px rgba(255, 107, 53, 0.35);
             transition: all 0.3s;
             cursor: pointer;
@@ -90,70 +97,78 @@
             transform: translateY(-2px) scale(1.05);
             box-shadow: 0 8px 30px rgba(255, 107, 53, 0.5);
         }
-        .credits-badge-nav .credits-number {
-            background: rgba(255,255,255,0.2);
-            padding: 0.02rem 0.4rem;
-            border-radius: 50px;
-            font-size: 0.65rem;
-        }
 
         .btn-planos-nav {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.25rem 0.9rem;
+            padding: 0.3rem 1rem;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             transition: all 0.3s;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             gap: 0.3rem;
         }
-        .btn-planos-nav:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,0.35); color: white; }
+        .btn-planos-nav:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.35);
+            color: white;
+        }
+
         .btn-sair-nav {
             background: transparent;
             border: 2px solid #e53e3e;
             color: #e53e3e;
-            padding: 0.2rem 0.7rem;
+            padding: 0.25rem 0.8rem;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             transition: all 0.3s;
             text-decoration: none;
         }
         .btn-sair-nav:hover { background: #e53e3e; color: white; transform: translateY(-2px); }
 
-        /* ===== CONTEÚDO ===== */
-        .hero-section { padding: 75px 0 20px; min-height: 100vh; }
+        /* ==============================================
+                   CONTEÚDO PRINCIPAL
+                ============================================== */
+        .hero-section { padding: 85px 0 25px; min-height: 100vh; }
 
-        /* ===== CARDS ===== */
+        /* ==============================================
+                   CARDS
+                ============================================== */
         .glass-card {
-            background: rgba(255, 255, 255, 0.07);
+            background: rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(20px);
-            border-radius: 18px;
-            padding: 1rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 20px;
+            padding: 1.2rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             color: white;
             height: 100%;
         }
         .glass-card:hover {
-            transform: translateY(-3px);
-            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-4px);
+            background: rgba(255, 255, 255, 0.09);
             border-color: rgba(255, 107, 53, 0.2);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         .glass-card .card-title {
             color: white;
             font-weight: 700;
-            font-size: 0.9rem;
-            margin-bottom: 0.6rem;
+            font-size: 0.95rem;
+            margin-bottom: 0.8rem;
         }
-        .glass-card .card-title i { color: #ff6b35; margin-right: 0.4rem; }
+        .glass-card .card-title i {
+            color: #ff6b35;
+            margin-right: 0.4rem;
+        }
 
-        /* ===== MÉTRICAS ===== */
+        /* ==============================================
+                   MÉTRICAS
+                ============================================== */
         .metric-row {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -161,7 +176,7 @@
         }
         .metric-card {
             background: rgba(0, 0, 0, 0.25);
-            border-radius: 10px;
+            border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.05);
             padding: 0.5rem 0.3rem;
             text-align: center;
@@ -169,33 +184,35 @@
         }
         .metric-card:hover { background: rgba(255,107,53,0.08); border-color: rgba(255,107,53,0.15); }
         .metric-value {
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             font-weight: 800;
             color: #ff6b35;
             line-height: 1.2;
         }
         .metric-label {
-            font-size: 0.5rem;
+            font-size: 0.55rem;
             color: rgba(255, 255, 255, 0.4);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-top: 0.05rem;
         }
         .metric-value.credits-highlight {
-            font-size: 1.6rem;
+            font-size: 1.7rem;
             color: #f5a623;
         }
 
-        /* ===== UPLOAD ===== */
+        /* ==============================================
+                   UPLOAD
+                ============================================== */
         .upload-area {
             border: 2px dashed rgba(255, 107, 53, 0.4);
-            border-radius: 16px;
-            padding: 1.5rem 1rem;
+            border-radius: 18px;
+            padding: 1.8rem 1.2rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            background: rgba(255, 107, 53, 0.05);
-            min-height: 150px;
+            background: rgba(255, 107, 53, 0.04);
+            min-height: 160px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -203,7 +220,7 @@
         }
         .upload-area:hover {
             border-color: rgba(255, 107, 53, 0.8);
-            background: rgba(255, 107, 53, 0.1);
+            background: rgba(255, 107, 53, 0.08);
             transform: scale(1.01);
         }
         .upload-area.dragover {
@@ -212,33 +229,37 @@
             transform: scale(1.02);
         }
         .upload-area .upload-icon {
-            font-size: 2.5rem;
+            font-size: 2.8rem;
             color: #ff6b35;
-            margin-bottom: 0.3rem;
+            margin-bottom: 0.4rem;
             display: block;
         }
         .upload-area .upload-icon i { animation: float 3s ease-in-out infinite; }
         @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-        .upload-area h4 { color: white; font-weight: 700; font-size: 0.95rem; }
-        .upload-area p { color: rgba(255,255,255,0.4); font-size: 0.75rem; margin-bottom: 0.5rem; }
+        .upload-area h4 { color: white; font-weight: 700; font-size: 1rem; }
+        .upload-area p { color: rgba(255,255,255,0.45); font-size: 0.8rem; margin-bottom: 0.5rem; }
         .upload-area .btn-select {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.4rem 1.2rem;
+            padding: 0.5rem 1.5rem;
             border-radius: 50px;
             font-weight: 700;
-            font-size: 0.75rem;
+            font-size: 0.85rem;
             transition: all 0.3s;
             box-shadow: 0 4px 20px rgba(255, 107, 53, 0.25);
         }
-        .upload-area .btn-select:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,107,53,0.4); color: white; }
+        .upload-area .btn-select:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
         .upload-area .file-hint {
-            margin-top: 0.4rem;
-            font-size: 0.6rem;
+            margin-top: 0.5rem;
+            font-size: 0.65rem;
             color: rgba(255, 255, 255, 0.2);
             display: flex;
-            gap: 0.6rem;
+            gap: 0.8rem;
             justify-content: center;
             flex-wrap: wrap;
         }
@@ -249,7 +270,9 @@
         .upload-area.success { border-color: #48bb78; background: rgba(72,187,120,0.08); }
         .upload-area.error { border-color: #dc3545; background: rgba(220,53,69,0.08); }
 
-        /* ===== FILE PREVIEW ===== */
+        /* ==============================================
+                   FILE PREVIEW
+                ============================================== */
         .file-preview-container {
             max-height: 120px;
             overflow-y: auto;
@@ -262,9 +285,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.2rem 0.6rem;
+            padding: 0.3rem 0.6rem;
             background: rgba(255,255,255,0.04);
-            border-radius: 6px;
+            border-radius: 8px;
             margin-bottom: 0.2rem;
             border: 1px solid rgba(255,255,255,0.04);
         }
@@ -295,15 +318,17 @@
         }
         .file-preview-item .file-remove:hover { color: #e53e3e; background: rgba(229,62,62,0.15); }
 
-        /* ===== STATUS ===== */
+        /* ==============================================
+                   STATUS
+                ============================================== */
         .analysis-status {
             display: none;
             padding: 0.5rem;
-            border-radius: 10px;
+            border-radius: 12px;
             text-align: center;
             background: rgba(245, 166, 35, 0.06);
             border: 1px solid rgba(245, 166, 35, 0.1);
-            margin-top: 0.4rem;
+            margin-top: 0.5rem;
         }
         .analysis-status.show { display: block; animation: fadeUp 0.3s ease-out; }
         .analysis-status .status-icon { font-size: 1.5rem; margin-bottom: 0.1rem; }
@@ -325,7 +350,9 @@
         }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* ===== RESULTADO ===== */
+        /* ==============================================
+                   RESULTADO
+                ============================================== */
         .result-container { display: none; animation: fadeUp 0.5s ease-out; margin-top: 0.6rem; }
         .result-container.show { display: block; }
 
@@ -342,9 +369,9 @@
         .result-header .result-title { font-size: 0.9rem; font-weight: 700; color: white; }
         .result-header .result-title i { color: #48bb78; margin-right: 0.3rem; }
         .result-header .result-badge {
-            padding: 0.1rem 0.6rem;
+            padding: 0.15rem 0.7rem;
             border-radius: 50px;
-            font-size: 0.55rem;
+            font-size: 0.6rem;
             font-weight: 600;
         }
         .result-header .result-badge.success {
@@ -355,24 +382,26 @@
 
         .result-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
             gap: 0.4rem;
             margin-bottom: 0.6rem;
         }
         .result-stat {
             background: rgba(0,0,0,0.15);
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 0.4rem 0.5rem;
             text-align: center;
             border: 1px solid rgba(255,255,255,0.03);
         }
         .result-stat .stat-value { font-size: 1.2rem; font-weight: 800; color: #ff6b35; }
-        .result-stat .stat-label { font-size: 0.45rem; color: rgba(255,255,255,0.4); text-transform: uppercase; }
+        .result-stat .stat-label { font-size: 0.5rem; color: rgba(255,255,255,0.4); text-transform: uppercase; }
 
-        /* ===== GRÁFICOS ===== */
+        /* ==============================================
+                   GRÁFICOS
+                ============================================== */
         .chart-container {
             background: rgba(0,0,0,0.12);
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 0.4rem;
             border: 1px solid rgba(255,255,255,0.03);
             height: 100%;
@@ -385,25 +414,25 @@
         }
         .chart-container .chart-title span {
             color: rgba(255,255,255,0.35);
-            font-size: 0.45rem;
+            font-size: 0.5rem;
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
         .chart-container .chart-title .badge-chart {
             background: rgba(255,107,53,0.15);
             color: #ff6b35;
-            font-size: 0.4rem;
+            font-size: 0.45rem;
             padding: 0.05rem 0.4rem;
             border-radius: 50px;
         }
-        .chart-container canvas { width: 100% !important; max-height: 90px; }
-        .chart-container-sm canvas { max-height: 70px; }
+        .chart-container canvas { width: 100% !important; max-height: 100px; }
+        .chart-container-sm canvas { max-height: 80px; }
 
         .result-insights { margin-top: 0.5rem; }
         .result-insight {
             padding: 0.4rem 0.6rem;
             background: rgba(0,0,0,0.15);
-            border-radius: 6px;
+            border-radius: 8px;
             border-left: 3px solid #ff6b35;
             margin-bottom: 0.25rem;
             color: rgba(255,255,255,0.75);
@@ -420,10 +449,10 @@
             flex-wrap: wrap;
         }
         .result-actions .btn-result {
-            padding: 0.25rem 0.8rem;
+            padding: 0.3rem 0.8rem;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             border: none;
             transition: all 0.3s;
             display: inline-flex;
@@ -442,17 +471,19 @@
         }
         .result-actions .btn-result-secondary:hover { background: rgba(255,255,255,0.1); color: white; }
 
-        /* ===== EXPLICAÇÃO ===== */
+        /* ==============================================
+                   EXPLICAÇÃO
+                ============================================== */
         .site-explanation {
             background: rgba(0,0,0,0.2);
             border-radius: 10px;
-            padding: 0.6rem 0.8rem;
+            padding: 0.5rem 0.7rem;
             border: 1px solid rgba(255,255,255,0.04);
         }
         .site-explanation .exp-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 0.2rem 0.6rem;
+            gap: 0.2rem 0.5rem;
         }
         .site-explanation .exp-item {
             display: flex;
@@ -464,7 +495,9 @@
         .site-explanation .exp-item i { color: #ff6b35; font-size: 0.65rem; width: 1rem; text-align: center; }
         .site-explanation .exp-item strong { color: rgba(255,255,255,0.7); }
 
-        /* ===== TIMELINE ===== */
+        /* ==============================================
+                   TIMELINE
+                ============================================== */
         .timeline {
             position: relative;
             padding-left: 1.2rem;
@@ -502,7 +535,9 @@
         .timeline-content strong { color: #f5a623; }
         .timeline-content .timeline-date { font-size: 0.55rem; color: rgba(255,255,255,0.25); }
 
-        /* ===== LOADING ===== */
+        /* ==============================================
+                   LOADING
+                ============================================== */
         .loading-overlay {
             display: none;
             position: fixed;
@@ -535,7 +570,9 @@
         }
         .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.6rem; margin-top: 0.3rem; }
 
-        /* ===== MENSAGENS ===== */
+        /* ==============================================
+                   MENSAGENS
+                ============================================== */
         #messageContainer {
             position: fixed;
             top: 75px;
@@ -589,7 +626,9 @@
         }
         .message-dismiss:hover { opacity: 1; }
 
-        /* ===== WELCOME ===== */
+        /* ==============================================
+                   WELCOME
+                ============================================== */
         .welcome-notification {
             position: fixed;
             top: 75px;
@@ -701,20 +740,22 @@
             width: 100%;
         }
 
-        /* ===== MODAIS ===== */
+        /* ==============================================
+                   MODAIS
+                ============================================== */
         .modal-content-custom {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
             border: 1px solid rgba(255,107,53,0.3) !important;
             color: white;
         }
 
-        /* ===== RESPONSIVIDADE ===== */
+        /* ==============================================
+                   RESPONSIVIDADE
+                ============================================== */
         @media (max-width: 768px) {
             .navbar-modern .container { flex-direction: column; align-items: stretch; gap: 0.3rem; }
             .nav-right { justify-content: center; flex-wrap: wrap; }
             .brand-text { font-size: 1.1rem; text-align: center; }
-            .credits-badge-nav { font-size: 0.65rem; padding: 0.2rem 0.6rem; }
-            .btn-planos-nav, .btn-sair-nav { font-size: 0.6rem; padding: 0.15rem 0.6rem; }
             .hero-section { padding: 100px 0 15px; }
             .upload-area { min-height: 120px; padding: 0.8rem; }
             .upload-area .upload-icon { font-size: 2rem; }
@@ -723,20 +764,18 @@
             .metric-value { font-size: 1.1rem; }
             .result-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
             .chart-container canvas { max-height: 70px; }
-            .site-explanation .exp-grid { grid-template-columns: 1fr 1fr; }
             #messageContainer { top: 95px; right: 10px; left: 10px; max-width: none; }
             .welcome-notification { top: 95px; right: 10px; left: 10px; max-width: none; padding: 0.6rem 0.8rem; }
             .glass-card { padding: 0.7rem; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
-            .metric-value { font-size: 1rem; }
             .result-grid { grid-template-columns: 1fr 1fr; }
-            .site-explanation .exp-grid { grid-template-columns: 1fr; }
             .upload-area { padding: 0.6rem; min-height: 100px; }
             .upload-area .upload-icon { font-size: 1.6rem; }
             .upload-area .btn-select { padding: 0.3rem 0.8rem; font-size: 0.65rem; }
             .chart-container canvas { max-height: 60px; }
+            .site-explanation .exp-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -775,10 +814,13 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 MENSAGENS E NOTIFICAÇÕES -->
+    <!-- 🔥 MENSAGENS -->
     <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
 
+    <!-- ============================================== -->
+    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS -->
+    <!-- ============================================== -->
     <div class="welcome-notification" id="welcomeNotification" role="alert">
         <button class="notif-close" id="notifClose"><i class="fas fa-times"></i></button>
         <div class="d-flex align-items-start gap-2">
@@ -1193,6 +1235,368 @@
 
     <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+            console.log('🔐 Inicializando fallback de autenticação...');
+            function getApp() { return window.App || window.app || window.autoAnalytics; }
+            function isAppReady() {
+                var app = getApp();
+                if (app && typeof app.isReady === 'function') { return app.isReady(); }
+                return !!window._appReadyFired;
+            }
+            function redirectToLogin() {
+                console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
+                window.location.replace('/login');
+            }
+            function checkAuth() {
+                if (isAppReady()) {
+                    console.log('🔐 App pronto - verificando autenticação...');
+                    var app = getApp();
+                    var isAuth = app && typeof app.isAuthenticated === 'function' 
+                        ? app.isAuthenticated() 
+                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
+                    if (!isAuth) { redirectToLogin(); return false; }
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Autenticação verificada com sucesso!');
+                    return true;
+                }
+                console.log('🔐 Aguardando app:ready...');
+                document.addEventListener('app:ready', function handler(e) {
+                    document.removeEventListener('app:ready', handler);
+                    console.log('🔐 app:ready recebido - verificando autenticação...');
+                    var app = getApp();
+                    var isAuth = app && typeof app.isAuthenticated === 'function' 
+                        ? app.isAuthenticated() 
+                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
+                    if (!isAuth) { redirectToLogin(); return; }
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Autenticação verificada com sucesso!');
+                });
+                var timeoutId = setTimeout(function() {
+                    document.removeEventListener('app:ready', function() {});
+                    console.warn('🔐 Timeout: app não respondeu, verificando token...');
+                    var token = localStorage.getItem('access_token');
+                    if (!token || token.length <= 10) { redirectToLogin(); return; }
+                    document.body.classList.add('app-ready');
+                    document.body.classList.remove('loading-state');
+                    console.log('🔐 Acesso liberado por fallback (token presente)');
+                }, 5000);
+                document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
+                return null;
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
+            } else {
+                setTimeout(checkAuth, 100);
+            }
+            window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady };
+            console.log('✅ Fallback de autenticação carregado!');
+        })();
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 SISTEMA DE MENSAGENS INTELIGENTES -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+            console.log('📢 Inicializando MessageRenderer...');
+            class MessageRenderer {
+                constructor() {
+                    this.container = document.getElementById('messageContainer');
+                    this._dismissedMessages = new Set();
+                    this._autoDismissTimer = null;
+                    this._lastRendered = null;
+                    if (!this.container) { console.warn('⚠️ messageContainer não encontrado'); return; }
+                    this._loadDismissedState();
+                    this._setupListeners();
+                    setTimeout(() => this.render(), 400);
+                    console.log('✅ MessageRenderer inicializado');
+                }
+                _loadDismissedState() {
+                    try {
+                        var saved = localStorage.getItem('_dismissed_messages');
+                        if (saved) {
+                            var parsed = JSON.parse(saved);
+                            if (Array.isArray(parsed)) { this._dismissedMessages = new Set(parsed); }
+                        }
+                    } catch (e) {}
+                }
+                _saveDismissedState() {
+                    try {
+                        var arr = Array.from(this._dismissedMessages);
+                        localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
+                    } catch (e) {}
+                }
+                _setupListeners() {
+                    window.addEventListener('app:state_changed', (e) => {
+                        var detail = e.detail || {};
+                        if (detail.key === 'currentMessage' || detail.key === 'userSegment' || detail.key === 'credits') {
+                            setTimeout(() => this.render(), 100);
+                        }
+                    });
+                    window.addEventListener('message:context_updated', (e) => { setTimeout(() => this.render(), 150); });
+                    document.addEventListener('creditsUpdated', (e) => { setTimeout(() => this.render(), 200); });
+                    window.addEventListener('app:ready', (e) => { setTimeout(() => this.render(), 300); });
+                    window.addEventListener('authReady', (e) => { setTimeout(() => this.render(), 500); });
+                    window.addEventListener('authLoginSuccess', (e) => { setTimeout(() => this.render(), 600); });
+                }
+                render() {
+                    var state = window.__APP_STATE || window.App?.State;
+                    if (!state) return;
+                    var message = state.currentMessage;
+                    var segment = state.userSegment;
+                    var credits = state.credits;
+                    if (!message) { this._hideContainer(); return; }
+                    var messageId = message.message_id || segment + '_' + credits;
+                    if (this._dismissedMessages.has(messageId)) { this._hideContainer(); return; }
+                    this._renderMessage(message, segment, credits);
+                    this._lastRendered = messageId;
+                }
+                _renderMessage(message, segment, credits) {
+                    if (!this.container) return;
+                    var title = message.title || 'Mensagem';
+                    var icon = message.icon || 'fa-info-circle';
+                    var color = message.color || 'info';
+                    var msgText = message.message || '';
+                    var show_action = message.show_action || false;
+                    var action_text = message.action_text || 'Ver mais';
+                    var action_url = message.action_url || '#';
+                    var dismissible = message.dismissible !== undefined ? message.dismissible : true;
+                    var priority = message.priority || 0;
+                    var message_id = message.message_id || '';
+                    var colorClass = this._getColorClass(color);
+                    var iconClass = icon;
+                    var segmentClass = segment === 'new' ? 'new-user-message' : segment === 'premium' ? 'premium-message' : '';
+                    var isExternal = action_url.startsWith('http') || action_url.startsWith('//');
+                    var targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
+                    this.container.innerHTML = `
+                        <div class="message-banner message-${colorClass} ${segmentClass}" data-message-id="${message_id}" data-priority="${priority}">
+                            <div class="message-content">
+                                <div class="message-icon"><i class="fas ${iconClass}"></i></div>
+                                <div class="message-text">
+                                    <div class="message-title">${title}</div>
+                                    <div class="message-body">${msgText}</div>
+                                    ${show_action ? `<div class="message-action"><a href="${action_url}" class="btn btn-${colorClass}" ${targetAttr}>${action_text} <i class="fas fa-arrow-right ms-1"></i></a></div>` : ''}
+                                </div>
+                                ${dismissible ? `<button class="message-dismiss btn-close" aria-label="Fechar"></button>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    this.container.style.display = 'block';
+                    var dismissBtn = this.container.querySelector('.message-dismiss');
+                    if (dismissBtn) {
+                        dismissBtn.addEventListener('click', () => {
+                            var id = this.container.dataset.messageId || message_id;
+                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
+                            this._hideContainer();
+                            window.dispatchEvent(new CustomEvent('message:dismissed', { detail: { messageId: id, segment: segment, credits: credits } }));
+                        });
+                    }
+                    requestAnimationFrame(() => {
+                        var banner = this.container.querySelector('.message-banner');
+                        if (banner) { banner.classList.add('message-visible'); }
+                    });
+                    if (priority <= 1 && dismissible) {
+                        clearTimeout(this._autoDismissTimer);
+                        this._autoDismissTimer = setTimeout(() => {
+                            var id = this.container.dataset.messageId || message_id;
+                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
+                            this._hideContainer();
+                        }, 8000);
+                    }
+                }
+                _getColorClass(color) {
+                    var map = { 'success': 'success', 'warning': 'warning', 'info': 'info', 'danger': 'danger', 'primary': 'primary', 'premium': 'premium', 'dark': 'dark' };
+                    return map[color] || 'info';
+                }
+                _hideContainer() {
+                    if (this.container) { this.container.style.display = 'none'; this.container.innerHTML = ''; }
+                    clearTimeout(this._autoDismissTimer);
+                }
+                refresh() { this._dismissedMessages.clear(); this._saveDismissedState(); this.render(); }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => { window.messageRenderer = new MessageRenderer(); });
+            } else {
+                setTimeout(() => { window.messageRenderer = new MessageRenderer(); }, 300);
+            }
+            console.log('✅ MessageRenderer carregado');
+        })();
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
+    <!-- ============================================== -->
+    <script>
+        (function() {
+            'use strict';
+            console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
+            var NOTIF_CONFIG = { AUTO_CLOSE_DELAY: 6000, STORAGE_KEY: '_aa_welcome_shown', WELCOME_PERMANENT_KEY: '_aa_welcome_permanent', INITIAL_CREDITS: 3 };
+            var notification = document.getElementById('welcomeNotification');
+            var notifClose = document.getElementById('notifClose');
+            var notifDismiss = document.getElementById('notifDismiss');
+            var notifGoDashboard = document.getElementById('notifGoDashboard');
+            var notifCreditsCount = document.getElementById('notifCreditsCount');
+            var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
+            var notifTitle = document.getElementById('notifTitle');
+            var notifSubtitle = document.getElementById('notifSubtitle');
+            var progressBar = document.getElementById('notifProgressBar');
+            function getUserData() {
+                try { var userData = localStorage.getItem('user_data'); if (userData) { return JSON.parse(userData); } } catch (e) {}
+                return null;
+            }
+            function getCreditsFromState() {
+                try { if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) { return window.__APP_STATE.credits; } if (window.App && typeof window.App.getCredits === 'function') { return window.App.getCredits(); } } catch (e) {}
+                return null;
+            }
+            function shouldShowWelcome() {
+                try {
+                    if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') { return false; }
+                    if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') { return false; }
+                    var user = getUserData();
+                    if (user && user.is_admin === true) { localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true'); return false; }
+                    var credits = getCreditsFromState() || (user ? user.credits : 0);
+                    if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) { return false; }
+                    if (user && user.created_at) {
+                        var createdAt = new Date(user.created_at);
+                        var now = new Date();
+                        var diffMinutes = (now - createdAt) / (1000 * 60);
+                        if (diffMinutes < 5) { return true; }
+                    }
+                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        var totalAnalyses = user ? user.total_analyses || 0 : 0;
+                        if (totalAnalyses === 0) { return true; }
+                    }
+                    return false;
+                } catch (e) { return false; }
+            }
+            function setupNotificationContent() {
+                var user = getUserData();
+                var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
+                var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
+                if (notifCreditsCount) notifCreditsCount.textContent = credits;
+                if (notifCreditsHighlight) notifCreditsHighlight.textContent = credits;
+                if (notifTitle) notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
+                if (notifSubtitle) {
+                    if (credits > 0) {
+                        notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
+                    } else {
+                        notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
+                    }
+                }
+            }
+            function showWelcomeNotification() {
+                if (!notification) return;
+                setupNotificationContent();
+                notification.classList.add('show');
+                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+                startAutoClose();
+                window.dispatchEvent(new CustomEvent('welcome:shown', { detail: { credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS, timestamp: Date.now() } }));
+                console.log('🔔 Notificação de boas-vindas exibida!');
+            }
+            function startAutoClose() {
+                if (!progressBar) return;
+                progressBar.style.width = '100%';
+                progressBar.style.transition = 'none';
+                void progressBar.offsetWidth;
+                progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
+                setTimeout(function() { progressBar.style.width = '0%'; }, 50);
+                clearTimeout(window._notifTimer);
+                window._notifTimer = setTimeout(function() { dismissNotification(); }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
+            }
+            function dismissNotification() {
+                if (!notification) return;
+                notification.classList.remove('show');
+                clearTimeout(window._notifTimer);
+                localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
+                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+                window.dispatchEvent(new CustomEvent('welcome:dismissed', { detail: { timestamp: Date.now() } }));
+                console.log('🔔 Notificação fechada');
+            }
+            function goToDashboard() {
+                dismissNotification();
+                window.location.href = '/dashboard';
+            }
+            function setupEvents() {
+                if (notifClose) notifClose.addEventListener('click', dismissNotification);
+                if (notifDismiss) notifDismiss.addEventListener('click', dismissNotification);
+                if (notifGoDashboard) notifGoDashboard.addEventListener('click', goToDashboard);
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
+                        dismissNotification();
+                    }
+                });
+                if (notification) {
+                    notification.addEventListener('mouseenter', function() {
+                        clearTimeout(window._notifTimer);
+                        if (progressBar) {
+                            progressBar.style.transition = 'none';
+                            progressBar.style.width = progressBar.style.width || '100%';
+                        }
+                    });
+                    notification.addEventListener('mouseleave', function() {
+                        var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
+                        var percent = parseFloat(remaining) || 100;
+                        var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
+                        if (remainingTime > 500) {
+                            clearTimeout(window._notifTimer);
+                            if (progressBar) {
+                                progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
+                                progressBar.style.width = '0%';
+                            }
+                            window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
+                        }
+                    });
+                }
+            }
+            function listenAppEvents() {
+                document.addEventListener('authLoginSuccess', function(e) {
+                    var data = e.detail || {};
+                    if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 800);
+                    }
+                });
+                document.addEventListener('app:ready', function(e) {
+                    var detail = e.detail || {};
+                    setTimeout(function() { if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) { showWelcomeNotification(); } }, 500);
+                });
+                document.addEventListener('authReady', function(e) {
+                    if (e.detail && e.detail.isAuthenticated) {
+                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
+                    }
+                });
+            }
+            function init() {
+                setupEvents();
+                listenAppEvents();
+                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
+                    setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 400);
+                }
+                if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
+                    var credits = getCreditsFromState();
+                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
+                    }
+                }
+                console.log('✅ Sistema de notificação inicializado!');
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                setTimeout(init, 300);
+            }
+            window.WelcomeNotif = { show: showWelcomeNotification, dismiss: dismissNotification, shouldShow: shouldShowWelcome };
+            console.log('✅ welcome-notification.js carregado!');
+        })();
+    </script>
 
 </body>
 </html>
