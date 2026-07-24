@@ -1,4 +1,4 @@
-<!-- frontend/index.html - VERSÃO LIMPA V8.0 -->
+<!-- frontend/index.html - VERSÃO REORGANIZADA V8.1 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,7 +7,9 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <style>
-        /* ===== RESET E BASE ===== */
+        /* ==============================================
+                   RESET E BASE
+                ============================================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -20,7 +22,17 @@
         }
         body.app-ready { opacity: 1; }
 
-        /* ===== NAVBAR ===== */
+        /* ==============================================
+                   SCROLLBAR PERSONALIZADA
+                ============================================== */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,107,53,0.5); }
+
+        /* ==============================================
+                   NAVBAR
+                ============================================== */
         .navbar-modern {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
@@ -97,36 +109,58 @@
             color: white;
             transform: translateY(-2px);
         }
+        .pow-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            background: rgba(72, 187, 120, 0.15);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+            cursor: default;
+        }
 
-        /* ===== CONTEÚDO ===== */
-        .hero-section { padding: 100px 0 40px; min-height: 100vh; }
+        /* ==============================================
+                   CONTEÚDO PRINCIPAL
+                ============================================== */
+        .hero-section { padding: 90px 0 30px; min-height: 100vh; }
 
+        /* ==============================================
+                   CARDS GERAIS
+                ============================================== */
         .glass-card {
-            background: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(20px);
-            border-radius: 24px;
+            border-radius: 20px;
             padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             color: white;
+            height: 100%;
         }
         .glass-card:hover {
-            transform: translateY(-6px);
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 107, 53, 0.3);
+            transform: translateY(-4px);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 107, 53, 0.2);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         .glass-card .card-title {
             color: white;
             font-weight: 700;
-            font-size: 1.1rem;
+            font-size: 1rem;
+            margin-bottom: 1rem;
         }
         .glass-card .card-title i {
             color: #ff6b35;
             margin-right: 0.5rem;
         }
 
-        /* ===== ÁREA DE UPLOAD ===== */
+        /* ==============================================
+                   ÁREA DE UPLOAD - DESTACADA
+                ============================================== */
         .upload-area {
             border: 2px dashed rgba(255, 107, 53, 0.35);
             border-radius: 20px;
@@ -136,11 +170,19 @@
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             background: rgba(255, 107, 53, 0.04);
             position: relative;
-            min-height: 200px;
+            min-height: 220px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+        }
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: radial-gradient(circle at center, rgba(255,107,53,0.04) 0%, transparent 70%);
+            pointer-events: none;
         }
         .upload-area:hover {
             border-color: rgba(255, 107, 53, 0.7);
@@ -234,11 +276,13 @@
         .upload-area.success { border-color: #48bb78; background: rgba(72, 187, 120, 0.08); }
         .upload-area.error { border-color: #dc3545; background: rgba(220, 53, 69, 0.08); }
 
-        /* ===== FILE PREVIEW ===== */
+        /* ==============================================
+                   FILE PREVIEW
+                ============================================== */
         .file-preview-container {
-            max-height: 180px;
+            max-height: 160px;
             overflow-y: auto;
-            margin: 0.5rem 0 1rem;
+            margin: 0.5rem 0 0.8rem;
         }
         .file-preview-container::-webkit-scrollbar { width: 4px; }
         .file-preview-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
@@ -248,28 +292,28 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.5rem 1rem;
+            padding: 0.4rem 0.8rem;
             background: rgba(255,255,255,0.04);
-            border-radius: 12px;
-            margin-bottom: 0.4rem;
+            border-radius: 10px;
+            margin-bottom: 0.3rem;
             animation: slideIn 0.3s ease-out;
             border: 1px solid rgba(255,255,255,0.05);
         }
         .file-preview-item .file-info {
             display: flex;
             align-items: center;
-            gap: 0.8rem;
+            gap: 0.6rem;
             flex: 1;
             min-width: 0;
         }
         .file-preview-item .file-info i {
-            font-size: 1.4rem;
+            font-size: 1.2rem;
             color: #48bb78;
             flex-shrink: 0;
         }
         .file-preview-item .file-info .file-name {
             color: rgba(255,255,255,0.85);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -277,18 +321,18 @@
         }
         .file-preview-item .file-info .file-size {
             color: rgba(255,255,255,0.3);
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             flex-shrink: 0;
         }
         .file-preview-item .file-remove {
             background: none;
             border: none;
-            color: rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.2);
             cursor: pointer;
-            padding: 0.3rem 0.6rem;
-            border-radius: 8px;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
             transition: all 0.3s;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
         }
         .file-preview-item .file-remove:hover {
             color: #e53e3e;
@@ -299,51 +343,57 @@
             to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* ===== MÉTRICAS ===== */
+        /* ==============================================
+                   MÉTRICAS
+                ============================================== */
         .metric-card {
             background: rgba(0, 0, 0, 0.2);
-            border-radius: 16px;
+            border-radius: 14px;
             border: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 1rem;
+            padding: 0.8rem;
             text-align: center;
             transition: all 0.3s;
         }
         .metric-card:hover {
-            background: rgba(255, 107, 53, 0.1);
-            border-color: rgba(255, 107, 53, 0.2);
+            background: rgba(255, 107, 53, 0.08);
+            border-color: rgba(255, 107, 53, 0.15);
         }
         .metric-value {
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: 800;
             color: #ff6b35;
+            line-height: 1.2;
         }
         .metric-label {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.6rem;
+            color: rgba(255, 255, 255, 0.4);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            margin-top: 0.1rem;
         }
 
-        /* ===== STATUS DE ANÁLISE ===== */
+        /* ==============================================
+                   STATUS DE ANÁLISE
+                ============================================== */
         .analysis-status {
             display: none;
-            padding: 1rem;
-            border-radius: 16px;
+            padding: 0.8rem;
+            border-radius: 14px;
             text-align: center;
             background: rgba(245, 166, 35, 0.06);
             border: 1px solid rgba(245, 166, 35, 0.15);
-            margin-top: 1rem;
+            margin-top: 0.8rem;
         }
         .analysis-status.show {
             display: block;
             animation: fadeUp 0.4s ease-out;
         }
-        .analysis-status .status-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .analysis-status .status-text { font-weight: 600; color: rgba(255,255,255,0.8); }
-        .analysis-status .status-sub { font-size: 0.85rem; color: rgba(255,255,255,0.4); }
+        .analysis-status .status-icon { font-size: 2rem; margin-bottom: 0.3rem; }
+        .analysis-status .status-text { font-weight: 600; color: rgba(255,255,255,0.8); font-size: 0.9rem; }
+        .analysis-status .status-sub { font-size: 0.75rem; color: rgba(255,255,255,0.4); }
         .analysis-status .status-progress {
-            margin-top: 0.8rem;
-            height: 4px;
+            margin-top: 0.6rem;
+            height: 3px;
             background: rgba(255,255,255,0.05);
             border-radius: 10px;
             overflow: hidden;
@@ -356,15 +406,17 @@
             border-radius: 10px;
         }
 
-        /* ===== RESULTADO ===== */
+        /* ==============================================
+                   RESULTADO
+                ============================================== */
         .result-container {
             display: none;
             animation: fadeUp 0.6s ease-out;
-            margin-top: 1.5rem;
+            margin-top: 1rem;
         }
         .result-container.show { display: block; }
         @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(15px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -373,13 +425,13 @@
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 1rem;
-            margin-bottom: 1rem;
-            padding-bottom: 0.8rem;
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.6rem;
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .result-header .result-title {
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 700;
             color: white;
         }
@@ -388,9 +440,9 @@
             margin-right: 0.5rem;
         }
         .result-header .result-badge {
-            padding: 0.3rem 1rem;
+            padding: 0.2rem 0.8rem;
             border-radius: 50px;
-            font-size: 0.75rem;
+            font-size: 0.65rem;
             font-weight: 600;
         }
         .result-header .result-badge.success {
@@ -401,24 +453,24 @@
 
         .result-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 0.8rem;
-            margin-bottom: 1.2rem;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.6rem;
+            margin-bottom: 1rem;
         }
         .result-stat {
             background: rgba(0,0,0,0.15);
             border-radius: 12px;
-            padding: 0.8rem 1rem;
+            padding: 0.6rem 0.8rem;
             text-align: center;
             border: 1px solid rgba(255,255,255,0.04);
         }
         .result-stat .stat-value {
-            font-size: 1.8rem;
+            font-size: 1.5rem;
             font-weight: 800;
             color: #ff6b35;
         }
         .result-stat .stat-label {
-            font-size: 0.65rem;
+            font-size: 0.55rem;
             color: rgba(255,255,255,0.4);
             text-transform: uppercase;
             letter-spacing: 0.3px;
@@ -428,11 +480,13 @@
         .result-stat .stat-value.medium { color: #f5a623; }
         .result-stat .stat-value.bad { color: #dc3545; }
 
-        /* ===== GRÁFICOS ===== */
+        /* ==============================================
+                   GRÁFICOS
+                ============================================== */
         .chart-container {
             background: rgba(0,0,0,0.12);
             border-radius: 12px;
-            padding: 0.8rem;
+            padding: 0.6rem;
             border: 1px solid rgba(255,255,255,0.03);
             height: 100%;
         }
@@ -444,57 +498,63 @@
         }
         .chart-container .chart-title span {
             color: rgba(255,255,255,0.4);
-            font-size: 0.6rem;
+            font-size: 0.55rem;
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
         .chart-container .chart-title .badge-chart {
             background: rgba(255,107,53,0.15);
             color: #ff6b35;
-            font-size: 0.5rem;
-            padding: 0.15rem 0.6rem;
+            font-size: 0.45rem;
+            padding: 0.1rem 0.5rem;
             border-radius: 50px;
         }
         .chart-container canvas {
             width: 100% !important;
-            max-height: 120px;
+            max-height: 110px;
         }
-        .chart-container-sm canvas { max-height: 100px; }
+        .chart-container-sm canvas { max-height: 90px; }
 
+        /* ==============================================
+                   INSIGHTS
+                ============================================== */
         .result-insights { margin-top: 0.8rem; }
         .result-insight {
-            padding: 0.8rem 1rem;
+            padding: 0.6rem 0.8rem;
             background: rgba(0,0,0,0.15);
-            border-radius: 12px;
+            border-radius: 10px;
             border-left: 3px solid #ff6b35;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.4rem;
             color: rgba(255,255,255,0.8);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             line-height: 1.5;
         }
         .result-insight:last-child { margin-bottom: 0; }
         .result-insight .insight-icon {
-            margin-right: 0.5rem;
+            margin-right: 0.4rem;
             color: #ff6b35;
         }
 
+        /* ==============================================
+                   AÇÕES
+                ============================================== */
         .result-actions {
             display: flex;
-            gap: 0.8rem;
-            margin-top: 1rem;
+            gap: 0.6rem;
+            margin-top: 0.8rem;
             flex-wrap: wrap;
         }
         .result-actions .btn-result {
-            padding: 0.5rem 1.2rem;
+            padding: 0.4rem 1rem;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             border: none;
             transition: all 0.3s;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
         }
         .result-actions .btn-result-primary {
             background: linear-gradient(135deg, #ff6b35, #f7931e);
@@ -515,7 +575,9 @@
             color: white;
         }
 
-        /* ===== LOADING OVERLAY ===== */
+        /* ==============================================
+                   LOADING OVERLAY
+                ============================================== */
         .loading-overlay {
             display: none;
             position: fixed;
@@ -535,7 +597,7 @@
             50% { opacity: 0.6; transform: scale(1.05); }
         }
         .loading-overlay .loading-title { color: #ff6b35; font-weight: 800; font-size: 1.5rem; }
-        .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+        .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.9rem; }
         .loading-overlay .loading-progress { margin-top: 1.5rem; }
         .loading-overlay .progress {
             height: 4px;
@@ -551,15 +613,17 @@
         }
         .loading-overlay .loading-percent {
             color: rgba(255,255,255,0.3);
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             margin-top: 0.5rem;
         }
 
-        /* ===== TIMELINE ===== */
+        /* ==============================================
+                   TIMELINE (HISTÓRICO)
+                ============================================== */
         .timeline {
             position: relative;
             padding-left: 1.5rem;
-            max-height: 250px;
+            max-height: 200px;
             overflow-y: auto;
         }
         .timeline::-webkit-scrollbar { width: 4px; }
@@ -576,14 +640,14 @@
             border-radius: 2px;
             opacity: 0.3;
         }
-        .timeline-item { position: relative; padding-bottom: 1.2rem; }
+        .timeline-item { position: relative; padding-bottom: 1rem; }
         .timeline-item:last-child { padding-bottom: 0; }
         .timeline-marker {
             position: absolute;
             left: -1.5rem;
-            top: 0.25rem;
-            width: 12px;
-            height: 12px;
+            top: 0.2rem;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: #ff6b35;
             border: 2px solid white;
@@ -593,20 +657,26 @@
             background: #48bb78;
             box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.3);
         }
-        .timeline-content { padding-left: 0.5rem; color: rgba(255, 255, 255, 0.85); }
+        .timeline-content { padding-left: 0.5rem; color: rgba(255, 255, 255, 0.85); font-size: 0.85rem; }
         .timeline-content strong { color: #f5a623; }
+        .timeline-content .timeline-date {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.3);
+        }
 
-        /* ===== WELCOME NOTIFICATION ===== */
+        /* ==============================================
+                   WELCOME NOTIFICATION
+                ============================================== */
         .welcome-notification {
             position: fixed;
             top: 80px;
             right: 20px;
-            max-width: 420px;
+            max-width: 400px;
             width: 100%;
             background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
             border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 20px;
-            padding: 1.5rem 1.8rem;
+            border-radius: 18px;
+            padding: 1.2rem 1.5rem;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 107, 53, 0.1);
             z-index: 9998;
             transform: translateX(120%);
@@ -615,54 +685,54 @@
         }
         .welcome-notification.show { transform: translateX(0); }
         .welcome-notification .notif-icon {
-            width: 60px;
-            height: 60px;
+            width: 50px;
+            height: 50px;
             background: linear-gradient(135deg, #ff6b35, #f7931e);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.8rem;
+            font-size: 1.5rem;
             color: white;
             flex-shrink: 0;
         }
         .welcome-notification .notif-content { flex: 1; }
         .welcome-notification .notif-title {
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 800;
             color: #ff6b35;
-            margin-bottom: 0.2rem;
+            margin-bottom: 0.1rem;
         }
         .welcome-notification .notif-subtitle {
-            font-size: 0.9rem;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 0.4rem;
         }
         .welcome-notification .notif-credits {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
             background: rgba(255, 107, 53, 0.12);
             border: 1px solid rgba(255, 107, 53, 0.2);
             border-radius: 50px;
-            padding: 0.3rem 1.2rem;
-            font-size: 1.3rem;
+            padding: 0.2rem 1rem;
+            font-size: 1.1rem;
             font-weight: 800;
             color: #f5a623;
         }
-        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 1.2rem; }
+        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 1rem; }
         .welcome-notification .notif-actions {
             display: flex;
-            gap: 0.5rem;
-            margin-top: 0.8rem;
+            gap: 0.4rem;
+            margin-top: 0.6rem;
             flex-wrap: wrap;
         }
         .welcome-notification .notif-btn {
-            padding: 0.4rem 1.2rem;
+            padding: 0.3rem 1rem;
             border-radius: 50px;
             border: none;
             font-weight: 600;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             transition: all 0.3s;
             cursor: pointer;
         }
@@ -685,16 +755,15 @@
         }
         .welcome-notification .notif-close {
             position: absolute;
-            top: 10px;
-            right: 12px;
+            top: 8px;
+            right: 10px;
             background: none;
             border: none;
             color: rgba(255, 255, 255, 0.2);
-            font-size: 1.2rem;
+            font-size: 1rem;
             cursor: pointer;
-            transition: all 0.3s;
             padding: 0.2rem 0.4rem;
-            border-radius: 8px;
+            border-radius: 6px;
         }
         .welcome-notification .notif-close:hover { color: white; background: rgba(255, 255, 255, 0.05); }
         .welcome-notification .notif-progress {
@@ -702,40 +771,42 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 3px;
+            height: 2px;
             background: rgba(255, 255, 255, 0.05);
-            border-radius: 0 0 20px 20px;
+            border-radius: 0 0 18px 18px;
             overflow: hidden;
         }
         .welcome-notification .notif-progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #ff6b35, #f7931e);
-            border-radius: 0 0 20px 20px;
+            border-radius: 0 0 18px 18px;
             transition: width 6s linear;
             width: 100%;
         }
 
-        /* ===== MENSAGENS ===== */
+        /* ==============================================
+                   MENSAGENS
+                ============================================== */
         #messageContainer {
             position: fixed;
             top: 80px;
             right: 20px;
             z-index: 1050;
-            max-width: 420px;
+            max-width: 400px;
             width: 100%;
             pointer-events: none;
         }
         #messageContainer .message-banner { pointer-events: auto; }
         .message-banner {
             background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border-radius: 16px;
-            padding: 16px 20px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 40px rgba(255,107,53,0.05);
+            border-radius: 14px;
+            padding: 14px 18px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
             border-left: 4px solid #6c757d;
             transform: translateX(30px);
             opacity: 0;
             transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255,255,255,0.06);
         }
@@ -745,24 +816,24 @@
         .message-banner.message-info { border-left-color: #17a2b8; }
         .message-banner.message-danger { border-left-color: #dc3545; }
         .message-banner.message-primary { border-left-color: #007bff; }
-        .message-content { display: flex; align-items: flex-start; gap: 12px; }
-        .message-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+        .message-content { display: flex; align-items: flex-start; gap: 10px; }
+        .message-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
         .message-success .message-icon { color: #28a745; }
         .message-warning .message-icon { color: #ffc107; }
         .message-info .message-icon { color: #17a2b8; }
         .message-danger .message-icon { color: #dc3545; }
         .message-primary .message-icon { color: #007bff; }
         .message-text { flex: 1; min-width: 0; }
-        .message-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; color: #ffffff; }
-        .message-body { font-size: 0.9rem; color: rgba(255,255,255,0.7); line-height: 1.4; }
-        .message-action { margin-top: 8px; }
-        .message-action .btn { font-size: 0.8rem; padding: 4px 14px; border-radius: 20px; font-weight: 600; }
+        .message-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 1px; color: #ffffff; }
+        .message-body { font-size: 0.8rem; color: rgba(255,255,255,0.6); line-height: 1.4; }
+        .message-action { margin-top: 6px; }
+        .message-action .btn { font-size: 0.7rem; padding: 3px 12px; border-radius: 20px; font-weight: 600; }
         .message-dismiss {
             flex-shrink: 0;
             background: transparent;
             border: none;
             padding: 4px;
-            font-size: 1.2rem;
+            font-size: 1rem;
             opacity: 0.3;
             transition: opacity 0.2s;
             margin-top: -4px;
@@ -770,9 +841,11 @@
         }
         .message-dismiss:hover { opacity: 1; }
 
-        /* ===== RESPONSIVIDADE ===== */
+        /* ==============================================
+                   RESPONSIVIDADE
+                ============================================== */
         @media (max-width: 992px) {
-            .hero-section { padding: 90px 0 30px; }
+            .hero-section { padding: 85px 0 25px; }
             .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
         }
         @media (max-width: 768px) {
@@ -785,14 +858,14 @@
             .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
             .metric-value { font-size: 1.5rem; }
             .upload-area { min-height: 160px; padding: 1.5rem; }
-            .result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+            .result-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
             #messageContainer {
                 top: 70px;
                 right: 10px;
                 left: 10px;
                 max-width: none;
             }
-            .message-banner { padding: 12px 16px; border-radius: 12px; }
+            .message-banner { padding: 10px 14px; border-radius: 10px; }
             .welcome-notification {
                 top: 70px;
                 right: 10px;
@@ -801,16 +874,17 @@
                 padding: 1rem 1.2rem;
             }
             .chart-container canvas { max-height: 100px; }
+            .glass-card { padding: 1rem; }
         }
         @media (max-width: 480px) {
-            .hero-section { padding: 80px 0 20px; }
-            .glass-card { padding: 1rem; }
+            .hero-section { padding: 75px 0 15px; }
             .upload-area { padding: 1rem; min-height: 140px; }
             .upload-area .upload-icon { font-size: 2.2rem; }
             .upload-area h4 { font-size: 0.9rem; }
             .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
             .result-grid { grid-template-columns: 1fr 1fr; }
             .chart-container canvas { max-height: 80px; }
+            .result-stat .stat-value { font-size: 1.2rem; }
         }
     </style>
 </head>
@@ -838,7 +912,7 @@
                         <span id="creditsCount">0</span>
                     </div>
                     
-                    <span class="pow-status loading" id="powStatus" title="Proof of Work">
+                    <span class="pow-status" id="powStatus">
                         <i class="fas fa-shield-alt"></i>
                         <span id="powStatusText">⚡ Pronto</span>
                     </span>
@@ -879,7 +953,7 @@
                         <i class="fas fa-coins"></i>
                         <span id="notifCreditsCount">3</span> créditos grátis
                     </span>
-                    <span style="font-size:0.65rem; color: rgba(255,255,255,0.2);">
+                    <span style="font-size:0.6rem; color: rgba(255,255,255,0.2);">
                         <i class="fas fa-bolt me-1" style="color:#f5a623;"></i>
                         Válido por 30 dias
                     </span>
@@ -925,83 +999,111 @@
             <!-- ===== INTRO ===== -->
             <div class="row mb-4">
                 <div class="col-12 text-center">
-                    <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                    <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.15rem 0.8rem; border-radius:50px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
                         <i class="fas fa-robot me-1"></i> Inteligência Artificial para Mecânicos
                     </span>
-                    <h1 class="display-4 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                    <h1 class="display-5 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size:2.5rem;">
                         Transforme dados em resultados
                     </h1>
-                    <p class="lead" style="color: rgba(255,255,255,0.6); max-width: 700px; margin: 0 auto;">
+                    <p class="lead" style="color: rgba(255,255,255,0.5); max-width: 600px; margin: 0 auto; font-size:1rem;">
                         Analise dados da sua oficina, preveja problemas e otimize seus lucros com IA
                     </p>
                 </div>
             </div>
 
+            <!-- ===== LINHA PRINCIPAL: PAINEL + UPLOAD ===== -->
             <div class="row g-4">
                 
-                <!-- ===== COLUNA ESQUERDA - MÉTRICAS ===== -->
+                <!-- ===== COLUNA ESQUERDA: PAINEL DO USUÁRIO ===== -->
                 <div class="col-lg-4">
                     <div class="row g-3">
+                        <!-- CARD: Métricas -->
                         <div class="col-12">
                             <div class="glass-card">
-                                <h5 class="card-title mb-3">
+                                <h5 class="card-title">
                                     <i class="fas fa-chart-simple"></i> Seu Painel
                                 </h5>
                                 <div class="row g-2">
-                                    <div class="col-6">
+                                    <div class="col-4">
                                         <div class="metric-card">
                                             <div class="metric-value" id="totalAnalises">0</div>
                                             <div class="metric-label">Análises</div>
                                         </div>
                                     </div>
-                                    <div class="col-6">
+                                    <div class="col-4">
                                         <div class="metric-card">
                                             <div class="metric-value" id="analisesHoje">0</div>
                                             <div class="metric-label">Hoje</div>
                                         </div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-4">
                                         <div class="metric-card">
                                             <div class="metric-value" id="creditsDisplay">0</div>
-                                            <div class="metric-label">Créditos Disponíveis</div>
+                                            <div class="metric-label">Créditos</div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- STATUS PREMIUM -->
+                        <!-- CARD: Status Premium -->
                         <div class="col-12">
                             <div class="glass-card" id="premiumStatusContainer">
-                                <div class="text-center py-3">
-                                    <div class="spinner-border text-warning" role="status" style="width: 1.5rem; height: 1.5rem; color: #ff6b35 !important;">
+                                <h5 class="card-title">
+                                    <i class="fas fa-crown"></i> Status
+                                </h5>
+                                <div class="text-center py-2">
+                                    <div class="spinner-border text-warning" role="status" style="width: 1.2rem; height: 1.2rem; color: #ff6b35 !important;">
                                         <span class="visually-hidden">Carregando...</span>
                                     </div>
-                                    <p class="mt-2 small" style="color: rgba(255,255,255,0.4);">Carregando status...</p>
+                                    <p class="mt-1 small" style="color: rgba(255,255,255,0.3); font-size:0.7rem;">Carregando status...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- CARD: Dicas Rápidas -->
+                        <div class="col-12">
+                            <div class="glass-card">
+                                <h5 class="card-title">
+                                    <i class="fas fa-lightbulb"></i> Dicas Rápidas
+                                </h5>
+                                <div style="font-size:0.75rem; color: rgba(255,255,255,0.5); line-height:1.6;">
+                                    <div style="display:flex; gap:0.5rem; margin-bottom:0.3rem;">
+                                        <span style="color:#ff6b35;">📁</span>
+                                        <span>Arraste arquivos CSV ou Excel</span>
+                                    </div>
+                                    <div style="display:flex; gap:0.5rem; margin-bottom:0.3rem;">
+                                        <span style="color:#ff6b35;">💰</span>
+                                        <span>Cada análise consome <strong style="color:#f5a623;">1 crédito</strong></span>
+                                    </div>
+                                    <div style="display:flex; gap:0.5rem;">
+                                        <span style="color:#ff6b35;">📊</span>
+                                        <span>Receba insights e recomendações da IA</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- ===== COLUNA CENTRAL - UPLOAD E RELATÓRIO ===== -->
+                <!-- ===== COLUNA DIREITA: UPLOAD DESTACADO ===== -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- 🔥 UPLOAD -->
+                        <!-- CARD: UPLOAD - ÁREA PRINCIPAL -->
                         <div class="col-12">
-                            <div class="glass-card">
-                                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
+                            <div class="glass-card" style="border-color: rgba(255,107,53,0.15);">
+                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
                                     <h5 class="card-title mb-0">
                                         <i class="fas fa-cloud-upload-alt"></i> Envie seus arquivos
                                     </h5>
-                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding: 0.3rem 0.8rem;">
+                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding: 0.25rem 0.8rem; font-size:0.7rem;">
                                         <i class="fas fa-coins me-1"></i>
                                         <span id="uploadCredits">0</span> créditos
                                     </span>
                                 </div>
                                 
-                                <div class="limit-info" style="background:rgba(0,0,0,0.2); border-radius:12px; padding:0.5rem 1rem; margin-bottom:1rem; text-align:center; font-size:0.75rem; border:1px solid rgba(255,255,255,0.05); color:rgba(255,255,255,0.6);">
-                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
+                                <div class="limit-info" style="background:rgba(0,0,0,0.15); border-radius:10px; padding:0.3rem 0.8rem; margin-bottom:0.8rem; text-align:center; font-size:0.65rem; border:1px solid rgba(255,255,255,0.03); color:rgba(255,255,255,0.4);">
+                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-2">
                                         <span><i class="fas fa-hard-drive"></i> <strong style="color:#ff6b35;">200 KB</strong>/arquivo</span>
                                         <span><i class="fas fa-layer-group"></i> <strong style="color:#ff6b35;">3</strong> arquivos/vez</span>
                                         <span><i class="fas fa-coins"></i> <strong style="color:#ff6b35;">1</strong> crédito/arquivo</span>
@@ -1042,113 +1144,118 @@
                                 </form>
                             </div>
                         </div>
-                        
-                        <!-- 🔥 RELATÓRIO DE ANÁLISE COM GRÁFICOS -->
-                        <div class="col-12">
-                            <div class="glass-card" id="resultCard">
-                                <div class="result-container" id="resultContainer">
-                                    <div class="result-header">
-                                        <div class="result-title">
-                                            <i class="fas fa-chart-line"></i> Relatório da Análise
-                                        </div>
-                                        <span class="result-badge success">
-                                            <i class="fas fa-check-circle"></i> Concluído
-                                        </span>
-                                    </div>
-                                    
-                                    <!-- Métricas -->
-                                    <div class="result-grid" id="resultMetrics"></div>
-                                    
-                                    <!-- 🔥 GRÁFICOS -->
-                                    <div class="row g-3 mt-2">
-                                        <div class="col-md-6">
-                                            <div class="chart-container">
-                                                <div class="chart-title">
-                                                    <span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
-                                                    <span class="badge-chart" id="riskBadge">0 alto</span>
-                                                </div>
-                                                <canvas id="riskChart" height="120"></canvas>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="chart-container">
-                                                <div class="chart-title">
-                                                    <span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Score de Confiança</span>
-                                                    <span class="badge-chart" id="scoreBadge">0%</span>
-                                                </div>
-                                                <canvas id="predChart" height="120"></canvas>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- 🔥 DONUT + RESUMO -->
-                                    <div class="row g-3 mt-1">
-                                        <div class="col-md-4">
-                                            <div class="chart-container chart-container-sm">
-                                                <div class="chart-title">
-                                                    <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span>
-                                                </div>
-                                                <canvas id="donutChart" height="100"></canvas>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-8">
-                                            <div class="chart-container">
-                                                <div class="chart-title">
-                                                    <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo Executivo</span>
-                                                    <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
-                                                </div>
-                                                <div id="resultSummary" style="color: rgba(255,255,255,0.7); font-size:0.85rem; line-height:1.6; min-height:50px; padding:0.2rem 0;">
-                                                    <span style="color: rgba(255,255,255,0.3);">Aguardando análise...</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Insights -->
-                                    <div class="result-insights" id="resultInsights"></div>
-                                    
-                                    <!-- Ações -->
-                                    <div class="result-actions">
-                                        <button class="btn-result btn-result-primary" id="downloadPdfBtn">
-                                            <i class="fas fa-file-pdf"></i> Baixar PDF
-                                        </button>
-                                        <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
-                                            <i class="fas fa-plus"></i> Nova Análise
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <!-- Placeholder -->
-                                <div id="resultPlaceholder" style="text-align:center; padding:1.5rem 0; color: rgba(255,255,255,0.2);">
-                                    <i class="fas fa-file-alt fa-3x mb-3" style="opacity:0.3;"></i>
-                                    <p style="font-size:0.9rem;">Seu relatório aparecerá aqui após a análise</p>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
                 
             </div>
 
-            <!-- ===== HISTÓRICO ===== -->
+            <!-- ===== LINHA DE RESULTADO ===== -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="glass-card" id="resultCard">
+                        <!-- RELATÓRIO -->
+                        <div class="result-container" id="resultContainer">
+                            <div class="result-header">
+                                <div class="result-title">
+                                    <i class="fas fa-chart-line"></i> Relatório da Análise
+                                </div>
+                                <span class="result-badge success">
+                                    <i class="fas fa-check-circle"></i> Concluído
+                                </span>
+                            </div>
+                            
+                            <!-- Métricas -->
+                            <div class="result-grid" id="resultMetrics"></div>
+                            
+                            <!-- GRÁFICOS -->
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="chart-container">
+                                        <div class="chart-title">
+                                            <span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
+                                            <span class="badge-chart" id="riskBadge">0 alto</span>
+                                        </div>
+                                        <canvas id="riskChart" height="110"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-container">
+                                        <div class="chart-title">
+                                            <span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Score de Confiança</span>
+                                            <span class="badge-chart" id="scoreBadge">0%</span>
+                                        </div>
+                                        <canvas id="predChart" height="110"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- DONUT + RESUMO -->
+                            <div class="row g-3 mt-1">
+                                <div class="col-md-4">
+                                    <div class="chart-container chart-container-sm">
+                                        <div class="chart-title">
+                                            <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span>
+                                        </div>
+                                        <canvas id="donutChart" height="90"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="chart-container">
+                                        <div class="chart-title">
+                                            <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo Executivo</span>
+                                            <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
+                                        </div>
+                                        <div id="resultSummary" style="color: rgba(255,255,255,0.6); font-size:0.8rem; line-height:1.5; min-height:45px; padding:0.2rem 0;">
+                                            <span style="color: rgba(255,255,255,0.25);">Aguardando análise...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Insights -->
+                            <div class="result-insights" id="resultInsights"></div>
+                            
+                            <!-- Ações -->
+                            <div class="result-actions">
+                                <button class="btn-result btn-result-primary" id="downloadPdfBtn">
+                                    <i class="fas fa-file-pdf"></i> Baixar PDF
+                                </button>
+                                <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
+                                    <i class="fas fa-plus"></i> Nova Análise
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- PLACEHOLDER -->
+                        <div id="resultPlaceholder" style="text-align:center; padding:1.5rem 0; color: rgba(255,255,255,0.15);">
+                            <i class="fas fa-file-alt fa-3x mb-3" style="opacity:0.3;"></i>
+                            <p style="font-size:0.85rem;">Seu relatório aparecerá aqui após a análise</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== LINHA DE HISTÓRICO ===== -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card">
-                        <div class="d-flex align-items-center mb-3">
-                            <i class="fas fa-history me-2" style="color: #ff6b35;"></i>
-                            <h5 class="card-title mb-0">Seu histórico de análises</h5>
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-history"></i> Histórico de análises
+                            </h5>
+                            <span class="badge" style="background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.3); font-size:0.6rem;" id="historyCount">0</span>
                         </div>
                         <div class="timeline" id="recentAnalyses">
                             <div class="timeline-item">
                                 <div class="timeline-marker" style="background:#ff6b35; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
                                 <div class="timeline-content">
-                                    <p class="mb-1 small">Carregando histórico...</p>
-                                    <small style="color: rgba(255,255,255,0.3);">Aguarde</small>
+                                    <p class="mb-0 small" style="color:rgba(255,255,255,0.3);">Carregando histórico...</p>
+                                    <span class="timeline-date">Aguarde</span>
                                 </div>
                             </div>
                         </div>
                         <div class="mt-2 text-center">
-                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: #ff6b35;">
+                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: rgba(255,107,53,0.5); font-size:0.7rem;">
                                 <i class="fas fa-eye me-1"></i> Ver todas
                             </button>
                         </div>
@@ -1157,11 +1264,11 @@
             </div>
 
             <!-- ===== RODAPÉ ===== -->
-            <div class="row mt-5">
+            <div class="row mt-4">
                 <div class="col-12 text-center">
-                    <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
+                    <p style="color: rgba(255,255,255,0.08); font-size: 0.6rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v8.0 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v8.1 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1176,8 +1283,10 @@
     </section>
 
     <!-- ============================================== -->
-    <!-- 🔥 MODAL DE CRÉDITOS -->
+    <!-- 🔥 MODAIS -->
     <!-- ============================================== -->
+    
+    <!-- MODAL CRÉDITOS -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
@@ -1191,19 +1300,18 @@
                 <div class="modal-body text-center py-4">
                     <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
                     <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
-                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.5);">créditos disponíveis</p>
-                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.15) !important; color:rgba(255,255,255,0.85) !important;">
+                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.4); font-size:0.9rem;">créditos disponíveis</p>
+                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.12) !important; color:rgba(255,255,255,0.8) !important; font-size:0.75rem; text-align:left;">
                         <i class="fas fa-info-circle me-2"></i>
                         <strong style="color: #ff6b35;">Como funcionam:</strong><br>
                         • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
                         • ⭐ Premium ganha 1 crédito por dia<br>
                         • Cada análise consome 1 crédito<br>
-                        • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
-                        • 🔥 Limite máximo de 3 créditos acumulados
+                        • 📁 Até 3 arquivos por vez (máx 200KB cada)
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.1);">
-                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.75rem; border-radius: 50px; font-weight: 700;">
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.06);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.6rem; border-radius: 50px; font-weight: 700; font-size:0.85rem;">
                         <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
                     </a>
                 </div>
@@ -1211,9 +1319,7 @@
         </div>
     </div>
 
-    <!-- ============================================== -->
-    <!-- 🔥 MODAL GPSA -->
-    <!-- ============================================== -->
+    <!-- MODAL GPSA -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
             <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
@@ -1229,7 +1335,7 @@
                         <div class="spinner-border text-warning" role="status" style="color: #ff6b35;">
                             <span class="visually-hidden">Carregando...</span>
                         </div>
-                        <p class="mt-3" style="color: rgba(255,255,255,0.4);">Carregando análise...</p>
+                        <p class="mt-3" style="color: rgba(255,255,255,0.3);">Carregando análise...</p>
                     </div>
                 </div>
             </div>
@@ -1249,22 +1355,22 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white-50 mb-3">
+                    <p class="text-white-50 mb-3" style="font-size:0.9rem;">
                         <i class="fas fa-shield-alt me-2"></i> 
                         CPF obrigatório para gerar PIX e proteger sua compra.
                     </p>
                     <div class="mb-3">
-                        <label class="form-label text-white">CPF</label>
+                        <label class="form-label text-white" style="font-size:0.85rem;">CPF</label>
                         <input type="text" class="form-control form-control-lg" 
                                id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
-                               style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;">
-                        <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
+                               style="background: rgba(255,255,255,0.08); border-color: #f5a623; color: white; border-radius:10px; font-size:1rem;">
+                        <div class="form-text text-white-50" style="font-size:0.7rem;">Apenas números (11 dígitos)</div>
                     </div>
                     <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
                 </div>
                 <div class="modal-footer border-0">
-                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.5rem 1.5rem; font-weight:700;">
+                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.4rem 1.5rem; font-size:0.8rem;" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.4rem 1.5rem; font-weight:700; font-size:0.8rem;">
                         <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
                     </button>
                 </div>
@@ -1275,50 +1381,50 @@
     <template id="pixModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
                     <h5 class="modal-title" style="color: #f5a623;">
                         <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center py-4">
-                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.15); border-color: #28a745; color: #48bb78;">
+                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.12); border-color: #28a745; color: #48bb78; font-size:0.85rem;">
                         <i class="fas fa-gem me-2"></i>
                         <strong id="pixPromoText">🎉 VOCÊ GARANTIU O PREÇO FUNDADOR!</strong><br>
                         <small id="pixPriceText">R$ 97,00 - Preço bloqueado VITALÍCIO!</small>
                     </div>
                     
-                    <h6 class="mb-3" style="color: rgba(255,255,255,0.7);">Escaneie o QR Code com seu banco</h6>
+                    <h6 class="mb-3" style="color: rgba(255,255,255,0.5); font-size:0.85rem;">Escaneie o QR Code com seu banco</h6>
                     
                     <div class="text-center mb-3">
-                        <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
-                            <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px; display: none;">
-                            <div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>
+                        <div class="p-3 d-inline-block" style="background: white; border-radius: 14px;">
+                            <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 180px; border-radius: 6px; display: none;">
+                            <div id="pixQrPlaceholder" style="width:180px; height:180px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:6px; color:#999; font-size:13px;">QR Code indisponível</div>
                         </div>
                     </div>
                     
                     <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
-                        <code id="pixCodeText" class="small" style="color: #f5a623;">autonalytics@gmail.com</code>
+                        <code id="pixCodeText" class="small" style="color: #f5a623; font-size:0.75rem;">autonalytics@gmail.com</code>
                     </div>
                     
                     <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
-                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.3); border-radius: 12px; padding: 0.75rem;">
+                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.2); border-radius: 10px; padding: 0.6rem; font-size:0.8rem;">
                         <i class="fas fa-copy me-2"></i> Copiar Chave PIX
                     </button>
                     
-                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.08); border-color: rgba(205,127,50,0.2); color: rgba(255,255,255,0.7);">
+                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.06); border-color: rgba(205,127,50,0.15); color: rgba(255,255,255,0.6); font-size:0.7rem; text-align:left;">
                         <i class="fas fa-info-circle me-2"></i>
                         <strong>Informações do pagamento:</strong><br>
                         <strong id="pixPlanText">Plano Bronze</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
                         <span class="text-success" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
-                        <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
+                        <span style="color: rgba(255,255,255,0.4);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
                     </div>
                     
                     <div id="paymentStatus" class="mt-2"></div>
                 </div>
                 <div class="modal-footer border-0 justify-content-center" style="border-top: 1px solid rgba(255,255,255,0.06);">
                     <button type="button" class="btn w-100" id="pixVerifyBtn" 
-                            style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); border: none; border-radius: 50px; padding: 0.75rem;">
+                            style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); border: none; border-radius: 50px; padding: 0.6rem; font-size:0.8rem;">
                         <i class="fas fa-check-circle me-2"></i> Já realizei o pagamento / Atualizar
                     </button>
                 </div>
@@ -1350,71 +1456,6 @@
     <script src="/static/js/auth.js?ver=4.1.0"></script>
     <script src="/static/js/payment.js?ver=7.1.0"></script>
     <script src="/static/js/dashboard.js?ver=7.4.0"></script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            console.log('🔐 Inicializando fallback de autenticação...');
-            function getApp() { return window.App || window.app || window.autoAnalytics; }
-            function isAppReady() {
-                var app = getApp();
-                if (app && typeof app.isReady === 'function') { return app.isReady(); }
-                return !!window._appReadyFired;
-            }
-            function redirectToLogin() {
-                console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
-                window.location.replace('/login');
-            }
-            function checkAuth() {
-                if (isAppReady()) {
-                    console.log('🔐 App pronto - verificando autenticação...');
-                    var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
-                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    if (!isAuth) { redirectToLogin(); return false; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
-                    return true;
-                }
-                console.log('🔐 Aguardando app:ready...');
-                document.addEventListener('app:ready', function handler(e) {
-                    document.removeEventListener('app:ready', handler);
-                    console.log('🔐 app:ready recebido - verificando autenticação...');
-                    var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
-                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    if (!isAuth) { redirectToLogin(); return; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
-                });
-                var timeoutId = setTimeout(function() {
-                    document.removeEventListener('app:ready', function() {});
-                    console.warn('🔐 Timeout: app não respondeu, verificando token...');
-                    var token = localStorage.getItem('access_token');
-                    if (!token || token.length <= 10) { redirectToLogin(); return; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Acesso liberado por fallback (token presente)');
-                }, 5000);
-                document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
-                return null;
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
-            } else {
-                setTimeout(checkAuth, 100);
-            }
-            window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady };
-            console.log('✅ Fallback de autenticação carregado!');
-        })();
-    </script>
 
     <!-- ============================================== -->
     <!-- 🔥 SISTEMA DE UPLOAD E RELATÓRIO COM GRÁFICOS -->
