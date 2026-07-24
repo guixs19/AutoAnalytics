@@ -1,4 +1,3 @@
-<!-- frontend/index.html - VERSÃO REORGANIZADA V8.1 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,9 +6,7 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <style>
-        /* ==============================================
-                   RESET E BASE
-                ============================================== */
+        /* ===== RESET E BASE ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -22,30 +19,32 @@
         }
         body.app-ready { opacity: 1; }
 
-        /* ==============================================
-                   SCROLLBAR PERSONALIZADA
-                ============================================== */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        /* ===== SCROLLBAR ===== */
+        ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,107,53,0.5); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.4); border-radius: 10px; }
 
-        /* ==============================================
-                   NAVBAR
-                ============================================== */
+        /* ===== NAVBAR ===== */
         .navbar-modern {
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.97);
             backdrop-filter: blur(20px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-            padding: 0.6rem 0;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12);
+            padding: 0.5rem 0;
             position: fixed;
             width: 100%;
             top: 0;
             z-index: 1000;
-            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+            border-bottom: 3px solid rgba(255, 107, 53, 0.4);
+        }
+        .navbar-modern .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
         .brand-text {
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             font-weight: 900;
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             -webkit-background-clip: text;
@@ -55,344 +54,263 @@
         .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
         .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
 
-        .credits-badge {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            padding: 0.4rem 1.2rem;
-            border-radius: 50px;
-            color: white;
-            font-weight: 700;
-            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
-            transition: all 0.3s;
-            cursor: pointer;
-            border: none;
-            font-size: 0.85rem;
-        }
-        .credits-badge:hover {
-            transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.6);
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
         }
         .user-name-display {
             font-weight: 600;
             color: #2d3748;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
         }
         .user-name-display i { color: #ff6b35; }
-        .btn-planos {
+
+        /* CRÉDITOS EM DESTAQUE */
+        .credits-badge-nav {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            color: white;
-            border: none;
-            padding: 0.4rem 1.2rem;
+            padding: 0.25rem 0.9rem;
             border-radius: 50px;
+            color: white;
             font-weight: 700;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.35);
             transition: all 0.3s;
-            text-decoration: none;
-        }
-        .btn-planos:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
-            color: white;
-        }
-        .btn-sair {
-            background: transparent;
-            border: 2px solid #e53e3e;
-            color: #e53e3e;
-            padding: 0.3rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-            text-decoration: none;
-        }
-        .btn-sair:hover {
-            background: #e53e3e;
-            color: white;
-            transform: translateY(-2px);
-        }
-        .pow-status {
+            cursor: pointer;
+            border: none;
             display: inline-flex;
             align-items: center;
             gap: 0.3rem;
-            padding: 0.15rem 0.6rem;
+        }
+        .credits-badge-nav:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.5);
+        }
+        .credits-badge-nav .credits-number {
+            background: rgba(255,255,255,0.2);
+            padding: 0.02rem 0.4rem;
             border-radius: 50px;
-            font-size: 0.6rem;
-            font-weight: 700;
-            background: rgba(72, 187, 120, 0.15);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
-            cursor: default;
+            font-size: 0.65rem;
         }
 
-        /* ==============================================
-                   CONTEÚDO PRINCIPAL
-                ============================================== */
-        .hero-section { padding: 90px 0 30px; min-height: 100vh; }
+        .btn-planos-nav {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 0.25rem 0.9rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.7rem;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .btn-planos-nav:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,0.35); color: white; }
+        .btn-sair-nav {
+            background: transparent;
+            border: 2px solid #e53e3e;
+            color: #e53e3e;
+            padding: 0.2rem 0.7rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.65rem;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-sair-nav:hover { background: #e53e3e; color: white; transform: translateY(-2px); }
 
-        /* ==============================================
-                   CARDS GERAIS
-                ============================================== */
+        /* ===== CONTEÚDO ===== */
+        .hero-section { padding: 75px 0 20px; min-height: 100vh; }
+
+        /* ===== CARDS ===== */
         .glass-card {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.07);
             backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 18px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             color: white;
             height: 100%;
         }
         .glass-card:hover {
-            transform: translateY(-4px);
-            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.1);
             border-color: rgba(255, 107, 53, 0.2);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
         }
         .glass-card .card-title {
             color: white;
             font-weight: 700;
-            font-size: 1rem;
-            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            margin-bottom: 0.6rem;
         }
-        .glass-card .card-title i {
+        .glass-card .card-title i { color: #ff6b35; margin-right: 0.4rem; }
+
+        /* ===== MÉTRICAS ===== */
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.4rem;
+        }
+        .metric-card {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0.5rem 0.3rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .metric-card:hover { background: rgba(255,107,53,0.08); border-color: rgba(255,107,53,0.15); }
+        .metric-value {
+            font-size: 1.4rem;
+            font-weight: 800;
             color: #ff6b35;
-            margin-right: 0.5rem;
+            line-height: 1.2;
+        }
+        .metric-label {
+            font-size: 0.5rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 0.05rem;
+        }
+        .metric-value.credits-highlight {
+            font-size: 1.6rem;
+            color: #f5a623;
         }
 
-        /* ==============================================
-                   ÁREA DE UPLOAD - DESTACADA
-                ============================================== */
+        /* ===== UPLOAD ===== */
         .upload-area {
-            border: 2px dashed rgba(255, 107, 53, 0.35);
-            border-radius: 20px;
-            padding: 2.5rem 2rem;
+            border: 2px dashed rgba(255, 107, 53, 0.4);
+            border-radius: 16px;
+            padding: 1.5rem 1rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            background: rgba(255, 107, 53, 0.04);
-            position: relative;
-            min-height: 220px;
+            background: rgba(255, 107, 53, 0.05);
+            min-height: 150px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
         }
-        .upload-area::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 20px;
-            background: radial-gradient(circle at center, rgba(255,107,53,0.04) 0%, transparent 70%);
-            pointer-events: none;
-        }
         .upload-area:hover {
-            border-color: rgba(255, 107, 53, 0.7);
-            background: rgba(255, 107, 53, 0.08);
+            border-color: rgba(255, 107, 53, 0.8);
+            background: rgba(255, 107, 53, 0.1);
             transform: scale(1.01);
         }
         .upload-area.dragover {
             border-color: #48bb78;
             background: rgba(72, 187, 120, 0.12);
             transform: scale(1.02);
-            box-shadow: 0 0 50px rgba(72, 187, 120, 0.1);
         }
         .upload-area .upload-icon {
-            font-size: 3.5rem;
+            font-size: 2.5rem;
             color: #ff6b35;
-            margin-bottom: 0.8rem;
+            margin-bottom: 0.3rem;
             display: block;
-            position: relative;
-            z-index: 1;
         }
-        .upload-area .upload-icon i {
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
-        .upload-area h4 {
-            color: white;
-            font-weight: 700;
-            font-size: 1.1rem;
-            margin-bottom: 0.2rem;
-            position: relative;
-            z-index: 1;
-        }
-        .upload-area p {
-            color: rgba(255, 255, 255, 0.45);
-            font-size: 0.85rem;
-            margin-bottom: 1rem;
-            position: relative;
-            z-index: 1;
-        }
+        .upload-area .upload-icon i { animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .upload-area h4 { color: white; font-weight: 700; font-size: 0.95rem; }
+        .upload-area p { color: rgba(255,255,255,0.4); font-size: 0.75rem; margin-bottom: 0.5rem; }
         .upload-area .btn-select {
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.6rem 1.8rem;
+            padding: 0.4rem 1.2rem;
             border-radius: 50px;
             font-weight: 700;
-            font-size: 0.9rem;
+            font-size: 0.75rem;
             transition: all 0.3s;
-            position: relative;
-            z-index: 1;
             box-shadow: 0 4px 20px rgba(255, 107, 53, 0.25);
         }
-        .upload-area .btn-select:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.4);
-            color: white;
-        }
+        .upload-area .btn-select:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,107,53,0.4); color: white; }
         .upload-area .file-hint {
-            margin-top: 0.8rem;
-            font-size: 0.7rem;
+            margin-top: 0.4rem;
+            font-size: 0.6rem;
             color: rgba(255, 255, 255, 0.2);
-            position: relative;
-            z-index: 1;
             display: flex;
-            gap: 1.2rem;
+            gap: 0.6rem;
             justify-content: center;
             flex-wrap: wrap;
         }
-        .upload-area .file-hint span {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-        }
         .upload-area .file-hint i { color: #ff6b35; }
+        .upload-area.uploading { border-color: #f5a623; background: rgba(245,166,35,0.08); pointer-events: none; }
+        .upload-area.uploading .upload-icon i { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .upload-area.success { border-color: #48bb78; background: rgba(72,187,120,0.08); }
+        .upload-area.error { border-color: #dc3545; background: rgba(220,53,69,0.08); }
 
-        .upload-area.uploading {
-            border-color: #f5a623;
-            background: rgba(245, 166, 35, 0.08);
-            pointer-events: none;
-        }
-        .upload-area.uploading .upload-icon i {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .upload-area.success { border-color: #48bb78; background: rgba(72, 187, 120, 0.08); }
-        .upload-area.error { border-color: #dc3545; background: rgba(220, 53, 69, 0.08); }
-
-        /* ==============================================
-                   FILE PREVIEW
-                ============================================== */
+        /* ===== FILE PREVIEW ===== */
         .file-preview-container {
-            max-height: 160px;
+            max-height: 120px;
             overflow-y: auto;
-            margin: 0.5rem 0 0.8rem;
+            margin: 0.3rem 0 0.4rem;
         }
-        .file-preview-container::-webkit-scrollbar { width: 4px; }
-        .file-preview-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
-        .file-preview-container::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 4px; }
+        .file-preview-container::-webkit-scrollbar { width: 3px; }
+        .file-preview-container::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
 
         .file-preview-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.4rem 0.8rem;
+            padding: 0.2rem 0.6rem;
             background: rgba(255,255,255,0.04);
-            border-radius: 10px;
-            margin-bottom: 0.3rem;
-            animation: slideIn 0.3s ease-out;
-            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            margin-bottom: 0.2rem;
+            border: 1px solid rgba(255,255,255,0.04);
         }
         .file-preview-item .file-info {
             display: flex;
             align-items: center;
-            gap: 0.6rem;
+            gap: 0.4rem;
             flex: 1;
             min-width: 0;
         }
-        .file-preview-item .file-info i {
-            font-size: 1.2rem;
-            color: #48bb78;
-            flex-shrink: 0;
-        }
+        .file-preview-item .file-info i { font-size: 0.9rem; color: #48bb78; flex-shrink: 0; }
         .file-preview-item .file-info .file-name {
-            color: rgba(255,255,255,0.85);
-            font-size: 0.8rem;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.7rem;
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }
-        .file-preview-item .file-info .file-size {
-            color: rgba(255,255,255,0.3);
-            font-size: 0.65rem;
-            flex-shrink: 0;
         }
         .file-preview-item .file-remove {
             background: none;
             border: none;
             color: rgba(255,255,255,0.2);
             cursor: pointer;
-            padding: 0.2rem 0.5rem;
-            border-radius: 6px;
-            transition: all 0.3s;
-            font-size: 0.8rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
         }
-        .file-preview-item .file-remove:hover {
-            color: #e53e3e;
-            background: rgba(229, 62, 62, 0.15);
-        }
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
+        .file-preview-item .file-remove:hover { color: #e53e3e; background: rgba(229,62,62,0.15); }
 
-        /* ==============================================
-                   MÉTRICAS
-                ============================================== */
-        .metric-card {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 0.8rem;
-            text-align: center;
-            transition: all 0.3s;
-        }
-        .metric-card:hover {
-            background: rgba(255, 107, 53, 0.08);
-            border-color: rgba(255, 107, 53, 0.15);
-        }
-        .metric-value {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: #ff6b35;
-            line-height: 1.2;
-        }
-        .metric-label {
-            font-size: 0.6rem;
-            color: rgba(255, 255, 255, 0.4);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 0.1rem;
-        }
-
-        /* ==============================================
-                   STATUS DE ANÁLISE
-                ============================================== */
+        /* ===== STATUS ===== */
         .analysis-status {
             display: none;
-            padding: 0.8rem;
-            border-radius: 14px;
+            padding: 0.5rem;
+            border-radius: 10px;
             text-align: center;
             background: rgba(245, 166, 35, 0.06);
-            border: 1px solid rgba(245, 166, 35, 0.15);
-            margin-top: 0.8rem;
+            border: 1px solid rgba(245, 166, 35, 0.1);
+            margin-top: 0.4rem;
         }
-        .analysis-status.show {
-            display: block;
-            animation: fadeUp 0.4s ease-out;
-        }
-        .analysis-status .status-icon { font-size: 2rem; margin-bottom: 0.3rem; }
-        .analysis-status .status-text { font-weight: 600; color: rgba(255,255,255,0.8); font-size: 0.9rem; }
-        .analysis-status .status-sub { font-size: 0.75rem; color: rgba(255,255,255,0.4); }
+        .analysis-status.show { display: block; animation: fadeUp 0.3s ease-out; }
+        .analysis-status .status-icon { font-size: 1.5rem; margin-bottom: 0.1rem; }
+        .analysis-status .status-text { font-weight: 600; color: rgba(255,255,255,0.8); font-size: 0.8rem; }
+        .analysis-status .status-sub { font-size: 0.65rem; color: rgba(255,255,255,0.4); }
         .analysis-status .status-progress {
-            margin-top: 0.6rem;
+            margin-top: 0.3rem;
             height: 3px;
             background: rgba(255,255,255,0.05);
             border-radius: 10px;
@@ -405,44 +323,28 @@
             transition: width 0.5s ease;
             border-radius: 10px;
         }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* ==============================================
-                   RESULTADO
-                ============================================== */
-        .result-container {
-            display: none;
-            animation: fadeUp 0.6s ease-out;
-            margin-top: 1rem;
-        }
+        /* ===== RESULTADO ===== */
+        .result-container { display: none; animation: fadeUp 0.5s ease-out; margin-top: 0.6rem; }
         .result-container.show { display: block; }
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(15px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
 
         .result-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 0.8rem;
-            margin-bottom: 0.8rem;
-            padding-bottom: 0.6rem;
+            gap: 0.4rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.4rem;
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
-        .result-header .result-title {
-            font-size: 1rem;
-            font-weight: 700;
-            color: white;
-        }
-        .result-header .result-title i {
-            color: #48bb78;
-            margin-right: 0.5rem;
-        }
+        .result-header .result-title { font-size: 0.9rem; font-weight: 700; color: white; }
+        .result-header .result-title i { color: #48bb78; margin-right: 0.3rem; }
         .result-header .result-badge {
-            padding: 0.2rem 0.8rem;
+            padding: 0.1rem 0.6rem;
             border-radius: 50px;
-            font-size: 0.65rem;
+            font-size: 0.55rem;
             font-weight: 600;
         }
         .result-header .result-badge.success {
@@ -453,40 +355,25 @@
 
         .result-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 0.6rem;
-            margin-bottom: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
         }
         .result-stat {
             background: rgba(0,0,0,0.15);
-            border-radius: 12px;
-            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            padding: 0.4rem 0.5rem;
             text-align: center;
-            border: 1px solid rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.03);
         }
-        .result-stat .stat-value {
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #ff6b35;
-        }
-        .result-stat .stat-label {
-            font-size: 0.55rem;
-            color: rgba(255,255,255,0.4);
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            margin-top: 0.1rem;
-        }
-        .result-stat .stat-value.good { color: #48bb78; }
-        .result-stat .stat-value.medium { color: #f5a623; }
-        .result-stat .stat-value.bad { color: #dc3545; }
+        .result-stat .stat-value { font-size: 1.2rem; font-weight: 800; color: #ff6b35; }
+        .result-stat .stat-label { font-size: 0.45rem; color: rgba(255,255,255,0.4); text-transform: uppercase; }
 
-        /* ==============================================
-                   GRÁFICOS
-                ============================================== */
+        /* ===== GRÁFICOS ===== */
         .chart-container {
             background: rgba(0,0,0,0.12);
-            border-radius: 12px;
-            padding: 0.6rem;
+            border-radius: 8px;
+            padding: 0.4rem;
             border: 1px solid rgba(255,255,255,0.03);
             height: 100%;
         }
@@ -494,90 +381,128 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .chart-container .chart-title span {
-            color: rgba(255,255,255,0.4);
-            font-size: 0.55rem;
+            color: rgba(255,255,255,0.35);
+            font-size: 0.45rem;
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
         .chart-container .chart-title .badge-chart {
             background: rgba(255,107,53,0.15);
             color: #ff6b35;
-            font-size: 0.45rem;
-            padding: 0.1rem 0.5rem;
+            font-size: 0.4rem;
+            padding: 0.05rem 0.4rem;
             border-radius: 50px;
         }
-        .chart-container canvas {
-            width: 100% !important;
-            max-height: 110px;
-        }
-        .chart-container-sm canvas { max-height: 90px; }
+        .chart-container canvas { width: 100% !important; max-height: 90px; }
+        .chart-container-sm canvas { max-height: 70px; }
 
-        /* ==============================================
-                   INSIGHTS
-                ============================================== */
-        .result-insights { margin-top: 0.8rem; }
+        .result-insights { margin-top: 0.5rem; }
         .result-insight {
-            padding: 0.6rem 0.8rem;
+            padding: 0.4rem 0.6rem;
             background: rgba(0,0,0,0.15);
-            border-radius: 10px;
+            border-radius: 6px;
             border-left: 3px solid #ff6b35;
-            margin-bottom: 0.4rem;
-            color: rgba(255,255,255,0.8);
-            font-size: 0.85rem;
-            line-height: 1.5;
+            margin-bottom: 0.25rem;
+            color: rgba(255,255,255,0.75);
+            font-size: 0.75rem;
+            line-height: 1.4;
         }
         .result-insight:last-child { margin-bottom: 0; }
-        .result-insight .insight-icon {
-            margin-right: 0.4rem;
-            color: #ff6b35;
-        }
+        .result-insight .insight-icon { margin-right: 0.3rem; color: #ff6b35; }
 
-        /* ==============================================
-                   AÇÕES
-                ============================================== */
         .result-actions {
             display: flex;
-            gap: 0.6rem;
-            margin-top: 0.8rem;
+            gap: 0.4rem;
+            margin-top: 0.5rem;
             flex-wrap: wrap;
         }
         .result-actions .btn-result {
-            padding: 0.4rem 1rem;
+            padding: 0.25rem 0.8rem;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.75rem;
+            font-size: 0.65rem;
             border: none;
             transition: all 0.3s;
-            text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.3rem;
         }
         .result-actions .btn-result-primary {
             background: linear-gradient(135deg, #ff6b35, #f7931e);
             color: white;
         }
-        .result-actions .btn-result-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
-            color: white;
-        }
+        .result-actions .btn-result-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,0.4); color: white; }
         .result-actions .btn-result-secondary {
             background: rgba(255,255,255,0.06);
-            color: rgba(255,255,255,0.6);
+            color: rgba(255,255,255,0.5);
             border: 1px solid rgba(255,255,255,0.06);
         }
-        .result-actions .btn-result-secondary:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
+        .result-actions .btn-result-secondary:hover { background: rgba(255,255,255,0.1); color: white; }
 
-        /* ==============================================
-                   LOADING OVERLAY
-                ============================================== */
+        /* ===== EXPLICAÇÃO ===== */
+        .site-explanation {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .site-explanation .exp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.2rem 0.6rem;
+        }
+        .site-explanation .exp-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: rgba(255,255,255,0.45);
+            font-size: 0.6rem;
+        }
+        .site-explanation .exp-item i { color: #ff6b35; font-size: 0.65rem; width: 1rem; text-align: center; }
+        .site-explanation .exp-item strong { color: rgba(255,255,255,0.7); }
+
+        /* ===== TIMELINE ===== */
+        .timeline {
+            position: relative;
+            padding-left: 1.2rem;
+            max-height: 160px;
+            overflow-y: auto;
+        }
+        .timeline::-webkit-scrollbar { width: 3px; }
+        .timeline::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #ff6b35, #f7931e);
+            border-radius: 2px;
+            opacity: 0.3;
+        }
+        .timeline-item { position: relative; padding-bottom: 0.6rem; }
+        .timeline-item:last-child { padding-bottom: 0; }
+        .timeline-marker {
+            position: absolute;
+            left: -1.2rem;
+            top: 0.1rem;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff6b35;
+            border: 2px solid white;
+            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.25);
+        }
+        .timeline-marker.bg-success { background: #48bb78; box-shadow: 0 0 0 3px rgba(72,187,120,0.25); }
+        .timeline-content { padding-left: 0.3rem; color: rgba(255,255,255,0.8); font-size: 0.75rem; }
+        .timeline-content strong { color: #f5a623; }
+        .timeline-content .timeline-date { font-size: 0.55rem; color: rgba(255,255,255,0.25); }
+
+        /* ===== LOADING ===== */
         .loading-overlay {
             display: none;
             position: fixed;
@@ -590,17 +515,14 @@
             flex-direction: column;
         }
         .loading-overlay.show { display: flex; }
-        .loading-overlay .loading-container { text-align: center; padding: 2rem; max-width: 500px; }
-        .loading-overlay .loading-icon { font-size: 4rem; margin-bottom: 1rem; animation: pulse 1.5s ease-in-out infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.6; transform: scale(1.05); }
-        }
-        .loading-overlay .loading-title { color: #ff6b35; font-weight: 800; font-size: 1.5rem; }
-        .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.9rem; }
-        .loading-overlay .loading-progress { margin-top: 1.5rem; }
+        .loading-overlay .loading-container { text-align: center; padding: 2rem; max-width: 450px; }
+        .loading-overlay .loading-icon { font-size: 3rem; margin-bottom: 0.6rem; animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
+        .loading-overlay .loading-title { color: #ff6b35; font-weight: 800; font-size: 1.2rem; }
+        .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.8rem; }
+        .loading-overlay .loading-progress { margin-top: 1rem; }
         .loading-overlay .progress {
-            height: 4px;
+            height: 3px;
             background: rgba(255,255,255,0.08);
             border-radius: 10px;
             overflow: hidden;
@@ -611,202 +533,29 @@
             transition: width 0.3s ease;
             border-radius: 10px;
         }
-        .loading-overlay .loading-percent {
-            color: rgba(255,255,255,0.3);
-            font-size: 0.7rem;
-            margin-top: 0.5rem;
-        }
+        .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.6rem; margin-top: 0.3rem; }
 
-        /* ==============================================
-                   TIMELINE (HISTÓRICO)
-                ============================================== */
-        .timeline {
-            position: relative;
-            padding-left: 1.5rem;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .timeline::-webkit-scrollbar { width: 4px; }
-        .timeline::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
-        .timeline::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 4px; }
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: linear-gradient(180deg, #ff6b35, #f7931e);
-            border-radius: 2px;
-            opacity: 0.3;
-        }
-        .timeline-item { position: relative; padding-bottom: 1rem; }
-        .timeline-item:last-child { padding-bottom: 0; }
-        .timeline-marker {
-            position: absolute;
-            left: -1.5rem;
-            top: 0.2rem;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #ff6b35;
-            border: 2px solid white;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.3);
-        }
-        .timeline-marker.bg-success {
-            background: #48bb78;
-            box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.3);
-        }
-        .timeline-content { padding-left: 0.5rem; color: rgba(255, 255, 255, 0.85); font-size: 0.85rem; }
-        .timeline-content strong { color: #f5a623; }
-        .timeline-content .timeline-date {
-            font-size: 0.65rem;
-            color: rgba(255,255,255,0.3);
-        }
-
-        /* ==============================================
-                   WELCOME NOTIFICATION
-                ============================================== */
-        .welcome-notification {
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            max-width: 400px;
-            width: 100%;
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 18px;
-            padding: 1.2rem 1.5rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 107, 53, 0.1);
-            z-index: 9998;
-            transform: translateX(120%);
-            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            backdrop-filter: blur(20px);
-        }
-        .welcome-notification.show { transform: translateX(0); }
-        .welcome-notification .notif-icon {
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            color: white;
-            flex-shrink: 0;
-        }
-        .welcome-notification .notif-content { flex: 1; }
-        .welcome-notification .notif-title {
-            font-size: 1rem;
-            font-weight: 800;
-            color: #ff6b35;
-            margin-bottom: 0.1rem;
-        }
-        .welcome-notification .notif-subtitle {
-            font-size: 0.85rem;
-            color: rgba(255, 255, 255, 0.6);
-            margin-bottom: 0.4rem;
-        }
-        .welcome-notification .notif-credits {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            background: rgba(255, 107, 53, 0.12);
-            border: 1px solid rgba(255, 107, 53, 0.2);
-            border-radius: 50px;
-            padding: 0.2rem 1rem;
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #f5a623;
-        }
-        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 1rem; }
-        .welcome-notification .notif-actions {
-            display: flex;
-            gap: 0.4rem;
-            margin-top: 0.6rem;
-            flex-wrap: wrap;
-        }
-        .welcome-notification .notif-btn {
-            padding: 0.3rem 1rem;
-            border-radius: 50px;
-            border: none;
-            font-weight: 600;
-            font-size: 0.75rem;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-        .welcome-notification .notif-btn-primary {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-        }
-        .welcome-notification .notif-btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
-        }
-        .welcome-notification .notif-btn-secondary {
-            background: rgba(255, 255, 255, 0.06);
-            color: rgba(255, 255, 255, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .welcome-notification .notif-btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.8);
-        }
-        .welcome-notification .notif-close {
-            position: absolute;
-            top: 8px;
-            right: 10px;
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 1rem;
-            cursor: pointer;
-            padding: 0.2rem 0.4rem;
-            border-radius: 6px;
-        }
-        .welcome-notification .notif-close:hover { color: white; background: rgba(255, 255, 255, 0.05); }
-        .welcome-notification .notif-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 0 0 18px 18px;
-            overflow: hidden;
-        }
-        .welcome-notification .notif-progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            border-radius: 0 0 18px 18px;
-            transition: width 6s linear;
-            width: 100%;
-        }
-
-        /* ==============================================
-                   MENSAGENS
-                ============================================== */
+        /* ===== MENSAGENS ===== */
         #messageContainer {
             position: fixed;
-            top: 80px;
-            right: 20px;
+            top: 75px;
+            right: 15px;
             z-index: 1050;
-            max-width: 400px;
+            max-width: 350px;
             width: 100%;
             pointer-events: none;
         }
         #messageContainer .message-banner { pointer-events: auto; }
         .message-banner {
             background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border-radius: 14px;
-            padding: 14px 18px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            border-radius: 10px;
+            padding: 10px 14px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
             border-left: 4px solid #6c757d;
             transform: translateX(30px);
             opacity: 0;
             transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255,255,255,0.06);
         }
@@ -815,76 +564,179 @@
         .message-banner.message-warning { border-left-color: #ffc107; }
         .message-banner.message-info { border-left-color: #17a2b8; }
         .message-banner.message-danger { border-left-color: #dc3545; }
-        .message-banner.message-primary { border-left-color: #007bff; }
-        .message-content { display: flex; align-items: flex-start; gap: 10px; }
-        .message-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+        .message-content { display: flex; align-items: flex-start; gap: 8px; }
+        .message-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
         .message-success .message-icon { color: #28a745; }
         .message-warning .message-icon { color: #ffc107; }
         .message-info .message-icon { color: #17a2b8; }
         .message-danger .message-icon { color: #dc3545; }
-        .message-primary .message-icon { color: #007bff; }
         .message-text { flex: 1; min-width: 0; }
-        .message-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 1px; color: #ffffff; }
-        .message-body { font-size: 0.8rem; color: rgba(255,255,255,0.6); line-height: 1.4; }
-        .message-action { margin-top: 6px; }
-        .message-action .btn { font-size: 0.7rem; padding: 3px 12px; border-radius: 20px; font-weight: 600; }
+        .message-title { font-weight: 700; font-size: 0.8rem; margin-bottom: 1px; color: #ffffff; }
+        .message-body { font-size: 0.7rem; color: rgba(255,255,255,0.6); line-height: 1.4; }
+        .message-body strong { color: #f5a623; }
+        .message-action { margin-top: 3px; }
+        .message-action .btn { font-size: 0.6rem; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
         .message-dismiss {
             flex-shrink: 0;
             background: transparent;
             border: none;
-            padding: 4px;
-            font-size: 1rem;
+            padding: 2px;
+            font-size: 0.8rem;
             opacity: 0.3;
             transition: opacity 0.2s;
-            margin-top: -4px;
+            margin-top: -2px;
             color: white;
         }
         .message-dismiss:hover { opacity: 1; }
 
-        /* ==============================================
-                   RESPONSIVIDADE
-                ============================================== */
-        @media (max-width: 992px) {
-            .hero-section { padding: 85px 0 25px; }
-            .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
+        /* ===== WELCOME ===== */
+        .welcome-notification {
+            position: fixed;
+            top: 75px;
+            right: 15px;
+            max-width: 350px;
+            width: 100%;
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 14px;
+            padding: 0.8rem 1rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            z-index: 9998;
+            transform: translateX(120%);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(20px);
         }
+        .welcome-notification.show { transform: translateX(0); }
+        .welcome-notification .notif-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            color: white;
+            flex-shrink: 0;
+        }
+        .welcome-notification .notif-content { flex: 1; }
+        .welcome-notification .notif-title {
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: #ff6b35;
+            margin-bottom: 0.05rem;
+        }
+        .welcome-notification .notif-subtitle {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 0.2rem;
+        }
+        .welcome-notification .notif-credits {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            background: rgba(255, 107, 53, 0.12);
+            border: 1px solid rgba(255, 107, 53, 0.2);
+            border-radius: 50px;
+            padding: 0.1rem 0.6rem;
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #f5a623;
+        }
+        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 0.8rem; }
+        .welcome-notification .notif-actions {
+            display: flex;
+            gap: 0.3rem;
+            margin-top: 0.3rem;
+            flex-wrap: wrap;
+        }
+        .welcome-notification .notif-btn {
+            padding: 0.2rem 0.7rem;
+            border-radius: 50px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.65rem;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .welcome-notification .notif-btn-primary {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+        }
+        .welcome-notification .notif-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,0.4); }
+        .welcome-notification .notif-btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .welcome-notification .notif-btn-secondary:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
+        .welcome-notification .notif-close {
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.2);
+            font-size: 0.8rem;
+            cursor: pointer;
+            padding: 0.1rem 0.2rem;
+            border-radius: 4px;
+        }
+        .welcome-notification .notif-close:hover { color: white; background: rgba(255,255,255,0.05); }
+        .welcome-notification .notif-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 0 0 14px 14px;
+            overflow: hidden;
+        }
+        .welcome-notification .notif-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            border-radius: 0 0 14px 14px;
+            transition: width 6s linear;
+            width: 100%;
+        }
+
+        /* ===== MODAIS ===== */
+        .modal-content-custom {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+            border: 1px solid rgba(255,107,53,0.3) !important;
+            color: white;
+        }
+
+        /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 768px) {
-            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
-            .brand-text { font-size: 1.1rem; }
-            .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
-            .user-name-display { font-size: 0.75rem; }
-            .upload-area .upload-icon { font-size: 2.8rem; }
-            .upload-area h4 { font-size: 1rem; }
-            .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
-            .metric-value { font-size: 1.5rem; }
-            .upload-area { min-height: 160px; padding: 1.5rem; }
-            .result-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
-            #messageContainer {
-                top: 70px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-            }
-            .message-banner { padding: 10px 14px; border-radius: 10px; }
-            .welcome-notification {
-                top: 70px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-                padding: 1rem 1.2rem;
-            }
-            .chart-container canvas { max-height: 100px; }
-            .glass-card { padding: 1rem; }
+            .navbar-modern .container { flex-direction: column; align-items: stretch; gap: 0.3rem; }
+            .nav-right { justify-content: center; flex-wrap: wrap; }
+            .brand-text { font-size: 1.1rem; text-align: center; }
+            .credits-badge-nav { font-size: 0.65rem; padding: 0.2rem 0.6rem; }
+            .btn-planos-nav, .btn-sair-nav { font-size: 0.6rem; padding: 0.15rem 0.6rem; }
+            .hero-section { padding: 100px 0 15px; }
+            .upload-area { min-height: 120px; padding: 0.8rem; }
+            .upload-area .upload-icon { font-size: 2rem; }
+            .upload-area h4 { font-size: 0.8rem; }
+            .metric-row { grid-template-columns: repeat(3, 1fr); gap: 0.2rem; }
+            .metric-value { font-size: 1.1rem; }
+            .result-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+            .chart-container canvas { max-height: 70px; }
+            .site-explanation .exp-grid { grid-template-columns: 1fr 1fr; }
+            #messageContainer { top: 95px; right: 10px; left: 10px; max-width: none; }
+            .welcome-notification { top: 95px; right: 10px; left: 10px; max-width: none; padding: 0.6rem 0.8rem; }
+            .glass-card { padding: 0.7rem; }
         }
         @media (max-width: 480px) {
-            .hero-section { padding: 75px 0 15px; }
-            .upload-area { padding: 1rem; min-height: 140px; }
-            .upload-area .upload-icon { font-size: 2.2rem; }
-            .upload-area h4 { font-size: 0.9rem; }
-            .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
+            .metric-row { grid-template-columns: 1fr 1fr; }
+            .metric-value { font-size: 1rem; }
             .result-grid { grid-template-columns: 1fr 1fr; }
-            .chart-container canvas { max-height: 80px; }
-            .result-stat .stat-value { font-size: 1.2rem; }
+            .site-explanation .exp-grid { grid-template-columns: 1fr; }
+            .upload-area { padding: 0.6rem; min-height: 100px; }
+            .upload-area .upload-icon { font-size: 1.6rem; }
+            .upload-area .btn-select { padding: 0.3rem 0.8rem; font-size: 0.65rem; }
+            .chart-container canvas { max-height: 60px; }
         }
     </style>
 </head>
@@ -895,86 +747,64 @@
     <!-- ============================================== -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
-            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap">
-                <a class="brand-text text-decoration-none" href="/dashboard">
-                    <i class="fas fa-wrench me-2"></i>
-                    Auto<span>Analytics</span>
+            <a class="brand-text text-decoration-none" href="/dashboard">
+                <i class="fas fa-wrench me-2"></i>
+                Auto<span>Analytics</span>
+            </a>
+            
+            <div class="nav-right">
+                <span class="user-name-display">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="userName">Carregando...</span>
+                </span>
+                
+                <button class="credits-badge-nav" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                    <i class="fas fa-coins"></i>
+                    <span id="creditsCount">0</span>
+                </button>
+                
+                <a href="/planos" class="btn-planos-nav" id="planosLink">
+                    <i class="fas fa-crown"></i> Planos
                 </a>
                 
-                <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
-                    <span class="user-name-display">
-                        <i class="fas fa-user-circle"></i>
-                        <span id="userName">Carregando...</span>
-                    </span>
-                    
-                    <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
-                        <i class="fas fa-coins me-1"></i>
-                        <span id="creditsCount">0</span>
-                    </div>
-                    
-                    <span class="pow-status" id="powStatus">
-                        <i class="fas fa-shield-alt"></i>
-                        <span id="powStatusText">⚡ Pronto</span>
-                    </span>
-                    
-                    <a href="/planos" class="btn-planos" id="planosLink">
-                        <i class="fas fa-crown me-1"></i> Planos
-                    </a>
-                    
-                    <a href="#" class="btn-sair" onclick="event.preventDefault(); window.logout();">
-                        <i class="fas fa-sign-out-alt me-1"></i> Sair
-                    </a>
-                </div>
+                <a href="#" class="btn-sair-nav" onclick="event.preventDefault(); window.logout();">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </a>
             </div>
         </div>
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 CONTAINER DE MENSAGENS -->
+    <!-- 🔥 MENSAGENS E NOTIFICAÇÕES -->
     <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
 
-    <!-- ============================================== -->
-    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS -->
-    <!-- ============================================== -->
     <div class="welcome-notification" id="welcomeNotification" role="alert">
-        <button class="notif-close" id="notifClose" aria-label="Fechar notificação">
-            <i class="fas fa-times"></i>
-        </button>
-        <div class="d-flex align-items-start gap-3">
+        <button class="notif-close" id="notifClose"><i class="fas fa-times"></i></button>
+        <div class="d-flex align-items-start gap-2">
             <div class="notif-icon"><i class="fas fa-gift"></i></div>
             <div class="notif-content">
-                <div class="notif-title" id="notifTitle">🎉 Bem-vindo ao AutoAnalytics!</div>
+                <div class="notif-title" id="notifTitle">🎉 Bem-vindo!</div>
                 <div class="notif-subtitle" id="notifSubtitle">
-                    Você ganhou <strong id="notifCreditsHighlight">3</strong> créditos grátis para começar.
+                    Você ganhou <strong id="notifCreditsHighlight">3</strong> créditos grátis
                 </div>
-                <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="notif-credits">
                         <i class="fas fa-coins"></i>
-                        <span id="notifCreditsCount">3</span> créditos grátis
-                    </span>
-                    <span style="font-size:0.6rem; color: rgba(255,255,255,0.2);">
-                        <i class="fas fa-bolt me-1" style="color:#f5a623;"></i>
-                        Válido por 30 dias
+                        <span id="notifCreditsCount">3</span>
                     </span>
                 </div>
                 <div class="notif-actions">
-                    <button class="notif-btn notif-btn-primary" id="notifGoDashboard">
-                        <i class="fas fa-chart-line me-1"></i> Ir para Dashboard
-                    </button>
-                    <button class="notif-btn notif-btn-secondary" id="notifDismiss">
-                        <i class="fas fa-check me-1"></i> Entendi
-                    </button>
+                    <button class="notif-btn notif-btn-primary" id="notifGoDashboard"><i class="fas fa-chart-line me-1"></i> Dashboard</button>
+                    <button class="notif-btn notif-btn-secondary" id="notifDismiss">Entendi</button>
                 </div>
             </div>
         </div>
-        <div class="notif-progress">
-            <div class="notif-progress-bar" id="notifProgressBar"></div>
-        </div>
+        <div class="notif-progress"><div class="notif-progress-bar" id="notifProgressBar"></div></div>
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 LOADING OVERLAY -->
+    <!-- 🔥 LOADING -->
     <!-- ============================================== -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-container text-center">
@@ -982,9 +812,7 @@
             <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
             <p class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</p>
             <div class="loading-progress">
-                <div class="progress">
-                    <div class="progress-bar" id="loadingProgressBar" style="width: 0%;"></div>
-                </div>
+                <div class="progress"><div class="progress-bar" id="loadingProgressBar" style="width:0%;"></div></div>
                 <div class="loading-percent" id="loadingPercent">0%</div>
             </div>
         </div>
@@ -996,89 +824,71 @@
     <section class="hero-section">
         <div class="container">
             
-            <!-- ===== INTRO ===== -->
-            <div class="row mb-4">
+            <!-- INTRO -->
+            <div class="row mb-3">
                 <div class="col-12 text-center">
-                    <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.15rem 0.8rem; border-radius:50px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
-                        <i class="fas fa-robot me-1"></i> Inteligência Artificial para Mecânicos
+                    <span class="highlight-badge mb-1" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.1rem 0.6rem; border-radius:50px; font-size:0.55rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+                        <i class="fas fa-robot me-1"></i> IA para Mecânicos
                     </span>
-                    <h1 class="display-5 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size:2.5rem;">
+                    <h1 class="display-6 fw-bold mt-1" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size:1.8rem;">
                         Transforme dados em resultados
                     </h1>
-                    <p class="lead" style="color: rgba(255,255,255,0.5); max-width: 600px; margin: 0 auto; font-size:1rem;">
-                        Analise dados da sua oficina, preveja problemas e otimize seus lucros com IA
+                    <p class="lead" style="color: rgba(255,255,255,0.4); max-width: 500px; margin: 0 auto; font-size:0.85rem;">
+                        Analise dados da sua oficina com IA e obtenha insights em segundos
                     </p>
                 </div>
             </div>
 
-            <!-- ===== LINHA PRINCIPAL: PAINEL + UPLOAD ===== -->
-            <div class="row g-4">
+            <div class="row g-3">
                 
-                <!-- ===== COLUNA ESQUERDA: PAINEL DO USUÁRIO ===== -->
+                <!-- COLUNA ESQUERDA -->
                 <div class="col-lg-4">
                     <div class="row g-3">
-                        <!-- CARD: Métricas -->
+                        
+                        <!-- MÉTRICAS -->
                         <div class="col-12">
                             <div class="glass-card">
-                                <h5 class="card-title">
-                                    <i class="fas fa-chart-simple"></i> Seu Painel
-                                </h5>
-                                <div class="row g-2">
-                                    <div class="col-4">
-                                        <div class="metric-card">
-                                            <div class="metric-value" id="totalAnalises">0</div>
-                                            <div class="metric-label">Análises</div>
-                                        </div>
+                                <h5 class="card-title"><i class="fas fa-chart-simple"></i> Resumo</h5>
+                                <div class="metric-row">
+                                    <div class="metric-card">
+                                        <div class="metric-value" id="totalAnalises">0</div>
+                                        <div class="metric-label">Análises</div>
                                     </div>
-                                    <div class="col-4">
-                                        <div class="metric-card">
-                                            <div class="metric-value" id="analisesHoje">0</div>
-                                            <div class="metric-label">Hoje</div>
-                                        </div>
+                                    <div class="metric-card">
+                                        <div class="metric-value" id="analisesHoje">0</div>
+                                        <div class="metric-label">Hoje</div>
                                     </div>
-                                    <div class="col-4">
-                                        <div class="metric-card">
-                                            <div class="metric-value" id="creditsDisplay">0</div>
-                                            <div class="metric-label">Créditos</div>
-                                        </div>
+                                    <div class="metric-card" style="border-color: rgba(255,107,53,0.15);">
+                                        <div class="metric-value credits-highlight" id="creditsDisplay">0</div>
+                                        <div class="metric-label" style="color:#f5a623;">Créditos</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- CARD: Status Premium -->
+                        <!-- STATUS -->
                         <div class="col-12">
                             <div class="glass-card" id="premiumStatusContainer">
-                                <h5 class="card-title">
-                                    <i class="fas fa-crown"></i> Status
-                                </h5>
+                                <h5 class="card-title"><i class="fas fa-crown"></i> Status</h5>
                                 <div class="text-center py-2">
-                                    <div class="spinner-border text-warning" role="status" style="width: 1.2rem; height: 1.2rem; color: #ff6b35 !important;">
+                                    <div class="spinner-border text-warning" role="status" style="width:1rem; height:1rem; color:#ff6b35 !important;">
                                         <span class="visually-hidden">Carregando...</span>
                                     </div>
-                                    <p class="mt-1 small" style="color: rgba(255,255,255,0.3); font-size:0.7rem;">Carregando status...</p>
+                                    <p class="mt-1 small" style="color:rgba(255,255,255,0.3); font-size:0.65rem;">Carregando...</p>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- CARD: Dicas Rápidas -->
+                        <!-- EXPLICAÇÃO -->
                         <div class="col-12">
                             <div class="glass-card">
-                                <h5 class="card-title">
-                                    <i class="fas fa-lightbulb"></i> Dicas Rápidas
-                                </h5>
-                                <div style="font-size:0.75rem; color: rgba(255,255,255,0.5); line-height:1.6;">
-                                    <div style="display:flex; gap:0.5rem; margin-bottom:0.3rem;">
-                                        <span style="color:#ff6b35;">📁</span>
-                                        <span>Arraste arquivos CSV ou Excel</span>
-                                    </div>
-                                    <div style="display:flex; gap:0.5rem; margin-bottom:0.3rem;">
-                                        <span style="color:#ff6b35;">💰</span>
-                                        <span>Cada análise consome <strong style="color:#f5a623;">1 crédito</strong></span>
-                                    </div>
-                                    <div style="display:flex; gap:0.5rem;">
-                                        <span style="color:#ff6b35;">📊</span>
-                                        <span>Receba insights e recomendações da IA</span>
+                                <h5 class="card-title"><i class="fas fa-info-circle"></i> Como funciona</h5>
+                                <div class="site-explanation">
+                                    <div class="exp-grid">
+                                        <div class="exp-item"><i class="fas fa-upload"></i> Envie <strong>CSV/Excel</strong></div>
+                                        <div class="exp-item"><i class="fas fa-robot"></i> IA analisa os <strong>dados</strong></div>
+                                        <div class="exp-item"><i class="fas fa-chart-line"></i> Receba <strong>insights</strong></div>
+                                        <div class="exp-item"><i class="fas fa-coins"></i> <strong>1 crédito</strong>/análise</div>
                                     </div>
                                 </div>
                             </div>
@@ -1086,23 +896,19 @@
                     </div>
                 </div>
                 
-                <!-- ===== COLUNA DIREITA: UPLOAD DESTACADO ===== -->
+                <!-- COLUNA DIREITA: UPLOAD -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- CARD: UPLOAD - ÁREA PRINCIPAL -->
                         <div class="col-12">
                             <div class="glass-card" style="border-color: rgba(255,107,53,0.15);">
                                 <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
-                                    <h5 class="card-title mb-0">
-                                        <i class="fas fa-cloud-upload-alt"></i> Envie seus arquivos
-                                    </h5>
-                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding: 0.25rem 0.8rem; font-size:0.7rem;">
-                                        <i class="fas fa-coins me-1"></i>
-                                        <span id="uploadCredits">0</span> créditos
+                                    <h5 class="card-title mb-0"><i class="fas fa-cloud-upload-alt"></i> Upload</h5>
+                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding:0.15rem 0.6rem; font-size:0.6rem;">
+                                        <i class="fas fa-coins me-1"></i> <span id="uploadCredits">0</span>
                                     </span>
                                 </div>
                                 
-                                <div class="limit-info" style="background:rgba(0,0,0,0.15); border-radius:10px; padding:0.3rem 0.8rem; margin-bottom:0.8rem; text-align:center; font-size:0.65rem; border:1px solid rgba(255,255,255,0.03); color:rgba(255,255,255,0.4);">
+                                <div style="background:rgba(0,0,0,0.15); border-radius:6px; padding:0.15rem 0.5rem; margin-bottom:0.4rem; text-align:center; font-size:0.55rem; color:rgba(255,255,255,0.3);">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-2">
                                         <span><i class="fas fa-hard-drive"></i> <strong style="color:#ff6b35;">200 KB</strong>/arquivo</span>
                                         <span><i class="fas fa-layer-group"></i> <strong style="color:#ff6b35;">3</strong> arquivos/vez</span>
@@ -1111,35 +917,30 @@
                                 </div>
                                 
                                 <form id="uploadForm">
-                                    <!-- ÁREA DE DRAG & DROP -->
                                     <div class="upload-area" id="dropArea">
                                         <span class="upload-icon"><i class="fas fa-file-excel"></i></span>
-                                        <h4>📁 Arraste seus arquivos aqui</h4>
-                                        <p class="small">Suporte para <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
+                                        <h4>📁 Arraste seus arquivos</h4>
+                                        <p>CSV ou Excel (.xlsx, .xls)</p>
                                         <div>
                                             <label for="fileInput" class="btn-select">
-                                                <i class="fas fa-folder-open me-2"></i> Selecionar Arquivos
+                                                <i class="fas fa-folder-open me-2"></i> Selecionar
                                             </label>
                                             <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
                                         </div>
                                         <div class="file-hint">
                                             <span><i class="fas fa-check-circle"></i> Até 3 arquivos</span>
-                                            <span><i class="fas fa-weight-scale"></i> Máx. 200 KB cada</span>
-                                            <span><i class="fas fa-coins"></i> 1 crédito por arquivo</span>
+                                            <span><i class="fas fa-weight-scale"></i> Máx. 200 KB</span>
+                                            <span><i class="fas fa-coins"></i> 1 crédito</span>
                                         </div>
                                     </div>
                                     
-                                    <!-- PREVIEW DOS ARQUIVOS -->
                                     <div class="file-preview-container" id="filePreviewContainer"></div>
                                     
-                                    <!-- STATUS DA ANÁLISE -->
                                     <div class="analysis-status" id="analysisStatus">
                                         <div class="status-icon" id="statusIcon">⏳</div>
-                                        <div class="status-text" id="statusText">Processando arquivo...</div>
-                                        <div class="status-sub" id="statusSub">A IA está analisando seus dados</div>
-                                        <div class="status-progress">
-                                            <div class="status-progress-bar" id="statusProgressBar"></div>
-                                        </div>
+                                        <div class="status-text" id="statusText">Processando...</div>
+                                        <div class="status-sub" id="statusSub">A IA está analisando</div>
+                                        <div class="status-progress"><div class="status-progress-bar" id="statusProgressBar"></div></div>
                                     </div>
                                 </form>
                             </div>
@@ -1149,105 +950,71 @@
                 
             </div>
 
-            <!-- ===== LINHA DE RESULTADO ===== -->
-            <div class="row mt-4">
+            <!-- RESULTADO -->
+            <div class="row mt-3">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
-                        <!-- RELATÓRIO -->
                         <div class="result-container" id="resultContainer">
                             <div class="result-header">
-                                <div class="result-title">
-                                    <i class="fas fa-chart-line"></i> Relatório da Análise
-                                </div>
-                                <span class="result-badge success">
-                                    <i class="fas fa-check-circle"></i> Concluído
-                                </span>
+                                <div class="result-title"><i class="fas fa-chart-line"></i> Relatório</div>
+                                <span class="result-badge success"><i class="fas fa-check-circle"></i> Concluído</span>
                             </div>
-                            
-                            <!-- Métricas -->
                             <div class="result-grid" id="resultMetrics"></div>
-                            
-                            <!-- GRÁFICOS -->
-                            <div class="row g-3">
+                            <div class="row g-2">
                                 <div class="col-md-6">
                                     <div class="chart-container">
-                                        <div class="chart-title">
-                                            <span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
-                                            <span class="badge-chart" id="riskBadge">0 alto</span>
-                                        </div>
-                                        <canvas id="riskChart" height="110"></canvas>
+                                        <div class="chart-title"><span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Risco</span><span class="badge-chart" id="riskBadge">0</span></div>
+                                        <canvas id="riskChart" height="90"></canvas>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="chart-container">
-                                        <div class="chart-title">
-                                            <span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Score de Confiança</span>
-                                            <span class="badge-chart" id="scoreBadge">0%</span>
-                                        </div>
-                                        <canvas id="predChart" height="110"></canvas>
+                                        <div class="chart-title"><span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Confiança</span><span class="badge-chart" id="scoreBadge">0%</span></div>
+                                        <canvas id="predChart" height="90"></canvas>
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- DONUT + RESUMO -->
-                            <div class="row g-3 mt-1">
+                            <div class="row g-2 mt-1">
                                 <div class="col-md-4">
                                     <div class="chart-container chart-container-sm">
-                                        <div class="chart-title">
-                                            <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span>
-                                        </div>
-                                        <canvas id="donutChart" height="90"></canvas>
+                                        <div class="chart-title"><span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span></div>
+                                        <canvas id="donutChart" height="70"></canvas>
                                     </div>
                                 </div>
                                 <div class="col-md-8">
                                     <div class="chart-container">
-                                        <div class="chart-title">
-                                            <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo Executivo</span>
-                                            <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
-                                        </div>
-                                        <div id="resultSummary" style="color: rgba(255,255,255,0.6); font-size:0.8rem; line-height:1.5; min-height:45px; padding:0.2rem 0;">
-                                            <span style="color: rgba(255,255,255,0.25);">Aguardando análise...</span>
+                                        <div class="chart-title"><span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo</span><span class="badge-chart"><i class="fas fa-robot"></i> IA</span></div>
+                                        <div id="resultSummary" style="color:rgba(255,255,255,0.5); font-size:0.7rem; line-height:1.3; min-height:35px;">
+                                            <span style="color:rgba(255,255,255,0.2);">Aguardando análise...</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            
-                            <!-- Insights -->
                             <div class="result-insights" id="resultInsights"></div>
-                            
-                            <!-- Ações -->
                             <div class="result-actions">
-                                <button class="btn-result btn-result-primary" id="downloadPdfBtn">
-                                    <i class="fas fa-file-pdf"></i> Baixar PDF
-                                </button>
-                                <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
-                                    <i class="fas fa-plus"></i> Nova Análise
-                                </button>
+                                <button class="btn-result btn-result-primary" id="downloadPdfBtn"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button class="btn-result btn-result-secondary" id="newAnalysisBtn"><i class="fas fa-plus"></i> Nova</button>
                             </div>
                         </div>
-                        
-                        <!-- PLACEHOLDER -->
-                        <div id="resultPlaceholder" style="text-align:center; padding:1.5rem 0; color: rgba(255,255,255,0.15);">
-                            <i class="fas fa-file-alt fa-3x mb-3" style="opacity:0.3;"></i>
-                            <p style="font-size:0.85rem;">Seu relatório aparecerá aqui após a análise</p>
+                        <div id="resultPlaceholder" style="text-align:center; padding:0.8rem 0; color:rgba(255,255,255,0.1);">
+                            <i class="fas fa-file-alt fa-2x mb-2" style="opacity:0.3;"></i>
+                            <p style="font-size:0.75rem;">Relatório aparecerá aqui após a análise</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- ===== LINHA DE HISTÓRICO ===== -->
-            <div class="row mt-4">
+            <!-- HISTÓRICO -->
+            <div class="row mt-3">
                 <div class="col-12">
                     <div class="glass-card">
-                        <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-history"></i> Histórico de análises
-                            </h5>
-                            <span class="badge" style="background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.3); font-size:0.6rem;" id="historyCount">0</span>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h5 class="card-title mb-0"><i class="fas fa-history"></i> Histórico</h5>
+                            <span class="badge" style="background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.25); font-size:0.5rem;" id="historyCount">0</span>
                         </div>
                         <div class="timeline" id="recentAnalyses">
                             <div class="timeline-item">
-                                <div class="timeline-marker" style="background:#ff6b35; box-shadow:0 0 0 3px rgba(255,107,53,0.3);"></div>
+                                <div class="timeline-marker" style="background:#ff6b35;"></div>
                                 <div class="timeline-content">
                                     <p class="mb-0 small" style="color:rgba(255,255,255,0.3);">Carregando histórico...</p>
                                     <span class="timeline-date">Aguarde</span>
@@ -1255,7 +1022,7 @@
                             </div>
                         </div>
                         <div class="mt-2 text-center">
-                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color: rgba(255,107,53,0.5); font-size:0.7rem;">
+                            <button class="btn btn-link small text-decoration-none" onclick="window.loadFullHistory?.()" style="color:rgba(255,107,53,0.4); font-size:0.6rem;">
                                 <i class="fas fa-eye me-1"></i> Ver todas
                             </button>
                         </div>
@@ -1263,18 +1030,13 @@
                 </div>
             </div>
 
-            <!-- ===== RODAPÉ ===== -->
-            <div class="row mt-4">
+            <!-- RODAPÉ -->
+            <div class="row mt-3">
                 <div class="col-12 text-center">
-                    <p style="color: rgba(255,255,255,0.08); font-size: 0.6rem;">
-                        <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v8.1 - Inteligência Artificial para Mecânicos
+                    <p style="color:rgba(255,255,255,0.05); font-size:0.5rem;">
+                        AutoAnalytics v9.0 - IA para Mecânicos
                         <span class="mx-2">•</span>
-                        <i class="fas fa-shield-alt me-1"></i>
-                        Protegido por PoW
-                        <span class="mx-2">•</span>
-                        <i class="fas fa-database me-1"></i>
-                        Dados criptografados
+                        <i class="fas fa-shield-alt"></i> PoW
                     </p>
                 </div>
             </div>
@@ -1286,56 +1048,48 @@
     <!-- 🔥 MODAIS -->
     <!-- ============================================== -->
     
-    <!-- MODAL CRÉDITOS -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h5 class="modal-title">
-                        <i class="fas fa-coins me-2" style="color: #ff6b35;"></i>
-                        Meus Créditos
-                    </h5>
+            <div class="modal-content modal-content-custom">
+                <div class="modal-header modal-header-custom">
+                    <h5 class="modal-title"><i class="fas fa-coins me-2" style="color:#ff6b35;"></i> Meus Créditos</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
-                <div class="modal-body text-center py-4">
-                    <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
-                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
-                    <p class="text-muted mb-3" style="color: rgba(255,255,255,0.4); font-size:0.9rem;">créditos disponíveis</p>
-                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.12) !important; color:rgba(255,255,255,0.8) !important; font-size:0.75rem; text-align:left;">
+                <div class="modal-body text-center py-3">
+                    <i class="fas fa-coins fa-3x mb-2" style="color:#ff6b35;"></i>
+                    <div class="display-5 fw-bold" id="modalCreditsCount" style="color:#ff6b35;">0</div>
+                    <p class="text-muted mb-2" style="color:rgba(255,255,255,0.4); font-size:0.8rem;">créditos disponíveis</p>
+                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.06) !important; border-color:rgba(255,107,53,0.1) !important; color:rgba(255,255,255,0.7) !important; font-size:0.65rem; text-align:left;">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong style="color: #ff6b35;">Como funcionam:</strong><br>
-                        • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
-                        • ⭐ Premium ganha 1 crédito por dia<br>
+                        <strong style="color:#ff6b35;">Como funciona:</strong><br>
+                        • <strong style="color:#ff6b35;">3 créditos grátis</strong> ao começar<br>
+                        • ⭐ Premium ganha 1 crédito/dia<br>
                         • Cada análise consome 1 crédito<br>
-                        • 📁 Até 3 arquivos por vez (máx 200KB cada)
+                        • 📁 Até 3 arquivos por vez (200KB cada)
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.06);">
-                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.6rem; border-radius: 50px; font-weight: 700; font-size:0.85rem;">
-                        <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
+                <div class="modal-footer modal-footer-custom">
+                    <a href="/planos" class="btn w-100" style="background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; border:none; padding:0.4rem; border-radius:50px; font-weight:700; font-size:0.75rem;">
+                        <i class="fas fa-credit-card me-2"></i> Comprar créditos
                     </a>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- MODAL GPSA -->
     <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h5 class="modal-title">
-                        <i class="fas fa-chart-line me-2" style="color: #ff6b35;"></i>
-                        GPSA - Impacto no Negócio
-                    </h5>
+            <div class="modal-content modal-content-custom">
+                <div class="modal-header modal-header-custom">
+                    <h5 class="modal-title"><i class="fas fa-chart-line me-2" style="color:#ff6b35;"></i> GPSA - Impacto no Negócio</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body" id="gpsaModalBody">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-warning" role="status" style="color: #ff6b35;">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-warning" role="status" style="color:#ff6b35;">
                             <span class="visually-hidden">Carregando...</span>
                         </div>
-                        <p class="mt-3" style="color: rgba(255,255,255,0.3);">Carregando análise...</p>
+                        <p class="mt-2" style="color:rgba(255,255,255,0.3); font-size:0.8rem;">Carregando análise...</p>
                     </div>
                 </div>
             </div>
@@ -1347,31 +1101,24 @@
     <!-- ============================================== -->
     <template id="cpfModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); border:1px solid #f5a623;">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color: #f5a623;">
-                        <i class="fas fa-id-card me-2"></i>Confirme seu CPF
-                    </h5>
+                    <h5 class="modal-title" style="color:#f5a623;"><i class="fas fa-id-card me-2"></i>Confirme seu CPF</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white-50 mb-3" style="font-size:0.9rem;">
-                        <i class="fas fa-shield-alt me-2"></i> 
-                        CPF obrigatório para gerar PIX e proteger sua compra.
-                    </p>
-                    <div class="mb-3">
-                        <label class="form-label text-white" style="font-size:0.85rem;">CPF</label>
-                        <input type="text" class="form-control form-control-lg" 
-                               id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
-                               style="background: rgba(255,255,255,0.08); border-color: #f5a623; color: white; border-radius:10px; font-size:1rem;">
-                        <div class="form-text text-white-50" style="font-size:0.7rem;">Apenas números (11 dígitos)</div>
+                    <p class="text-white-50 mb-2" style="font-size:0.8rem;"><i class="fas fa-shield-alt me-2"></i> CPF obrigatório para gerar PIX.</p>
+                    <div class="mb-2">
+                        <label class="form-label text-white" style="font-size:0.75rem;">CPF</label>
+                        <input type="text" class="form-control" id="cpfInput" placeholder="000.000.000-00" maxlength="14" style="background:rgba(255,255,255,0.08); border-color:#f5a623; color:white; border-radius:8px; font-size:0.9rem;">
+                        <div class="form-text text-white-50" style="font-size:0.6rem;">Apenas números (11 dígitos)</div>
                     </div>
-                    <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
+                    <div id="cpfError" class="alert alert-danger d-none"></div>
                 </div>
                 <div class="modal-footer border-0">
-                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.4rem 1.5rem; font-size:0.8rem;" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.4rem 1.5rem; font-weight:700; font-size:0.8rem;">
-                        <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
+                    <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.3rem 1.2rem; font-size:0.7rem;" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn" id="cpfConfirmBtn" style="background:linear-gradient(135deg,#f5a623,#e67e22); color:white; border:none; border-radius:50px; padding:0.3rem 1.2rem; font-weight:700; font-size:0.7rem;">
+                        <i class="fas fa-arrow-right me-2"></i>Continuar
                     </button>
                 </div>
             </div>
@@ -1380,52 +1127,39 @@
 
     <template id="pixModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <h5 class="modal-title" style="color: #f5a623;">
-                        <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
-                    </h5>
+            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); border:1px solid rgba(205,127,50,0.3);">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title" style="color:#f5a623;"><i class="fas fa-qrcode me-2"></i> Pagamento PIX</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body text-center py-4">
-                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.12); border-color: #28a745; color: #48bb78; font-size:0.85rem;">
-                        <i class="fas fa-gem me-2"></i>
-                        <strong id="pixPromoText">🎉 VOCÊ GARANTIU O PREÇO FUNDADOR!</strong><br>
-                        <small id="pixPriceText">R$ 97,00 - Preço bloqueado VITALÍCIO!</small>
+                <div class="modal-body text-center py-3">
+                    <div class="alert alert-success mb-2 text-center" style="background:rgba(40,167,69,0.1); border-color:#28a745; color:#48bb78; font-size:0.75rem;">
+                        <strong id="pixPromoText">🎉 PREÇO FUNDADOR!</strong><br>
+                        <small id="pixPriceText">R$ 97,00</small>
                     </div>
-                    
-                    <h6 class="mb-3" style="color: rgba(255,255,255,0.5); font-size:0.85rem;">Escaneie o QR Code com seu banco</h6>
-                    
-                    <div class="text-center mb-3">
-                        <div class="p-3 d-inline-block" style="background: white; border-radius: 14px;">
-                            <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 180px; border-radius: 6px; display: none;">
-                            <div id="pixQrPlaceholder" style="width:180px; height:180px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:6px; color:#999; font-size:13px;">QR Code indisponível</div>
+                    <h6 class="mb-2" style="color:rgba(255,255,255,0.5); font-size:0.75rem;">Escaneie o QR Code</h6>
+                    <div class="text-center mb-2">
+                        <div class="p-2 d-inline-block" style="background:white; border-radius:10px;">
+                            <img id="pixQrCode" src="" style="max-width:150px; display:none;">
+                            <div id="pixQrPlaceholder" style="width:150px; height:150px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:6px; color:#999; font-size:12px;">QR Code</div>
                         </div>
                     </div>
-                    
-                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
-                        <code id="pixCodeText" class="small" style="color: #f5a623; font-size:0.75rem;">autonalytics@gmail.com</code>
+                    <div class="p-2 rounded-2 mb-2" style="background:rgba(255,255,255,0.05); word-break:break-all;">
+                        <code id="pixCodeText" style="color:#f5a623; font-size:0.65rem;">autonalytics@gmail.com</code>
                     </div>
-                    
-                    <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
-                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.2); border-radius: 10px; padding: 0.6rem; font-size:0.8rem;">
-                        <i class="fas fa-copy me-2"></i> Copiar Chave PIX
+                    <button class="btn w-100 mb-2" onclick="window.copyPixCode()" style="background:rgba(255,255,255,0.06); color:#f5a623; border:1px solid rgba(205,127,50,0.2); border-radius:8px; padding:0.4rem; font-size:0.7rem;">
+                        <i class="fas fa-copy me-2"></i> Copiar Chave
                     </button>
-                    
-                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.06); border-color: rgba(205,127,50,0.15); color: rgba(255,255,255,0.6); font-size:0.7rem; text-align:left;">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong>Informações do pagamento:</strong><br>
-                        <strong id="pixPlanText">Plano Bronze</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
-                        <span class="text-success" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
-                        <span style="color: rgba(255,255,255,0.4);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
+                    <div class="alert alert-info small" style="background:rgba(245,166,35,0.05); border-color:rgba(205,127,50,0.1); color:rgba(255,255,255,0.5); font-size:0.6rem; text-align:left;">
+                        <strong id="pixPlanText">Plano Bronze</strong> - <span id="pixAmountText">R$ 97,00</span><br>
+                        <span class="text-success" id="pixPromoBadge">✅ Preço vitalício</span><br>
+                        <span style="color:rgba(255,255,255,0.3);">⏰ <strong id="countdownTimer">30:00</strong> min</span>
                     </div>
-                    
-                    <div id="paymentStatus" class="mt-2"></div>
+                    <div id="paymentStatus"></div>
                 </div>
-                <div class="modal-footer border-0 justify-content-center" style="border-top: 1px solid rgba(255,255,255,0.06);">
-                    <button type="button" class="btn w-100" id="pixVerifyBtn" 
-                            style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); border: none; border-radius: 50px; padding: 0.6rem; font-size:0.8rem;">
-                        <i class="fas fa-check-circle me-2"></i> Já realizei o pagamento / Atualizar
+                <div class="modal-footer border-0 justify-content-center">
+                    <button type="button" class="btn w-100" id="pixVerifyBtn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.4rem; font-size:0.7rem;">
+                        <i class="fas fa-check-circle me-2"></i> Já paguei
                     </button>
                 </div>
             </div>
@@ -1457,307 +1191,8 @@
     <script src="/static/js/payment.js?ver=7.1.0"></script>
     <script src="/static/js/dashboard.js?ver=7.4.0"></script>
 
-    <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE UPLOAD E RELATÓRIO COM GRÁFICOS -->
-    <!-- ============================================== -->
+    <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.0"></script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE MENSAGENS INTELIGENTES -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            console.log('📢 Inicializando MessageRenderer...');
-            class MessageRenderer {
-                constructor() {
-                    this.container = document.getElementById('messageContainer');
-                    this._dismissedMessages = new Set();
-                    this._autoDismissTimer = null;
-                    this._lastRendered = null;
-                    if (!this.container) { console.warn('⚠️ messageContainer não encontrado'); return; }
-                    this._loadDismissedState();
-                    this._setupListeners();
-                    setTimeout(() => this.render(), 400);
-                    console.log('✅ MessageRenderer inicializado');
-                }
-                _loadDismissedState() {
-                    try {
-                        var saved = localStorage.getItem('_dismissed_messages');
-                        if (saved) {
-                            var parsed = JSON.parse(saved);
-                            if (Array.isArray(parsed)) { this._dismissedMessages = new Set(parsed); }
-                        }
-                    } catch (e) {}
-                }
-                _saveDismissedState() {
-                    try {
-                        var arr = Array.from(this._dismissedMessages);
-                        localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
-                    } catch (e) {}
-                }
-                _setupListeners() {
-                    window.addEventListener('app:state_changed', (e) => {
-                        var detail = e.detail || {};
-                        if (detail.key === 'currentMessage' || detail.key === 'userSegment' || detail.key === 'credits') {
-                            setTimeout(() => this.render(), 100);
-                        }
-                    });
-                    window.addEventListener('message:context_updated', (e) => { setTimeout(() => this.render(), 150); });
-                    document.addEventListener('creditsUpdated', (e) => { setTimeout(() => this.render(), 200); });
-                    window.addEventListener('app:ready', (e) => { setTimeout(() => this.render(), 300); });
-                    window.addEventListener('authReady', (e) => { setTimeout(() => this.render(), 500); });
-                    window.addEventListener('authLoginSuccess', (e) => { setTimeout(() => this.render(), 600); });
-                }
-                render() {
-                    var state = window.__APP_STATE || window.App?.State;
-                    if (!state) return;
-                    var message = state.currentMessage;
-                    var segment = state.userSegment;
-                    var credits = state.credits;
-                    if (!message) { this._hideContainer(); return; }
-                    var messageId = message.message_id || segment + '_' + credits;
-                    if (this._dismissedMessages.has(messageId)) { this._hideContainer(); return; }
-                    this._renderMessage(message, segment, credits);
-                    this._lastRendered = messageId;
-                }
-                _renderMessage(message, segment, credits) {
-                    if (!this.container) return;
-                    var title = message.title || 'Mensagem';
-                    var icon = message.icon || 'fa-info-circle';
-                    var color = message.color || 'info';
-                    var msgText = message.message || '';
-                    var show_action = message.show_action || false;
-                    var action_text = message.action_text || 'Ver mais';
-                    var action_url = message.action_url || '#';
-                    var dismissible = message.dismissible !== undefined ? message.dismissible : true;
-                    var priority = message.priority || 0;
-                    var message_id = message.message_id || '';
-                    var colorClass = this._getColorClass(color);
-                    var iconClass = icon;
-                    var segmentClass = segment === 'new' ? 'new-user-message' : segment === 'premium' ? 'premium-message' : '';
-                    var isExternal = action_url.startsWith('http') || action_url.startsWith('//');
-                    var targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
-                    this.container.innerHTML = `
-                        <div class="message-banner message-${colorClass} ${segmentClass}" data-message-id="${message_id}" data-priority="${priority}">
-                            <div class="message-content">
-                                <div class="message-icon"><i class="fas ${iconClass}"></i></div>
-                                <div class="message-text">
-                                    <div class="message-title">${title}</div>
-                                    <div class="message-body">${msgText}</div>
-                                    ${show_action ? `<div class="message-action"><a href="${action_url}" class="btn btn-${colorClass}" ${targetAttr}>${action_text} <i class="fas fa-arrow-right ms-1"></i></a></div>` : ''}
-                                </div>
-                                ${dismissible ? `<button class="message-dismiss btn-close" aria-label="Fechar"></button>` : ''}
-                            </div>
-                        </div>
-                    `;
-                    this.container.style.display = 'block';
-                    var dismissBtn = this.container.querySelector('.message-dismiss');
-                    if (dismissBtn) {
-                        dismissBtn.addEventListener('click', () => {
-                            var id = this.container.dataset.messageId || message_id;
-                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
-                            this._hideContainer();
-                            window.dispatchEvent(new CustomEvent('message:dismissed', { detail: { messageId: id, segment: segment, credits: credits } }));
-                        });
-                    }
-                    requestAnimationFrame(() => {
-                        var banner = this.container.querySelector('.message-banner');
-                        if (banner) { banner.classList.add('message-visible'); }
-                    });
-                    if (priority <= 1 && dismissible) {
-                        clearTimeout(this._autoDismissTimer);
-                        this._autoDismissTimer = setTimeout(() => {
-                            var id = this.container.dataset.messageId || message_id;
-                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
-                            this._hideContainer();
-                        }, 8000);
-                    }
-                }
-                _getColorClass(color) {
-                    var map = { 'success': 'success', 'warning': 'warning', 'info': 'info', 'danger': 'danger', 'primary': 'primary', 'premium': 'premium', 'dark': 'dark' };
-                    return map[color] || 'info';
-                }
-                _hideContainer() {
-                    if (this.container) { this.container.style.display = 'none'; this.container.innerHTML = ''; }
-                    clearTimeout(this._autoDismissTimer);
-                }
-                refresh() { this._dismissedMessages.clear(); this._saveDismissedState(); this.render(); }
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => { window.messageRenderer = new MessageRenderer(); });
-            } else {
-                setTimeout(() => { window.messageRenderer = new MessageRenderer(); }, 300);
-            }
-            console.log('✅ MessageRenderer carregado');
-        })();
-    </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
-            var NOTIF_CONFIG = { AUTO_CLOSE_DELAY: 6000, STORAGE_KEY: '_aa_welcome_shown', WELCOME_PERMANENT_KEY: '_aa_welcome_permanent', INITIAL_CREDITS: 3 };
-            var notification = document.getElementById('welcomeNotification');
-            var notifClose = document.getElementById('notifClose');
-            var notifDismiss = document.getElementById('notifDismiss');
-            var notifGoDashboard = document.getElementById('notifGoDashboard');
-            var notifCreditsCount = document.getElementById('notifCreditsCount');
-            var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
-            var notifTitle = document.getElementById('notifTitle');
-            var notifSubtitle = document.getElementById('notifSubtitle');
-            var progressBar = document.getElementById('notifProgressBar');
-            function getUserData() {
-                try { var userData = localStorage.getItem('user_data'); if (userData) { return JSON.parse(userData); } } catch (e) {}
-                return null;
-            }
-            function getCreditsFromState() {
-                try { if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) { return window.__APP_STATE.credits; } if (window.App && typeof window.App.getCredits === 'function') { return window.App.getCredits(); } } catch (e) {}
-                return null;
-            }
-            function shouldShowWelcome() {
-                try {
-                    if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') { return false; }
-                    if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') { return false; }
-                    var user = getUserData();
-                    if (user && user.is_admin === true) { localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true'); return false; }
-                    var credits = getCreditsFromState() || (user ? user.credits : 0);
-                    if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) { return false; }
-                    if (user && user.created_at) {
-                        var createdAt = new Date(user.created_at);
-                        var now = new Date();
-                        var diffMinutes = (now - createdAt) / (1000 * 60);
-                        if (diffMinutes < 5) { return true; }
-                    }
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        var totalAnalyses = user ? user.total_analyses || 0 : 0;
-                        if (totalAnalyses === 0) { return true; }
-                    }
-                    return false;
-                } catch (e) { return false; }
-            }
-            function setupNotificationContent() {
-                var user = getUserData();
-                var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
-                var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
-                if (notifCreditsCount) notifCreditsCount.textContent = credits;
-                if (notifCreditsHighlight) notifCreditsHighlight.textContent = credits;
-                if (notifTitle) notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
-                if (notifSubtitle) {
-                    if (credits > 0) {
-                        notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
-                    } else {
-                        notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
-                    }
-                }
-            }
-            function showWelcomeNotification() {
-                if (!notification) return;
-                setupNotificationContent();
-                notification.classList.add('show');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-                startAutoClose();
-                window.dispatchEvent(new CustomEvent('welcome:shown', { detail: { credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS, timestamp: Date.now() } }));
-                console.log('🔔 Notificação de boas-vindas exibida!');
-            }
-            function startAutoClose() {
-                if (!progressBar) return;
-                progressBar.style.width = '100%';
-                progressBar.style.transition = 'none';
-                void progressBar.offsetWidth;
-                progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
-                setTimeout(function() { progressBar.style.width = '0%'; }, 50);
-                clearTimeout(window._notifTimer);
-                window._notifTimer = setTimeout(function() { dismissNotification(); }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
-            }
-            function dismissNotification() {
-                if (!notification) return;
-                notification.classList.remove('show');
-                clearTimeout(window._notifTimer);
-                localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-                window.dispatchEvent(new CustomEvent('welcome:dismissed', { detail: { timestamp: Date.now() } }));
-                console.log('🔔 Notificação fechada');
-            }
-            function goToDashboard() {
-                dismissNotification();
-                window.location.href = '/dashboard';
-            }
-            function setupEvents() {
-                if (notifClose) notifClose.addEventListener('click', dismissNotification);
-                if (notifDismiss) notifDismiss.addEventListener('click', dismissNotification);
-                if (notifGoDashboard) notifGoDashboard.addEventListener('click', goToDashboard);
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
-                        dismissNotification();
-                    }
-                });
-                if (notification) {
-                    notification.addEventListener('mouseenter', function() {
-                        clearTimeout(window._notifTimer);
-                        if (progressBar) {
-                            progressBar.style.transition = 'none';
-                            progressBar.style.width = progressBar.style.width || '100%';
-                        }
-                    });
-                    notification.addEventListener('mouseleave', function() {
-                        var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
-                        var percent = parseFloat(remaining) || 100;
-                        var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
-                        if (remainingTime > 500) {
-                            clearTimeout(window._notifTimer);
-                            if (progressBar) {
-                                progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
-                                progressBar.style.width = '0%';
-                            }
-                            window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
-                        }
-                    });
-                }
-            }
-            function listenAppEvents() {
-                document.addEventListener('authLoginSuccess', function(e) {
-                    var data = e.detail || {};
-                    if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 800);
-                    }
-                });
-                document.addEventListener('app:ready', function(e) {
-                    var detail = e.detail || {};
-                    setTimeout(function() { if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) { showWelcomeNotification(); } }, 500);
-                });
-                document.addEventListener('authReady', function(e) {
-                    if (e.detail && e.detail.isAuthenticated) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
-                    }
-                });
-            }
-            function init() {
-                setupEvents();
-                listenAppEvents();
-                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
-                    setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 400);
-                }
-                if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
-                    var credits = getCreditsFromState();
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
-                    }
-                }
-                console.log('✅ Sistema de notificação inicializado!');
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                setTimeout(init, 300);
-            }
-            window.WelcomeNotif = { show: showWelcomeNotification, dismiss: dismissNotification, shouldShow: shouldShowWelcome };
-            console.log('✅ welcome-notification.js carregado!');
-        })();
-    </script>
 
 </body>
 </html>
