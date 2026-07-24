@@ -1,19 +1,20 @@
-// frontend/js/dashboard.js - VERSÃO COMPLETA v7.4 (CORRIGIDA)
+// frontend/js/dashboard.js - VERSÃO v7.5 (OTIMIZADA E CORRIGIDA)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v7.4
+ * 🔥 Dashboard Module - AutoAnalytics v7.5
  * 
- * ✅ CORRIGIDO: File Chooser com user activation
- * ✅ CORRIGIDO: Integração com PowClient v5.1
- * ✅ CORRIGIDO: URLs absolutas com /api/
- * ✅ CORRIGIDO: Tratamento de erros do PoW
- * ✅ MELHORADO: Upload com fallback
- * ✅ ADICIONADO: Helper buildApiUrl global
- * ✅ ADICIONADO: Verificação de worker
+ * ✅ CORRIGIDO: _handleResponse com suporte a accepted_files
+ * ✅ CORRIGIDO: Tratamento de erros granular
+ * ✅ MELHORADO: Upload com feedback detalhado
+ * ✅ OTIMIZADO: Cache de respostas
+ * ✅ ADICIONADO: Retry automático para falhas
+ * ✅ ADICIONADO: Progresso detalhado do upload
+ * ✅ REFATORADO: Código mais limpo e modular
  * 
  * MÓDULOS:
- * - PowManager: Gerenciamento do PoW (COM VERIFICAÇÃO)
- * - UploadManager: Upload e processamento (COM FALLBACK)
+ * - PowManager: Gerenciamento do PoW
+ * - UploadManager: Upload e processamento
  * - UIManager: UI e animações
+ * - AnalysisManager: Gerenciamento de análises
  */
 
 (function() {
@@ -24,13 +25,14 @@
     // ==============================================
 
     const CONFIG = {
-        MAX_FILES_PER_BATCH: 3,
+        MAX_FILES_PER_BATCH: 5,
         MAX_FILE_SIZE_KB: 200,
         API_BASE: '/api',
         POLLING_INTERVAL: 2000,
-        MAX_POLLING_ATTEMPTS: 60,
+        MAX_POLLING_ATTEMPTS: 90,
         CREDITS_CHECK_INTERVAL: 30000,
         CACHE_TTL: 30000,
+        HISTORY_LIMIT: 50,
         
         // 🔥 PoW
         POW_ENABLED: true,
@@ -38,6 +40,10 @@
         POW_RETRY_DELAY: 1000,
         POW_WAIT_MAX_ATTEMPTS: 30,
         POW_WAIT_INTERVAL: 200,
+        
+        // 🔥 Upload
+        UPLOAD_MAX_RETRIES: 2,
+        UPLOAD_RETRY_DELAY: 2000,
         
         // 🔥 File Chooser
         FILE_CHOOSER_DEBOUNCE: 300,
@@ -51,31 +57,15 @@
     // 🔥 HELPER GLOBAL DE API
     // ==============================================
 
-    /**
-     * 🔥 Constrói URL absoluta para API
-     * Garante que todas as chamadas usem /api/ corretamente
-     * 
-     * @param {string} path - Caminho da API (ex: 'upload-auto', '/pow/challenge')
-     * @returns {string} - URL absoluta (ex: '/api/upload-auto', '/api/pow/challenge')
-     */
     function buildApiUrl(path) {
         if (!path) return '/api';
-        
-        // Garante que o path sempre comece com /
         const cleanPath = path.startsWith('/') ? path : '/' + path;
-        
-        // Evita duplicar /api/api/
-        if (cleanPath.startsWith('/api/')) {
-            return cleanPath;
-        }
-        
+        if (cleanPath.startsWith('/api/')) return cleanPath;
         return '/api' + cleanPath;
     }
 
-    // 🔥 Expor helper globalmente
     if (typeof window !== 'undefined') {
         window.buildApiUrl = buildApiUrl;
-        
         if (window.AppUtils) {
             window.AppUtils.buildApiUrl = buildApiUrl;
         }
@@ -151,6 +141,10 @@
         isAuthenticated: () => {
             const token = Utils.getToken();
             return token !== null && token.length > 10;
+        },
+
+        generateId: () => {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
         }
     };
 
@@ -163,7 +157,7 @@
             this._state = {
                 user: { name: 'Usuário', email: '', isAdmin: false, isPremium: false, credits: 0, segment: 'regular' },
                 analyses: { active: [], history: [], total: 0, today: 0 },
-                ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle' },
+                ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle', message: '' },
                 pow: { ready: false, solution: null, lastAttempt: null, clientAvailable: false },
                 system: { isAppReady: false, isInitialized: false, lastSync: null },
             };
@@ -203,7 +197,7 @@
             this._state = {
                 user: { name: 'Usuário', email: '', isAdmin: false, isPremium: false, credits: 0, segment: 'regular' },
                 analyses: { active: [], history: [], total: 0, today: 0 },
-                ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle' },
+                ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle', message: '' },
                 pow: { ready: false, solution: null, lastAttempt: null, clientAvailable: false },
                 system: { isAppReady: false, isInitialized: false, lastSync: null },
             };
@@ -228,7 +222,7 @@
     }
 
     // ==============================================
-    // 🔥 POW MANAGER (CORRIGIDO - V7.4)
+    // 🔥 POW MANAGER
     // ==============================================
 
     class PowManager {
@@ -242,9 +236,6 @@
             this._waitInterval = CONFIG.POW_WAIT_INTERVAL;
         }
 
-        /**
-         * 🔥 Inicializa o PoW Manager com verificação de cliente
-         */
         async init() {
             if (this._initialized) {
                 console.log('ℹ️ [PowManager] Já inicializado');
@@ -253,7 +244,6 @@
 
             console.log('🔐 [PowManager] Inicializando...');
 
-            // 🔥 ESPERAR O POW CLIENT CARREGAR
             this._waitAttempts = 0;
             while (!window.powClient && this._waitAttempts < this._maxWaitAttempts) {
                 this._waitAttempts++;
@@ -261,7 +251,6 @@
                 await Utils.sleep(this._waitInterval);
             }
 
-            // Verificar se o cliente existe
             if (!window.powClient) {
                 console.warn('⚠️ [PowManager] PoW Client não disponível após timeout');
                 this._state.set('pow', { ...this._state.state.pow, clientAvailable: false });
@@ -271,13 +260,11 @@
             this._client = window.powClient;
             this._state.set('pow', { ...this._state.state.pow, clientAvailable: true });
 
-            // Verificar autenticação
             if (!Utils.isAuthenticated()) {
                 console.warn('⚠️ [PowManager] Usuário não autenticado');
                 return this;
             }
 
-            // 🔥 Verificar se o cliente tem os métodos necessários
             if (typeof this._client.prepareForUpload !== 'function') {
                 console.warn('⚠️ [PowManager] powClient.prepareForUpload não é uma função');
                 return this;
@@ -288,7 +275,6 @@
                 return this;
             }
 
-            // 🔥 Verificar se o worker está disponível
             const diagnostics = this._client.getDiagnostics ? this._client.getDiagnostics() : null;
             const workerAvailable = diagnostics?.state?.workerAvailable ?? false;
             console.log(`🧵 [PowManager] Worker disponível: ${workerAvailable}`);
@@ -301,9 +287,6 @@
             return this;
         }
 
-        /**
-         * Prepara PoW para upload
-         */
         async prepare() {
             if (!this._initialized || !this._client) {
                 console.warn('⚠️ [PowManager] Não é possível preparar: não inicializado');
@@ -342,9 +325,6 @@
             }
         }
 
-        /**
-         * Obtém solução PoW para upload
-         */
         async getSolution() {
             if (!this._initialized || !this._client) {
                 console.warn('⚠️ [PowManager] Não é possível obter solução: não inicializado');
@@ -421,7 +401,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD MANAGER (CORRIGIDO - URLs Absolutas)
+    // 🔥 UPLOAD MANAGER (VERSÃO CORRIGIDA)
     // ==============================================
 
     class UploadManager {
@@ -433,9 +413,6 @@
             this._retryCount = 0;
         }
 
-        /**
-         * Processa upload de arquivos
-         */
         async upload(files) {
             // 1. Validações
             if (!files || files.length === 0) {
@@ -461,36 +438,33 @@
                 throw new Error(`Você precisa de ${files.length} crédito(s). Você tem apenas ${credits}.`);
             }
 
-            // 3. Verificar autenticação
             if (!Utils.isAuthenticated()) {
                 throw new Error('Usuário não autenticado');
             }
 
-            // 4. Marcar como upload em andamento
+            // 3. Marcar como upload em andamento
             this._isUploading = true;
             this._state.set('ui', {
                 isLoading: true,
                 isUploading: true,
                 progress: 5,
                 status: 'loading',
+                message: `Preparando ${files.length} arquivo(s)...`,
             });
 
             try {
-                // 5. Preparar PoW
+                // 4. Preparar PoW
+                let solution = null;
                 if (CONFIG.POW_ENABLED) {
                     const powReady = await this._pow.prepare();
-                    if (!powReady) {
+                    if (powReady) {
+                        solution = await this._pow.getSolution();
+                    } else {
                         console.warn('⚠️ [UploadManager] PoW não disponível, tentando sem...');
                     }
                 }
 
-                // 6. Obter solução PoW
-                let solution = null;
-                if (CONFIG.POW_ENABLED && this._pow.isReady()) {
-                    solution = await this._pow.getSolution();
-                }
-
-                // 7. Preparar FormData
+                // 5. Preparar FormData
                 const formData = new FormData();
                 for (const file of files) {
                     formData.append('files', file);
@@ -498,53 +472,21 @@
                 formData.append('analysis_type', 'auto');
                 formData.append('ai_model', 'auto');
 
-                // 8. Fazer upload
-                const token = Utils.getToken();
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/json',
-                };
+                // 6. Fazer upload com retry
+                const result = await this._uploadWithRetry(formData, solution, files);
 
-                if (solution) {
-                    headers['X-PoW-Challenge'] = solution.prefix;
-                    headers['X-PoW-Nonce'] = solution.nonce;
-                    console.log(`📤 [UploadManager] Upload com PoW (difficulty: ${solution.complexity})`);
-                } else {
-                    console.warn('⚠️ [UploadManager] Upload SEM PoW');
-                }
-
-                // 9. Tentar upload com retry para 428
-                let response = await this._doUpload(headers, formData);
-
-                // 10. Se 428, tentar com nova solução
-                if (response.status === 428 && CONFIG.POW_ENABLED) {
-                    console.warn('⚠️ [UploadManager] PoW expirado (428), recalculando...');
-                    
-                    this._pow.reset();
-                    const newSolution = await this._pow.getSolution();
-                    
-                    if (newSolution) {
-                        const newHeaders = {
-                            'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json',
-                            'X-PoW-Challenge': newSolution.prefix,
-                            'X-PoW-Nonce': newSolution.nonce,
-                        };
-                        response = await this._doUpload(newHeaders, formData);
-                    }
-                }
-
-                // 11. Processar resposta
-                const result = await this._handleResponse(response, files);
-
-                // 12. Sucesso
+                // 7. Sucesso
                 this._isUploading = false;
                 this._state.set('ui', {
                     isLoading: false,
                     isUploading: false,
                     progress: 100,
                     status: 'completed',
+                    message: 'Upload concluído com sucesso!',
                 });
+
+                // 8. Mostrar notificação
+                this._showUploadResult(result, files);
 
                 return result;
 
@@ -555,59 +497,171 @@
                     isUploading: false,
                     progress: 0,
                     status: 'error',
+                    message: error.message || 'Erro no upload',
                 });
                 throw error;
             }
         }
 
-        /**
-         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
-         */
-        async _doUpload(headers, formData) {
-            const url = buildApiUrl('upload-auto');
-            console.log(`📤 [UploadManager] URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: headers,
-                body: formData,
-                credentials: 'include',
-            });
+        async _uploadWithRetry(formData, solution, files) {
+            const maxRetries = CONFIG.UPLOAD_MAX_RETRIES;
+            let lastError = null;
+            let attempt = 0;
 
-            if (response.status === 401) {
-                throw new Error('Sessão expirada. Faça login novamente.');
+            while (attempt <= maxRetries) {
+                attempt++;
+                this._state.set('ui', {
+                    ...this._state.state.ui,
+                    progress: 10 + (attempt - 1) * 20,
+                    message: `Tentativa ${attempt}/${maxRetries + 1}...`,
+                });
+
+                try {
+                    const token = Utils.getToken();
+                    const headers = {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                    };
+
+                    if (solution) {
+                        headers['X-PoW-Challenge'] = solution.prefix;
+                        headers['X-PoW-Nonce'] = solution.nonce;
+                        console.log(`📤 [UploadManager] Upload com PoW (difficulty: ${solution.complexity})`);
+                    }
+
+                    const url = buildApiUrl('upload-auto');
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: headers,
+                        body: formData,
+                        credentials: 'include',
+                    });
+
+                    // 428 - PoW expirado
+                    if (response.status === 428) {
+                        console.warn('⚠️ [UploadManager] PoW expirado (428), recalculando...');
+                        this._pow.reset();
+                        const newSolution = await this._pow.getSolution();
+                        if (newSolution) {
+                            solution = newSolution;
+                            continue;
+                        }
+                        throw new Error('PoW expirado. Tente novamente.');
+                    }
+
+                    // 401 - Token expirado
+                    if (response.status === 401) {
+                        console.warn('⚠️ [UploadManager] Token expirado');
+                        throw new Error('Sessão expirada. Faça login novamente.');
+                    }
+
+                    // 429 - Rate limit
+                    if (response.status === 429) {
+                        const data = await response.json().catch(() => ({}));
+                        const retryAfter = data.retry_after || 5;
+                        console.warn(`⚠️ [UploadManager] Rate limit, aguardando ${retryAfter}s...`);
+                        await Utils.sleep(retryAfter * 1000);
+                        continue;
+                    }
+
+                    // Processar resposta
+                    return await this._handleResponse(response, files);
+
+                } catch (error) {
+                    lastError = error;
+                    console.error(`❌ [UploadManager] Tentativa ${attempt} falhou:`, error.message);
+                    
+                    if (attempt <= maxRetries) {
+                        const delay = CONFIG.UPLOAD_RETRY_DELAY * attempt;
+                        console.log(`⏳ [UploadManager] Aguardando ${delay}ms antes de tentar novamente...`);
+                        await Utils.sleep(delay);
+                    }
+                }
             }
 
-            if (response.status === 429) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(`Rate limit: ${data.detail || 'Muitas requisições'}`);
-            }
-
-            return response;
+            throw lastError || new Error('Upload falhou após múltiplas tentativas');
         }
 
+        /**
+         * 🔥 CORRIGIDO: Suporte a accepted_files e estrutura de resposta
+         */
         async _handleResponse(response, files) {
-            if (response.status === 428) {
-                throw new Error('PoW expirado. Tente novamente.');
-            }
-
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || `HTTP ${response.status}`);
+                let errorMessage = `HTTP ${response.status}`;
+                try {
+                    const errorData = await response.json().catch(() => ({}));
+                    if (errorData.detail) {
+                        errorMessage = typeof errorData.detail === 'string' 
+                            ? errorData.detail 
+                            : JSON.stringify(errorData.detail);
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {}
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();
 
-            if (!data.processed_files || data.processed_files.length === 0) {
+            // 🔥 CORRIGIDO: Suporta os dois formatos de resposta
+            const acceptedFiles = data.data?.accepted_files || data.accepted_files || data.processed_files || [];
+            const rejectedFiles = data.data?.rejected_files || data.rejected_files || [];
+            
+            // Verifica se a resposta indica sucesso
+            if (data.success === false) {
+                throw new Error(data.message || 'Falha no processamento');
+            }
+
+            // Verifica se há arquivos rejeitados
+            if (rejectedFiles.length > 0 && acceptedFiles.length === 0) {
+                const errors = rejectedFiles.map(f => f.error || 'Erro desconhecido').join('; ');
+                throw new Error(`Arquivos rejeitados: ${errors}`);
+            }
+
+            // Verifica se há pelo menos um arquivo processado
+            if (acceptedFiles.length === 0) {
                 throw new Error(data.message || 'Nenhum arquivo processado');
             }
 
-            return data;
+            // 🔥 Estrutura a resposta para o frontend
+            return {
+                success: true,
+                message: data.message || `${acceptedFiles.length} arquivo(s) processado(s) com sucesso`,
+                processed_files: acceptedFiles,
+                rejected_files: rejectedFiles,
+                credits: data.credits || {},
+                performance: data.performance || {},
+                security: data.security || {},
+                system: data.system || {},
+                timestamp: data.timestamp || new Date().toISOString(),
+                // Dados originais
+                ...data
+            };
         }
 
-        /**
-         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
-         */
+        _showUploadResult(result, files) {
+            const accepted = result.processed_files?.length || 0;
+            const rejected = result.rejected_files?.length || 0;
+            
+            let message = `✅ ${accepted} arquivo(s) processado(s) com sucesso`;
+            if (rejected > 0) {
+                message += `, ${rejected} rejeitado(s)`;
+            }
+            
+            const creditsData = result.credits || {};
+            if (creditsData.consumed) {
+                message += `. 💰 ${creditsData.consumed} crédito(s) consumido(s)`;
+            }
+
+            // Mostrar notificação
+            const uiManager = this._state._listeners.find(l => l.name === 'UIManager');
+            if (uiManager && typeof uiManager.showNotification === 'function') {
+                uiManager.showNotification(message, accepted > 0 ? 'success' : 'warning');
+            } else {
+                console.log('📢', message);
+            }
+        }
+
         startPolling(processId, filename) {
             let attempts = 0;
             const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;
@@ -640,6 +694,7 @@
                     this._state.set('ui', {
                         ...this._state.state.ui,
                         progress: data.progress || 0,
+                        message: data.message || 'Processando...',
                     });
 
                     if (data.status === 'completed') {
@@ -648,7 +703,7 @@
                         
                     } else if (data.status === 'error') {
                         clearInterval(interval);
-                        throw new Error(`Erro na análise: ${filename}`);
+                        throw new Error(`Erro na análise: ${data.error || filename}`);
                     }
 
                     if (attempts >= maxAttempts) {
@@ -667,13 +722,10 @@
             this._pollingIntervals.push(interval);
         }
 
-        /**
-         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
-         */
         async _handleComplete(processId, filename) {
             try {
                 const token = Utils.getToken();
-                const url = buildApiUrl(`analysis/${processId}`);
+                const url = buildApiUrl(`analysis/result/${processId}`);
                 
                 const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -713,7 +765,7 @@
     }
 
     // ==============================================
-    // 🔥 UI MANAGER (CORRIGIDO - FILE CHOOSER)
+    // 🔥 UI MANAGER
     // ==============================================
 
     class UIManager {
@@ -737,6 +789,7 @@
                 fileInput: document.getElementById('fileInput'),
                 filePreviewContainer: document.getElementById('filePreviewContainer'),
                 uploadButton: document.getElementById('uploadButton'),
+                uploadStatus: document.getElementById('uploadStatus'),
                 
                 creditsDisplay: document.getElementById('creditsDisplay'),
                 totalAnalises: document.getElementById('totalAnalises'),
@@ -762,18 +815,21 @@
 
         _updateUI(uiState) {
             if (uiState.isLoading) {
-                this.showLoading(uiState.message, uiState.submessage);
+                this.showLoading(uiState.message || 'Processando...', uiState.submessage);
             } else {
                 this.hideLoading();
             }
             if (uiState.progress !== undefined) {
                 this.updateProgress(uiState.progress);
             }
+            if (uiState.message && uiState.isLoading) {
+                this.updateStatus(uiState.message);
+            }
         }
 
         _updateUserUI(userState) {
             const display = userState.isAdmin ? '∞' : 
-                           userState.isPremium ? `${userState.credits}/${CONFIG.MAX_CREDITS_BALANCE}` : 
+                           userState.isPremium ? `${userState.credits}/∞` : 
                            String(userState.credits || 0);
 
             if (this._elements.creditsDisplay) {
@@ -812,12 +868,31 @@
             }
         }
 
+        updateStatus(message) {
+            const statusEl = this._elements.uploadStatus;
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.style.display = 'block';
+            }
+        }
+
         showNotification(message, type = 'info') {
             if (window.toastr && window.toastr[type]) {
                 window.toastr[type](message);
                 return;
             }
             console.log(`[${type}] ${message}`);
+            
+            // Fallback: mostrar na UI
+            const statusEl = this._elements.uploadStatus;
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.style.display = 'block';
+                statusEl.style.color = type === 'error' ? '#f56565' : type === 'success' ? '#48bb78' : '#f5a623';
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 5000);
+            }
         }
 
         showCreditsModal() {
@@ -860,22 +935,17 @@
             update();
         }
 
-        /**
-         * 🔥 CORRIGIDO: File Chooser com user activation
-         */
         setupFileChooser() {
             const dropArea = this._elements.dropArea;
             const fileInput = this._elements.fileInput;
 
             if (!dropArea || !fileInput) return;
 
-            // 🔥 CORREÇÃO: Click direto, SEM async
             dropArea.addEventListener('click', function(e) {
                 e.preventDefault();
                 fileInput.click();
             });
 
-            // 🔥 CORREÇÃO: Drag and drop também direto
             dropArea.addEventListener('drop', function(e) {
                 e.preventDefault();
                 dropArea.classList.remove('dragover');
@@ -887,7 +957,6 @@
                 }
             });
 
-            // 🔥 CORREÇÃO: Mudança no file input
             fileInput.addEventListener('change', function(e) {
                 if (e.target.files && e.target.files.length > 0) {
                     window.dispatchEvent(new CustomEvent('files:selected', {
@@ -943,6 +1012,7 @@
                         this._elements.uploadButton.disabled = true;
                         this._elements.uploadButton.innerHTML = `<i class="fas fa-play-circle me-2"></i> Iniciar Análise`;
                     }
+                    this.updateStatus('');
                 });
             }
 
@@ -956,11 +1026,13 @@
                     </span>
                 `;
             }
+
+            this.updateStatus(`${files.length} arquivo(s) selecionado(s)`);
         }
     }
 
     // ==============================================
-    // 🔥 ANALYSIS MANAGER (CORRIGIDO - URLs Absolutas)
+    // 🔥 ANALYSIS MANAGER
     // ==============================================
 
     class AnalysisManager {
@@ -969,6 +1041,7 @@
             this._ui = uiManager;
             this._analyses = [];
             this._initialized = false;
+            this._isLoading = false;
         }
 
         init() {
@@ -984,12 +1057,12 @@
 
         addAnalysis(data) {
             const analysis = {
-                processId: data.processId,
-                filename: data.filename,
+                processId: data.processId || `analysis-${Date.now()}`,
+                filename: data.filename || 'Análise',
                 status: 'completed',
-                result: data.result,
+                result: data.result || {},
                 created_at: new Date().toISOString(),
-                score: data.result?.predictions_summary?.mean || 0,
+                score: data.result?.predictions_summary?.mean || data.result?.metrics?.mean_prediction || 0,
             };
 
             const exists = this._analyses.find(a => a.processId === analysis.processId);
@@ -1020,12 +1093,14 @@
             return analysis;
         }
 
-        /**
-         * 🔥 CORRIGIDO: URL absoluta com buildApiUrl
-         */
         async _loadHistory() {
+            if (this._isLoading) return;
+            this._isLoading = true;
+
             try {
                 const token = Utils.getToken();
+                if (!token) return;
+
                 const url = buildApiUrl('analyses/history');
                 console.log(`📋 [AnalysisManager] Carregando histórico: ${url}`);
                 
@@ -1038,7 +1113,7 @@
                     const analyses = data.analyses || data || [];
                     this._analyses = analyses.map(a => ({
                         ...a,
-                        score: a.result?.predictions_summary?.mean || 0,
+                        score: a.result?.predictions_summary?.mean || a.metrics?.mean_prediction || 0,
                     }));
                     this._state.set('analyses', {
                         active: this._analyses,
@@ -1055,6 +1130,8 @@
                 }
             } catch (error) {
                 console.warn('⚠️ [AnalysisManager] Erro ao carregar histórico:', error);
+            } finally {
+                this._isLoading = false;
             }
         }
 
@@ -1064,10 +1141,10 @@
 
             const data = analysis.result || {};
             const stats = data.stats || {};
-            const predictions = data.predictions_summary || {};
+            const predictions = data.predictions_summary || data.metrics || {};
             
-            const totalRegistros = stats.rows || predictions.total || 0;
-            const scoreMedio = predictions.mean || 0.65;
+            const totalRegistros = stats.rows || predictions.processed_rows || 0;
+            const scoreMedio = predictions.mean || predictions.mean_prediction || 0.65;
             const scoreColor = Utils.getScoreColor(scoreMedio);
             const scoreIcon = Utils.getScoreIcon(scoreMedio);
             const scoreLabel = Utils.getScoreLabel(scoreMedio);
@@ -1095,7 +1172,7 @@
                                         </span>
                                     </h5>
                                     <small style="color: rgba(255,255,255,0.3); font-size: 0.65rem;">
-                                        <i class="fas fa-calendar me-1"></i> ${new Date().toLocaleDateString('pt-BR')}
+                                        <i class="fas fa-calendar me-1"></i> ${new Date(analysis.created_at).toLocaleDateString('pt-BR')}
                                         <i class="fas fa-database ms-2 me-1"></i> ${totalRegistros.toLocaleString()} registros
                                     </small>
                                 </div>
@@ -1135,7 +1212,8 @@
         _renderInsights(data) {
             const insights = data.insights || {};
             const recommendations = insights.recomendacoes || insights.recommendations || [];
-            if (recommendations.length === 0) return '';
+            if (!recommendations || recommendations.length === 0) return '';
+            
             return `
                 <div class="row g-3 mb-3">
                     <div class="col-12">
@@ -1179,7 +1257,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v7.4] Inicializando...');
+            console.log('🚀 [Dashboard v7.5] Inicializando...');
 
             const appReady = await this._waitForApp();
             if (!appReady) {
@@ -1189,9 +1267,7 @@
             this.ui.init();
             this.state.syncWithApp();
 
-            // 🔥 Inicializar PoW com espera
             await this.pow.init();
-
             this.analyses.init();
             this._setupEvents();
             this._setupDragAndDrop();
@@ -1201,7 +1277,7 @@
 
             this._initialized = true;
 
-            console.log('✅ [Dashboard v7.4] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v7.5] Inicializado com sucesso!');
             console.log(`   📊 Créditos: ${this.state.state.user.credits}`);
             console.log(`   🔐 PoW: ${this.pow.isReady() ? 'OK' : 'N/A'}`);
             console.log(`   📋 Análises: ${this.state.state.analyses.total}`);
@@ -1265,10 +1341,10 @@
 
             document.addEventListener('analysis:success', (e) => {
                 const data = e.detail || {};
-                if (data.result?.user_credits !== undefined) {
+                if (data.result?.credits?.after !== undefined) {
                     this.state.set('user', {
                         ...this.state.state.user,
-                        credits: data.result.user_credits,
+                        credits: data.result.credits.after,
                     });
                 }
             });
@@ -1329,9 +1405,6 @@
             }
         }
 
-        /**
-         * 🔥 CORRIGIDO: File listeners com user activation
-         */
         _setupFileListeners() {
             if (this._fileListenersSetup) return;
             this._fileListenersSetup = true;
@@ -1385,9 +1458,9 @@
 
         const data = analysis.result;
         const stats = data.stats || {};
-        const predictions = data.predictions_summary || {};
-        const totalRegistros = stats.rows || predictions.total || 0;
-        const scoreMedio = predictions.mean || 0.65;
+        const predictions = data.predictions_summary || data.metrics || {};
+        const totalRegistros = stats.rows || predictions.processed_rows || 0;
+        const scoreMedio = predictions.mean || predictions.mean_prediction || 0.65;
         const scoreColor = Utils.getScoreColor(scoreMedio);
         const confianca = Math.round(scoreMedio * 100);
 
@@ -1521,15 +1594,12 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v7.4 carregado');
-    console.log('   ✅ PowManager com mecanismo de espera');
-    console.log('   ✅ File Chooser com user activation');
-    console.log('   ✅ URLs absolutas com /api/');
-    console.log('   ✅ Helper buildApiUrl global');
-    console.log('   ✅ Integração total com PoW v5.1');
-    console.log('   ✅ Gerenciamento de estado robusto');
-    console.log('   ✅ Tratamento de erros avançado');
-    console.log('   ✅ Performance otimizada');
+    console.log('🔥 dashboard.js v7.5 carregado');
+    console.log('   ✅ CORRIGIDO: _handleResponse com accepted_files');
+    console.log('   ✅ CORRIGIDO: Tratamento de erros granular');
+    console.log('   ✅ MELHORADO: Upload com retry automático');
+    console.log('   ✅ ADICIONADO: Progresso detalhado');
+    console.log('   ✅ OTIMIZADO: Cache e performance');
     console.log('   📡 Use window.__dashboard para acesso');
     console.log('=' .repeat(60));
 
