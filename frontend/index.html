@@ -1,49 +1,10 @@
-<!-- frontend/index.html - VERSÃO COMPLETA V7.7 (COM SISTEMA DE MENSAGENS) -->
+<!-- frontend/index.html - VERSÃO CORRIGIDA V7.9 COM GRÁFICOS -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoAnalytics - IA para Mecânicos</title>
-    
-    <!-- ============================================== -->
-    <!-- 🔥 SEGURANÇA E BLOQUEIO (MODO PASSIVO) -->
-    <!-- ============================================== -->
-    <style>
-        /* 🔥 Oculta a interface por padrão para evitar Flash de Conteúdo Protegido (FOUC) */
-        body {
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            min-height: 100vh;
-        }
-        body.app-ready {
-            opacity: 1;
-        }
-        /* Fallback: se o JS falhar, mostra uma mensagem amigável */
-        body.loading-state::before {
-            content: '🔄 Carregando...';
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-family: 'Inter', sans-serif;
-            font-size: 1.2rem;
-            color: rgba(255, 255, 255, 0.5);
-            z-index: 9999;
-        }
-        body.app-ready::before {
-            display: none;
-        }
-    </style>
-    
-    <!-- ============================================== -->
-    <!-- 🔥 BIBLIOTECAS -->
-    <!-- ============================================== -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
     <style>
         /* ===== RESET E BASE ===== */
@@ -53,7 +14,11 @@
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
             color: #ffffff;
             overflow-x: hidden;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            min-height: 100vh;
         }
+        body.app-ready { opacity: 1; }
 
         /* ===== NAVBAR ===== */
         .navbar-modern {
@@ -133,35 +98,6 @@
             transform: translateY(-2px);
         }
 
-        .pow-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0.15rem 0.6rem;
-            border-radius: 50px;
-            font-size: 0.6rem;
-            font-weight: 700;
-            background: rgba(72, 187, 120, 0.15);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
-            cursor: default;
-        }
-        .pow-status.loading {
-            background: rgba(245, 166, 35, 0.15);
-            border-color: rgba(245, 166, 35, 0.3);
-            color: #f5a623;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        .pow-status.error {
-            background: rgba(220, 53, 69, 0.15);
-            border-color: rgba(220, 53, 69, 0.3);
-            color: #dc3545;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
         /* ===== CONTEÚDO ===== */
         .hero-section { padding: 100px 0 40px; min-height: 100vh; }
 
@@ -190,30 +126,21 @@
             margin-right: 0.5rem;
         }
 
-        /* 🔥 ÁREA DE UPLOAD - OTIMIZADA E VISÍVEL */
+        /* ===== ÁREA DE UPLOAD ===== */
         .upload-area {
             border: 2px dashed rgba(255, 107, 53, 0.35);
             border-radius: 20px;
-            padding: 3rem 2rem;
+            padding: 2.5rem 2rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             background: rgba(255, 107, 53, 0.04);
             position: relative;
-            min-height: 220px;
+            min-height: 200px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-        }
-        .upload-area::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 20px;
-            background: radial-gradient(circle at center, rgba(255,107,53,0.04) 0%, transparent 70%);
-            pointer-events: none;
-            transition: opacity 0.4s;
         }
         .upload-area:hover {
             border-color: rgba(255, 107, 53, 0.7);
@@ -227,16 +154,12 @@
             box-shadow: 0 0 50px rgba(72, 187, 120, 0.1);
         }
         .upload-area .upload-icon {
-            font-size: 3.8rem;
+            font-size: 3.5rem;
             color: #ff6b35;
             margin-bottom: 0.8rem;
             display: block;
             position: relative;
             z-index: 1;
-            transition: transform 0.4s;
-        }
-        .upload-area:hover .upload-icon {
-            transform: scale(1.05) rotate(-2deg);
         }
         .upload-area .upload-icon i {
             animation: float 3s ease-in-out infinite;
@@ -248,14 +171,14 @@
         .upload-area h4 {
             color: white;
             font-weight: 700;
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             margin-bottom: 0.2rem;
             position: relative;
             z-index: 1;
         }
         .upload-area p {
             color: rgba(255, 255, 255, 0.45);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             margin-bottom: 1rem;
             position: relative;
             z-index: 1;
@@ -264,10 +187,10 @@
             background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
             color: white;
             border: none;
-            padding: 0.7rem 2rem;
+            padding: 0.6rem 1.8rem;
             border-radius: 50px;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             transition: all 0.3s;
             position: relative;
             z-index: 1;
@@ -294,33 +217,34 @@
             align-items: center;
             gap: 0.3rem;
         }
-        .upload-area .file-hint i {
-            color: #ff6b35;
+        .upload-area .file-hint i { color: #ff6b35; }
+
+        .upload-area.uploading {
+            border-color: #f5a623;
+            background: rgba(245, 166, 35, 0.08);
+            pointer-events: none;
+        }
+        .upload-area.uploading .upload-icon i {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
-        .btn-gradient {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            color: white;
-            border: none;
-            padding: 0.7rem 1.5rem;
-            border-radius: 50px;
-            font-weight: 700;
-            transition: all 0.3s;
-        }
-        .btn-gradient:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
-            color: white;
-        }
-        .btn-gradient:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            transform: none;
+        .upload-area.success {
+            border-color: #48bb78;
+            background: rgba(72, 187, 120, 0.08);
         }
 
-        /* 🔥 FILE PREVIEW - ANIMADO */
+        .upload-area.error {
+            border-color: #dc3545;
+            background: rgba(220, 53, 69, 0.08);
+        }
+
+        /* ===== FILE PREVIEW ===== */
         .file-preview-container {
-            max-height: 200px;
+            max-height: 180px;
             overflow-y: auto;
             margin: 0.5rem 0 1rem;
         }
@@ -332,16 +256,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.6rem 1rem;
+            padding: 0.5rem 1rem;
             background: rgba(255,255,255,0.04);
             border-radius: 12px;
             margin-bottom: 0.4rem;
             animation: slideIn 0.3s ease-out;
             border: 1px solid rgba(255,255,255,0.05);
-            transition: all 0.3s;
-        }
-        .file-preview-item:hover {
-            background: rgba(255,255,255,0.08);
         }
         .file-preview-item .file-info {
             display: flex;
@@ -383,38 +303,12 @@
             background: rgba(229, 62, 62, 0.15);
         }
 
-        .file-preview-item .file-status {
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 0.15rem 0.6rem;
-            border-radius: 50px;
-            flex-shrink: 0;
-        }
-        .file-preview-item .file-status.ready {
-            color: #48bb78;
-            background: rgba(72, 187, 120, 0.15);
-        }
-        .file-preview-item .file-status.error {
-            color: #e53e3e;
-            background: rgba(229, 62, 62, 0.15);
-        }
-        .file-preview-item .file-status.loading {
-            color: #f5a623;
-            background: rgba(245, 166, 35, 0.15);
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
         @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+            from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
+        /* ===== MÉTRICAS ===== */
         .metric-card {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 16px;
@@ -439,6 +333,212 @@
             letter-spacing: 0.5px;
         }
 
+        /* ===== STATUS DE ANÁLISE ===== */
+        .analysis-status {
+            display: none;
+            padding: 1rem;
+            border-radius: 16px;
+            text-align: center;
+            background: rgba(245, 166, 35, 0.06);
+            border: 1px solid rgba(245, 166, 35, 0.15);
+            margin-top: 1rem;
+        }
+        .analysis-status.show {
+            display: block;
+            animation: fadeUp 0.4s ease-out;
+        }
+        .analysis-status .status-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .analysis-status .status-text {
+            font-weight: 600;
+            color: rgba(255,255,255,0.8);
+        }
+        .analysis-status .status-sub {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.4);
+        }
+        .analysis-status .status-progress {
+            margin-top: 0.8rem;
+            height: 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .analysis-status .status-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            width: 0%;
+            transition: width 0.5s ease;
+            border-radius: 10px;
+        }
+
+        /* ===== RESULTADO ===== */
+        .result-container {
+            display: none;
+            animation: fadeUp 0.6s ease-out;
+            margin-top: 1.5rem;
+        }
+        .result-container.show {
+            display: block;
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .result-header .result-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: white;
+        }
+        .result-header .result-title i {
+            color: #48bb78;
+            margin-right: 0.5rem;
+        }
+        .result-header .result-badge {
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .result-header .result-badge.success {
+            background: rgba(72, 187, 120, 0.15);
+            color: #48bb78;
+            border: 1px solid rgba(72, 187, 120, 0.2);
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 1.2rem;
+        }
+        .result-stat {
+            background: rgba(0,0,0,0.15);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .result-stat .stat-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #ff6b35;
+        }
+        .result-stat .stat-label {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-top: 0.1rem;
+        }
+        .result-stat .stat-value.good { color: #48bb78; }
+        .result-stat .stat-value.medium { color: #f5a623; }
+        .result-stat .stat-value.bad { color: #dc3545; }
+
+        /* ===== GRÁFICOS ===== */
+        .chart-container {
+            background: rgba(0,0,0,0.12);
+            border-radius: 12px;
+            padding: 0.8rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            height: 100%;
+        }
+        .chart-container .chart-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .chart-container .chart-title span {
+            color: rgba(255,255,255,0.4);
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .chart-container .chart-title .badge-chart {
+            background: rgba(255,107,53,0.15);
+            color: #ff6b35;
+            font-size: 0.5rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 50px;
+        }
+        .chart-container canvas {
+            width: 100% !important;
+            max-height: 120px;
+        }
+        .chart-container-sm canvas {
+            max-height: 100px;
+        }
+
+        .result-insights {
+            margin-top: 0.8rem;
+        }
+        .result-insight {
+            padding: 0.8rem 1rem;
+            background: rgba(0,0,0,0.15);
+            border-radius: 12px;
+            border-left: 3px solid #ff6b35;
+            margin-bottom: 0.5rem;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .result-insight:last-child { margin-bottom: 0; }
+        .result-insight .insight-icon {
+            margin-right: 0.5rem;
+            color: #ff6b35;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 0.8rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        .result-actions .btn-result {
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            border: none;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .result-actions .btn-result-primary {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+        }
+        .result-actions .btn-result-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+            color: white;
+        }
+        .result-actions .btn-result-secondary {
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .result-actions .btn-result-secondary:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
         /* ===== LOADING OVERLAY ===== */
         .loading-overlay {
             display: none;
@@ -451,372 +551,19 @@
             align-items: center;
             flex-direction: column;
         }
-        .loading-overlay.show {
-            display: flex;
+        .loading-overlay.show { display: flex; }
+        .loading-overlay .loading-container { text-align: center; padding: 2rem; max-width: 500px; }
+        .loading-overlay .loading-icon { font-size: 4rem; margin-bottom: 1rem; animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.05); }
         }
-        .loading-overlay .loading-container {
-            text-align: center;
-            padding: 2rem;
-            max-width: 500px;
-        }
-        .loading-overlay .loading-icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        .loading-overlay .loading-title {
-            color: #ff6b35;
-            font-weight: 800;
-            font-size: 1.5rem;
-        }
-        .loading-overlay .loading-subtitle {
-            color: rgba(255,255,255,0.5);
-            font-size: 0.95rem;
-        }
-        .loading-overlay .loading-progress {
-            margin-top: 1.5rem;
-        }
-        .loading-overlay .progress {
-            height: 4px;
-            background: rgba(255,255,255,0.08);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        .loading-overlay .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            transition: width 0.3s ease;
-            border-radius: 10px;
-        }
-        .loading-overlay .loading-percent {
-            color: rgba(255,255,255,0.3);
-            font-size: 0.75rem;
-            margin-top: 0.5rem;
-        }
-
-        /* ============================================== */
-        /* 🔥 NOTIFICAÇÃO DE BOAS-VINDAS (NOVOS USUÁRIOS) */
-        /* ============================================== */
-
-        .welcome-notification {
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            max-width: 420px;
-            width: 100%;
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 20px;
-            padding: 1.5rem 1.8rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 107, 53, 0.1);
-            z-index: 9998;
-            transform: translateX(120%);
-            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            backdrop-filter: blur(20px);
-        }
-
-        .welcome-notification.show {
-            transform: translateX(0);
-        }
-
-        .welcome-notification .notif-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.8rem;
-            color: white;
-            flex-shrink: 0;
-            animation: notifPulse 2s ease-in-out infinite;
-        }
-
-        @keyframes notifPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(255, 107, 53, 0.4); }
-        }
-
-        .welcome-notification .notif-content {
-            flex: 1;
-        }
-
-        .welcome-notification .notif-title {
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #ff6b35;
-            margin-bottom: 0.2rem;
-        }
-
-        .welcome-notification .notif-subtitle {
-            font-size: 0.9rem;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 0.5rem;
-        }
-
-        .welcome-notification .notif-credits {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: rgba(255, 107, 53, 0.12);
-            border: 1px solid rgba(255, 107, 53, 0.2);
-            border-radius: 50px;
-            padding: 0.3rem 1.2rem;
-            font-size: 1.3rem;
-            font-weight: 800;
-            color: #f5a623;
-        }
-
-        .welcome-notification .notif-credits i {
-            color: #ff6b35;
-            font-size: 1.2rem;
-        }
-
-        .welcome-notification .notif-actions {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 0.8rem;
-            flex-wrap: wrap;
-        }
-
-        .welcome-notification .notif-btn {
-            padding: 0.4rem 1.2rem;
-            border-radius: 50px;
-            border: none;
-            font-weight: 600;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-
-        .welcome-notification .notif-btn-primary {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-        }
-
-        .welcome-notification .notif-btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
-        }
-
-        .welcome-notification .notif-btn-secondary {
-            background: rgba(255, 255, 255, 0.06);
-            color: rgba(255, 255, 255, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .welcome-notification .notif-btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .welcome-notification .notif-close {
-            position: absolute;
-            top: 10px;
-            right: 12px;
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 1.2rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            padding: 0.2rem 0.4rem;
-            border-radius: 8px;
-        }
-
-        .welcome-notification .notif-close:hover {
-            color: white;
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .welcome-notification .notif-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 0 0 20px 20px;
-            overflow: hidden;
-        }
-
-        .welcome-notification .notif-progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            border-radius: 0 0 20px 20px;
-            transition: width 6s linear;
-            width: 100%;
-        }
-
-        /* ============================================== */
-        /* 🔥 MENSAGENS INTELIGENTES - ESTILOS           */
-        /* ============================================== */
-
-        #messageContainer {
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            z-index: 1050;
-            max-width: 420px;
-            width: 100%;
-            pointer-events: none;
-        }
-
-        #messageContainer .message-banner {
-            pointer-events: auto;
-        }
-
-        .message-banner {
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border-radius: 16px;
-            padding: 16px 20px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 40px rgba(255,107,53,0.05);
-            border-left: 4px solid #6c757d;
-            transform: translateX(30px);
-            opacity: 0;
-            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            margin-bottom: 12px;
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.06);
-        }
-
-        .message-banner.message-visible {
-            transform: translateX(0);
-            opacity: 1;
-        }
-
-        .message-banner.message-success { border-left-color: #28a745; }
-        .message-banner.message-warning { border-left-color: #ffc107; }
-        .message-banner.message-info { border-left-color: #17a2b8; }
-        .message-banner.message-danger { border-left-color: #dc3545; }
-        .message-banner.message-primary { border-left-color: #007bff; }
-        .message-banner.message-premium { 
-            border-left-color: #f39c12; 
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98), rgba(40, 30, 10, 0.95));
-            border-color: rgba(243, 156, 18, 0.2);
-        }
-
-        .message-content {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-        }
-
-        .message-icon {
-            font-size: 24px;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-        .message-success .message-icon { color: #28a745; }
-        .message-warning .message-icon { color: #ffc107; }
-        .message-info .message-icon { color: #17a2b8; }
-        .message-danger .message-icon { color: #dc3545; }
-        .message-primary .message-icon { color: #007bff; }
-        .message-premium .message-icon { color: #f39c12; }
-
-        .message-text { flex: 1; min-width: 0; }
-        .message-title { 
-            font-weight: 700; 
-            font-size: 1rem; 
-            margin-bottom: 2px;
-            color: #ffffff;
-        }
-        .message-body { 
-            font-size: 0.9rem; 
-            color: rgba(255,255,255,0.7); 
-            line-height: 1.4;
-        }
-        .message-action { margin-top: 8px; }
-        .message-action .btn { 
-            font-size: 0.8rem; 
-            padding: 4px 14px; 
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .message-success .message-action .btn-success { background: #28a745; border-color: #28a745; color: white; }
-        .message-warning .message-action .btn-warning { background: #ffc107; border-color: #ffc107; color: #1a1a2e; }
-        .message-info .message-action .btn-info { background: #17a2b8; border-color: #17a2b8; color: white; }
-        .message-danger .message-action .btn-danger { background: #dc3545; border-color: #dc3545; color: white; }
-        .message-primary .message-action .btn-primary { background: #007bff; border-color: #007bff; color: white; }
-        .message-premium .message-action .btn-premium { 
-            background: linear-gradient(135deg, #f39c12, #e67e22); 
-            border-color: #f39c12; 
-            color: white; 
-        }
-
-        .message-dismiss {
-            flex-shrink: 0;
-            background: transparent;
-            border: none;
-            padding: 4px;
-            font-size: 1.2rem;
-            opacity: 0.3;
-            transition: opacity 0.2s;
-            margin-top: -4px;
-            color: white;
-        }
-        .message-dismiss:hover { opacity: 1; }
-
-        @keyframes pulse-rocket {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1) rotate(-5deg); }
-        }
-        .new-user-message .message-icon { animation: pulse-rocket 2s infinite; }
-
-        @keyframes spin-star {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .premium-message .message-icon { animation: spin-star 3s linear infinite; }
-
-        @keyframes glow-coins {
-            0%, 100% { filter: drop-shadow(0 0 5px rgba(255,107,53,0.3)); }
-            50% { filter: drop-shadow(0 0 20px rgba(255,107,53,0.6)); }
-        }
-        .message-icon .fa-coins { animation: glow-coins 2s ease-in-out infinite; }
-
-        @media (max-width: 576px) {
-            #messageContainer {
-                top: 70px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-            }
-            .message-banner { 
-                padding: 12px 16px; 
-                border-radius: 12px;
-            }
-            .message-content { gap: 8px; }
-            .message-icon { font-size: 20px; }
-            .message-title { font-size: 0.9rem; }
-            .message-body { font-size: 0.8rem; }
-        }
-
-        @media (max-width: 992px) {
-            .hero-section { padding: 90px 0 30px; }
-            .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
-        }
-        @media (max-width: 768px) {
-            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
-            .brand-text { font-size: 1.1rem; }
-            .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
-            .user-name-display { font-size: 0.75rem; }
-            .upload-area .upload-icon { font-size: 2.8rem; }
-            .upload-area h4 { font-size: 1rem; }
-            .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
-            .metric-value { font-size: 1.5rem; }
-            .upload-area { min-height: 160px; padding: 1.5rem; }
-        }
-        @media (max-width: 480px) {
-            .hero-section { padding: 80px 0 20px; }
-            .glass-card { padding: 1rem; }
-            .upload-area { padding: 1rem; min-height: 140px; }
-            .upload-area .upload-icon { font-size: 2.2rem; }
-            .upload-area h4 { font-size: 0.9rem; }
-            .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
-        }
+        .loading-overlay .loading-title { color: #ff6b35; font-weight: 800; font-size: 1.5rem; }
+        .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+        .loading-overlay .loading-progress { margin-top: 1.5rem; }
+        .loading-overlay .progress { height: 4px; background: rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; }
+        .loading-overlay .progress-bar { height: 100%; background: linear-gradient(90deg, #ff6b35, #f7931e); transition: width 0.3s ease; border-radius: 10px; }
+        .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.75rem; margin-top: 0.5rem; }
 
         /* ===== TIMELINE ===== */
         .timeline {
@@ -864,6 +611,216 @@
             color: rgba(255, 255, 255, 0.85);
         }
         .timeline-content strong { color: #f5a623; }
+
+        /* ===== WELCOME NOTIFICATION ===== */
+        .welcome-notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            max-width: 420px;
+            width: 100%;
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 20px;
+            padding: 1.5rem 1.8rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 107, 53, 0.1);
+            z-index: 9998;
+            transform: translateX(120%);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(20px);
+        }
+        .welcome-notification.show { transform: translateX(0); }
+        .welcome-notification .notif-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: white;
+            flex-shrink: 0;
+        }
+        .welcome-notification .notif-content { flex: 1; }
+        .welcome-notification .notif-title { font-size: 1.1rem; font-weight: 800; color: #ff6b35; margin-bottom: 0.2rem; }
+        .welcome-notification .notif-subtitle { font-size: 0.9rem; color: rgba(255, 255, 255, 0.7); margin-bottom: 0.5rem; }
+        .welcome-notification .notif-credits {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 107, 53, 0.12);
+            border: 1px solid rgba(255, 107, 53, 0.2);
+            border-radius: 50px;
+            padding: 0.3rem 1.2rem;
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: #f5a623;
+        }
+        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 1.2rem; }
+        .welcome-notification .notif-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.8rem;
+            flex-wrap: wrap;
+        }
+        .welcome-notification .notif-btn {
+            padding: 0.4rem 1.2rem;
+            border-radius: 50px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .welcome-notification .notif-btn-primary {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+        }
+        .welcome-notification .notif-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+        }
+        .welcome-notification .notif-btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .welcome-notification .notif-btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .welcome-notification .notif-close {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.2);
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 0.2rem 0.4rem;
+            border-radius: 8px;
+        }
+        .welcome-notification .notif-close:hover { color: white; background: rgba(255, 255, 255, 0.05); }
+        .welcome-notification .notif-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 0 0 20px 20px;
+            overflow: hidden;
+        }
+        .welcome-notification .notif-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            border-radius: 0 0 20px 20px;
+            transition: width 6s linear;
+            width: 100%;
+        }
+
+        /* ===== MENSAGENS ===== */
+        #messageContainer {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1050;
+            max-width: 420px;
+            width: 100%;
+            pointer-events: none;
+        }
+        #messageContainer .message-banner { pointer-events: auto; }
+        .message-banner {
+            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            border-radius: 16px;
+            padding: 16px 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 40px rgba(255,107,53,0.05);
+            border-left: 4px solid #6c757d;
+            transform: translateX(30px);
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            margin-bottom: 12px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .message-banner.message-visible { transform: translateX(0); opacity: 1; }
+        .message-banner.message-success { border-left-color: #28a745; }
+        .message-banner.message-warning { border-left-color: #ffc107; }
+        .message-banner.message-info { border-left-color: #17a2b8; }
+        .message-banner.message-danger { border-left-color: #dc3545; }
+        .message-banner.message-primary { border-left-color: #007bff; }
+        .message-content { display: flex; align-items: flex-start; gap: 12px; }
+        .message-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+        .message-success .message-icon { color: #28a745; }
+        .message-warning .message-icon { color: #ffc107; }
+        .message-info .message-icon { color: #17a2b8; }
+        .message-danger .message-icon { color: #dc3545; }
+        .message-primary .message-icon { color: #007bff; }
+        .message-text { flex: 1; min-width: 0; }
+        .message-title { font-weight: 700; font-size: 1rem; margin-bottom: 2px; color: #ffffff; }
+        .message-body { font-size: 0.9rem; color: rgba(255,255,255,0.7); line-height: 1.4; }
+        .message-action { margin-top: 8px; }
+        .message-action .btn { font-size: 0.8rem; padding: 4px 14px; border-radius: 20px; font-weight: 600; }
+        .message-dismiss {
+            flex-shrink: 0;
+            background: transparent;
+            border: none;
+            padding: 4px;
+            font-size: 1.2rem;
+            opacity: 0.3;
+            transition: opacity 0.2s;
+            margin-top: -4px;
+            color: white;
+        }
+        .message-dismiss:hover { opacity: 1; }
+
+        /* ===== RESPONSIVIDADE ===== */
+        @media (max-width: 992px) {
+            .hero-section { padding: 90px 0 30px; }
+            .upload-area { padding: 2rem 1.5rem; min-height: 180px; }
+        }
+        @media (max-width: 768px) {
+            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
+            .brand-text { font-size: 1.1rem; }
+            .credits-badge { padding: 0.25rem 0.8rem; font-size: 0.7rem; }
+            .user-name-display { font-size: 0.75rem; }
+            .upload-area .upload-icon { font-size: 2.8rem; }
+            .upload-area h4 { font-size: 1rem; }
+            .btn-planos, .btn-sair { font-size: 0.65rem; padding: 0.25rem 0.7rem; }
+            .metric-value { font-size: 1.5rem; }
+            .upload-area { min-height: 160px; padding: 1.5rem; }
+            .result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+            .result-score { font-size: 2.2rem; }
+            #messageContainer {
+                top: 70px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+            .message-banner { padding: 12px 16px; border-radius: 12px; }
+            .welcome-notification {
+                top: 70px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+                padding: 1rem 1.2rem;
+            }
+            .chart-container canvas { max-height: 100px; }
+        }
+        @media (max-width: 480px) {
+            .hero-section { padding: 80px 0 20px; }
+            .glass-card { padding: 1rem; }
+            .upload-area { padding: 1rem; min-height: 140px; }
+            .upload-area .upload-icon { font-size: 2.2rem; }
+            .upload-area h4 { font-size: 0.9rem; }
+            .upload-area .btn-select { padding: 0.5rem 1.2rem; font-size: 0.8rem; }
+            .result-grid { grid-template-columns: 1fr 1fr; }
+            .result-score { font-size: 1.8rem; }
+            .chart-container canvas { max-height: 80px; }
+        }
     </style>
 </head>
 <body class="loading-state">
@@ -908,23 +865,19 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 CONTAINER DE MENSAGENS INTELIGENTES         -->
+    <!-- 🔥 CONTAINER DE MENSAGENS -->
     <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
-    <!-- ============================================== -->
 
     <!-- ============================================== -->
-    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS (NOVOS USUÁRIOS) -->
+    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS -->
     <!-- ============================================== -->
     <div class="welcome-notification" id="welcomeNotification" role="alert">
         <button class="notif-close" id="notifClose" aria-label="Fechar notificação">
             <i class="fas fa-times"></i>
         </button>
-        
         <div class="d-flex align-items-start gap-3">
-            <div class="notif-icon">
-                <i class="fas fa-gift"></i>
-            </div>
+            <div class="notif-icon"><i class="fas fa-gift"></i></div>
             <div class="notif-content">
                 <div class="notif-title" id="notifTitle">🎉 Bem-vindo ao AutoAnalytics!</div>
                 <div class="notif-subtitle" id="notifSubtitle">
@@ -950,7 +903,6 @@
                 </div>
             </div>
         </div>
-        
         <div class="notif-progress">
             <div class="notif-progress-bar" id="notifProgressBar"></div>
         </div>
@@ -961,9 +913,7 @@
     <!-- ============================================== -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-container text-center">
-            <div class="loading-icon">
-                <i class="fas fa-robot"></i>
-            </div>
+            <div class="loading-icon"><i class="fas fa-robot"></i></div>
             <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
             <p class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</p>
             <div class="loading-progress">
@@ -983,7 +933,7 @@
             
             <!-- ===== INTRO ===== -->
             <div class="row mb-4">
-                <div class="col-12 text-center" data-aos="fade-down">
+                <div class="col-12 text-center">
                     <span class="highlight-badge mb-2" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
                         <i class="fas fa-robot me-1"></i> Inteligência Artificial para Mecânicos
                     </span>
@@ -1002,7 +952,7 @@
                 <div class="col-lg-4">
                     <div class="row g-3">
                         <div class="col-12">
-                            <div class="glass-card" data-aos="fade-right" data-aos-duration="800">
+                            <div class="glass-card">
                                 <h5 class="card-title mb-3">
                                     <i class="fas fa-chart-simple"></i> Seu Painel
                                 </h5>
@@ -1031,7 +981,7 @@
                         
                         <!-- STATUS PREMIUM -->
                         <div class="col-12">
-                            <div class="glass-card" id="premiumStatusContainer" data-aos="fade-right" data-aos-delay="100">
+                            <div class="glass-card" id="premiumStatusContainer">
                                 <div class="text-center py-3">
                                     <div class="spinner-border text-warning" role="status" style="width: 1.5rem; height: 1.5rem; color: #ff6b35 !important;">
                                         <span class="visually-hidden">Carregando...</span>
@@ -1043,12 +993,12 @@
                     </div>
                 </div>
                 
-                <!-- ===== COLUNA CENTRAL - UPLOAD ===== -->
+                <!-- ===== COLUNA CENTRAL - UPLOAD E RELATÓRIO ===== -->
                 <div class="col-lg-8">
                     <div class="row g-3">
-                        <!-- 🔥 UPLOAD - ÁREA PRINCIPAL -->
+                        <!-- 🔥 UPLOAD -->
                         <div class="col-12">
-                            <div class="glass-card" data-aos="fade-left" data-aos-duration="800">
+                            <div class="glass-card">
                                 <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
                                     <h5 class="card-title mb-0">
                                         <i class="fas fa-cloud-upload-alt"></i> Envie seus arquivos
@@ -1068,11 +1018,9 @@
                                 </div>
                                 
                                 <form id="uploadForm">
-                                    <!-- 🔥 ÁREA DE DRAG & DROP -->
+                                    <!-- ÁREA DE DRAG & DROP -->
                                     <div class="upload-area" id="dropArea">
-                                        <span class="upload-icon">
-                                            <i class="fas fa-file-excel"></i>
-                                        </span>
+                                        <span class="upload-icon"><i class="fas fa-file-excel"></i></span>
                                         <h4>📁 Arraste seus arquivos aqui</h4>
                                         <p class="small">Suporte para <strong>CSV</strong> e <strong>Excel</strong> (.xlsx, .xls)</p>
                                         <div>
@@ -1091,31 +1039,102 @@
                                     <!-- PREVIEW DOS ARQUIVOS -->
                                     <div class="file-preview-container" id="filePreviewContainer"></div>
                                     
-                                    <div class="d-grid">
-                                        <button type="submit" id="uploadButton" class="btn-gradient w-100" disabled>
-                                            <i class="fas fa-play-circle me-2"></i>
-                                            Iniciar Análise
-                                            <span class="badge ms-2" style="background: rgba(255,255,255,0.15); color: white; font-size:0.6rem;">1 crédito/arquivo</span>
-                                        </button>
+                                    <!-- STATUS DA ANÁLISE -->
+                                    <div class="analysis-status" id="analysisStatus">
+                                        <div class="status-icon" id="statusIcon">⏳</div>
+                                        <div class="status-text" id="statusText">Processando arquivo...</div>
+                                        <div class="status-sub" id="statusSub">A IA está analisando seus dados</div>
+                                        <div class="status-progress">
+                                            <div class="status-progress-bar" id="statusProgressBar"></div>
+                                        </div>
                                     </div>
                                 </form>
                             </div>
                         </div>
                         
-                        <!-- ANÁLISES EM ANDAMENTO -->
+                        <!-- 🔥 RELATÓRIO DE ANÁLISE COM GRÁFICOS -->
                         <div class="col-12">
-                            <div class="glass-card" data-aos="fade-left" data-aos-delay="100">
-                                <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <h5 class="card-title mb-0">
-                                        <i class="fas fa-spinner fa-pulse"></i> Análises em andamento
-                                    </h5>
-                                    <span class="badge" style="background: #ff6b35; color: white;" id="activeAnalysesCount">0</span>
-                                </div>
-                                <div id="activeAnalysesContainer">
-                                    <div class="text-center py-4" style="color: rgba(255,255,255,0.3);">
-                                        <i class="fas fa-cloud-upload-alt fa-2x mb-2 opacity-50"></i>
-                                        <p class="small mb-0">Nenhuma análise em andamento</p>
+                            <div class="glass-card" id="resultCard">
+                                <div class="result-container" id="resultContainer">
+                                    <div class="result-header">
+                                        <div class="result-title">
+                                            <i class="fas fa-chart-line"></i> Relatório da Análise
+                                        </div>
+                                        <span class="result-badge success">
+                                            <i class="fas fa-check-circle"></i> Concluído
+                                        </span>
                                     </div>
+                                    
+                                    <!-- Métricas principais -->
+                                    <div class="result-grid" id="resultMetrics">
+                                        <!-- Preenchido via JS -->
+                                    </div>
+                                    
+                                    <!-- 🔥 GRÁFICOS -->
+                                    <div class="row g-3 mt-2">
+                                        <div class="col-md-6">
+                                            <div class="chart-container">
+                                                <div class="chart-title">
+                                                    <span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
+                                                    <span class="badge-chart" id="riskBadge">0 alto</span>
+                                                </div>
+                                                <canvas id="riskChart" height="120"></canvas>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="chart-container">
+                                                <div class="chart-title">
+                                                    <span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Score de Confiança</span>
+                                                    <span class="badge-chart" id="scoreBadge">0%</span>
+                                                </div>
+                                                <canvas id="predChart" height="120"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 🔥 GRÁFICO DONUT + RESUMO -->
+                                    <div class="row g-3 mt-1">
+                                        <div class="col-md-4">
+                                            <div class="chart-container chart-container-sm">
+                                                <div class="chart-title">
+                                                    <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span>
+                                                </div>
+                                                <canvas id="donutChart" height="100"></canvas>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-8">
+                                            <div class="chart-container">
+                                                <div class="chart-title">
+                                                    <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo Executivo</span>
+                                                    <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
+                                                </div>
+                                                <div id="resultSummary" style="color: rgba(255,255,255,0.7); font-size:0.85rem; line-height:1.6; min-height:50px; padding:0.2rem 0;">
+                                                    <span style="color: rgba(255,255,255,0.3);">Aguardando análise...</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Insights -->
+                                    <div class="result-insights" id="resultInsights">
+                                        <!-- Preenchido via JS -->
+                                    </div>
+                                    
+                                    <!-- Ações -->
+                                    <div class="result-actions">
+                                        <button class="btn-result btn-result-primary" id="downloadPdfBtn">
+                                            <i class="fas fa-file-pdf"></i> Baixar PDF
+                                        </button>
+                                        <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
+                                            <i class="fas fa-plus"></i> Nova Análise
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Placeholder quando não há resultado -->
+                                <div id="resultPlaceholder" style="text-align:center; padding:1.5rem 0; color: rgba(255,255,255,0.2);">
+                                    <i class="fas fa-file-alt fa-3x mb-3" style="opacity:0.3;"></i>
+                                    <p style="font-size:0.9rem;">Seu relatório aparecerá aqui após a análise</p>
                                 </div>
                             </div>
                         </div>
@@ -1127,7 +1146,7 @@
             <!-- ===== HISTÓRICO ===== -->
             <div class="row mt-4">
                 <div class="col-12">
-                    <div class="glass-card" data-aos="fade-up" data-aos-delay="200">
+                    <div class="glass-card">
                         <div class="d-flex align-items-center mb-3">
                             <i class="fas fa-history me-2" style="color: #ff6b35;"></i>
                             <h5 class="card-title mb-0">Seu histórico de análises</h5>
@@ -1155,7 +1174,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v7.7 - Inteligência Artificial para Mecânicos
+                        AutoAnalytics v7.9 - Inteligência Artificial para Mecânicos
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1231,10 +1250,8 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js v7.0) -->
+    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js) -->
     <!-- ============================================== -->
-
-    <!-- Template: Modal CPF -->
     <template id="cpfModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
@@ -1268,7 +1285,6 @@
         </div>
     </template>
 
-    <!-- Template: Modal PIX -->
     <template id="pixModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
@@ -1324,19 +1340,13 @@
     </template>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS (ORDEM CORRETA - APP PRIMEIRO) -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ JQUERY - PRIMEIRO -->
+    <!-- 1️⃣ BIBLIOTECAS -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    
-    <!-- 2️⃣ TOASTR -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    
-    <!-- 3️⃣ BOOTSTRAP -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- 4️⃣ DEMAIS BIBLIOTECAS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
@@ -1347,30 +1357,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-   <!-- ============================================== -->
-<!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CORRETA) -->
-<!-- ============================================== -->
+    <!-- 2️⃣ SCRIPTS PRÓPRIOS -->
+    <script src="/static/js/pow-client.js?ver=5.1"></script>
+    <script src="/static/js/app.js?ver=7.3.0"></script>
+    <script src="/static/js/auth.js?ver=4.1.0"></script>
+    <script src="/static/js/payment.js?ver=7.1.0"></script>
+    <script src="/static/js/dashboard.js?ver=7.4.0"></script>
 
-<!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL) -->
-
-
-<script src="/static/js/pow-client.js?ver=5.1"></script>
-
-
-<script src="/static/js/app.js?ver=7.3.0"></script>
-
-
-
-<!-- 3️⃣ AUTH - v4.1 -->
-<script src="/static/js/auth.js?ver=4.1.0"></script>
-
-<!-- 4️⃣ PAYMENT - v7.1 -->
-<script src="/static/js/payment.js?ver=7.1.0"></script>
-
-<!-- 5️⃣ DASHBOARD - v7.2 (INTEGRADO COM POW) -->
-<script src="/static/js/dashboard.js?ver=7.4.0"></script>
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (PASSIVO) -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -1378,12 +1373,10 @@
 
             console.log('🔐 Inicializando fallback de autenticação...');
 
-            // ===== REFERÊNCIA AO APP =====
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
-            // ===== VERIFICA SE O APP ESTÁ PRONTO =====
             function isAppReady() {
                 var app = getApp();
                 if (app && typeof app.isReady === 'function') {
@@ -1392,15 +1385,12 @@
                 return !!window._appReadyFired;
             }
 
-            // ===== FALLBACK DE REDIRECIONAMENTO =====
             function redirectToLogin() {
                 console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
                 window.location.replace('/login');
             }
 
-            // ===== VERIFICA AUTENTICAÇÃO DE FORMA PASSIVA =====
             function checkAuth() {
-                // 🔥 Aguarda o app.js completar seu ciclo
                 if (isAppReady()) {
                     console.log('🔐 App pronto - verificando autenticação...');
                     var app = getApp();
@@ -1413,14 +1403,12 @@
                         return false;
                     }
                     
-                    // ✅ Autenticado - mostra a página
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
                     console.log('🔐 Autenticação verificada com sucesso!');
                     return true;
                 }
 
-                // 🔥 Se o app não estiver pronto, aguarda o evento 'app:ready'
                 console.log('🔐 Aguardando app:ready...');
                 document.addEventListener('app:ready', function handler(e) {
                     document.removeEventListener('app:ready', handler);
@@ -1441,7 +1429,6 @@
                     console.log('🔐 Autenticação verificada com sucesso!');
                 });
 
-                // 🔥 Timeout de segurança: se o app não responder em 5s, verifica token
                 var timeoutId = setTimeout(function() {
                     document.removeEventListener('app:ready', function() {});
                     console.warn('🔐 Timeout: app não respondeu, verificando token...');
@@ -1452,13 +1439,11 @@
                         return;
                     }
                     
-                    // Token existe - libera acesso (o app.js cuidará da validação completa)
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
                     console.log('🔐 Acesso liberado por fallback (token presente)');
                 }, 5000);
 
-                // Cancela timeout se app:ready chegar
                 document.addEventListener('app:ready', function() {
                     clearTimeout(timeoutId);
                 }, { once: true });
@@ -1466,7 +1451,6 @@
                 return null;
             }
 
-            // ===== INICIALIZA =====
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
                     setTimeout(checkAuth, 100);
@@ -1475,7 +1459,6 @@
                 setTimeout(checkAuth, 100);
             }
 
-            // ===== EXPÕE FUNÇÃO DE FALLBACK =====
             window._authFallback = {
                 check: checkAuth,
                 redirectToLogin: redirectToLogin,
@@ -1483,398 +1466,54 @@
             };
 
             console.log('✅ Fallback de autenticação carregado!');
-            console.log('   🔐 Modo passivo - aguarda app:ready');
-            console.log('   ⏰ Timeout de segurança: 5s');
 
         })();
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
+    <!-- 🔥 SISTEMA DE UPLOAD E RELATÓRIO COM GRÁFICOS -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
+            console.log('🚀 Inicializando sistema de upload e relatório com gráficos...');
 
             // ===== CONFIGURAÇÕES =====
-            var NOTIF_CONFIG = {
-                AUTO_CLOSE_DELAY: 6000,
-                STORAGE_KEY: '_aa_welcome_shown',
-                WELCOME_PERMANENT_KEY: '_aa_welcome_permanent',
-                INITIAL_CREDITS: 3
-            };
-
-            // ===== ELEMENTOS =====
-            var notification = document.getElementById('welcomeNotification');
-            var notifClose = document.getElementById('notifClose');
-            var notifDismiss = document.getElementById('notifDismiss');
-            var notifGoDashboard = document.getElementById('notifGoDashboard');
-            var notifCreditsCount = document.getElementById('notifCreditsCount');
-            var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
-            var notifTitle = document.getElementById('notifTitle');
-            var notifSubtitle = document.getElementById('notifSubtitle');
-            var progressBar = document.getElementById('notifProgressBar');
-
-            // ===== OBTÉM DADOS DO USUÁRIO =====
-            function getUserData() {
-                try {
-                    var userData = localStorage.getItem('user_data');
-                    if (userData) {
-                        return JSON.parse(userData);
-                    }
-                } catch (e) {
-                    console.warn('⚠️ Erro ao ler user_data:', e);
-                }
-                return null;
-            }
-
-            // ===== OBTÉM CRÉDITOS DO ESTADO GLOBAL =====
-            function getCreditsFromState() {
-                try {
-                    if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
-                        return window.__APP_STATE.credits;
-                    }
-                    if (window.App && typeof window.App.getCredits === 'function') {
-                        return window.App.getCredits();
-                    }
-                } catch (e) {
-                    console.warn('⚠️ Erro ao obter créditos do estado:', e);
-                }
-                return null;
-            }
-
-            // ===== VERIFICA SE DEVE MOSTRAR =====
-            function shouldShowWelcome() {
-                try {
-                    // 🔥 1. Já mostrou nesta sessão?
-                    if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') {
-                        console.log('🔔 Notificação já mostrada nesta sessão');
-                        return false;
-                    }
-
-                    // 🔥 2. Já mostrou permanentemente?
-                    if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') {
-                        console.log('🔔 Notificação já mostrada permanentemente');
-                        return false;
-                    }
-
-                    // 🔥 3. Verifica se é admin
-                    var user = getUserData();
-                    if (user && user.is_admin === true) {
-                        console.log('👑 Admin não precisa de notificação');
-                        localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
-                        return false;
-                    }
-
-                    // 🔥 4. Verifica se já tem créditos
-                    var credits = getCreditsFromState() || (user ? user.credits : 0);
-                    
-                    // Se o usuário já gastou créditos, não é novo
-                    if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) {
-                        console.log('🔔 Usuário já gastou créditos, não é novo');
-                        return false;
-                    }
-
-                    // 🔥 5. Verifica se é novo usuário (baseado no user_data)
-                    if (user && user.created_at) {
-                        var createdAt = new Date(user.created_at);
-                        var now = new Date();
-                        var diffMinutes = (now - createdAt) / (1000 * 60);
-                        
-                        if (diffMinutes < 5) {
-                            console.log('🔔 Usuário criado há ' + Math.round(diffMinutes) + ' minutos - novo!');
-                            return true;
-                        }
-                    }
-
-                    // 🔥 6. Fallback: se tem 3 créditos e 0 análises
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        var totalAnalyses = user ? user.total_analyses || 0 : 0;
-                        if (totalAnalyses === 0) {
-                            console.log('🔔 Usuário com créditos iniciais e sem análises - novo!');
-                            return true;
-                        }
-                    }
-
-                    console.log('🔔 Usuário não é novo, notificação não será mostrada');
-                    return false;
-
-                } catch (e) {
-                    console.warn('⚠️ Erro ao verificar notificação:', e);
-                    return false;
-                }
-            }
-
-            // ===== CONFIGURA TEXTO DA NOTIFICAÇÃO =====
-            function setupNotificationContent() {
-                var user = getUserData();
-                var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
-                var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
-
-                if (notifCreditsCount) {
-                    notifCreditsCount.textContent = credits;
-                }
-                if (notifCreditsHighlight) {
-                    notifCreditsHighlight.textContent = credits;
-                }
-
-                if (notifTitle) {
-                    notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
-                }
-
-                if (notifSubtitle) {
-                    if (credits > 0) {
-                        notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
-                    } else {
-                        notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
-                    }
-                }
-            }
-
-            // ===== MOSTRA NOTIFICAÇÃO =====
-            function showWelcomeNotification() {
-                if (!notification) {
-                    console.warn('⚠️ Elemento de notificação não encontrado');
-                    return;
-                }
-
-                setupNotificationContent();
-                notification.classList.add('show');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-                startAutoClose();
-
-                window.dispatchEvent(new CustomEvent('welcome:shown', {
-                    detail: {
-                        credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS,
-                        timestamp: Date.now()
-                    }
-                }));
-
-                console.log('🔔 Notificação de boas-vindas exibida!');
-            }
-
-            // ===== AUTO-CLOSE =====
-            function startAutoClose() {
-                if (!progressBar) return;
-
-                progressBar.style.width = '100%';
-                progressBar.style.transition = 'none';
-                void progressBar.offsetWidth;
-                progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
-                
-                setTimeout(function() {
-                    progressBar.style.width = '0%';
-                }, 50);
-
-                clearTimeout(window._notifTimer);
-                window._notifTimer = setTimeout(function() {
-                    dismissNotification();
-                }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
-            }
-
-            // ===== FECHA NOTIFICAÇÃO =====
-            function dismissNotification() {
-                if (!notification) return;
-
-                notification.classList.remove('show');
-                clearTimeout(window._notifTimer);
-                localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-
-                window.dispatchEvent(new CustomEvent('welcome:dismissed', {
-                    detail: { timestamp: Date.now() }
-                }));
-
-                console.log('🔔 Notificação fechada');
-            }
-
-            // ===== IR PARA DASHBOARD =====
-            function goToDashboard() {
-                dismissNotification();
-                window.location.href = '/dashboard';
-            }
-
-            // ===== CONFIGURA EVENTOS =====
-            function setupEvents() {
-                if (notifClose) {
-                    notifClose.addEventListener('click', dismissNotification);
-                }
-
-                if (notifDismiss) {
-                    notifDismiss.addEventListener('click', dismissNotification);
-                }
-
-                if (notifGoDashboard) {
-                    notifGoDashboard.addEventListener('click', goToDashboard);
-                }
-
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
-                        dismissNotification();
-                    }
-                });
-
-                if (notification) {
-                    notification.addEventListener('mouseenter', function() {
-                        clearTimeout(window._notifTimer);
-                        if (progressBar) {
-                            progressBar.style.transition = 'none';
-                            progressBar.style.width = progressBar.style.width || '100%';
-                        }
-                    });
-
-                    notification.addEventListener('mouseleave', function() {
-                        var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
-                        var percent = parseFloat(remaining) || 100;
-                        var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
-                        
-                        if (remainingTime > 500) {
-                            clearTimeout(window._notifTimer);
-                            if (progressBar) {
-                                progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
-                                progressBar.style.width = '0%';
-                            }
-                            window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
-                        }
-                    });
-                }
-
-                console.log('🔔 Eventos da notificação configurados');
-            }
-
-            // ===== ESCUTA EVENTOS DO APP =====
-            function listenAppEvents() {
-                document.addEventListener('authLoginSuccess', function(e) {
-                    console.log('📢 authLoginSuccess - verificando notificação');
-                    var data = e.detail || {};
-                    if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() {
-                            if (shouldShowWelcome()) {
-                                showWelcomeNotification();
-                            }
-                        }, 800);
-                    }
-                });
-
-                document.addEventListener('app:ready', function(e) {
-                    console.log('📢 app:ready - verificando notificação');
-                    var detail = e.detail || {};
-                    setTimeout(function() {
-                        if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) {
-                            showWelcomeNotification();
-                        }
-                    }, 500);
-                });
-
-                document.addEventListener('authReady', function(e) {
-                    console.log('📢 authReady - verificando notificação');
-                    if (e.detail && e.detail.isAuthenticated) {
-                        setTimeout(function() {
-                            if (shouldShowWelcome()) {
-                                showWelcomeNotification();
-                            }
-                        }, 600);
-                    }
-                });
-
-                document.addEventListener('paymentReady', function(e) {
-                    console.log('📢 paymentReady - sistema de pagamentos pronto');
-                    setTimeout(function() {
-                        if (shouldShowWelcome()) {
-                            showWelcomeNotification();
-                        }
-                    }, 800);
-                });
-
-                console.log('🔔 Listeners do app configurados');
-            }
-
-            // ===== RESET DA NOTIFICAÇÃO =====
-            function resetNotification() {
-                sessionStorage.removeItem(NOTIF_CONFIG.STORAGE_KEY);
-                localStorage.removeItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY);
-                console.log('🔔 Reset da notificação feito');
-            }
-
-            // ===== INICIALIZAÇÃO =====
-            function init() {
-                console.log('🔔 Inicializando sistema de notificação...');
-                setupEvents();
-                listenAppEvents();
-
-                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
-                    console.log('🔔 App já pronto - fallback');
-                    setTimeout(function() {
-                        if (shouldShowWelcome()) {
-                            showWelcomeNotification();
-                        }
-                    }, 400);
-                }
-
-                if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
-                    console.log('🔔 Auth já pronto - fallback');
-                    var credits = getCreditsFromState();
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() {
-                            if (shouldShowWelcome()) {
-                                showWelcomeNotification();
-                            }
-                        }, 600);
-                    }
-                }
-
-                console.log('✅ Sistema de notificação inicializado!');
-                console.log('   💰 Créditos iniciais: ' + NOTIF_CONFIG.INITIAL_CREDITS);
-                console.log('   ⏰ Auto-close: ' + (NOTIF_CONFIG.AUTO_CLOSE_DELAY/1000) + 's');
-                console.log('   🔄 Sincronizado com crud.py (INITIAL_FREE_CREDITS)');
-            }
-
-            // ===== DOMContentLoaded =====
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                setTimeout(init, 300);
-            }
-
-            // ===== EXPÕE FUNÇÕES GLOBAIS =====
-            window.WelcomeNotif = {
-                show: showWelcomeNotification,
-                dismiss: dismissNotification,
-                shouldShow: shouldShowWelcome,
-                reset: resetNotification
-            };
-
-            console.log('✅ welcome-notification.js carregado!');
-            console.log('   🔔 Mostra notificação para novos usuários');
-            console.log('   💰 Sincronizado com INITIAL_FREE_CREDITS = ' + NOTIF_CONFIG.INITIAL_CREDITS);
-            console.log('   🔄 Integrado com auth.js, app.js, payment.js');
-
-        })();
-    </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 CONTROLE DO UPLOAD (SINCRONIZADO) -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-
-            console.log('🚀 AutoAnalytics Mecânicos v7.7');
-
             var MAX_FILES = 3;
             var MAX_FILE_SIZE_KB = 200;
             var CREDITS_PER_FILE = 1;
             var selectedFiles = [];
-            var isInitialized = false;
+            var isUploading = false;
 
+            // ===== ELEMENTOS =====
             var dropArea = document.getElementById('dropArea');
             var fileInput = document.getElementById('fileInput');
             var filePreview = document.getElementById('filePreviewContainer');
-            var uploadBtn = document.getElementById('uploadButton');
             var uploadForm = document.getElementById('uploadForm');
+            
+            var analysisStatus = document.getElementById('analysisStatus');
+            var statusIcon = document.getElementById('statusIcon');
+            var statusText = document.getElementById('statusText');
+            var statusSub = document.getElementById('statusSub');
+            var statusProgress = document.getElementById('statusProgressBar');
+            
+            var resultContainer = document.getElementById('resultContainer');
+            var resultPlaceholder = document.getElementById('resultPlaceholder');
+            var resultMetrics = document.getElementById('resultMetrics');
+            var resultInsights = document.getElementById('resultInsights');
+            var resultSummary = document.getElementById('resultSummary');
+            var downloadPdfBtn = document.getElementById('downloadPdfBtn');
+            var newAnalysisBtn = document.getElementById('newAnalysisBtn');
+            
+            // ===== GRÁFICOS - REFERÊNCIAS =====
+            var _charts = {
+                risk: null,
+                pred: null,
+                donut: null
+            };
 
+            // ===== UTILITÁRIOS =====
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
@@ -1883,6 +1522,24 @@
                 if (bytes < 1024) return bytes + ' B';
                 if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
                 return (bytes / 1048576).toFixed(1) + ' MB';
+            }
+
+            function getScoreColor(score) {
+                if (score >= 0.7) return '#48bb78';
+                if (score >= 0.4) return '#f5a623';
+                return '#dc3545';
+            }
+
+            function getScoreLabel(score) {
+                if (score >= 0.7) return 'Alto potencial';
+                if (score >= 0.4) return 'Potencial médio';
+                return 'Baixo potencial';
+            }
+
+            function getScoreIcon(score) {
+                if (score >= 0.7) return '🚀';
+                if (score >= 0.4) return '📈';
+                return '🔄';
             }
 
             function validateFile(file) {
@@ -1897,10 +1554,30 @@
                 return { valid: errors.length === 0, errors: errors };
             }
 
+            function sleep(ms) {
+                return new Promise(function(resolve) { setTimeout(resolve, ms); });
+            }
+
+            // ===== CRÉDITOS =====
+            function updateCreditsDisplay() {
+                var app = getApp();
+                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
+                
+                document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(function(el) {
+                    if (el) {
+                        if (el.id === 'creditsDisplay') {
+                            el.textContent = (app && app.State && app.State.creditsDisplay) ? app.State.creditsDisplay : creditsAvailable;
+                        } else {
+                            el.textContent = creditsAvailable;
+                        }
+                    }
+                });
+            }
+
+            // ===== FILE PREVIEW =====
             function updateFilePreview() {
                 if (selectedFiles.length === 0) {
                     filePreview.innerHTML = '';
-                    uploadBtn.disabled = true;
                     return;
                 }
 
@@ -1923,7 +1600,6 @@
                 });
                 
                 filePreview.innerHTML = html;
-                uploadBtn.disabled = false;
 
                 document.querySelectorAll('.file-remove').forEach(function(btn) {
                     btn.addEventListener('click', function(e) {
@@ -1932,6 +1608,8 @@
                         removeFile(idx);
                     });
                 });
+
+                updateCreditsDisplay();
             }
 
             function addFiles(files) {
@@ -1962,6 +1640,7 @@
                     if (app && typeof app.showNotification === 'function') {
                         app.showNotification(added + ' arquivo(s) adicionado(s)', 'info');
                     }
+                    startAnalysis();
                 }
 
                 if (errors.length > 0) {
@@ -1970,8 +1649,6 @@
                         app.showNotification(errors.join(' | '), 'warning');
                     }
                 }
-
-                updateCreditsDisplay();
             }
 
             function removeFile(index) {
@@ -1979,35 +1656,461 @@
                     selectedFiles.splice(index, 1);
                     updateFilePreview();
                     updateCreditsDisplay();
+                    
+                    if (selectedFiles.length === 0) {
+                        resetAnalysisStatus();
+                    }
                 }
             }
 
-            function updateCreditsDisplay() {
-                var creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                var app = getApp();
-                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
-                
-                document.querySelectorAll('#uploadCredits, #creditsCount, #modalCreditsCount, #creditsDisplay').forEach(function(el) {
-                    if (el) {
-                        if (el.id === 'creditsDisplay') {
-                            el.textContent = (app && app.State && app.State.creditsDisplay) ? app.State.creditsDisplay : creditsAvailable;
-                        } else {
-                            el.textContent = creditsAvailable;
-                        }
-                    }
-                });
+            // ===== STATUS DA ANÁLISE =====
+            function showAnalysisStatus(message, submessage, progress) {
+                analysisStatus.classList.add('show');
+                statusText.textContent = message || 'Processando...';
+                statusSub.textContent = submessage || 'Aguarde...';
+                if (progress !== undefined) {
+                    statusProgress.style.width = Math.min(100, progress) + '%';
+                }
+                dropArea.classList.add('uploading');
+            }
 
-                var badge = uploadBtn.querySelector('.badge');
-                if (badge) {
-                    if (selectedFiles.length > 0) {
-                        badge.textContent = creditsNeeded + ' crédito' + (creditsNeeded > 1 ? 's' : '');
+            function updateAnalysisProgress(progress, message) {
+                statusProgress.style.width = Math.min(100, progress) + '%';
+                if (message) {
+                    statusText.textContent = message;
+                }
+            }
+
+            function resetAnalysisStatus() {
+                analysisStatus.classList.remove('show');
+                statusProgress.style.width = '0%';
+                dropArea.classList.remove('uploading', 'success', 'error');
+            }
+
+            // ===== 🔥 GRÁFICOS =====
+            function renderCharts(data) {
+                // Destroi gráficos antigos
+                if (_charts.risk) { _charts.risk.destroy(); _charts.risk = null; }
+                if (_charts.pred) { _charts.pred.destroy(); _charts.pred = null; }
+                if (_charts.donut) { _charts.donut.destroy(); _charts.donut = null; }
+                
+                var insights = data.insights || {};
+                var riskDist = insights.risk_distribution || {};
+                var predictions = data.predictions || [];
+                var stats = data.stats || {};
+                var metrics = data.metrics || {};
+                var scoreMedio = metrics.mean_prediction || 0.65;
+                
+                var high = riskDist.high || 0;
+                var medium = riskDist.medium || 0;
+                var low = riskDist.low || 0;
+                var total = high + medium + low;
+                
+                // Atualiza badges
+                var riskBadge = document.getElementById('riskBadge');
+                if (riskBadge) {
+                    riskBadge.textContent = high + ' alto';
+                    riskBadge.style.background = high > 0 ? 'rgba(220,53,69,0.2)' : 'rgba(255,107,53,0.15)';
+                    riskBadge.style.color = high > 0 ? '#dc3545' : '#ff6b35';
+                }
+                
+                var scoreBadge = document.getElementById('scoreBadge');
+                if (scoreBadge) {
+                    scoreBadge.textContent = Math.round(scoreMedio * 100) + '%';
+                }
+                
+                // 1️⃣ GRÁFICO DE BARRAS - RISCO
+                var riskCtx = document.getElementById('riskChart');
+                if (riskCtx) {
+                    _charts.risk = new Chart(riskCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['🔴 Alto', '🟡 Médio', '🟢 Baixo'],
+                            datasets: [{
+                                data: [high, medium, low],
+                                backgroundColor: ['#dc3545', '#f5a623', '#48bb78'],
+                                borderRadius: 6,
+                                barPercentage: 0.6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { 
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            var total = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                            var pct = total > 0 ? (context.raw / total * 100).toFixed(1) : 0;
+                                            return context.raw + ' casos (' + pct + '%)';
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: { 
+                                    beginAtZero: true,
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 8 } }
+                                },
+                                x: { 
+                                    grid: { display: false },
+                                    ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 8 } }
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // 2️⃣ GRÁFICO DE LINHA - PREDIÇÕES
+                var predCtx = document.getElementById('predChart');
+                if (predCtx && predictions && predictions.length > 0) {
+                    var displayData = predictions.slice(0, 30);
+                    _charts.pred = new Chart(predCtx, {
+                        type: 'line',
+                        data: {
+                            labels: displayData.map(function(_, i) { return '#' + (i+1); }),
+                            datasets: [{
+                                data: displayData,
+                                borderColor: '#ff6b35',
+                                backgroundColor: 'rgba(255,107,53,0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointBackgroundColor: '#ff6b35',
+                                pointHoverRadius: 5,
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { 
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return (context.raw * 100).toFixed(1) + '%';
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: { 
+                                    min: 0, 
+                                    max: 1,
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { 
+                                        color: 'rgba(255,255,255,0.3)', 
+                                        font: { size: 8 },
+                                        callback: function(value) { return (value * 100).toFixed(0) + '%'; }
+                                    }
+                                },
+                                x: { 
+                                    display: false,
+                                    grid: { display: false }
+                                }
+                            },
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            }
+                        }
+                    });
+                }
+                
+                // 3️⃣ GRÁFICO DONUT
+                var donutCtx = document.getElementById('donutChart');
+                if (donutCtx && total > 0) {
+                    _charts.donut = new Chart(donutCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Alto Risco', 'Médio Risco', 'Baixo Risco'],
+                            datasets: [{
+                                data: [high, medium, low],
+                                backgroundColor: ['#dc3545', '#f5a623', '#48bb78'],
+                                borderColor: ['rgba(0,0,0,0.2)'],
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                    labels: {
+                                        color: 'rgba(255,255,255,0.5)',
+                                        padding: 6,
+                                        usePointStyle: true,
+                                        pointStyle: 'circle',
+                                        font: { size: 8 }
+                                    }
+                                }
+                            },
+                            cutout: '55%'
+                        }
+                    });
+                }
+                
+                // 4️⃣ RESUMO EXECUTIVO
+                if (resultSummary) {
+                    var totalRegistros = stats.rows || 0;
+                    var scorePercent = Math.round(scoreMedio * 100);
+                    var scoreLabel = getScoreLabel(scoreMedio);
+                    var scoreColor = getScoreColor(scoreMedio);
+                    var modelUsed = data.model_used || data.metadata?.model_used || 'AutoML';
+                    
+                    resultSummary.innerHTML = `
+                        <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1.5rem;">
+                            <span><strong style="color:#ff6b35;">📊 ${totalRegistros.toLocaleString()}</strong> registros</span>
+                            <span><strong style="color:${scoreColor};">🎯 ${scorePercent}%</strong> confiança</span>
+                            <span><strong style="color:#f5a623;">📈 ${scoreLabel}</strong></span>
+                            <span style="color:rgba(255,255,255,0.3); font-size:0.7rem;">
+                                <i class="fas fa-robot"></i> ${modelUsed}
+                            </span>
+                        </div>
+                    `;
+                }
+            }
+
+            // ===== RELATÓRIO =====
+            function showResult(data) {
+                resultPlaceholder.style.display = 'none';
+                resultContainer.classList.add('show');
+                
+                var stats = data.stats || {};
+                var predictions = data.predictions_summary || data.metrics || {};
+                var insights = data.insights || {};
+                var recommendations = insights.recomendacoes || insights.recommendations || [];
+                
+                var totalRegistros = stats.rows || predictions.processed_rows || 0;
+                var scoreMedio = predictions.mean || predictions.mean_prediction || 0.65;
+                var scoreColor = getScoreColor(scoreMedio);
+                var scoreLabel = getScoreLabel(scoreMedio);
+                var scoreIcon = getScoreIcon(scoreMedio);
+                var confianca = Math.round(scoreMedio * 100);
+                
+                resultMetrics.innerHTML = `
+                    <div class="result-stat">
+                        <div class="stat-value">${totalRegistros.toLocaleString()}</div>
+                        <div class="stat-label">Registros analisados</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="stat-value" style="color: ${scoreColor};">${confianca}%</div>
+                        <div class="stat-label">Score de confiança</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="stat-value">${scoreIcon} ${scoreLabel}</div>
+                        <div class="stat-label">Classificação</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="stat-value">${data.credits?.consumed || 1}</div>
+                        <div class="stat-label">Créditos consumidos</div>
+                    </div>
+                `;
+                
+                if (recommendations && recommendations.length > 0) {
+                    var insightsHtml = '<div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"><i class="fas fa-lightbulb" style="color:#ff6b35;margin-right:0.5rem;"></i>Insights da IA</div>';
+                    recommendations.slice(0, 4).forEach(function(r) {
+                        insightsHtml += `
+                            <div class="result-insight">
+                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
+                                ${r}
+                            </div>
+                        `;
+                    });
+                    resultInsights.innerHTML = insightsHtml;
+                } else {
+                    var defaultInsights = [];
+                    if (scoreMedio >= 0.7) {
+                        defaultInsights = [
+                            '✅ Seus dados mostram um alto potencial de performance. Continue com as boas práticas!',
+                            '📈 Recomendamos manter o foco em treinamento e manutenção preventiva.',
+                            '🎯 Considere expandir suas operações para capturar mais oportunidades.'
+                        ];
+                    } else if (scoreMedio >= 0.4) {
+                        defaultInsights = [
+                            '📊 Seus dados indicam espaço para melhorias significativas.',
+                            '🔍 Recomendamos revisar processos e identificar gargalos operacionais.',
+                            '📋 Considere investir em treinamento para sua equipe.'
+                        ];
                     } else {
-                        badge.textContent = '1 crédito/arquivo';
+                        defaultInsights = [
+                            '⚠️ Seus dados mostram oportunidades claras de melhoria.',
+                            '🛠️ Recomendamos uma revisão completa dos processos da oficina.',
+                            '📊 Considere implementar um sistema de monitoramento de performance.'
+                        ];
                     }
+                    
+                    var insightsHtml = '<div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"><i class="fas fa-lightbulb" style="color:#ff6b35;margin-right:0.5rem;"></i>Recomendações</div>';
+                    defaultInsights.forEach(function(r) {
+                        insightsHtml += `
+                            <div class="result-insight">
+                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
+                                ${r}
+                            </div>
+                        `;
+                    });
+                    resultInsights.innerHTML = insightsHtml;
+                }
+                
+                window._lastResult = data;
+                
+                // 🔥 RENDERIZA GRÁFICOS
+                setTimeout(function() {
+                    renderCharts(data);
+                }, 350);
+                
+                document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+                var app = getApp();
+                if (app && typeof app.showNotification === 'function') {
+                    app.showNotification('✅ Análise concluída com sucesso!', 'success');
+                }
+            }
+
+            // ===== ANÁLISE PRINCIPAL =====
+            async function startAnalysis() {
+                if (isUploading) return;
+                if (selectedFiles.length === 0) {
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('Selecione pelo menos um arquivo.', 'warning');
+                    }
+                    return;
                 }
 
-                var hasCredits = creditsNeeded > 0 ? creditsAvailable >= creditsNeeded : true;
-                uploadBtn.disabled = !hasCredits || selectedFiles.length === 0;
+                var app = getApp();
+                var creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
+                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
+
+                if (creditsAvailable < creditsNeeded) {
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('Créditos insuficientes. Você tem ' + creditsAvailable + ', precisa de ' + creditsNeeded + '.', 'error');
+                    }
+                    return;
+                }
+
+                isUploading = true;
+                var filesToUpload = selectedFiles.slice();
+                
+                showAnalysisStatus(
+                    '📤 Enviando arquivos...',
+                    'A IA está preparando a análise',
+                    10
+                );
+                
+                try {
+                    if (app && typeof app.uploadWithPow === 'function') {
+                        var result = await app.uploadWithPow(filesToUpload, '/api/upload-auto');
+                        
+                        if (result && result.ok !== false) {
+                            var data = await result.json().catch(function() { return result; });
+                            
+                            updateAnalysisProgress(70, '🔄 Processando resultados...');
+                            
+                            if (data.process_id || data.processId) {
+                                var processId = data.process_id || data.processId;
+                                await pollAnalysisStatus(processId);
+                            } else {
+                                showResult(data);
+                            }
+                            
+                            selectedFiles = [];
+                            updateFilePreview();
+                            updateCreditsDisplay();
+                            
+                            dropArea.classList.remove('uploading');
+                            dropArea.classList.add('success');
+                            resetAnalysisStatus();
+                            
+                        } else {
+                            throw new Error(result?.message || 'Falha no processamento');
+                        }
+                    } else {
+                        throw new Error('Sistema de upload indisponível.');
+                    }
+                } catch (error) {
+                    console.error('❌ Erro na análise:', error);
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification(error.message || 'Erro ao processar análise.', 'error');
+                    }
+                    dropArea.classList.remove('uploading');
+                    dropArea.classList.add('error');
+                    resetAnalysisStatus();
+                } finally {
+                    isUploading = false;
+                    if (app && typeof app.hideLoading === 'function') {
+                        app.hideLoading();
+                    }
+                }
+            }
+
+            // ===== POLLING DO STATUS =====
+            async function pollAnalysisStatus(processId) {
+                var maxAttempts = 60;
+                var attempts = 0;
+                
+                while (attempts < maxAttempts) {
+                    attempts++;
+                    
+                    try {
+                        var url = '/api/status/' + processId;
+                        var token = localStorage.getItem('access_token');
+                        
+                        var response = await fetch(url, {
+                            headers: { 'Authorization': 'Bearer ' + token }
+                        });
+                        
+                        if (!response.ok) {
+                            if (response.status === 404) {
+                                updateAnalysisProgress(
+                                    10 + (attempts / maxAttempts) * 60,
+                                    '⏳ Analisando dados... (' + attempts + '/' + maxAttempts + ')'
+                                );
+                                await sleep(2000);
+                                continue;
+                            }
+                            throw new Error('Erro ao verificar status: ' + response.status);
+                        }
+                        
+                        var data = await response.json();
+                        
+                        if (data.status === 'completed' || data.status === 'complete') {
+                            var resultUrl = '/api/analysis/result/' + processId;
+                            var resultResponse = await fetch(resultUrl, {
+                                headers: { 'Authorization': 'Bearer ' + token }
+                            });
+                            
+                            if (resultResponse.ok) {
+                                var resultData = await resultResponse.json();
+                                updateAnalysisProgress(95, '✅ Análise concluída!');
+                                await sleep(500);
+                                showResult(resultData);
+                                return;
+                            }
+                        } else if (data.status === 'error' || data.status === 'failed') {
+                            throw new Error(data.message || 'Erro na análise');
+                        } else {
+                            var progress = data.progress || 0;
+                            updateAnalysisProgress(
+                                10 + (progress / 100) * 60,
+                                '⏳ Processando... (' + Math.round(progress) + '%)'
+                            );
+                        }
+                        
+                        await sleep(2000);
+                        
+                    } catch (error) {
+                        console.warn('⚠️ Polling error:', error);
+                        await sleep(3000);
+                    }
+                }
+                
+                throw new Error('Timeout: a análise está demorando mais que o esperado.');
             }
 
             // ===== EVENTOS DE DRAG & DROP =====
@@ -2031,7 +2134,9 @@
             });
 
             dropArea.addEventListener('click', function() {
-                fileInput.click();
+                if (!isUploading) {
+                    fileInput.click();
+                }
             });
 
             fileInput.addEventListener('change', function(e) {
@@ -2041,77 +2146,41 @@
                 fileInput.value = '';
             });
 
-            // ===== SUBMISSÃO =====
-            uploadForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-
-                if (selectedFiles.length === 0) {
-                    var app = getApp();
-                    if (app && typeof app.showNotification === 'function') {
-                        app.showNotification('Nenhum arquivo selecionado.', 'warning');
-                    }
-                    return;
-                }
-
+            // ===== BOTÕES =====
+            downloadPdfBtn.addEventListener('click', function() {
                 var app = getApp();
-                var creditsNeeded = selectedFiles.length * CREDITS_PER_FILE;
-                var creditsAvailable = (app && typeof app.getCredits === 'function') ? app.getCredits() : 0;
-
-                if (creditsAvailable < creditsNeeded) {
-                    if (app && typeof app.showNotification === 'function') {
-                        app.showNotification('Créditos insuficientes. Você tem ' + creditsAvailable + ', precisa de ' + creditsNeeded + '.', 'error');
-                    }
-                    return;
-                }
-
-                var filesToUpload = selectedFiles.slice();
-                
-                if (app && typeof app.showLoading === 'function') {
-                    app.showLoading('Enviando arquivos...', 'A IA está processando seus dados');
+                if (app && typeof app.showNotification === 'function') {
+                    app.showNotification('📄 Gerando PDF...', 'info');
                 }
                 
-                try {
-                    if (app && typeof app.uploadWithPow === 'function') {
-                        var result = await app.uploadWithPow(filesToUpload, '/api/upload-auto');
-                        if (result) {
-                            if (app && typeof app.showNotification === 'function') {
-                                app.showNotification('✅ Arquivos enviados com sucesso!', 'success');
-                            }
-                            selectedFiles = [];
-                            updateFilePreview();
-                            updateCreditsDisplay();
-                            window.dispatchEvent(new CustomEvent('analysis:uploaded', { detail: { result: result, files: filesToUpload } }));
-                        } else {
-                            if (app && typeof app.showNotification === 'function') {
-                                app.showNotification('Erro ao enviar arquivos.', 'error');
-                            }
-                        }
-                    } else {
-                        if (app && typeof app.showNotification === 'function') {
-                            app.showNotification('Sistema de upload indisponível.', 'error');
-                        }
-                    }
-                } catch (error) {
-                    console.error('❌ Erro no upload:', error);
-                    if (app && typeof app.showNotification === 'function') {
-                        app.showNotification(error.message || 'Erro ao processar upload.', 'error');
-                    }
-                } finally {
-                    if (app && typeof app.hideLoading === 'function') {
-                        app.hideLoading();
-                    }
-                }
+                window.dispatchEvent(new CustomEvent('pdf:generate', {
+                    detail: { data: window._lastResult }
+                }));
             });
 
-            // ===== ESCUTA EVENTOS DE CRÉDITOS =====
-            function onCreditsUpdated() {
-                updateCreditsDisplay();
-            }
+            newAnalysisBtn.addEventListener('click', function() {
+                resultContainer.classList.remove('show');
+                resultPlaceholder.style.display = 'block';
+                resultMetrics.innerHTML = '';
+                resultInsights.innerHTML = '';
+                if (resultSummary) resultSummary.innerHTML = '<span style="color: rgba(255,255,255,0.3);">Aguardando análise...</span>';
+                window._lastResult = null;
+                
+                // Destroi gráficos
+                if (_charts.risk) { _charts.risk.destroy(); _charts.risk = null; }
+                if (_charts.pred) { _charts.pred.destroy(); _charts.pred = null; }
+                if (_charts.donut) { _charts.donut.destroy(); _charts.donut = null; }
+                
+                dropArea.classList.remove('success');
+                resetAnalysisStatus();
+                dropArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
 
-            document.addEventListener('credits:updated', onCreditsUpdated);
-            document.addEventListener('credits:loaded', onCreditsUpdated);
-            document.addEventListener('creditsUpdated', onCreditsUpdated);
-            document.addEventListener('premiumStatusUpdated', onCreditsUpdated);
+            // ===== ESCUTA EVENTOS =====
+            document.addEventListener('credits:updated', updateCreditsDisplay);
+            document.addEventListener('credits:loaded', updateCreditsDisplay);
+            document.addEventListener('creditsUpdated', updateCreditsDisplay);
+            document.addEventListener('premiumStatusUpdated', updateCreditsDisplay);
             
             document.addEventListener('app:state_changed', function(e) {
                 var detail = e.detail || {};
@@ -2120,10 +2189,15 @@
                 }
             });
 
+            document.addEventListener('analysis:success', function(e) {
+                var detail = e.detail || {};
+                if (detail.result) {
+                    showResult(detail.result);
+                }
+            });
+
             // ===== INICIALIZAÇÃO =====
             function init() {
-                if (isInitialized) return;
-                
                 if (typeof toastr !== 'undefined') {
                     toastr.options = {
                         closeButton: true,
@@ -2147,11 +2221,10 @@
                 setTimeout(updateCreditsDisplay, 300);
                 setInterval(updateCreditsDisplay, 30000);
 
-                isInitialized = true;
-                console.log('✅ Upload area inicializada com sucesso!');
+                console.log('✅ Sistema de upload e relatório com gráficos inicializado!');
             }
 
-            document.addEventListener('app:ready', function(e) {
+            document.addEventListener('app:ready', function() {
                 console.log('📢 app:ready recebido - inicializando upload');
                 setTimeout(init, 200);
             });
@@ -2167,12 +2240,13 @@
                 }
             });
 
-            window.uploadFiles = {
+            // ===== EXPÕE FUNÇÕES =====
+            window.uploadSystem = {
                 addFiles: addFiles,
                 removeFile: removeFile,
-                clearFiles: function() { selectedFiles = []; updateFilePreview(); updateCreditsDisplay(); },
+                clearFiles: function() { selectedFiles = []; updateFilePreview(); resetAnalysisStatus(); },
                 getFiles: function() { return selectedFiles.slice(); },
-                getCount: function() { return selectedFiles.length; },
+                startAnalysis: startAnalysis,
                 MAX_FILES: MAX_FILES,
                 MAX_FILE_SIZE_KB: MAX_FILE_SIZE_KB,
                 CREDITS_PER_FILE: CREDITS_PER_FILE,
@@ -2180,31 +2254,29 @@
             };
 
             if (window.App) {
-                window.App.upload = window.uploadFiles;
+                window.App.upload = window.uploadSystem;
             }
 
-            console.log('✅ upload-control.js carregado v7.7');
-            console.log('   📁 Arraste e solte arquivos CSV ou Excel');
-            console.log('   🔗 Sincronizado com app.js v7.0');
-            console.log('   🔔 Notificação de novos usuários ativa');
-            console.log('   📢 Sistema de mensagens inteligentes ativo');
+            console.log('✅ upload-report-system.js carregado v7.9 com gráficos');
+            console.log('   📁 Upload automático com PoW');
+            console.log('   📊 Relatório com gráficos Chart.js');
+            console.log('   🔗 Sincronizado com app.js e dashboard.js');
 
         })();
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 RENDERIZADOR DE MENSAGENS INTELIGENTES     -->
+    <!-- 🔥 SISTEMA DE MENSAGENS INTELIGENTES -->
     <!-- ============================================== -->
-    <script>
+    <!-- ============================================== -->
+<!-- 🔥 SISTEMA DE MENSAGENS INTELIGENTES -->
+<!-- ============================================== -->
+<script>
     (function() {
         'use strict';
         
         console.log('📢 Inicializando MessageRenderer...');
         
-        /**
-         * MessageRenderer - Renderiza mensagens baseadas no estado global
-         * Totalmente integrado com __APP_STATE e EventBus
-         */
         class MessageRenderer {
             constructor() {
                 this.container = document.getElementById('messageContainer');
@@ -2217,13 +2289,8 @@
                     return;
                 }
                 
-                // Carrega mensagens dispensadas do localStorage
                 this._loadDismissedState();
-                
-                // Configura listeners
                 this._setupListeners();
-                
-                // Renderiza mensagem inicial se disponível
                 setTimeout(() => this.render(), 400);
                 
                 console.log('✅ MessageRenderer inicializado');
@@ -2231,31 +2298,26 @@
             
             _loadDismissedState() {
                 try {
-                    const saved = localStorage.getItem('_dismissed_messages');
+                    var saved = localStorage.getItem('_dismissed_messages');
                     if (saved) {
-                        const parsed = JSON.parse(saved);
+                        var parsed = JSON.parse(saved);
                         if (Array.isArray(parsed)) {
                             this._dismissedMessages = new Set(parsed);
                         }
                     }
-                } catch (e) {
-                    // Ignora
-                }
+                } catch (e) {}
             }
             
             _saveDismissedState() {
                 try {
-                    const arr = Array.from(this._dismissedMessages);
+                    var arr = Array.from(this._dismissedMessages);
                     localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
-                } catch (e) {
-                    // Ignora
-                }
+                } catch (e) {}
             }
             
             _setupListeners() {
-                // 🔥 Mudanças no estado global (app.js)
                 window.addEventListener('app:state_changed', (e) => {
-                    const detail = e.detail || {};
+                    var detail = e.detail || {};
                     if (detail.key === 'currentMessage' || 
                         detail.key === 'userSegment' ||
                         detail.key === 'credits') {
@@ -2263,31 +2325,26 @@
                     }
                 });
                 
-                // 🔥 Atualização de contexto de mensagem (auth.js)
                 window.addEventListener('message:context_updated', (e) => {
                     console.log('📢 message:context_updated recebido');
                     setTimeout(() => this.render(), 150);
                 });
                 
-                // 🔥 Mudanças de créditos (payment.js / upload)
                 document.addEventListener('creditsUpdated', (e) => {
                     console.log('📢 creditsUpdated recebido');
                     setTimeout(() => this.render(), 200);
                 });
                 
-                // 🔥 App pronto
                 window.addEventListener('app:ready', (e) => {
                     console.log('📢 app:ready recebido');
                     setTimeout(() => this.render(), 300);
                 });
                 
-                // 🔥 Auth pronto
                 window.addEventListener('authReady', (e) => {
                     console.log('📢 authReady recebido');
                     setTimeout(() => this.render(), 500);
                 });
                 
-                // 🔥 Login sucesso
                 window.addEventListener('authLoginSuccess', (e) => {
                     console.log('📢 authLoginSuccess recebido');
                     setTimeout(() => this.render(), 600);
@@ -2295,31 +2352,25 @@
             }
             
             render() {
-                // Pega o estado global
-                const state = window.__APP_STATE || window.App?.State;
-                if (!state) {
-                    return;
-                }
+                var state = window.__APP_STATE || window.App?.State;
+                if (!state) return;
                 
-                const message = state.currentMessage;
-                const segment = state.userSegment;
-                const credits = state.credits;
+                var message = state.currentMessage;
+                var segment = state.userSegment;
+                var credits = state.credits;
                 
-                // Se não tem mensagem, esconde
                 if (!message) {
                     this._hideContainer();
                     return;
                 }
                 
-                const messageId = message.message_id || `${segment}_${credits}`;
+                var messageId = message.message_id || segment + '_' + credits;
                 
-                // Se o usuário já dispensou esta mensagem, não mostra
                 if (this._dismissedMessages.has(messageId)) {
                     this._hideContainer();
                     return;
                 }
                 
-                // Renderiza
                 this._renderMessage(message, segment, credits);
                 this._lastRendered = messageId;
             }
@@ -2327,27 +2378,24 @@
             _renderMessage(message, segment, credits) {
                 if (!this.container) return;
                 
-                const {
-                    title = 'Mensagem',
-                    icon = 'fa-info-circle',
-                    color = 'info',
-                    message: msgText = '',
-                    show_action = false,
-                    action_text = 'Ver mais',
-                    action_url = '#',
-                    dismissible = true,
-                    priority = 0,
-                    message_id = ''
-                } = message;
+                var title = message.title || 'Mensagem';
+                var icon = message.icon || 'fa-info-circle';
+                var color = message.color || 'info';
+                var msgText = message.message || '';
+                var show_action = message.show_action || false;
+                var action_text = message.action_text || 'Ver mais';
+                var action_url = message.action_url || '#';
+                var dismissible = message.dismissible !== undefined ? message.dismissible : true;
+                var priority = message.priority || 0;
+                var message_id = message.message_id || '';
                 
-                const colorClass = this._getColorClass(color);
-                const iconClass = icon;
-                const segmentClass = segment === 'new' ? 'new-user-message' : 
+                var colorClass = this._getColorClass(color);
+                var iconClass = icon;
+                var segmentClass = segment === 'new' ? 'new-user-message' : 
                                      segment === 'premium' ? 'premium-message' : '';
                 
-                // Verifica se é uma URL externa ou interna
-                const isExternal = action_url.startsWith('http') || action_url.startsWith('//');
-                const targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
+                var isExternal = action_url.startsWith('http') || action_url.startsWith('//');
+                var targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
                 
                 this.container.innerHTML = `
                     <div class="message-banner message-${colorClass} ${segmentClass}" 
@@ -2377,11 +2425,10 @@
                 
                 this.container.style.display = 'block';
                 
-                // Evento de dismiss
-                const dismissBtn = this.container.querySelector('.message-dismiss');
+                var dismissBtn = this.container.querySelector('.message-dismiss');
                 if (dismissBtn) {
                     dismissBtn.addEventListener('click', () => {
-                        const id = this.container.dataset.messageId || message_id;
+                        var id = this.container.dataset.messageId || message_id;
                         if (id) {
                             this._dismissedMessages.add(id);
                             this._saveDismissedState();
@@ -2389,24 +2436,22 @@
                         this._hideContainer();
                         
                         window.dispatchEvent(new CustomEvent('message:dismissed', {
-                            detail: { messageId: id, segment, credits }
+                            detail: { messageId: id, segment: segment, credits: credits }
                         }));
                     });
                 }
                 
-                // Animação de entrada
                 requestAnimationFrame(() => {
-                    const banner = this.container.querySelector('.message-banner');
+                    var banner = this.container.querySelector('.message-banner');
                     if (banner) {
                         banner.classList.add('message-visible');
                     }
                 });
                 
-                // Auto-dismiss após 8 segundos (prioridade baixa)
                 if (priority <= 1 && dismissible) {
                     clearTimeout(this._autoDismissTimer);
                     this._autoDismissTimer = setTimeout(() => {
-                        const id = this.container.dataset.messageId || message_id;
+                        var id = this.container.dataset.messageId || message_id;
                         if (id) {
                             this._dismissedMessages.add(id);
                             this._saveDismissedState();
@@ -2417,7 +2462,7 @@
             }
             
             _getColorClass(color) {
-                const map = {
+                var map = {
                     'success': 'success',
                     'warning': 'warning',
                     'info': 'info',
@@ -2444,7 +2489,6 @@
             }
         }
         
-        // Inicializa quando o DOM estiver pronto
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 window.messageRenderer = new MessageRenderer();
@@ -2456,13 +2500,247 @@
         }
         
         console.log('✅ MessageRenderer carregado');
-        console.log('   📢 Sistema de mensagens inteligentes ativo');
-        console.log('   🔄 Integrado com __APP_STATE e EventBus');
-        console.log('   💾 Mensagens dispensadas salvas no localStorage');
         
     })();
-    </script>
+</script>
+
     <!-- ============================================== -->
+    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
+    <!-- ============================================== -->
+  <!-- ============================================== -->
+<!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
+<!-- ============================================== -->
+<script>
+    (function() {
+        'use strict';
+
+        console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
+
+        var NOTIF_CONFIG = {
+            AUTO_CLOSE_DELAY: 6000,
+            STORAGE_KEY: '_aa_welcome_shown',
+            WELCOME_PERMANENT_KEY: '_aa_welcome_permanent',
+            INITIAL_CREDITS: 3
+        };
+
+        var notification = document.getElementById('welcomeNotification');
+        var notifClose = document.getElementById('notifClose');
+        var notifDismiss = document.getElementById('notifDismiss');
+        var notifGoDashboard = document.getElementById('notifGoDashboard');
+        var notifCreditsCount = document.getElementById('notifCreditsCount');
+        var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
+        var notifTitle = document.getElementById('notifTitle');
+        var notifSubtitle = document.getElementById('notifSubtitle');
+        var progressBar = document.getElementById('notifProgressBar');
+
+        function getUserData() {
+            try {
+                var userData = localStorage.getItem('user_data');
+                if (userData) {
+                    return JSON.parse(userData);
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        function getCreditsFromState() {
+            try {
+                if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
+                    return window.__APP_STATE.credits;
+                }
+                if (window.App && typeof window.App.getCredits === 'function') {
+                    return window.App.getCredits();
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        function shouldShowWelcome() {
+            try {
+                if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') {
+                    return false;
+                }
+                if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') {
+                    return false;
+                }
+                var user = getUserData();
+                if (user && user.is_admin === true) {
+                    localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
+                    return false;
+                }
+                var credits = getCreditsFromState() || (user ? user.credits : 0);
+                if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) {
+                    return false;
+                }
+                if (user && user.created_at) {
+                    var createdAt = new Date(user.created_at);
+                    var now = new Date();
+                    var diffMinutes = (now - createdAt) / (1000 * 60);
+                    if (diffMinutes < 5) {
+                        return true;
+                    }
+                }
+                if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                    var totalAnalyses = user ? user.total_analyses || 0 : 0;
+                    if (totalAnalyses === 0) {
+                        return true;
+                    }
+                }
+                return false;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function setupNotificationContent() {
+            var user = getUserData();
+            var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
+            var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
+
+            if (notifCreditsCount) notifCreditsCount.textContent = credits;
+            if (notifCreditsHighlight) notifCreditsHighlight.textContent = credits;
+            if (notifTitle) notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
+            if (notifSubtitle) {
+                if (credits > 0) {
+                    notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
+                } else {
+                    notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
+                }
+            }
+        }
+
+        function showWelcomeNotification() {
+            if (!notification) return;
+            setupNotificationContent();
+            notification.classList.add('show');
+            sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+            startAutoClose();
+            window.dispatchEvent(new CustomEvent('welcome:shown', {
+                detail: { credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS, timestamp: Date.now() }
+            }));
+            console.log('🔔 Notificação de boas-vindas exibida!');
+        }
+
+        function startAutoClose() {
+            if (!progressBar) return;
+            progressBar.style.width = '100%';
+            progressBar.style.transition = 'none';
+            void progressBar.offsetWidth;
+            progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
+            setTimeout(function() { progressBar.style.width = '0%'; }, 50);
+            clearTimeout(window._notifTimer);
+            window._notifTimer = setTimeout(function() { dismissNotification(); }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
+        }
+
+        function dismissNotification() {
+            if (!notification) return;
+            notification.classList.remove('show');
+            clearTimeout(window._notifTimer);
+            localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
+            sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
+            window.dispatchEvent(new CustomEvent('welcome:dismissed', { detail: { timestamp: Date.now() } }));
+            console.log('🔔 Notificação fechada');
+        }
+
+        function goToDashboard() {
+            dismissNotification();
+            window.location.href = '/dashboard';
+        }
+
+        function setupEvents() {
+            if (notifClose) notifClose.addEventListener('click', dismissNotification);
+            if (notifDismiss) notifDismiss.addEventListener('click', dismissNotification);
+            if (notifGoDashboard) notifGoDashboard.addEventListener('click', goToDashboard);
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
+                    dismissNotification();
+                }
+            });
+            if (notification) {
+                notification.addEventListener('mouseenter', function() {
+                    clearTimeout(window._notifTimer);
+                    if (progressBar) {
+                        progressBar.style.transition = 'none';
+                        progressBar.style.width = progressBar.style.width || '100%';
+                    }
+                });
+                notification.addEventListener('mouseleave', function() {
+                    var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
+                    var percent = parseFloat(remaining) || 100;
+                    var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
+                    if (remainingTime > 500) {
+                        clearTimeout(window._notifTimer);
+                        if (progressBar) {
+                            progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
+                            progressBar.style.width = '0%';
+                        }
+                        window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
+                    }
+                });
+            }
+        }
+
+        function listenAppEvents() {
+            document.addEventListener('authLoginSuccess', function(e) {
+                var data = e.detail || {};
+                if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                    setTimeout(function() {
+                        if (shouldShowWelcome()) showWelcomeNotification();
+                    }, 800);
+                }
+            });
+            document.addEventListener('app:ready', function(e) {
+                var detail = e.detail || {};
+                setTimeout(function() {
+                    if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) {
+                        showWelcomeNotification();
+                    }
+                }, 500);
+            });
+            document.addEventListener('authReady', function(e) {
+                if (e.detail && e.detail.isAuthenticated) {
+                    setTimeout(function() {
+                        if (shouldShowWelcome()) showWelcomeNotification();
+                    }, 600);
+                }
+            });
+        }
+
+        function init() {
+            setupEvents();
+            listenAppEvents();
+            if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
+                setTimeout(function() {
+                    if (shouldShowWelcome()) showWelcomeNotification();
+                }, 400);
+            }
+            if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
+                var credits = getCreditsFromState();
+                if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
+                    setTimeout(function() {
+                        if (shouldShowWelcome()) showWelcomeNotification();
+                    }, 600);
+                }
+            }
+            console.log('✅ Sistema de notificação inicializado!');
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            setTimeout(init, 300);
+        }
+
+        window.WelcomeNotif = {
+            show: showWelcomeNotification,
+            dismiss: dismissNotification,
+            shouldShow: shouldShowWelcome
+        };
+
+        console.log('✅ welcome-notification.js carregado!');
+
+    })();
+</script>
 
 </body>
 </html>
