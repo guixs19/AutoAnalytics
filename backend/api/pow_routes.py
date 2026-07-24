@@ -1,7 +1,8 @@
-# backend/api/pow_routes.py - VERSÃO 3.0 PRODUÇÃO
+# backend/api/pow_routes.py - VERSÃO 3.1 PRODUÇÃO (CORRIGIDA)
 """
-🔥 Serviço de Proof of Work (PoW) - PRODUÇÃO V3.0
+🔥 Serviço de Proof of Work (PoW) - PRODUÇÃO V3.1
 ================================================================================
+✅ CORRIGIDO: Logging sem sobrescrever campos reservados
 ✅ ARQUITETURA DE ALTA PERFORMANCE
 ✅ CACHE DISTRIBUÍDO (Redis + Memória)
 ✅ VALIDAÇÃO ATÔMICA COM CONSUMO CONTROLADO
@@ -10,11 +11,11 @@
 ✅ PREVENÇÃO DE REPLAY ATTACKS AVANÇADA
 ✅ MÉTRICAS E MONITORAMENTO COMPLETO
 ✅ CIRCUIT BREAKER PARA PROTEÇÃO
-✅ LOGGESTRUTURADO COM CORRELAÇÃO
+✅ LOG ESTRUTURADO COM CORRELAÇÃO
 ✅ SUPORTE A HEADERS X-PoW-*
 ✅ TESTADO E VALIDADO EM PRODUÇÃO
 
-VERSÃO: 3.0
+VERSÃO: 3.1
 AUTOR: AutoAnalytics Team
 ================================================================================
 """
@@ -499,9 +500,9 @@ class PoWService:
         await self.cache.add(challenge, challenge_data)
         self._stats["total_challenges_generated"] += 1
         
-        # 4. Log estruturado
+        # 4. Log estruturado (CORRIGIDO - sem 'message')
         logger.info(
-            f"🔐 Desafio PoW gerado",
+            f"🔐 Desafio PoW gerado para {user_email or ip} (dificuldade: {difficulty}, expires: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s)",
             extra={
                 "user": user_email or ip,
                 "difficulty": difficulty,
@@ -653,7 +654,7 @@ class PoWService:
                 self._reset_ip_failures(ip)
                 
                 logger.info(
-                    f"✅ PoW validado e consumido",
+                    f"✅ PoW validado e consumido - IP: {ip}, usuário: {user_id}, dificuldade: {difficulty}",
                     extra={
                         "ip": ip,
                         "user_id": user_id,
@@ -664,7 +665,7 @@ class PoWService:
                 )
             elif mode == VerifyMode.VALIDATE_ONLY:
                 logger.debug(
-                    f"✅ PoW validado (não consumido)",
+                    f"✅ PoW validado (não consumido) - IP: {ip}",
                     extra={
                         "ip": ip,
                         "challenge_id": challenge[:8]
@@ -672,7 +673,7 @@ class PoWService:
                 )
             else:  # PEEK
                 logger.debug(
-                    f"👀 PoW verificado (peek)",
+                    f"👀 PoW verificado (peek) - IP: {ip}",
                     extra={
                         "ip": ip,
                         "challenge_id": challenge[:8]
@@ -806,8 +807,11 @@ async def validate_pow_request(request: Request) -> bool:
     
     if not nonce or not challenge:
         logger.warning(
-            f"⚠️ PoW ausente na requisição",
-            extra={"ip": client_ip, "request_id": request_id}
+            f"⚠️ PoW ausente na requisição de {client_ip}",
+            extra={
+                "client_ip": client_ip,
+                "request_id": request_id
+            }
         )
         raise HTTPException(
             status_code=428,  # Precondition Required
@@ -830,10 +834,10 @@ async def validate_pow_request(request: Request) -> bool:
     
     if not result.success:
         logger.warning(
-            f"❌ PoW inválido",
+            f"❌ PoW inválido para {client_ip} - {result.message}",
             extra={
-                "ip": client_ip,
-                "message": result.message,
+                "client_ip": client_ip,
+                "error": result.message,
                 "request_id": request_id
             }
         )
@@ -847,8 +851,11 @@ async def validate_pow_request(request: Request) -> bool:
         )
     
     logger.debug(
-        f"✅ PoW validado (não consumido)",
-        extra={"ip": client_ip, "request_id": request_id}
+        f"✅ PoW validado (não consumido) para {client_ip}",
+        extra={
+            "client_ip": client_ip,
+            "request_id": request_id
+        }
     )
     return True
 
@@ -910,8 +917,11 @@ async def verify_pow_solution(
     request_id = request.headers.get(PoWConfig.HEADER_REQUEST_ID, str(uuid.uuid4())[:8])
     
     logger.info(
-        f"🔍 Verificando PoW",
-        extra={"user": current_user.email, "request_id": request_id}
+        f"🔍 Verificando PoW para {current_user.email}",
+        extra={
+            "user": current_user.email,
+            "request_id": request_id
+        }
     )
     
     # Verificar (CONSUME)
@@ -927,8 +937,12 @@ async def verify_pow_solution(
     
     if not result.success:
         logger.warning(
-            f"⚠️ {result.message}",
-            extra={"user": current_user.email, "request_id": request_id}
+            f"⚠️ {result.message} para {current_user.email}",
+            extra={
+                "user": current_user.email,
+                "error": result.message,
+                "request_id": request_id
+            }
         )
         raise HTTPException(
             status_code=400,
@@ -940,8 +954,11 @@ async def verify_pow_solution(
         )
     
     logger.info(
-        f"✅ PoW verificado com sucesso",
-        extra={"user": current_user.email, "request_id": request_id}
+        f"✅ PoW verificado com sucesso para {current_user.email}",
+        extra={
+            "user": current_user.email,
+            "request_id": request_id
+        }
     )
     
     return {
@@ -961,7 +978,7 @@ async def pow_health():
     return {
         "status": stats["status"],
         "service": "pow",
-        "version": "3.0",
+        "version": "3.1",
         "algorithm": PoWConfig.ALGORITHM,
         "challenge_ttl_seconds": PoWConfig.CHALLENGE_EXPIRY_SECONDS,
         "default_difficulty": PoWConfig.DEFAULT_DIFFICULTY,
@@ -1006,7 +1023,7 @@ __all__ = [
 ]
 
 print("=" * 70)
-print("🔥 PoW Service v3.0 - PRODUÇÃO")
+print("🔥 PoW Service v3.1 - PRODUÇÃO (CORRIGIDO)")
 print(f"   ✅ Challenge TTL: {PoWConfig.CHALLENGE_EXPIRY_SECONDS}s")
 print(f"   ✅ Default Difficulty: {PoWConfig.DEFAULT_DIFFICULTY}")
 print(f"   ✅ Replay Attack Prevention: Ativo")
@@ -1016,4 +1033,5 @@ print(f"   ✅ Circuit Breaker: Ativo")
 print(f"   ✅ Algoritmo: {PoWConfig.ALGORITHM}")
 print(f"   ✅ Cache: {PoWConfig.CHALLENGE_MAX_SIZE} desafios")
 print(f"   ✅ Modo: VALIDAÇÃO NÃO CONSOOME + CONSUMO CONTROLADO")
+print(f"   ✅ CORRIGIDO: Logging sem sobrescrever 'message'")
 print("=" * 70)
