@@ -351,7 +351,7 @@
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* ==============================================
-                   RESULTADO - VERSÃO MELHORADA E DESTACADA
+                   RESULTADO - COM GRÁFICO FINANCEIRO
                 ============================================== */
         #resultCard {
             background: rgba(255, 255, 255, 0.08) !important;
@@ -439,6 +439,39 @@
             box-shadow: 0 0 20px rgba(72, 187, 120, 0.1);
         }
 
+        /* 🔥 GRÁFICO FINANCEIRO */
+        .finance-chart-wrapper {
+            height: 260px;
+            position: relative;
+            margin-bottom: 0.6rem;
+        }
+        .finance-chart-wrapper canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Legenda do gráfico */
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.65rem;
+            margin-bottom: 0.8rem;
+        }
+        .chart-legend .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .chart-legend .legend-color {
+            width: 12px;
+            height: 3px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+
+        /* Métricas */
         .result-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -475,6 +508,19 @@
             font-size: 0.8rem;
             color: rgba(255,255,255,0.15);
             margin-right: 2px;
+        }
+
+        /* Resumo + Donut */
+        .result-summary-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+            margin-bottom: 0.8rem;
+        }
+        @media (max-width: 768px) {
+            .result-summary-row {
+                grid-template-columns: 1fr;
+            }
         }
 
         .result-insights {
@@ -560,9 +606,7 @@
             color: rgba(255,255,255,0.06);
         }
 
-        /* ==============================================
-                   GRÁFICOS
-                ============================================== */
+        /* Chart containers para gráficos secundários */
         .chart-container {
             background: rgba(0,0,0,0.12);
             border-radius: 10px;
@@ -850,6 +894,8 @@
             .welcome-notification { top: 95px; right: 10px; left: 10px; max-width: none; padding: 0.6rem 0.8rem; }
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
+            .result-summary-row { grid-template-columns: 1fr; }
+            .finance-chart-wrapper { height: 200px; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
@@ -861,6 +907,25 @@
             .site-explanation .exp-grid { grid-template-columns: 1fr; }
             .result-header { flex-direction: column; text-align: center; }
             .result-actions { justify-content: center; }
+            .finance-chart-wrapper { height: 180px; }
+            .chart-legend { gap: 0.5rem; font-size: 0.55rem; }
+        }
+
+        /* ==============================================
+                   PDF BUTTON - ESTILO ESPECIAL
+                ============================================== */
+        .btn-pdf {
+            background: linear-gradient(135deg, #dc3545, #c0392b) !important;
+            color: white !important;
+            box-shadow: 0 4px 20px rgba(220, 53, 69, 0.3) !important;
+        }
+        .btn-pdf:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 35px rgba(220, 53, 69, 0.45) !important;
+            color: white !important;
+        }
+        .btn-pdf i {
+            color: white !important;
         }
     </style>
 </head>
@@ -993,8 +1058,6 @@
                             </div>
                         </div>
                         
-                        <!-- ⚠️ DIV DE STATUS REMOVIDA -->
-
                         <!-- EXPLICAÇÃO -->
                         <div class="col-12">
                             <div class="glass-card">
@@ -1066,14 +1129,15 @@
                 
             </div>
 
-            <!-- RESULTADO - MELHORADO E DESTACADO -->
+            <!-- 🔥 RESULTADO - COM GRÁFICO FINANCEIRO -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
                         <h5 class="card-title">
-                            <i class="fas fa-chart-bar"></i> Relatório da Análise
+                            <i class="fas fa-chart-line" style="color:#48bb78;"></i> 
+                            Evolução Financeira da Oficina
                             <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.15); margin-left:0.5rem;">
-                                <i class="fas fa-robot"></i> IA Insights
+                                <i class="fas fa-calendar-week me-1"></i> Receita vs Custos
                             </span>
                         </h5>
                         
@@ -1089,73 +1153,137 @@
                                 </span>
                             </div>
 
-                            <!-- Métricas principais -->
-                            <div class="result-grid" id="resultMetrics">
-                                <!-- Preenchido via JS -->
+                            <!-- 🔥 GRÁFICO PRINCIPAL -->
+                            <div class="finance-chart-wrapper">
+                                <canvas id="weeklyFinanceChart"></canvas>
                             </div>
 
-                            <!-- Gráficos -->
-                            <div class="row g-2">
-                                <div class="col-md-6">
-                                    <div class="chart-container">
-                                        <div class="chart-title"><span><i class="fas fa-chart-bar me-1" style="color:#ff6b35;"></i> Risco</span><span class="badge-chart" id="riskBadge">0</span></div>
-                                        <canvas id="riskChart" height="90"></canvas>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="chart-container">
-                                        <div class="chart-title"><span><i class="fas fa-chart-line me-1" style="color:#ff6b35;"></i> Confiança</span><span class="badge-chart" id="scoreBadge">0%</span></div>
-                                        <canvas id="predChart" height="90"></canvas>
-                                    </div>
-                                </div>
+                            <!-- Legenda -->
+                            <div class="chart-legend">
+                                <span class="legend-item">
+                                    <span class="legend-color" style="background:#48bb78;"></span> Receita
+                                </span>
+                                <span class="legend-item">
+                                    <span class="legend-color" style="background:#f56565;"></span> Custos
+                                </span>
+                                <span class="legend-item">
+                                    <span class="legend-color" style="background:#ff6b35;"></span> Lucro
+                                </span>
+                                <span style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
+                                    <i class="fas fa-info-circle me-1"></i> Passe o mouse para detalhes
+                                </span>
                             </div>
 
-                            <!-- Resumo e Donut -->
-                            <div class="row g-2 mt-1">
-                                <div class="col-md-4">
-                                    <div class="chart-container chart-container-sm">
-                                        <div class="chart-title"><span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Proporção</span></div>
-                                        <canvas id="donutChart" height="70"></canvas>
+                            <!-- 📊 MÉTRICAS -->
+                            <div class="result-grid" id="resultMetrics"></div>
+
+                            <!-- Resumo + Donut -->
+                            <div class="result-summary-row">
+                                <div class="chart-container">
+                                    <div class="chart-title">
+                                        <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo da Análise</span>
+                                        <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
+                                    </div>
+                                    <div id="resultSummary" style="color:rgba(255,255,255,0.5); font-size:0.75rem; line-height:1.5; min-height:40px; padding:0.2rem 0.3rem;">
+                                        <span style="color:rgba(255,255,255,0.2);">Aguardando análise...</span>
                                     </div>
                                 </div>
-                                <div class="col-md-8">
-                                    <div class="chart-container">
-                                        <div class="chart-title"><span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo</span><span class="badge-chart"><i class="fas fa-robot"></i> IA</span></div>
-                                        <div id="resultSummary" style="color:rgba(255,255,255,0.5); font-size:0.75rem; line-height:1.5; min-height:40px;">
-                                            <span style="color:rgba(255,255,255,0.2);">Aguardando análise...</span>
-                                        </div>
+                                <div class="chart-container">
+                                    <div class="chart-title">
+                                        <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
+                                        <span class="badge-chart" id="riskBadge">0</span>
                                     </div>
+                                    <canvas id="donutChart" height="70"></canvas>
                                 </div>
                             </div>
 
                             <!-- Insights -->
                             <div class="result-insights" id="resultInsights"></div>
 
-                            <!-- Ações -->
+                            <!-- 🔥 AÇÕES -->
                             <div class="result-actions">
-                                <button class="btn-result btn-result-primary" id="downloadPdfBtn">
-                                    <i class="fas fa-file-pdf"></i> Baixar PDF
+                                <button class="btn-result btn-pdf" id="downloadPdfBtn">
+                                    <i class="fas fa-file-pdf"></i> Baixar Relatório PDF
                                 </button>
                                 <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
                                     <i class="fas fa-plus"></i> Nova Análise
-                                </button>
-                                <button class="btn-result btn-result-secondary" id="shareResultBtn" style="display:none;">
-                                    <i class="fas fa-share-alt"></i> Compartilhar
                                 </button>
                             </div>
                         </div>
 
                         <!-- Placeholder -->
                         <div id="resultPlaceholder">
-                            <i class="fas fa-file-alt"></i>
-                            <p>📊 Seus resultados aparecerão aqui</p>
-                            <span class="placeholder-sub">Faça upload de um arquivo para iniciar</span>
+                            <i class="fas fa-chart-line"></i>
+                            <p>📊 Aguardando dados para análise financeira</p>
+                            <span class="placeholder-sub">Faça upload de um arquivo CSV/Excel para visualizar a evolução</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- ⚠️ DIV DE HISTÓRICO REMOVIDA -->
+            <!-- 🔥 GRÁFICOS SECUNDÁRIOS -->
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="glass-card">
+                        <h5 class="card-title">
+                            <i class="fas fa-tasks" style="color:#4a9eff;"></i> 
+                            Desempenho Semanal
+                            <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
+                                <i class="fas fa-wrench me-1"></i> Serviços
+                            </span>
+                        </h5>
+                        <div style="height: 160px; position: relative;">
+                            <canvas id="weeklyPerformanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="glass-card">
+                        <h5 class="card-title">
+                            <i class="fas fa-calendar-alt" style="color:#f5a623;"></i> 
+                            Evolução Mensal
+                            <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
+                                <i class="fas fa-chart-line me-1"></i> Receita
+                            </span>
+                        </h5>
+                        <div style="height: 160px; position: relative;">
+                            <canvas id="monthlyFinanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- 🔥 GRÁFICO GPSA - PERFORMANCE DA OFICINA -->
+            <!-- ============================================== -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="glass-card">
+                        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-heartbeat" style="color:#ff6b35;"></i> 
+                                GPSA - Performance da Oficina
+                                <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
+                                    <i class="fas fa-chart-line me-1"></i> Score • Serviços • Financeiro
+                                </span>
+                            </h5>
+                            <div id="gpsaHealthIndicator" class="badge" style="font-size:0.65rem; padding:0.3rem 0.8rem; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.4); border:1px solid rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                <i class="fas fa-circle me-1" style="font-size:0.4rem;"></i>
+                                Carregando...
+                            </div>
+                        </div>
+                        <div style="height: 300px; position: relative;">
+                            <canvas id="gpsaChart"></canvas>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <small style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
+                                <i class="fas fa-info-circle me-1"></i> 
+                                Passe o mouse para ver detalhes • Picos e vales são destacados automaticamente
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- RODAPÉ -->
             <div class="row mt-3">
@@ -1316,10 +1444,270 @@
     <script src="/static/js/app.js?ver=7.3.0"></script>
     <script src="/static/js/auth.js?ver=4.1.0"></script>
     <script src="/static/js/payment.js?ver=7.1.0"></script>
-    <script src="/static/js/dashboard.js?ver=7.4.0"></script>
+    <script src="/static/js/dashboard.js?ver=9.0"></script>
 
     <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.0"></script>
+    <script src="/static/js/pdf-generator.js?ver=1.0"></script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
+    <!-- ============================================== -->
+    <script>
+    (function() {
+        'use strict';
+
+        window.generateFinancePDF = function(analysisData) {
+            console.log('📄 Gerando PDF com relatório em linguagem natural...');
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            
+            // Cores
+            const primaryColor = [255, 107, 53];
+            const secondaryColor = [72, 187, 120];
+            const textColor = [50, 50, 50];
+            
+            // ==============================================
+            // 1. CABEÇALHO
+            // ==============================================
+            doc.setFillColor(15, 12, 41);
+            doc.rect(0, 0, 210, 40, 'F');
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📊 AutoAnalytics', 20, 25);
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Relatório de Análise Financeira', 20, 33);
+            
+            // Data
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
+            
+            // ==============================================
+            // 2. MÉTRICAS PRINCIPAIS
+            // ==============================================
+            let yPos = 55;
+            
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📈 Métricas da Análise', 20, yPos);
+            yPos += 8;
+            
+            // Buscar métricas
+            const metrics = analysisData?.metrics || {};
+            const predictions = analysisData?.predictions || [];
+            const insights = analysisData?.insights || {};
+            const recommendations = analysisData?.recommendations || [];
+            
+            const totalRegistros = metrics.dataset_rows || predictions.length || 0;
+            const scoreMedio = metrics.mean_prediction || 0.65;
+            const highRisk = metrics.high_risk_percentage || 0;
+            const lowRisk = metrics.low_risk_percentage || 0;
+            
+            // Grid de métricas
+            const metricsData = [
+                { label: 'Total Registros', value: totalRegistros.toLocaleString(), icon: '📋' },
+                { label: 'Score Médio', value: (scoreMedio * 100).toFixed(0) + '%', icon: '📈' },
+                { label: 'Alto Risco', value: highRisk.toFixed(0) + '%', icon: '🔴' },
+                { label: 'Baixo Risco', value: lowRisk.toFixed(0) + '%', icon: '🟢' }
+            ];
+            
+            const colWidth = 42;
+            const startX = 20;
+            
+            metricsData.forEach((item, index) => {
+                const x = startX + (index * colWidth);
+                
+                // Card
+                doc.setFillColor(245, 245, 245);
+                doc.roundedRect(x, yPos, colWidth - 2, 28, 3, 3, 'F');
+                
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.text(item.icon + ' ' + item.label, x + 3, yPos + 6);
+                
+                doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text(item.value, x + 3, yPos + 22);
+            });
+            
+            yPos += 38;
+            
+            // ==============================================
+            // 3. INSIGHTS (LINGUAGEM NATURAL)
+            // ==============================================
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('💡 Insights da Análise', 20, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            
+            const insightLines = insights.summary ? [
+                '📊 ' + insights.summary.total_predictions + ' registros analisados',
+                '📈 Score médio de ' + (insights.summary.mean * 100).toFixed(0) + '%',
+                '🔴 ' + insights.risk_distribution?.high + ' casos de alto risco (' + (insights.risk_distribution?.high_percentage || 0).toFixed(0) + '%)',
+                '🟢 ' + insights.risk_distribution?.low + ' casos de baixo risco (' + (insights.risk_distribution?.low_percentage || 0).toFixed(0) + '%)'
+            ] : [
+                '📊 ' + totalRegistros + ' registros processados',
+                '📈 Score médio de ' + (scoreMedio * 100).toFixed(0) + '%',
+                '🔴 ' + highRisk.toFixed(0) + '% dos casos são de alto risco',
+                '🟢 ' + lowRisk.toFixed(0) + '% dos casos são de baixo risco'
+            ];
+            
+            insightLines.forEach(line => {
+                doc.text(line, 22, yPos);
+                yPos += 7;
+            });
+            
+            yPos += 5;
+            
+            // ==============================================
+            // 4. RECOMENDAÇÕES
+            // ==============================================
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('🎯 Recomendações', 20, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            
+            const recs = recommendations.length > 0 ? recommendations : [
+                '📊 Monitorar KPIs mensalmente',
+                '🔄 Revisar dados periodicamente',
+                '📈 Comparar resultados com metas'
+            ];
+            
+            recs.slice(0, 4).forEach(rec => {
+                const maxWidth = 160;
+                const lines = doc.splitTextToSize('• ' + rec, maxWidth);
+                doc.text(lines, 22, yPos);
+                yPos += (lines.length * 6) + 2;
+            });
+            
+            yPos += 5;
+            
+            // ==============================================
+            // 5. DADOS DO GRÁFICO (TABELA RESUMO)
+            // ==============================================
+            const chartData = analysisData?.chart_data?.weekly || {};
+            const labels = chartData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const revenue = chartData.revenue || [];
+            const costs = chartData.costs || [];
+            
+            if (revenue.length > 0) {
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'bold');
+                doc.text('📊 Dados Semanais', 20, yPos);
+                yPos += 7;
+                
+                // Cabeçalho da tabela
+                doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+                doc.rect(20, yPos, 170, 6, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(6);
+                doc.setFont('helvetica', 'bold');
+                
+                const colWidths = [22, 22, 22, 22, 22, 22, 22];
+                let xPos = 22;
+                
+                labels.forEach((label, i) => {
+                    doc.text(label, xPos, yPos + 4.5);
+                    xPos += colWidths[i] || 22;
+                });
+                
+                yPos += 8;
+                
+                // Dados de receita
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(6);
+                doc.setFont('helvetica', 'normal');
+                
+                xPos = 22;
+                revenue.forEach((val, i) => {
+                    const formatted = 'R$ ' + (val || 0).toFixed(0);
+                    doc.text(formatted, xPos, yPos + 4);
+                    xPos += colWidths[i] || 22;
+                });
+                
+                yPos += 6;
+                
+                // Dados de custos
+                xPos = 22;
+                costs.forEach((val, i) => {
+                    const formatted = 'R$ ' + (val || 0).toFixed(0);
+                    doc.text(formatted, xPos, yPos + 4);
+                    xPos += colWidths[i] || 22;
+                });
+                
+                yPos += 10;
+            }
+            
+            // ==============================================
+            // 6. RODAPÉ
+            // ==============================================
+            doc.setFillColor(15, 12, 41);
+            doc.rect(0, 280, 210, 17, 'F');
+            
+            doc.setTextColor(200, 200, 200);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.text('AutoAnalytics v9.0 - Relatório gerado automaticamente por IA', 20, 290);
+            doc.text('Página 1/1', 170, 290);
+            
+            // ==============================================
+            // 7. SALVAR PDF
+            // ==============================================
+            doc.save('Relatorio_AutoAnalytics.pdf');
+            console.log('✅ PDF gerado com sucesso!');
+        };
+
+        // 🔥 Event listener para o botão de PDF
+        document.addEventListener('DOMContentLoaded', function() {
+            const pdfBtn = document.getElementById('downloadPdfBtn');
+            if (pdfBtn) {
+                pdfBtn.addEventListener('click', function() {
+                    const dashboard = window.__dashboard;
+                    if (!dashboard) {
+                        toastr.warning('Aguardando dados da análise...');
+                        return;
+                    }
+                    
+                    const state = dashboard.state?.state || {};
+                    const analyses = state.analyses?.active || [];
+                    const lastAnalysis = analyses[0] || {};
+                    
+                    const resultData = lastAnalysis.result || {};
+                    const analysisData = {
+                        metrics: resultData.metrics || state.metrics || {},
+                        predictions: resultData.predictions || [],
+                        insights: resultData.insights || state.insights || {},
+                        recommendations: resultData.recommendations || state.recommendations || [],
+                        chart_data: resultData.chart_data || state.chart_data || {},
+                        filename: lastAnalysis.filename || 'Análise'
+                    };
+                    
+                    window.generateFinancePDF(analysisData);
+                });
+            }
+        });
+
+        console.log('✅ PDF Generator carregado!');
+    })();
+    </script>
 
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->

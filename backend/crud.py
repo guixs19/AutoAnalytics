@@ -1,7 +1,7 @@
-# backend/crud.py - VERSÃO COMPLETA CORRIGIDA
+# backend/crud.py - VERSÃO 2.1 COM CHART_DATA
 """
 CRUD - Operações de banco de dados
-VERSÃO: 2.0 - COM SUPORTE A POW
+VERSÃO: 2.1 - COM SUPORTE A CHART_DATA E POW
 """
 
 from sqlalchemy.orm import Session
@@ -668,7 +668,7 @@ def get_approved_payments_by_user(db: Session, user_id: int) -> List[models.Paym
 
 
 # ==============================================
-# 🔥🔥🔥 ANÁLISES - VERSÃO UNIFICADA COM POW
+# 🔥🔥🔥 ANÁLISES - VERSÃO UNIFICADA COM POW E CHART_DATA
 # ==============================================
 
 def create_analysis(
@@ -726,7 +726,7 @@ def create_analysis(
 
 
 def get_analysis(db: Session, analysis_id: int) -> Optional[models.Analysis]:
-    """Busca análise por ID (já inclui todos os campos)"""
+    """Busca análise por ID (já inclui todos os campos, incluindo chart_data)"""
     return db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
 
 
@@ -737,7 +737,7 @@ def get_user_analyses(
     limit: int = 100,
     status: Optional[str] = None
 ) -> List[models.Analysis]:
-    """Retorna análises do usuário com filtros"""
+    """Retorna análises do usuário com filtros (inclui chart_data)"""
     query = db.query(models.Analysis).filter(models.Analysis.user_id == user_id)
     if status:
         query = query.filter(models.Analysis.status == status)
@@ -745,7 +745,7 @@ def get_user_analyses(
 
 
 def update_analysis(db: Session, analysis_id: int, updates: dict) -> Optional[models.Analysis]:
-    """Atualiza análise (aceita qualquer campo)"""
+    """Atualiza análise (aceita qualquer campo, incluindo chart_data)"""
     db_analysis = get_analysis(db, analysis_id)
     if not db_analysis:
         return None
@@ -843,18 +843,25 @@ def update_analysis_results(
     results: Dict[str, Any],
 ) -> Optional[models.Analysis]:
     """
-    🔥 Atualiza resultados de uma análise
+    🔥 Atualiza resultados de uma análise (inclui chart_data)
     """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
     
+    # 🔥 Resultados principais
     if 'predictions_summary' in results:
         analysis.predictions_summary = results['predictions_summary']
     if 'insights' in results:
         analysis.insights = results['insights']
     if 'recommendations' in results:
         analysis.recommendations = results['recommendations']
+    
+    # 🔥 NOVO: chart_data
+    if 'chart_data' in results:
+        analysis.chart_data = results['chart_data']
+        logger.info(f"📊 chart_data salvo para análise {analysis_id}")
+    
     if 'status' in results:
         analysis.status = results['status']
     
@@ -916,6 +923,81 @@ def delete_analysis(db: Session, analysis_id: int) -> bool:
 
 def get_recent_analyses(db: Session, limit: int = 10) -> List[models.Analysis]:
     return db.query(models.Analysis).order_by(desc(models.Analysis.uploaded_at)).limit(limit).all()
+
+
+# ==============================================
+# 🔥 CHART_DATA - OPERAÇÕES ESPECÍFICAS
+# ==============================================
+
+def update_analysis_chart_data(
+    db: Session,
+    analysis_id: int,
+    chart_data: Dict[str, Any],
+) -> Optional[models.Analysis]:
+    """
+    🔥 Atualiza apenas o chart_data de uma análise
+    
+    Args:
+        db: Sessão do banco
+        analysis_id: ID da análise
+        chart_data: Dados para o gráfico (weekly, monthly, performance)
+    
+    Returns:
+        Analysis: Análise atualizada ou None se não encontrada
+    """
+    analysis = get_analysis(db, analysis_id)
+    if not analysis:
+        logger.warning(f"⚠️ Análise {analysis_id} não encontrada para atualizar chart_data")
+        return None
+    
+    analysis.chart_data = chart_data
+    safe_commit(db, "Erro ao atualizar chart_data da análise")
+    db.refresh(analysis)
+    
+    logger.info(f"📊 ChartData atualizado para análise {analysis_id}")
+    logger.debug(f"   Weekly: {len(chart_data.get('weekly', {}).get('revenue', []))} dias")
+    logger.debug(f"   Monthly: {len(chart_data.get('monthly', {}).get('revenue', []))} meses")
+    return analysis
+
+
+def get_analysis_chart_data(
+    db: Session,
+    analysis_id: int,
+) -> Optional[Dict[str, Any]]:
+    """
+    🔥 Retorna apenas o chart_data de uma análise
+    
+    Args:
+        db: Sessão do banco
+        analysis_id: ID da análise
+    
+    Returns:
+        Dict: chart_data ou None se não encontrado
+    """
+    analysis = get_analysis(db, analysis_id)
+    if not analysis:
+        return None
+    return analysis.chart_data
+
+
+def has_chart_data(
+    db: Session,
+    analysis_id: int,
+) -> bool:
+    """
+    🔥 Verifica se uma análise tem chart_data
+    
+    Args:
+        db: Sessão do banco
+        analysis_id: ID da análise
+    
+    Returns:
+        bool: True se tem chart_data
+    """
+    analysis = get_analysis(db, analysis_id)
+    if not analysis:
+        return False
+    return analysis.chart_data is not None and bool(analysis.chart_data)
 
 
 # ==============================================
@@ -1267,11 +1349,14 @@ def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
 # ==============================================
 
 print("=" * 70)
-print("✅ crud.py v2.0 carregado - COM SUPORTE A POW")
+print("✅ crud.py v2.1 carregado - COM CHART_DATA!")
 print("   🔥 create_analysis() unificada com suporte a PoW")
 print("   🔥 update_analysis_metrics() → Métricas de performance")
 print("   🔥 update_analysis_data_metrics() → Métricas de dados")
-print("   🔥 update_analysis_results() → Resultados da análise")
+print("   🔥 update_analysis_results() → Resultados + chart_data")
+print("   🔥 update_analysis_chart_data() → Atualização específica")
+print("   🔥 get_analysis_chart_data() → Busca específica")
+print("   🔥 has_chart_data() → Verificação")
 print("   🔥 get_analyses_with_pow_stats() → Estatísticas de PoW")
 print("   🔥 get_user_analyses() → Já inclui todos os campos")
 print("   🔥 UTC-3 (Brasília) mantido para criação de registros")

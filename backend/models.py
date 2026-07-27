@@ -1,7 +1,8 @@
-# backend/models.py - VERSÃO 2.1 COMPLETA
+# backend/models.py - VERSÃO 2.2 COM CHART_DATA
+
 """
 🔥 Models - AutoAnalytics
-Versão: 2.1 - Com suporte a PoW, métricas e todas as colunas necessárias
+Versão: 2.2 - Com suporte a chart_data para gráficos
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
@@ -249,7 +250,7 @@ class DailyCreditLog(Base):
 
 
 # ==============================================
-# 🔥🔥🔥 ANALYSIS - VERSÃO 2.1 COMPLETA
+# 🔥🔥🔥 ANALYSIS - VERSÃO 2.2 COM CHART_DATA
 # ==============================================
                
 class Analysis(Base):
@@ -260,7 +261,7 @@ class Analysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     filename = Column(String, nullable=False)
-    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")  # ✅ JÁ EXISTE
+    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")
     analysis_type = Column(String, nullable=False, default="auto")
     status = Column(String, default="pending")
     ai_used = Column(Boolean, default=False)
@@ -307,7 +308,17 @@ class Analysis(Base):
     numeric_columns = Column(Integer, default=0, comment="Colunas numéricas")
     categorical_columns = Column(Integer, default=0, comment="Colunas categóricas")
     
-    # Resultados
+    # ==========================================
+    # 🔥🔥🔥 NOVO: CHART_DATA PARA GRÁFICOS
+    # ==========================================
+    
+    # Dados para o gráfico (weekly, monthly, performance)
+    chart_data = Column(JSON, nullable=True, comment="Dados para renderização de gráficos")
+    
+    # ==========================================
+    # RESULTADOS
+    # ==========================================
+    
     predictions_summary = Column(JSON, nullable=True, comment="Resumo das predições")
     insights = Column(JSON, nullable=True, comment="Insights gerados")
     recommendations = Column(JSON, nullable=True, comment="Recomendações geradas")
@@ -360,6 +371,9 @@ class Analysis(Base):
             self.insights = results['insights']
         if 'recommendations' in results:
             self.recommendations = results['recommendations']
+        # 🔥 NOVO: chart_data
+        if 'chart_data' in results:
+            self.chart_data = results['chart_data']
     
     def to_dict(self):
         """Converte para dicionário com todos os campos"""
@@ -392,6 +406,8 @@ class Analysis(Base):
             "total_columns": self.total_columns,
             "numeric_columns": self.numeric_columns,
             "categorical_columns": self.categorical_columns,
+            # 🔥 NOVO: chart_data
+            "chart_data": self.chart_data,
             # Resultados
             "predictions_summary": self.predictions_summary,
             "insights": self.insights,
@@ -457,9 +473,10 @@ class BlacklistedToken(Base):
 
 
 print("=" * 70)
-print("🔥 models.py v2.1 carregado - COMPLETO")
+print("🔥 models.py v2.2 carregado - COM CHART_DATA!")
 print("   ✅ Analysis com campos PoW")
 print("   ✅ Analysis com file_size")
 print("   ✅ Analysis com métricas de performance")
+print("   ✅ Analysis com chart_data para gráficos")  # 🔥 NOVO
 print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
 print("=" * 70)

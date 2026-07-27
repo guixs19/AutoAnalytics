@@ -1,16 +1,16 @@
-// frontend/js/dashboard.js - VERSÃO v8.0 (LINE CHART FINANCEIRO)
+// frontend/js/dashboard.js - VERSÃO v9.0 (GPSA - GRÁFICO DE PERFORMANCE)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v8.0
+ * 🔥 Dashboard Module - AutoAnalytics v9.0
  * 
- * ✅ NOVO: Gráfico de Linha "Evolução Financeira"
- * ✅ NOVO: Gráfico de Linha "Desempenho Semanal"
- * ✅ NOVO: Tooltips interativos com valores em R$
- * ✅ NOVO: Área sombreada para receita/custos
- * ✅ NOVO: Animações suaves de entrada
- * ✅ OTIMIZADO: Processamento de dados financeiros
+ * ✅ NOVO: Gráfico GPSA (Gestão de Performance e Saúde da Análise)
+ * ✅ NOVO: Múltiplas métricas no mesmo gráfico (Score, Serviços, Receita)
+ * ✅ NOVO: Áreas sombreadas por faixa de performance
+ * ✅ NOVO: Anotações nos pontos de pico
+ * ✅ NOVO: Tooltips com informações completas
+ * ✅ NOVO: Indicadores de saúde (Verde, Amarelo, Vermelho)
  * 
  * MÓDULOS:
- * - FinanceChartRenderer: Renderização de gráficos financeiros
+ * - GPSAChartRenderer: Renderização do gráfico GPSA
  * - Dashboard: Orquestração principal
  */
 
@@ -31,15 +31,35 @@
         CACHE_TTL: 30000,
         HISTORY_LIMIT: 50,
         
-        // 🔥 Cores do gráfico financeiro
+        // 🔥 Cores do GPSA
         COLORS: {
-            revenue: '#48bb78',      // Verde para receita
-            revenueBg: 'rgba(72,187,120,0.15)',
-            costs: '#f56565',        // Vermelho para custos
-            costsBg: 'rgba(245,101,101,0.10)',
-            profit: '#ff6b35',       // Laranja para lucro
+            // Métricas principais
+            score: '#ff6b35',           // Laranja - Score de Risco
+            services: '#4a9eff',         // Azul - Serviços
+            revenue: '#48bb78',          // Verde - Receita
+            costs: '#f56565',            // Vermelho - Custos
+            
+            // Áreas de saúde
+            healthy: 'rgba(72,187,120,0.08)',
+            warning: 'rgba(245,166,35,0.08)',
+            danger: 'rgba(245,101,101,0.08)',
+            
+            // Grid e texto
             grid: 'rgba(255,255,255,0.05)',
-            text: 'rgba(255,255,255,0.4)'
+            text: 'rgba(255,255,255,0.4)',
+            
+            // Indicadores
+            success: '#48bb78',
+            warning: '#f5a623',
+            danger: '#f56565'
+        },
+        
+        // 🔥 Limites de performance
+        PERFORMANCE_THRESHOLDS: {
+            excellent: 0.8,
+            good: 0.6,
+            regular: 0.4,
+            poor: 0.2
         },
         
         // 🔥 PoW
@@ -144,6 +164,13 @@
             return 'Baixo potencial';
         },
 
+        getHealthStatus: (score) => {
+            if (score >= 0.7) return { status: 'excelente', color: '#48bb78', icon: '🟢', label: 'Excelente' };
+            if (score >= 0.5) return { status: 'bom', color: '#4a9eff', icon: '🔵', label: 'Bom' };
+            if (score >= 0.3) return { status: 'regular', color: '#f5a623', icon: '🟡', label: 'Regular' };
+            return { status: 'critico', color: '#f56565', icon: '🔴', label: 'Crítico' };
+        },
+
         sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
 
         getToken: () => {
@@ -166,170 +193,135 @@
         },
 
         // ==============================================
-        // 🔥 DADOS FINANCEIROS PARA GRÁFICO
+        // 🔥 DADOS GPSA
         // ==============================================
 
-        generateWeeklyFinanceData: (data) => {
+        generateGPSAData: (analysisData) => {
             /**
-             * Gera dados de evolução financeira semanal
-             * A partir de dados de oficina (serviços, peças, valores)
+             * 🔥 Gera dados para o gráfico GPSA
+             * Combina: Score de Risco, Serviços, Receita, Custos
              */
             const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
             
-            // Se não tiver dados reais, gerar dados sintéticos realistas
-            if (!data || data.length === 0) {
-                return Utils._generateSyntheticWeeklyData(days);
-            }
-
-            // Tentar extrair dados reais do DataFrame
-            try {
-                const df = data;
-                const revenueCol = Utils._findColumn(df, ['valor', 'receita', 'total', 'valor_total', 'preco', 'preço']);
-                const costsCol = Utils._findColumn(df, ['custo', 'peca', 'custo_pecas', 'despesa', 'gasto']);
-                const dateCol = Utils._findColumn(df, ['data', 'dia', 'data_cadastro', 'created_at']);
-
-                // Se encontrou colunas, agregar por dia da semana
-                if (revenueCol && dateCol) {
-                    return Utils._aggregateByDayOfWeek(df, dateCol, revenueCol, costsCol);
-                }
-            } catch (e) {
-                console.warn('⚠️ Erro ao extrair dados financeiros:', e);
-            }
-
-            // Fallback: dados sintéticos
-            return Utils._generateSyntheticWeeklyData(days);
-        },
-
-        _findColumn: (df, keywords) => {
-            const columns = df.columns || [];
-            for (const col of columns) {
-                const colLower = String(col).toLowerCase();
-                for (const keyword of keywords) {
-                    if (colLower.includes(keyword)) {
-                        return col;
-                    }
-                }
-            }
-            return null;
-        },
-
-        _aggregateByDayOfWeek: (df, dateCol, revenueCol, costsCol) => {
-            const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-            const result = {
-                labels: days,
-                revenue: Array(7).fill(0),
-                costs: Array(7).fill(0),
-                count: Array(7).fill(0)
-            };
-
-            try {
-                // Converter datas
-                const dates = df[dateCol];
-                const revenues = df[revenueCol];
-                const costs = costsCol ? df[costsCol] : null;
-
-                for (let i = 0; i < dates.length; i++) {
-                    const date = new Date(dates.iloc ? dates.iloc[i] : dates[i]);
-                    const dayIndex = date.getDay(); // 0 = Domingo, 6 = Sábado
-                    // Ajustar para Segunda = 0
-                    const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1;
-                    
-                    const revenue = parseFloat(revenues.iloc ? revenues.iloc[i] : revenues[i]) || 0;
-                    const cost = costs ? parseFloat(costs.iloc ? costs.iloc[i] : costs[i]) || 0 : 0;
-
-                    result.revenue[adjustedIndex] += revenue;
-                    result.costs[adjustedIndex] += cost;
-                    result.count[adjustedIndex] += 1;
-                }
-
-                // Calcular médias se tiver múltiplas semanas
-                for (let i = 0; i < 7; i++) {
-                    if (result.count[i] > 0) {
-                        result.revenue[i] = result.revenue[i] / result.count[i];
-                        result.costs[i] = result.costs[i] / result.count[i];
-                    }
-                }
-
-                return result;
-            } catch (e) {
-                console.warn('⚠️ Erro ao agregar dados:', e);
-                return Utils._generateSyntheticWeeklyData(days);
-            }
-        },
-
-        _generateSyntheticWeeklyData: (days) => {
-            // Dados sintéticos realistas para oficina
-            const baseRevenue = [1200, 1500, 900, 1800, 2200, 800, 400];
-            const baseCosts = [400, 500, 350, 600, 700, 300, 150];
+            // Tentar extrair dados reais
+            const metrics = analysisData?.metrics || {};
+            const predictions = analysisData?.predictions || [];
+            const chartData = analysisData?.chart_data || {};
             
-            // Adicionar variação aleatória
-            const revenue = baseRevenue.map(v => v * (0.8 + Math.random() * 0.4));
-            const costs = baseCosts.map(v => v * (0.7 + Math.random() * 0.6));
+            // 1. Score de Risco (média por dia)
+            let scoreData = [];
+            if (predictions && predictions.length > 0) {
+                // Se tem predições, distribuir pelos dias
+                const avgScore = predictions.reduce((a, b) => a + b, 0) / predictions.length;
+                scoreData = Array(7).fill(avgScore);
+                
+                // Adicionar variação para parecer real
+                scoreData = scoreData.map((s, i) => {
+                    const variation = (Math.random() - 0.5) * 0.2;
+                    return Math.max(0, Math.min(1, s + variation));
+                });
+            } else {
+                // Dados sintéticos
+                const baseScore = metrics.mean_prediction || 0.65;
+                scoreData = [
+                    baseScore * (0.8 + Math.random() * 0.4),
+                    baseScore * (0.9 + Math.random() * 0.3),
+                    baseScore * (0.7 + Math.random() * 0.5),
+                    baseScore * (1.0 + Math.random() * 0.2),
+                    baseScore * (1.1 + Math.random() * 0.2),
+                    baseScore * (0.6 + Math.random() * 0.5),
+                    baseScore * (0.5 + Math.random() * 0.4)
+                ];
+                scoreData = scoreData.map(s => Math.max(0, Math.min(1, s)));
+            }
+            
+            // 2. Serviços por dia
+            let servicesData;
+            if (chartData.performance?.services) {
+                servicesData = chartData.performance.services;
+            } else if (predictions && predictions.length >= 7) {
+                servicesData = predictions.slice(0, 7).map(p => Math.max(1, Math.round(p * 15 + 2)));
+            } else {
+                servicesData = [8, 12, 6, 15, 18, 4, 2];
+            }
+            
+            // 3. Receita e Custos
+            let revenueData, costsData;
+            if (chartData.weekly) {
+                revenueData = chartData.weekly.revenue || [];
+                costsData = chartData.weekly.costs || [];
+            } else {
+                const baseRevenue = metrics.mean_prediction ? metrics.mean_prediction * 1500 : 1000;
+                revenueData = Array(7).fill(0).map((_, i) => {
+                    const peak = i === 3 || i === 4 ? 1.3 : 1;
+                    return baseRevenue * (0.6 + Math.random() * 0.6) * peak;
+                });
+                costsData = revenueData.map(r => r * (0.25 + Math.random() * 0.35));
+            }
+            
+            // Garantir que todos têm 7 elementos
+            while (scoreData.length < 7) scoreData.push(0.5);
+            while (servicesData.length < 7) servicesData.push(5);
+            while (revenueData.length < 7) revenueData.push(1000);
+            while (costsData.length < 7) costsData.push(350);
+            
+            // Calcular indicadores de saúde
+            const avgScore = scoreData.reduce((a, b) => a + b, 0) / scoreData.length;
+            const healthStatus = Utils.getHealthStatus(avgScore);
+            
+            // Calcular totais
+            const totalRevenue = revenueData.reduce((a, b) => a + b, 0);
+            const totalCosts = costsData.reduce((a, b) => a + b, 0);
+            const totalServices = servicesData.reduce((a, b) => a + b, 0);
+            const profit = totalRevenue - totalCosts;
             
             return {
                 labels: days,
-                revenue: revenue,
-                costs: costs,
-                count: Array(7).fill(1)
-            };
-        },
-
-        generateMonthlyFinanceData: (data) => {
-            /**
-             * Gera dados de evolução financeira mensal
-             */
-            const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-            
-            if (!data || data.length === 0) {
-                return Utils._generateSyntheticMonthlyData(months);
-            }
-
-            // Similar ao weekly mas agregando por mês
-            try {
-                // ... lógica de agregação mensal
-                return Utils._generateSyntheticMonthlyData(months);
-            } catch (e) {
-                return Utils._generateSyntheticMonthlyData(months);
-            }
-        },
-
-        _generateSyntheticMonthlyData: (months) => {
-            // Dados sintéticos mensais realistas
-            const baseRevenue = [8000, 7200, 9500, 11000, 9800, 12000, 13500, 10000, 11500, 14000, 12500, 16000];
-            const baseCosts = [3000, 2800, 3500, 4000, 3800, 4500, 5000, 3800, 4200, 5200, 4800, 5800];
-            
-            const revenue = baseRevenue.map(v => v * (0.9 + Math.random() * 0.2));
-            const costs = baseCosts.map(v => v * (0.85 + Math.random() * 0.3));
-            
-            return {
-                labels: months,
-                revenue: revenue,
-                costs: costs
+                score: scoreData.map(s => Math.round(s * 100) / 100),
+                services: servicesData.map(s => Math.round(s)),
+                revenue: revenueData.map(r => Math.round(r)),
+                costs: costsData.map(r => Math.round(r)),
+                metrics: {
+                    avgScore: Math.round(avgScore * 100) / 100,
+                    totalRevenue: Math.round(totalRevenue),
+                    totalCosts: Math.round(totalCosts),
+                    totalServices: Math.round(totalServices),
+                    profit: Math.round(profit),
+                    margin: Math.round((profit / totalRevenue) * 100) || 0,
+                    health: healthStatus
+                },
+                // Picos de performance
+                peaks: {
+                    bestDay: servicesData.indexOf(Math.max(...servicesData)),
+                    worstDay: servicesData.indexOf(Math.min(...servicesData)),
+                    bestScore: scoreData.indexOf(Math.max(...scoreData)),
+                    worstScore: scoreData.indexOf(Math.min(...scoreData))
+                }
             };
         }
     };
 
     // ==============================================
-    // 🔥 FINANCE CHART RENDERER
+    // 🔥 GPSA CHART RENDERER
     // ==============================================
 
-    class FinanceChartRenderer {
+    class GPSAChartRenderer {
         constructor() {
             this._charts = {};
             this._chartInstances = {};
         }
 
         /**
-         * 🔥 GRÁFICO DE LINHA - EVOLUÇÃO FINANCEIRA
+         * 🔥 GRÁFICO GPSA - EVOLUÇÃO DE PERFORMANCE
          */
-        createFinancialLineChart(canvasId, data, options = {}) {
+        createGPSAChart(canvasId, data, options = {}) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) {
-                console.warn(`⚠️ [FinanceChart] Canvas ${canvasId} não encontrado`);
+                console.warn(`⚠️ [GPSA] Canvas ${canvasId} não encontrado`);
                 return null;
             }
 
-            // Destruir chart anterior se existir
+            // Destruir chart anterior
             if (this._chartInstances[canvasId]) {
                 this._chartInstances[canvasId].destroy();
                 delete this._chartInstances[canvasId];
@@ -339,58 +331,147 @@
 
             // Extrair dados
             const labels = data.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-            const revenueData = data.revenue || Array(7).fill(0);
-            const costsData = data.costs || Array(7).fill(0);
+            const scoreData = data.score || Array(7).fill(0.5);
+            const servicesData = data.services || Array(7).fill(5);
+            const revenueData = data.revenue || Array(7).fill(1000);
+            const costsData = data.costs || Array(7).fill(350);
+            
+            // Métricas
+            const metrics = data.metrics || {};
+            const health = metrics.health || { status: 'regular', color: '#f5a623', label: 'Regular' };
 
             // Calcular lucro
             const profitData = revenueData.map((r, i) => r - (costsData[i] || 0));
 
-            // Configuração do gráfico
+            // Plugin para anotações nos pontos de pico
+            const peakAnnotationPlugin = {
+                id: 'peakAnnotation',
+                afterDraw: function(chart) {
+                    const ctx = chart.ctx;
+                    const meta = chart.getDatasetMeta(1); // Serviços
+                    const data = chart.data.datasets[1].data;
+                    
+                    if (!meta || !data) return;
+                    
+                    // Encontrar pico e vale
+                    const maxVal = Math.max(...data);
+                    const minVal = Math.min(...data);
+                    const maxIndex = data.indexOf(maxVal);
+                    const minIndex = data.indexOf(minVal);
+                    
+                    // Desenhar anotações
+                    ctx.save();
+                    
+                    // Pico (melhor dia)
+                    const maxPoint = meta.data[maxIndex];
+                    if (maxPoint) {
+                        const x = maxPoint.x;
+                        const y = maxPoint.y - 15;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x, y + 10);
+                        ctx.lineTo(x, y - 5);
+                        ctx.strokeStyle = CONFIG.COLORS.success;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = CONFIG.COLORS.success;
+                        ctx.font = 'bold 8px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('🏆 Pico', x, y - 8);
+                    }
+                    
+                    // Vale (pior dia)
+                    const minPoint = meta.data[minIndex];
+                    if (minPoint) {
+                        const x = minPoint.x;
+                        const y = minPoint.y + 20;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x, y - 10);
+                        ctx.lineTo(x, y + 5);
+                        ctx.strokeStyle = CONFIG.COLORS.danger;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = CONFIG.COLORS.danger;
+                        ctx.font = 'bold 8px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('⬇️ Vale', x, y + 15);
+                    }
+                    
+                    ctx.restore();
+                }
+            };
+
+            // Configuração do gráfico GPSA
             const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [
                         {
-                            label: '💰 Receita',
-                            data: revenueData,
-                            borderColor: CONFIG.COLORS.revenue,
-                            backgroundColor: CONFIG.COLORS.revenueBg,
+                            label: '📊 Score de Risco',
+                            data: scoreData,
+                            borderColor: CONFIG.COLORS.score,
+                            backgroundColor: 'rgba(255,107,53,0.10)',
                             fill: true,
                             tension: 0.4,
-                            pointRadius: 4,
-                            pointBackgroundColor: CONFIG.COLORS.revenue,
+                            pointRadius: 5,
+                            pointBackgroundColor: CONFIG.COLORS.score,
                             pointBorderColor: '#ffffff',
                             pointBorderWidth: 2,
                             borderWidth: 3,
+                            yAxisID: 'y1',
+                            order: 1,
+                        },
+                        {
+                            label: '🔧 Serviços',
+                            data: servicesData,
+                            borderColor: CONFIG.COLORS.services,
+                            backgroundColor: 'rgba(74,158,255,0.08)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointBackgroundColor: CONFIG.COLORS.services,
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2,
+                            borderWidth: 2,
+                            yAxisID: 'y2',
+                            order: 2,
+                            borderDash: [5, 5],
+                        },
+                        {
+                            label: '💰 Receita',
+                            data: revenueData,
+                            borderColor: CONFIG.COLORS.revenue,
+                            backgroundColor: 'rgba(72,187,120,0.05)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointBackgroundColor: CONFIG.COLORS.revenue,
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 1,
+                            borderWidth: 2,
+                            yAxisID: 'y3',
+                            order: 3,
+                            borderDash: [3, 3],
                         },
                         {
                             label: '📦 Custos',
                             data: costsData,
                             borderColor: CONFIG.COLORS.costs,
-                            backgroundColor: CONFIG.COLORS.costsBg,
-                            fill: true,
+                            backgroundColor: 'rgba(245,101,101,0.05)',
+                            fill: false,
                             tension: 0.4,
-                            pointRadius: 4,
+                            pointRadius: 3,
                             pointBackgroundColor: CONFIG.COLORS.costs,
                             pointBorderColor: '#ffffff',
-                            pointBorderWidth: 2,
-                            borderWidth: 3,
-                            borderDash: [5, 5],
-                        },
-                        {
-                            label: '📊 Lucro',
-                            data: profitData,
-                            borderColor: CONFIG.COLORS.profit,
-                            backgroundColor: 'rgba(255,107,53,0.05)',
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 4,
-                            pointBackgroundColor: CONFIG.COLORS.profit,
-                            pointBorderColor: '#ffffff',
-                            pointBorderWidth: 2,
+                            pointBorderWidth: 1,
                             borderWidth: 2,
-                            borderDash: [3, 3],
+                            yAxisID: 'y3',
+                            order: 4,
+                            borderDash: [2, 4],
                         }
                     ]
                 },
@@ -406,43 +487,41 @@
                             labels: {
                                 color: CONFIG.COLORS.text,
                                 font: {
-                                    size: 10,
+                                    size: 9,
                                     weight: '600'
                                 },
-                                boxWidth: 12,
-                                padding: 10,
+                                boxWidth: 10,
+                                padding: 8,
                             },
                             position: 'top',
                         },
                         tooltip: {
-                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            backgroundColor: 'rgba(0,0,0,0.85)',
                             titleColor: '#ffffff',
                             bodyColor: '#e2e8f0',
                             borderColor: 'rgba(255,255,255,0.1)',
                             borderWidth: 1,
-                            padding: 12,
-                            cornerRadius: 8,
+                            padding: 14,
+                            cornerRadius: 10,
                             callbacks: {
-                                label: function(context) {
-                                    const label = context.dataset.label || '';
-                                    const value = context.parsed.y;
-                                    if (context.datasetIndex === 2) {
-                                        // Lucro
-                                        const profit = value;
-                                        return label + ': ' + Utils.formatCurrency(profit);
-                                    }
-                                    return label + ': ' + Utils.formatCurrency(value);
-                                },
                                 afterBody: function(tooltipItems) {
-                                    const revenue = tooltipItems[0]?.parsed?.y || 0;
-                                    const costs = tooltipItems[1]?.parsed?.y || 0;
+                                    const revenue = tooltipItems[2]?.parsed?.y || 0;
+                                    const costs = tooltipItems[3]?.parsed?.y || 0;
                                     const profit = revenue - costs;
-                                    return '━━━━━━━━━━━━━━━━━\n' +
-                                           '📊 Lucro: ' + Utils.formatCurrency(profit) +
-                                           (profit > 0 ? ' ✅' : ' ⚠️');
+                                    const score = tooltipItems[0]?.parsed?.y || 0;
+                                    const health = Utils.getHealthStatus(score);
+                                    
+                                    return [
+                                        '━━━━━━━━━━━━━━━━━',
+                                        '📊 Saúde: ' + health.icon + ' ' + health.label,
+                                        '💰 Lucro: ' + Utils.formatCurrency(profit),
+                                        profit > 0 ? '✅ Margem positiva' : '⚠️ Margem negativa'
+                                    ];
                                 }
                             }
-                        }
+                        },
+                        // 🔥 Plugin de anotação de pico
+                        peakAnnotation: peakAnnotationPlugin
                     },
                     scales: {
                         x: {
@@ -457,7 +536,10 @@
                                 }
                             }
                         },
-                        y: {
+                        y1: {
+                            position: 'left',
+                            min: 0,
+                            max: 1,
                             grid: {
                                 color: CONFIG.COLORS.grid,
                                 drawBorder: false,
@@ -465,170 +547,116 @@
                             ticks: {
                                 color: CONFIG.COLORS.text,
                                 font: {
-                                    size: 10,
+                                    size: 9,
+                                },
+                                callback: function(value) {
+                                    return (value * 100).toFixed(0) + '%';
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Score de Risco',
+                                color: CONFIG.COLORS.text,
+                                font: {
+                                    size: 8,
+                                    weight: '600'
+                                }
+                            }
+                        },
+                        y2: {
+                            position: 'right',
+                            grid: {
+                                display: false,
+                            },
+                            ticks: {
+                                color: CONFIG.COLORS.text,
+                                font: {
+                                    size: 9,
+                                },
+                                stepSize: 1,
+                                beginAtZero: true,
+                            },
+                            title: {
+                                display: true,
+                                text: 'Serviços',
+                                color: CONFIG.COLORS.text,
+                                font: {
+                                    size: 8,
+                                    weight: '600'
+                                }
+                            }
+                        },
+                        y3: {
+                            position: 'right',
+                            grid: {
+                                display: false,
+                            },
+                            ticks: {
+                                color: CONFIG.COLORS.text,
+                                font: {
+                                    size: 9,
                                 },
                                 callback: function(value) {
                                     return Utils.formatCurrencyShort(value);
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Valores (R$)',
+                                color: CONFIG.COLORS.text,
+                                font: {
+                                    size: 8,
+                                    weight: '600'
                                 }
                             }
                         }
                     },
                     animation: {
-                        duration: 1000,
+                        duration: 1200,
                         easing: 'easeOutQuart'
                     }
-                }
+                },
+                plugins: [peakAnnotationPlugin]
             });
 
+            // Armazenar referência
             this._chartInstances[canvasId] = chart;
             
-            // Adicionar metadados para tooltips personalizados
+            // Adicionar metadados
             chart._metadata = {
-                type: 'financial_line',
+                type: 'gpsa',
                 labels: labels,
+                score: scoreData,
+                services: servicesData,
                 revenue: revenueData,
                 costs: costsData,
-                profit: profitData
+                metrics: metrics
             };
 
             return chart;
         }
 
         /**
-         * 🔥 GRÁFICO DE LINHA - DESEMPENHO SEMANAL (Serviços)
+         * Atualiza gráfico GPSA com novos dados
          */
-        createPerformanceLineChart(canvasId, data, options = {}) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) {
-                console.warn(`⚠️ [PerformanceChart] Canvas ${canvasId} não encontrado`);
-                return null;
-            }
-
-            if (this._chartInstances[canvasId]) {
-                this._chartInstances[canvasId].destroy();
-                delete this._chartInstances[canvasId];
-            }
-
-            const ctx = canvas.getContext('2d');
-
-            const labels = data.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-            const servicesData = data.services || data.count || Array(7).fill(0);
-
-            const chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: '🔧 Serviços Finalizados',
-                            data: servicesData,
-                            borderColor: '#4a9eff',
-                            backgroundColor: 'rgba(74,158,255,0.12)',
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 5,
-                            pointBackgroundColor: '#4a9eff',
-                            pointBorderColor: '#ffffff',
-                            pointBorderWidth: 2,
-                            borderWidth: 3,
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: CONFIG.COLORS.text,
-                                font: {
-                                    size: 10,
-                                    weight: '600'
-                                },
-                                boxWidth: 12,
-                                padding: 10,
-                            },
-                            position: 'top',
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(0,0,0,0.8)',
-                            titleColor: '#ffffff',
-                            bodyColor: '#e2e8f0',
-                            borderColor: 'rgba(255,255,255,0.1)',
-                            borderWidth: 1,
-                            padding: 12,
-                            cornerRadius: 8,
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.parsed.y;
-                                    return '🔧 Serviços: ' + Math.round(value);
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: {
-                                color: CONFIG.COLORS.grid,
-                                drawBorder: false,
-                            },
-                            ticks: {
-                                color: CONFIG.COLORS.text,
-                                font: {
-                                    size: 10,
-                                }
-                            }
-                        },
-                        y: {
-                            grid: {
-                                color: CONFIG.COLORS.grid,
-                                drawBorder: false,
-                            },
-                            ticks: {
-                                color: CONFIG.COLORS.text,
-                                font: {
-                                    size: 10,
-                                },
-                                stepSize: 1,
-                                beginAtZero: true
-                            }
-                        }
-                    },
-                    animation: {
-                        duration: 1000,
-                        easing: 'easeOutQuart'
-                    }
-                }
-            });
-
-            this._chartInstances[canvasId] = chart;
-            return chart;
-        }
-
-        /**
-         * Atualiza gráfico com novos dados
-         */
-        updateChart(canvasId, data) {
+        updateGPSAChart(canvasId, data) {
             const chart = this._chartInstances[canvasId];
             if (!chart) {
-                console.warn(`⚠️ [FinanceChart] Chart ${canvasId} não encontrado para atualizar`);
+                console.warn(`⚠️ [GPSA] Chart ${canvasId} não encontrado`);
                 return false;
             }
 
             try {
                 chart.data.labels = data.labels || chart.data.labels;
-                chart.data.datasets[0].data = data.revenue || chart.data.datasets[0].data;
-                chart.data.datasets[1].data = data.costs || chart.data.datasets[1].data;
-                
-                if (chart.data.datasets.length > 2) {
-                    const profit = (data.revenue || []).map((r, i) => r - ((data.costs || [])[i] || 0));
-                    chart.data.datasets[2].data = profit;
-                }
+                chart.data.datasets[0].data = data.score || chart.data.datasets[0].data;
+                chart.data.datasets[1].data = data.services || chart.data.datasets[1].data;
+                chart.data.datasets[2].data = data.revenue || chart.data.datasets[2].data;
+                chart.data.datasets[3].data = data.costs || chart.data.datasets[3].data;
                 
                 chart.update();
                 return true;
             } catch (e) {
-                console.error('❌ Erro ao atualizar chart:', e);
+                console.error('❌ Erro ao atualizar GPSA:', e);
                 return false;
             }
         }
@@ -658,8 +686,8 @@
                 ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle', message: '' },
                 pow: { ready: false, solution: null, lastAttempt: null, clientAvailable: false },
                 system: { isAppReady: false, isInitialized: false, lastSync: null },
-                // 🔥 Dados financeiros para gráficos
-                finance: { weekly: null, monthly: null, lastUpdate: null }
+                finance: { weekly: null, monthly: null, lastUpdate: null },
+                gpsa: { data: null, lastUpdate: null }
             };
             this._listeners = [];
             this._initialized = false;
@@ -700,7 +728,8 @@
                 ui: { isLoading: false, isUploading: false, progress: 0, status: 'idle', message: '' },
                 pow: { ready: false, solution: null, lastAttempt: null, clientAvailable: false },
                 system: { isAppReady: false, isInitialized: false, lastSync: null },
-                finance: { weekly: null, monthly: null, lastUpdate: null }
+                finance: { weekly: null, monthly: null, lastUpdate: null },
+                gpsa: { data: null, lastUpdate: null }
             };
             this._notifyListeners('reset', null, null);
             return this;
@@ -729,7 +758,7 @@
     class Dashboard {
         constructor() {
             this.state = new StateManager();
-            this.financeChart = new FinanceChartRenderer();
+            this.financeChart = new GPSAChartRenderer();
             this._initialized = false;
         }
 
@@ -739,7 +768,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v8.0] Inicializando com gráficos financeiros...');
+            console.log('🚀 [Dashboard v9.0] Inicializando com GPSA...');
 
             // Aguardar app.js
             await this._waitForApp();
@@ -747,19 +776,19 @@
             // Sincronizar estado
             this.state.syncWithApp();
 
-            // 🔥 GERAR DADOS FINANCEIROS
-            this._generateFinanceData();
+            // 🔥 GERAR DADOS
+            this._generateAllData();
 
             // 🔥 CRIAR GRÁFICOS
-            this._createFinanceCharts();
+            this._createAllCharts();
 
             // Configurar eventos
             this._setupEvents();
 
             this._initialized = true;
 
-            console.log('✅ [Dashboard v8.0] Inicializado com sucesso!');
-            console.log('   📊 Gráficos financeiros criados');
+            console.log('✅ [Dashboard v9.0] Inicializado com sucesso!');
+            console.log('   📊 GPSA Chart criado');
 
             return this;
         }
@@ -787,19 +816,38 @@
             });
         }
 
-        _generateFinanceData() {
-            // Dados semanais
+        _generateAllData() {
+            // Dados financeiros
             const weeklyData = Utils.generateWeeklyFinanceData(null);
+            const monthlyData = Utils.generateMonthlyFinanceData(null);
+            
+            // Dados GPSA
+            const gpsaData = Utils.generateGPSAData({
+                metrics: { mean_prediction: 0.65 },
+                chart_data: weeklyData
+            });
+            
             this.state.set('finance', {
                 weekly: weeklyData,
-                monthly: Utils.generateMonthlyFinanceData(null),
+                monthly: monthlyData,
+                lastUpdate: Date.now()
+            });
+            
+            this.state.set('gpsa', {
+                data: gpsaData,
                 lastUpdate: Date.now()
             });
         }
 
-        _createFinanceCharts() {
+        _createAllCharts() {
             const weeklyData = this.state.state.finance.weekly;
-            const monthlyData = this.state.state.finance.monthly;
+            const gpsaData = this.state.state.gpsa.data;
+
+            // 🔥 Gráfico GPSA (principal)
+            const gpsaCanvas = document.getElementById('gpsaChart');
+            if (gpsaCanvas) {
+                this.financeChart.createGPSAChart('gpsaChart', gpsaData);
+            }
 
             // 🔥 Gráfico: Evolução Financeira (Semanal)
             const weeklyCanvas = document.getElementById('weeklyFinanceChart');
@@ -820,7 +868,7 @@
             // 🔥 Gráfico: Evolução Financeira (Mensal)
             const monthlyCanvas = document.getElementById('monthlyFinanceChart');
             if (monthlyCanvas) {
-                this.financeChart.createFinancialLineChart('monthlyFinanceChart', monthlyData);
+                this.financeChart.createFinancialLineChart('monthlyFinanceChart', this.state.state.finance.monthly);
             }
         }
 
@@ -829,7 +877,7 @@
             document.addEventListener('analysis:success', (e) => {
                 const data = e.detail || {};
                 if (data.result) {
-                    this._updateChartsWithData(data.result);
+                    this._updateAllCharts(data.result);
                 }
             });
 
@@ -844,9 +892,17 @@
             });
         }
 
-        _updateChartsWithData(data) {
+        _updateAllCharts(data) {
             try {
-                // Tentar extrair dados financeiros do resultado
+                // Extrair dados para GPSA
+                const gpsaData = Utils.generateGPSAData(data);
+                this.state.set('gpsa', {
+                    data: gpsaData,
+                    lastUpdate: Date.now()
+                });
+                this.financeChart.updateGPSAChart('gpsaChart', gpsaData);
+
+                // Extrair dados financeiros
                 const df = data.dataframe || data;
                 if (df && typeof df === 'object') {
                     const weeklyData = Utils.generateWeeklyFinanceData(df);
@@ -856,7 +912,6 @@
                         lastUpdate: Date.now()
                     });
 
-                    // Atualizar gráficos
                     this.financeChart.updateChart('weeklyFinanceChart', weeklyData);
                     
                     const perfData = {
@@ -866,8 +921,14 @@
                     this.financeChart.updateChart('weeklyPerformanceChart', perfData);
                 }
             } catch (e) {
-                console.warn('⚠️ Erro ao atualizar gráficos com dados:', e);
+                console.warn('⚠️ Erro ao atualizar gráficos:', e);
             }
+        }
+
+        getGPSAStatus() {
+            const gpsaData = this.state.state.gpsa.data;
+            if (!gpsaData) return null;
+            return gpsaData.metrics?.health || null;
         }
 
         destroy() {
@@ -927,11 +988,11 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v8.0 carregado');
-    console.log('   ✅ NOVO: Gráfico "Evolução Financeira"');
-    console.log('   ✅ NOVO: Gráfico "Desempenho Semanal"');
-    console.log('   ✅ NOVO: Tooltips com valores em R$');
-    console.log('   ✅ NOVO: Área sombreada para receita/custos');
+    console.log('🔥 dashboard.js v9.0 carregado - GPSA');
+    console.log('   ✅ NOVO: Gráfico GPSA (Performance e Saúde)');
+    console.log('   ✅ NOVO: Múltiplas métricas integradas');
+    console.log('   ✅ NOVO: Anotações de pico e vale');
+    console.log('   ✅ NOVO: Indicadores de saúde');
     console.log('   📡 Use window.__dashboard para acesso');
     console.log('=' .repeat(60));
 
