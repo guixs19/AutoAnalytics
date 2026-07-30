@@ -30,20 +30,18 @@
         }
         body.app-ready { opacity: 1; }
 
-        /* ==============================================
-                   NAVBAR
-                ============================================== */
+       
         .navbar-modern {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-            padding: 0.6rem 0;
-            position: fixed;
-            width: 100%;
-            top: 0;
-            z-index: 1000;
-            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
-        }
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);  /* ← CORRIGIDO: 0, 0, 0 */
+    padding: 0.6rem 0;
+    position: fixed;
+    width: 100%;
+    top: 0;
+    z-index: 1000;
+    border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+}
         .navbar-modern .container {
             display: flex;
             justify-content: space-between;
@@ -351,7 +349,53 @@
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* ==============================================
-                   RESULTADO - COM GRÁFICO FINANCEIRO
+                   RELATÓRIO DA IA - NOVO ESTILO
+                ============================================== */
+        .ai-report-card {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 107, 53, 0.08);
+            max-height: 200px;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+        }
+        .ai-report-card:hover {
+            border-color: rgba(255, 107, 53, 0.15);
+        }
+        .ai-report-card::-webkit-scrollbar { width: 4px; }
+        .ai-report-card::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
+        .ai-report-card::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
+
+        .ai-report-content {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.8rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .ai-report-content .highlight {
+            color: #ff6b35;
+            font-weight: 600;
+        }
+        .ai-report-content .success-text { color: #48bb78; }
+        .ai-report-content .warning-text { color: #f5a623; }
+        .ai-report-content .danger-text { color: #f56565; }
+
+        .ai-report-placeholder {
+            color: rgba(255, 255, 255, 0.15);
+            font-size: 0.8rem;
+            text-align: center;
+            padding: 1rem 0;
+        }
+        .ai-report-placeholder i {
+            font-size: 1.5rem;
+            display: block;
+            margin-bottom: 0.5rem;
+            opacity: 0.3;
+        }
+
+        /* ==============================================
+                   RESULTADO - VERSÃO SIMPLIFICADA (SEM GRÁFICO FINANCEIRO)
                 ============================================== */
         #resultCard {
             background: rgba(255, 255, 255, 0.08) !important;
@@ -439,38 +483,6 @@
             box-shadow: 0 0 20px rgba(72, 187, 120, 0.1);
         }
 
-        /* 🔥 GRÁFICO FINANCEIRO */
-        .finance-chart-wrapper {
-            height: 260px;
-            position: relative;
-            margin-bottom: 0.6rem;
-        }
-        .finance-chart-wrapper canvas {
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        /* Legenda do gráfico */
-        .chart-legend {
-            display: flex;
-            justify-content: center;
-            gap: 1.5rem;
-            flex-wrap: wrap;
-            font-size: 0.65rem;
-            margin-bottom: 0.8rem;
-        }
-        .chart-legend .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 0.3rem;
-        }
-        .chart-legend .legend-color {
-            width: 12px;
-            height: 3px;
-            border-radius: 2px;
-            display: inline-block;
-        }
-
         /* Métricas */
         .result-grid {
             display: grid;
@@ -508,19 +520,6 @@
             font-size: 0.8rem;
             color: rgba(255,255,255,0.15);
             margin-right: 2px;
-        }
-
-        /* Resumo + Donut */
-        .result-summary-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.6rem;
-            margin-bottom: 0.8rem;
-        }
-        @media (max-width: 768px) {
-            .result-summary-row {
-                grid-template-columns: 1fr;
-            }
         }
 
         .result-insights {
@@ -606,7 +605,9 @@
             color: rgba(255,255,255,0.06);
         }
 
-        /* Chart containers para gráficos secundários */
+        /* ==============================================
+                   GRÁFICOS
+                ============================================== */
         .chart-container {
             background: rgba(0,0,0,0.12);
             border-radius: 10px;
@@ -894,8 +895,7 @@
             .welcome-notification { top: 95px; right: 10px; left: 10px; max-width: none; padding: 0.6rem 0.8rem; }
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
-            .result-summary-row { grid-template-columns: 1fr; }
-            .finance-chart-wrapper { height: 200px; }
+            .ai-report-card { max-height: 150px; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
@@ -907,8 +907,8 @@
             .site-explanation .exp-grid { grid-template-columns: 1fr; }
             .result-header { flex-direction: column; text-align: center; }
             .result-actions { justify-content: center; }
-            .finance-chart-wrapper { height: 180px; }
-            .chart-legend { gap: 0.5rem; font-size: 0.55rem; }
+            .ai-report-card { max-height: 120px; padding: 0.6rem; }
+            .ai-report-content { font-size: 0.7rem; }
         }
 
         /* ==============================================
@@ -1129,15 +1129,15 @@
                 
             </div>
 
-            <!-- 🔥 RESULTADO - COM GRÁFICO FINANCEIRO -->
+            <!-- 🔥 RESULTADO - COM RELATÓRIO DA IA (SEM GRÁFICO FINANCEIRO) -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
                         <h5 class="card-title">
-                            <i class="fas fa-chart-line" style="color:#48bb78;"></i> 
-                            Evolução Financeira da Oficina
+                            <i class="fas fa-robot" style="color:#ff6b35;"></i> 
+                            Relatório da IA
                             <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.15); margin-left:0.5rem;">
-                                <i class="fas fa-calendar-week me-1"></i> Receita vs Custos
+                                <i class="fas fa-brain me-1"></i> Análise em linguagem natural
                             </span>
                         </h5>
                         
@@ -1153,51 +1153,20 @@
                                 </span>
                             </div>
 
-                            <!-- 🔥 GRÁFICO PRINCIPAL -->
-                            <div class="finance-chart-wrapper">
-                                <canvas id="weeklyFinanceChart"></canvas>
-                            </div>
-
-                            <!-- Legenda -->
-                            <div class="chart-legend">
-                                <span class="legend-item">
-                                    <span class="legend-color" style="background:#48bb78;"></span> Receita
-                                </span>
-                                <span class="legend-item">
-                                    <span class="legend-color" style="background:#f56565;"></span> Custos
-                                </span>
-                                <span class="legend-item">
-                                    <span class="legend-color" style="background:#ff6b35;"></span> Lucro
-                                </span>
-                                <span style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
-                                    <i class="fas fa-info-circle me-1"></i> Passe o mouse para detalhes
-                                </span>
-                            </div>
-
                             <!-- 📊 MÉTRICAS -->
                             <div class="result-grid" id="resultMetrics"></div>
 
-                            <!-- Resumo + Donut -->
-                            <div class="result-summary-row">
-                                <div class="chart-container">
-                                    <div class="chart-title">
-                                        <span><i class="fas fa-list-check me-1" style="color:#ff6b35;"></i> Resumo da Análise</span>
-                                        <span class="badge-chart"><i class="fas fa-robot"></i> IA</span>
+                            <!-- 📝 RELATÓRIO DA IA -->
+                            <div class="ai-report-card">
+                                <div id="aiReportContent" class="ai-report-content">
+                                    <div class="ai-report-placeholder">
+                                        <i class="fas fa-spinner fa-spin"></i>
+                                        Gerando análise com IA...
                                     </div>
-                                    <div id="resultSummary" style="color:rgba(255,255,255,0.5); font-size:0.75rem; line-height:1.5; min-height:40px; padding:0.2rem 0.3rem;">
-                                        <span style="color:rgba(255,255,255,0.2);">Aguardando análise...</span>
-                                    </div>
-                                </div>
-                                <div class="chart-container">
-                                    <div class="chart-title">
-                                        <span><i class="fas fa-chart-pie me-1" style="color:#ff6b35;"></i> Distribuição de Risco</span>
-                                        <span class="badge-chart" id="riskBadge">0</span>
-                                    </div>
-                                    <canvas id="donutChart" height="70"></canvas>
                                 </div>
                             </div>
 
-                            <!-- Insights -->
+                            <!-- 💡 INSIGHTS -->
                             <div class="result-insights" id="resultInsights"></div>
 
                             <!-- 🔥 AÇÕES -->
@@ -1213,9 +1182,9 @@
 
                         <!-- Placeholder -->
                         <div id="resultPlaceholder">
-                            <i class="fas fa-chart-line"></i>
-                            <p>📊 Aguardando dados para análise financeira</p>
-                            <span class="placeholder-sub">Faça upload de um arquivo CSV/Excel para visualizar a evolução</span>
+                            <i class="fas fa-brain"></i>
+                            <p>🤖 Aguardando análise da IA</p>
+                            <span class="placeholder-sub">Faça upload de um arquivo CSV/Excel para gerar o relatório</span>
                         </div>
                     </div>
                 </div>
@@ -1272,9 +1241,24 @@
                                 Carregando...
                             </div>
                         </div>
-                        <div style="height: 300px; position: relative;">
-                            <canvas id="gpsaChart"></canvas>
+                        
+                        <!-- 🔥 ABAS DINÂMICAS -->
+                        <div id="gpsaTabsContainer">
+                            <ul class="nav nav-tabs" id="gpsaTabs" role="tablist" style="border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.8rem;">
+                                <!-- As abas serão geradas dinamicamente pelo JS -->
+                            </ul>
+                            
+                            <div class="tab-content" id="gpsaTabContent">
+                                <!-- Os conteúdos das abas serão gerados dinamicamente pelo JS -->
+                            </div>
                         </div>
+                        
+                        <!-- Placeholder quando não há análises -->
+                        <div id="gpsaPlaceholder" style="text-align:center; padding:2rem 0; color:rgba(255,255,255,0.1);">
+                            <i class="fas fa-chart-line fa-3x mb-3" style="opacity:0.2;"></i>
+                            <p style="font-size:0.85rem; color:rgba(255,255,255,0.2);">Faça upload de arquivos para ver os gráficos GPSA</p>
+                        </div>
+                        
                         <div class="mt-2 text-center">
                             <small style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
                                 <i class="fas fa-info-circle me-1"></i> 
@@ -1444,7 +1428,7 @@
     <script src="/static/js/app.js?ver=7.3.0"></script>
     <script src="/static/js/auth.js?ver=4.1.0"></script>
     <script src="/static/js/payment.js?ver=7.1.0"></script>
-    <script src="/static/js/dashboard.js?ver=9.0"></script>
+    <script src="/static/js/dashboard.js?ver=9.1"></script>
 
     <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.0"></script>
@@ -1504,6 +1488,7 @@
             const predictions = analysisData?.predictions || [];
             const insights = analysisData?.insights || {};
             const recommendations = analysisData?.recommendations || [];
+            const aiReport = analysisData?.ai_report || '';
             
             const totalRegistros = metrics.dataset_rows || predictions.length || 0;
             const scoreMedio = metrics.mean_prediction || 0.65;
@@ -1542,35 +1527,31 @@
             yPos += 38;
             
             // ==============================================
-            // 3. INSIGHTS (LINGUAGEM NATURAL)
+            // 3. RELATÓRIO DA IA (LINGUAGEM NATURAL)
             // ==============================================
             doc.setTextColor(50, 50, 50);
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
-            doc.text('💡 Insights da Análise', 20, yPos);
+            doc.text('🤖 Relatório da IA', 20, yPos);
             yPos += 8;
             
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             
-            const insightLines = insights.summary ? [
-                '📊 ' + insights.summary.total_predictions + ' registros analisados',
-                '📈 Score médio de ' + (insights.summary.mean * 100).toFixed(0) + '%',
-                '🔴 ' + insights.risk_distribution?.high + ' casos de alto risco (' + (insights.risk_distribution?.high_percentage || 0).toFixed(0) + '%)',
-                '🟢 ' + insights.risk_distribution?.low + ' casos de baixo risco (' + (insights.risk_distribution?.low_percentage || 0).toFixed(0) + '%)'
-            ] : [
-                '📊 ' + totalRegistros + ' registros processados',
-                '📈 Score médio de ' + (scoreMedio * 100).toFixed(0) + '%',
-                '🔴 ' + highRisk.toFixed(0) + '% dos casos são de alto risco',
-                '🟢 ' + lowRisk.toFixed(0) + '% dos casos são de baixo risco'
-            ];
+            // Usar o relatório da IA ou gerar um fallback
+            let reportText = aiReport || '';
             
-            insightLines.forEach(line => {
-                doc.text(line, 22, yPos);
-                yPos += 7;
-            });
+            if (!reportText) {
+                reportText = `📊 Análise concluída com sucesso!\n\n` +
+                           `📈 Foram analisados ${totalRegistros} registros, com um score médio de ${(scoreMedio * 100).toFixed(0)}%.\n\n` +
+                           `🔴 ${highRisk.toFixed(0)}% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n` +
+                           `🟢 ${lowRisk.toFixed(0)}% dos casos são de baixo risco, demonstrando boa performance.\n\n` +
+                           `💡 Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.`;
+            }
             
-            yPos += 5;
+            const reportLines = doc.splitTextToSize(reportText, 170);
+            doc.text(reportLines, 20, yPos);
+            yPos += (reportLines.length * 6) + 10;
             
             // ==============================================
             // 4. RECOMENDAÇÕES
@@ -1585,9 +1566,10 @@
             doc.setFont('helvetica', 'normal');
             
             const recs = recommendations.length > 0 ? recommendations : [
-                '📊 Monitorar KPIs mensalmente',
-                '🔄 Revisar dados periodicamente',
-                '📈 Comparar resultados com metas'
+                '📊 Monitorar KPIs mensalmente para acompanhar evolução',
+                '🔄 Revisar dados periodicamente para identificar tendências',
+                '📈 Comparar resultados com metas estabelecidas',
+                '💡 Utilizar insights para otimização operacional'
             ];
             
             recs.slice(0, 4).forEach(rec => {
@@ -1697,7 +1679,8 @@
                         insights: resultData.insights || state.insights || {},
                         recommendations: resultData.recommendations || state.recommendations || [],
                         chart_data: resultData.chart_data || state.chart_data || {},
-                        filename: lastAnalysis.filename || 'Análise'
+                        filename: lastAnalysis.filename || 'Análise',
+                        ai_report: resultData.ai_report || state.ai_report || ''
                     };
                     
                     window.generateFinancePDF(analysisData);
