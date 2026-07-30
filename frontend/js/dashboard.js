@@ -1,6 +1,15 @@
-// frontend/js/dashboard.js - VERSÃO PROFISSIONAL v10.0
+// frontend/js/dashboard.js - VERSÃO 11.0 COM ANÁLISE MÚLTIPLA
 /**
- * 🔥 Dashboard Module - AutoAnalytics v10.0
+ * 🔥 Dashboard Module - AutoAnalytics v11.0
+ * 
+ * ✅ NOVO: Upload múltiplo com relatório executivo
+ * ✅ NOVO: Processamento de análise da IA
+ * ✅ NOVO: Renderização do relatório executivo
+ * ✅ NOVO: Download de relatório em PDF
+ * ✅ NOVO: Score Executivo com cards visuais
+ * ✅ NOVO: Recomendações priorizadas
+ * ✅ NOVO: Previsão e tendência
+ * ✅ NOVO: Conclusão geral
  * 
  * 🎨 DESIGN PROFISSIONAL:
  * ✅ Cards com gradientes e efeitos glassmorphism
@@ -8,16 +17,6 @@
  * ✅ Métricas com ícones e KPIs em tempo real
  * ✅ Tabs elegantes com indicadores visuais
  * ✅ Relatório da IA com formatação rica
- * ✅ Loading states profissionais
- * ✅ Tooltips interativos
- * ✅ Modo escuro aprimorado
- * ✅ Responsivo e otimizado
- * 
- * MÓDULOS:
- * - DashboardMetrics: Cards de métricas
- * - GPSAChartRenderer: Gráfico profissional
- * - TabManager: Tabs com animações
- * - Dashboard: Orquestração principal
  */
 
 (function() {
@@ -104,6 +103,7 @@
         },
 
         formatFileSize: (bytes) => {
+            if (!bytes || bytes < 0) return '0 B';
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / 1048576).toFixed(1) + ' MB';
@@ -194,19 +194,52 @@
 
         sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
 
+        // 🔥 CORRIGIDO: Função de token mais robusta
         getToken: () => {
             try {
                 const token = localStorage.getItem('access_token');
-                if (!token || token === 'undefined' || token === 'null') return null;
-                return token;
+                if (token && token !== 'undefined' && token !== 'null' && token.length > 10) {
+                    return token;
+                }
+                
+                const sessionToken = sessionStorage.getItem('access_token');
+                if (sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null' && sessionToken.length > 10) {
+                    return sessionToken;
+                }
+                
+                if (window.__APP_STATE && window.__APP_STATE.token) {
+                    return window.__APP_STATE.token;
+                }
+                
+                return null;
             } catch (e) {
+                console.warn('⚠️ Erro ao obter token:', e);
                 return null;
             }
         },
 
+        // 🔥 CORRIGIDO: Verificação de autenticação mais robusta
         isAuthenticated: () => {
             const token = Utils.getToken();
-            return token !== null && token.length > 10;
+            if (token) return true;
+            
+            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                try {
+                    return window.appAuth.isAuthenticated();
+                } catch (e) {}
+            }
+            
+            if (window.App && typeof window.App.isAuthenticated === 'function') {
+                try {
+                    return window.App.isAuthenticated();
+                } catch (e) {}
+            }
+            
+            if (window.__APP_STATE && window.__APP_STATE.isAuthenticated === true) {
+                return true;
+            }
+            
+            return false;
         },
 
         generateId: () => {
@@ -220,7 +253,7 @@
         animateElement: (element, animation, duration = 500) => {
             if (!element) return;
             element.style.animation = 'none';
-            element.offsetHeight; // Trigger reflow
+            element.offsetHeight;
             element.style.animation = `${animation} ${duration}ms ${CONFIG.ANIMATION.easing} forwards`;
         },
 
@@ -239,27 +272,6 @@
             element.style.transition = `opacity ${duration}ms ${CONFIG.ANIMATION.easing}`;
             requestAnimationFrame(() => {
                 element.style.opacity = '0';
-            });
-        },
-
-        slideDown: (element, duration = 400) => {
-            if (!element) return;
-            const height = element.scrollHeight;
-            element.style.maxHeight = '0';
-            element.style.overflow = 'hidden';
-            element.style.transition = `max-height ${duration}ms ${CONFIG.ANIMATION.easing}`;
-            requestAnimationFrame(() => {
-                element.style.maxHeight = height + 'px';
-            });
-        },
-
-        slideUp: (element, duration = 400) => {
-            if (!element) return;
-            element.style.maxHeight = element.scrollHeight + 'px';
-            element.style.overflow = 'hidden';
-            element.style.transition = `max-height ${duration}ms ${CONFIG.ANIMATION.easing}`;
-            requestAnimationFrame(() => {
-                element.style.maxHeight = '0';
             });
         },
 
@@ -492,9 +504,6 @@
             this._container = document.getElementById('metricsContainer');
         }
 
-        /**
-         * 🔥 Renderiza os cards de métricas
-         */
         renderMetrics(data) {
             if (!this._container) return;
 
@@ -535,7 +544,7 @@
                     value: Utils.formatNumber(metrics.totalServices),
                     color: '#4a9eff',
                     gradient: CONFIG.COLORS.gradient.secondary,
-                    subtitle: `${metrics.bestDay ? 'Pico na ' + ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][metrics.bestDay] : ''}`,
+                    subtitle: metrics.bestDay !== undefined ? `Pico na ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][metrics.bestDay]}` : '',
                 },
                 {
                     icon: '📈',
@@ -546,23 +555,7 @@
                               metrics.margin > 15 ? CONFIG.COLORS.gradient.warning : 
                               CONFIG.COLORS.gradient.danger,
                     subtitle: metrics.margin > 30 ? '✅ Saudável' : metrics.margin > 15 ? '⚠️ Moderada' : '🔴 Baixa',
-                },
-                {
-                    icon: '🏷️',
-                    label: 'Arquivos',
-                    value: data?.total_files || '0',
-                    color: '#9f7aea',
-                    gradient: CONFIG.COLORS.gradient.purple,
-                    subtitle: `${data?.processed_files || 0} processados`,
-                },
-                {
-                    icon: '💳',
-                    label: 'Créditos',
-                    value: data?.credits?.remaining || '0',
-                    color: '#ed64a6',
-                    gradient: CONFIG.COLORS.gradient.warning,
-                    subtitle: data?.credits?.is_admin ? '👑 Ilimitado' : 'Disponíveis',
-                },
+                }
             ];
 
             metricCards.forEach((card, index) => {
@@ -634,16 +627,10 @@
             });
 
             html += '</div>';
-
             this._container.innerHTML = html;
-
-            // Adicionar animações via CSS
             this._injectStyles();
         }
 
-        /**
-         * 🔥 Extrai métricas dos dados
-         */
         _extractMetrics(data) {
             const metrics = data?.metrics || {};
             const chartData = data?.chart_data || {};
@@ -670,9 +657,6 @@
             };
         }
 
-        /**
-         * 🔥 Injeta estilos CSS
-         */
         _injectStyles() {
             if (document.getElementById('dashboard-metrics-styles')) return;
 
@@ -710,32 +694,22 @@
                     .metric-card {
                         padding: 1rem !important;
                     }
-                    .metric-card div:first-child {
-                        font-size: 1.4rem !important;
-                    }
-                    .metric-card div:nth-child(2) {
-                        font-size: 1.5rem !important;
-                    }
                 }
             `;
             document.head.appendChild(styles);
         }
 
-        /**
-         * 🔥 Atualiza métricas
-         */
         updateMetrics(data) {
             this.renderMetrics(data);
         }
     }
 
     // ==============================================
-    // 🔥 GPSA CHART RENDERER PROFISSIONAL
+    // 🔥 GPSA CHART RENDERER
     // ==============================================
 
     class GPSAChartRenderer {
         constructor() {
-            this._charts = {};
             this._chartInstances = {};
         }
 
@@ -743,6 +717,11 @@
             const canvas = document.getElementById(canvasId);
             if (!canvas) {
                 console.warn(`⚠️ [GPSA] Canvas ${canvasId} não encontrado`);
+                return null;
+            }
+
+            if (typeof Chart === 'undefined') {
+                console.warn('⚠️ Chart.js não carregado');
                 return null;
             }
 
@@ -762,17 +741,18 @@
             const metrics = data.metrics || {};
             const health = metrics.health || { status: 'regular', color: '#f5a623', label: 'Regular' };
 
-            const profitData = revenueData.map((r, i) => r - (costsData[i] || 0));
-
             const gradientPlugin = {
                 id: 'gradientPlugin',
                 beforeDraw: function(chart) {
                     const ctx = chart.ctx;
                     const chartArea = chart.chartArea;
+                    if (!chartArea) return;
                     const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
                     gradient.addColorStop(0, 'rgba(255,107,53,0.4)');
                     gradient.addColorStop(1, 'rgba(255,107,53,0.0)');
-                    chart.data.datasets[0].backgroundColor = gradient;
+                    if (chart.data.datasets[0]) {
+                        chart.data.datasets[0].backgroundColor = gradient;
+                    }
                 }
             };
 
@@ -877,7 +857,6 @@
                             borderWidth: 1,
                             padding: 16,
                             cornerRadius: 12,
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
                             callbacks: {
                                 afterBody: function(tooltipItems) {
                                     const revenue = tooltipItems[2]?.parsed?.y || 0;
@@ -934,7 +913,6 @@
                                 font: {
                                     size: 9,
                                     weight: '600',
-                                    family: 'Inter, sans-serif',
                                 }
                             }
                         },
@@ -958,7 +936,6 @@
                                 font: {
                                     size: 9,
                                     weight: '600',
-                                    family: 'Inter, sans-serif',
                                 }
                             }
                         },
@@ -983,7 +960,6 @@
                                 font: {
                                     size: 9,
                                     weight: '600',
-                                    family: 'Inter, sans-serif',
                                 }
                             }
                         }
@@ -997,40 +973,7 @@
             });
 
             this._chartInstances[canvasId] = chart;
-            
-            chart._metadata = {
-                type: 'gpsa',
-                labels: labels,
-                score: scoreData,
-                services: servicesData,
-                revenue: revenueData,
-                costs: costsData,
-                metrics: metrics
-            };
-
             return chart;
-        }
-
-        updateGPSAChart(canvasId, data) {
-            const chart = this._chartInstances[canvasId];
-            if (!chart) {
-                console.warn(`⚠️ [GPSA] Chart ${canvasId} não encontrado`);
-                return false;
-            }
-
-            try {
-                chart.data.labels = data.labels || chart.data.labels;
-                chart.data.datasets[0].data = data.score || chart.data.datasets[0].data;
-                chart.data.datasets[1].data = data.services || chart.data.datasets[1].data;
-                chart.data.datasets[2].data = data.revenue || chart.data.datasets[2].data;
-                chart.data.datasets[3].data = data.costs || chart.data.datasets[3].data;
-                
-                chart.update();
-                return true;
-            } catch (e) {
-                console.error('❌ Erro ao atualizar GPSA:', e);
-                return false;
-            }
         }
 
         destroyAll() {
@@ -1061,9 +1004,6 @@
             this._metrics = new DashboardMetrics();
         }
 
-        /**
-         * 🔥 Renderiza as abas com design profissional
-         */
         renderTabs(analyses) {
             if (!analyses || analyses.length === 0) {
                 this._showPlaceholder();
@@ -1085,15 +1025,11 @@
             this._renderTabContents(validAnalyses);
             this._activateTab(0);
 
-            // Renderizar métricas da primeira análise
             if (validAnalyses.length > 0) {
                 this._metrics.renderMetrics(validAnalyses[0]);
             }
         }
 
-        /**
-         * 🔥 Renderiza cabeçalhos com design profissional
-         */
         _renderTabHeaders(analyses) {
             if (!this._tabList) return;
             
@@ -1178,7 +1114,6 @@
             
             this._tabList.innerHTML = html;
             
-            // Adicionar event listeners
             this._tabList.querySelectorAll('.nav-link').forEach((btn, index) => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -1187,9 +1122,6 @@
             });
         }
 
-        /**
-         * 🔥 Renderiza conteúdos com animações
-         */
         _renderTabContents(analyses) {
             if (!this._tabContent) return;
             
@@ -1234,7 +1166,6 @@
             
             this._tabContent.innerHTML = html;
             
-            // Renderizar gráficos de cada aba
             analyses.forEach((analysis, index) => {
                 const canvasId = `gpsaChart-${index}`;
                 const canvas = document.getElementById(canvasId);
@@ -1248,24 +1179,18 @@
                 }
             });
             
-            // Atualizar indicador de saúde
             if (analyses.length > 0) {
                 this._updateHealthIndicator(analyses[0]);
             }
 
-            // Injetar estilos de animação
             this._injectTabStyles();
         }
 
-        /**
-         * 🔥 Ativa uma aba com animação
-         */
         _activateTab(index) {
             if (index < 0 || index >= this._tabs.length) return;
             
             this._activeTab = index;
             
-            // Atualizar tabs
             const tabs = this._tabList.querySelectorAll('.nav-link');
             const contents = this._tabContent.querySelectorAll('.tab-pane');
             
@@ -1277,7 +1202,6 @@
                 tab.style.background = isActive ? 'rgba(255,255,255,0.06)' : 'transparent';
                 tab.style.border = isActive ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent';
                 
-                // Remover indicador antigo
                 const oldIndicator = tab.querySelector('span:last-child');
                 if (oldIndicator && oldIndicator.style.position === 'absolute') {
                     oldIndicator.remove();
@@ -1308,14 +1232,12 @@
                 }
             });
             
-            // Atualizar indicador de saúde
             if (this._tabs[index]) {
                 this._updateHealthIndicator(this._tabs[index]);
                 this._updateAIReport(this._tabs[index]);
                 this._metrics.updateMetrics(this._tabs[index]);
             }
             
-            // Redimensionar gráfico
             setTimeout(() => {
                 const activeContent = contents[index];
                 if (activeContent) {
@@ -1330,9 +1252,6 @@
             }, 150);
         }
 
-        /**
-         * 🔥 Atualiza indicador de saúde profissional
-         */
         _updateHealthIndicator(analysis) {
             if (!this._healthIndicator) return;
             
@@ -1371,9 +1290,6 @@
             `;
         }
 
-        /**
-         * 🔥 Atualiza relatório da IA profissional
-         */
         _updateAIReport(analysis) {
             if (!this._aiReportContainer) return;
             
@@ -1439,7 +1355,6 @@
                     </div>
             `;
             
-            // Insights
             if (insights && Object.keys(insights).length > 0) {
                 const summary = insights.summary || {};
                 const riskDist = insights.risk_distribution || {};
@@ -1488,7 +1403,6 @@
                 `;
             }
             
-            // Recomendações
             if (recommendations && recommendations.length > 0) {
                 html += `
                     <div style="
@@ -1536,9 +1450,6 @@
             this._aiReportContainer.innerHTML = html;
         }
 
-        /**
-         * 🔥 Mostra placeholder profissional
-         */
         _showPlaceholder() {
             if (this._container) this._container.style.display = 'none';
             if (this._placeholder) {
@@ -1570,21 +1481,6 @@
                             Faça upload de um arquivo para visualizar o gráfico GPSA
                             e as análises da IA
                         </p>
-                        <button onclick="document.getElementById('fileInput')?.click()" style="
-                            margin-top: 1rem;
-                            background: ${CONFIG.COLORS.gradient.primary};
-                            border: none;
-                            color: white;
-                            padding: 0.6rem 2rem;
-                            border-radius: 30px;
-                            font-weight: 600;
-                            font-size: 0.8rem;
-                            cursor: pointer;
-                            transition: all 0.3s ease;
-                            box-shadow: 0 4px 20px rgba(255,107,53,0.3);
-                        ">
-                            📤 Fazer Upload
-                        </button>
                     </div>
                 `;
             }
@@ -1619,24 +1515,17 @@
                     </div>
                 `;
             }
-            // Reset métricas
             const metricsContainer = document.getElementById('metricsContainer');
             if (metricsContainer) {
                 metricsContainer.innerHTML = '';
             }
         }
 
-        /**
-         * 🔥 Esconde placeholder
-         */
         _hidePlaceholder() {
             if (this._container) this._container.style.display = 'block';
             if (this._placeholder) this._placeholder.style.display = 'none';
         }
 
-        /**
-         * 🔥 Injeta estilos de animação
-         */
         _injectTabStyles() {
             if (document.getElementById('dashboard-tab-styles')) return;
 
@@ -1680,9 +1569,6 @@
             document.head.appendChild(styles);
         }
 
-        /**
-         * 🔥 Retorna a análise ativa
-         */
         getActiveAnalysis() {
             if (this._tabs && this._tabs[this._activeTab]) {
                 return this._tabs[this._activeTab];
@@ -1690,16 +1576,10 @@
             return null;
         }
 
-        /**
-         * 🔥 Retorna todas as análises
-         */
         getAllAnalyses() {
             return this._tabs;
         }
 
-        /**
-         * 🔥 Destroi todos os gráficos
-         */
         destroy() {
             this._chartRenderer.destroyAll();
         }
@@ -1791,6 +1671,7 @@
             this._initialized = false;
             this._pollingInterval = null;
             this._metrics = new DashboardMetrics();
+            this._uploadStatusTimeout = null;
         }
 
         async init() {
@@ -1799,25 +1680,29 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v10.0] Inicializando versão profissional...');
+            console.log('🚀 [Dashboard v11.0] Inicializando com análise múltipla...');
 
             await this._waitForApp();
             this.state.syncWithApp();
             this._setupEvents();
 
-            // 🔥 Carregar análises para as abas
             await this._loadAnalysesForTabs();
-
-            // 🔥 Iniciar polling para atualizações
             this._startPolling();
+
+            // 🔥 Configurar upload
+            this._setupUploadHandlers();
 
             this._initialized = true;
 
-            console.log('✅ [Dashboard v10.0] Inicializado com sucesso!');
-            console.log('   🎨 Design profissional ativado');
+            console.log('✅ [Dashboard v11.0] Inicializado com sucesso!');
+            console.log('   📊 Upload múltiplo com relatório executivo');
 
             return this;
         }
+
+        // ==========================================
+        // 🔥 WAIT FOR APP
+        // ==========================================
 
         async _waitForApp() {
             return new Promise((resolve) => {
@@ -1842,12 +1727,18 @@
             });
         }
 
-        /**
-         * 🔥 Carrega análises para as abas
-         */
+        // ==========================================
+        // 🔥 LOAD ANALYSES FOR TABS
+        // ==========================================
+
         async _loadAnalysesForTabs() {
             try {
                 const token = Utils.getToken();
+                if (!token) {
+                    console.warn('⚠️ [Dashboard] Sem token para carregar análises');
+                    return;
+                }
+
                 const response = await fetch('/api/analyses/history?limit=3', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -1856,7 +1747,6 @@
                     const data = await response.json();
                     const analyses = data.analyses || [];
                     
-                    // Buscar detalhes completos
                     const fullAnalyses = await Promise.all(
                         analyses.map(async (analysis) => {
                             const result = await this._fetchAnalysisResult(analysis.process_id);
@@ -1875,10 +1765,8 @@
                         })
                     );
                     
-                    // Renderizar abas
                     this.tabManager.renderTabs(fullAnalyses);
                     
-                    // Atualizar relatório da primeira análise
                     if (fullAnalyses.length > 0) {
                         this.tabManager._updateAIReport(fullAnalyses[0]);
                     }
@@ -1888,12 +1776,11 @@
             }
         }
 
-        /**
-         * 🔥 Busca resultado completo de uma análise
-         */
         async _fetchAnalysisResult(processId) {
             try {
                 const token = Utils.getToken();
+                if (!token) return null;
+                
                 const response = await fetch(`/api/analysis/result/${processId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -1907,9 +1794,10 @@
             return null;
         }
 
-        /**
-         * 🔥 Inicia polling para atualizações
-         */
+        // ==========================================
+        // 🔥 POLLING
+        // ==========================================
+
         _startPolling() {
             if (this._pollingInterval) {
                 clearInterval(this._pollingInterval);
@@ -1920,8 +1808,11 @@
             }, CONFIG.POLLING_INTERVAL);
         }
 
+        // ==========================================
+        // 🔥 SETUP EVENTS
+        // ==========================================
+
         _setupEvents() {
-            // Atualizar quando novas análises chegarem
             document.addEventListener('analysis:success', (e) => {
                 const data = e.detail || {};
                 if (data.result) {
@@ -1929,7 +1820,6 @@
                 }
             });
 
-            // Atualizar créditos
             document.addEventListener('creditsUpdated', (e) => {
                 const data = e.detail || {};
                 this.state.set('user', {
@@ -1937,50 +1827,126 @@
                     credits: data.credits || 0,
                     isPremium: data.isPremium || false,
                 });
-                // Atualizar métricas
-                const activeAnalysis = this.tabManager.getActiveAnalysis();
-                if (activeAnalysis) {
-                    this._metrics.updateMetrics({
-                        ...activeAnalysis,
-                        credits: {
-                            remaining: data.credits || 0,
-                            is_admin: data.isAdmin || false
-                        }
-                    });
-                }
+                this._updateCreditDisplay(data.credits || 0);
             });
         }
 
-        /**
-         * 🔥 Retorna a análise ativa
-         */
-        getActiveAnalysis() {
-            return this.tabManager.getActiveAnalysis();
+        // ==========================================
+        // 🔥 SETUP UPLOAD HANDLERS
+        // ==========================================
+
+        _setupUploadHandlers() {
+            const fileInput = document.getElementById('fileInput');
+            const dropArea = document.getElementById('dropArea');
+            const uploadBtn = document.querySelector('.btn-select');
+
+            // Botão de seleção
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (fileInput) fileInput.click();
+                });
+            }
+
+            // Input de arquivos
+            if (fileInput) {
+                fileInput.addEventListener('change', (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length > 0) {
+                        this.uploadMultipleFiles(files);
+                    }
+                    e.target.value = ''; // Reset
+                });
+            }
+
+            // Drop area
+            if (dropArea) {
+                dropArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropArea.classList.add('dragover');
+                });
+
+                dropArea.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    dropArea.classList.remove('dragover');
+                });
+
+                dropArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropArea.classList.remove('dragover');
+                    const files = Array.from(e.dataTransfer.files);
+                    if (files.length > 0) {
+                        this.uploadMultipleFiles(files);
+                    }
+                });
+            }
+
+            // Botão PDF
+            const pdfBtn = document.getElementById('downloadPdfBtn');
+            if (pdfBtn) {
+                pdfBtn.addEventListener('click', () => {
+                    this._downloadReport();
+                });
+            }
+
+            // Botão Nova Análise
+            const newAnalysisBtn = document.getElementById('newAnalysisBtn');
+            if (newAnalysisBtn) {
+                newAnalysisBtn.addEventListener('click', () => {
+                    this._resetUploadArea();
+                });
+            }
         }
 
-        /**
-         * 🔥 Retorna todas as análises
-         */
-        getAllAnalyses() {
-            return this.tabManager.getAllAnalyses();
-        }
+        // ==========================================
+        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS
+        // ==========================================
 
-        /**
-         * 🔥 Upload múltiplo de arquivos
-         */
         async uploadMultipleFiles(files) {
             try {
                 const token = Utils.getToken();
                 if (!token) {
-                    console.error('❌ Token não encontrado');
+                    this._showToast('❌ Token de autenticação não encontrado. Faça login novamente.', 'error');
                     return null;
                 }
 
                 // Validar número de arquivos
-                if (files.length > CONFIG.MAX_FILES_PER_BATCH) {
-                    console.error(`❌ Máximo de ${CONFIG.MAX_FILES_PER_BATCH} arquivos`);
+                if (files.length === 0) {
+                    this._showToast('⚠️ Selecione pelo menos um arquivo.', 'warning');
                     return null;
                 }
+
+                if (files.length > CONFIG.MAX_FILES_PER_BATCH) {
+                    this._showToast(`⚠️ Máximo de ${CONFIG.MAX_FILES_PER_BATCH} arquivos por vez.`, 'warning');
+                    return null;
+                }
+
+                // Validar tamanho dos arquivos
+                for (const file of files) {
+                    if (file.size > CONFIG.MAX_FILE_SIZE_KB * 1024) {
+                        this._showToast(`⚠️ Arquivo ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB.`, 'warning');
+                        return null;
+                    }
+                }
+
+                // Validar extensões
+                const allowedExtensions = ['.csv', '.xlsx', '.xls', '.tsv'];
+                for (const file of files) {
+                    const ext = '.' + file.name.split('.').pop().toLowerCase();
+                    if (!allowedExtensions.includes(ext)) {
+                        this._showToast(`⚠️ Arquivo ${file.name} não é suportado. Use: ${allowedExtensions.join(', ')}`, 'warning');
+                        return null;
+                    }
+                }
+
+                // Atualizar UI - Mostrar status de upload
+                this._showUploadStatus('⏳', 'Enviando arquivos...', 'Aguarde, estamos processando seus dados', 10);
+                this.state.set('ui', {
+                    isUploading: true,
+                    progress: 10,
+                    status: 'uploading',
+                    message: 'Enviando arquivos...'
+                });
 
                 // Criar FormData
                 const formData = new FormData();
@@ -1988,39 +1954,535 @@
                     formData.append('files', file);
                 }
                 formData.append('analysis_type', 'auto');
+                formData.append('report_format', 'html');
 
-                // Enviar
+                // Headers
+                const headers = {
+                    'Authorization': `Bearer ${token}`
+                };
+
+                // PoW headers
+                const powNonce = localStorage.getItem('pow_nonce');
+                const powChallenge = localStorage.getItem('pow_challenge');
+                if (powNonce && powChallenge) {
+                    headers['X-PoW-Nonce'] = powNonce;
+                    headers['X-PoW-Challenge'] = powChallenge;
+                    headers['X-PoW-Difficulty'] = '4';
+                }
+
+                // 🔥 CHAMAR O ENDPOINT /upload-multi-analyze
+                this._showUploadStatus('⏳', 'Processando análise...', 'A IA está analisando seus dados', 30);
+
                 const response = await fetch('/api/upload-multi-analyze', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    },
+                    headers: headers,
                     body: formData
                 });
 
+                // Processar resposta
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail?.message || errorData.message || 'Erro no upload');
+                }
+
                 const result = await response.json();
 
-                if (!response.ok) {
-                    throw new Error(result.detail?.message || result.message || 'Erro no upload');
-                }
+                // Atualizar UI - Sucesso
+                this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
+                this.state.set('ui', {
+                    isUploading: false,
+                    progress: 100,
+                    status: 'completed',
+                    message: 'Análise concluída!'
+                });
+
+                // Processar o resultado
+                await this._processMultiAnalysisResult(result);
 
                 // Disparar evento
                 document.dispatchEvent(new CustomEvent('analysis:success', {
                     detail: { result: result }
                 }));
 
+                // Atualizar créditos
+                if (result.credits) {
+                    this._updateCreditDisplay(result.credits.remaining);
+                }
+
+                // Mostrar toast de sucesso
+                this._showToast('✅ Análise concluída com sucesso!', 'success');
+
+                // Mostrar resultado
+                this._showResult();
+
                 return result;
 
             } catch (error) {
-                console.error('❌ Erro no upload:', error);
+                console.error('❌ [Dashboard] Erro no upload:', error);
+                
+                this.state.set('ui', {
+                    isUploading: false,
+                    status: 'error',
+                    message: error.message || 'Erro ao processar'
+                });
+
+                this._showUploadStatus('❌', 'Erro', error.message || 'Falha no processamento', 0);
+                this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
+                
                 return null;
             }
+        }
+
+        // ==========================================
+        // 🔥 PROCESSAR RESULTADO DA ANÁLISE
+        // ==========================================
+
+        async _processMultiAnalysisResult(result) {
+            if (!result || !result.success) {
+                console.warn('⚠️ Resultado vazio ou inválido');
+                return;
+            }
+
+            const { analysis, report, chart_data, credits } = result;
+
+            // Extrair dados
+            const executiveScore = analysis?.executive_score || {};
+            const executiveSummary = analysis?.executive_summary || '';
+            const recommendations = analysis?.recommendations || [];
+            const forecast = analysis?.forecast || '';
+            const generalConclusion = analysis?.general_conclusion || '';
+            const comparison = analysis?.comparison || {};
+            const trend = analysis?.trend || {};
+
+            // 1. Atualizar relatório da IA
+            await this._updateAIReport({
+                executive_score: executiveScore,
+                executive_summary: executiveSummary,
+                recommendations: recommendations,
+                forecast: forecast,
+                general_conclusion: generalConclusion,
+                comparison: comparison,
+                trend: trend,
+                chart_data: chart_data || {}
+            });
+
+            // 2. Atualizar métricas
+            await this._updateMetrics({
+                executive_score: executiveScore,
+                chart_data: chart_data || {}
+            });
+
+            // 3. Renderizar abas GPSA
+            if (result.data?.files && result.data.files.length > 0) {
+                const analyses = result.data.files.map((file, index) => ({
+                    filename: file.filename || `Arquivo ${index + 1}`,
+                    success: file.success || false,
+                    rows_processed: file.rows || 0,
+                    metrics: {
+                        mean_prediction: file.metrics?.mean_prediction || 0.5,
+                        high_risk_percentage: file.metrics?.high_risk_percentage || 0,
+                        low_risk_percentage: file.metrics?.low_risk_percentage || 0
+                    },
+                    chart_data: chart_data || {},
+                    insights: {
+                        summary: {
+                            mean: file.metrics?.mean_prediction || 0.5
+                        },
+                        risk_distribution: {
+                            high_percentage: file.metrics?.high_risk_percentage || 0,
+                            low_percentage: file.metrics?.low_risk_percentage || 0
+                        }
+                    },
+                    recommendations: recommendations,
+                    predictions: file.predictions || [],
+                    model_used: file.model_used || 'AutoML'
+                }));
+
+                this.tabManager.renderTabs(analyses);
+            }
+
+            // 4. Mostrar resultado
+            this._showResult();
+
+            console.log('✅ Análise múltipla processada com sucesso!');
+        }
+
+        // ==========================================
+        // 🔥 ATUALIZAR RELATÓRIO DA IA
+        // ==========================================
+
+        async _updateAIReport(data) {
+            const reportContainer = document.getElementById('aiReportContent');
+            if (!reportContainer) return;
+
+            const {
+                executive_score,
+                executive_summary,
+                recommendations,
+                forecast,
+                general_conclusion,
+                comparison,
+                trend
+            } = data;
+
+            let html = '';
+
+            // 1. Score Executivo
+            if (executive_score && Object.keys(executive_score).length > 0) {
+                const scoreItems = [
+                    { key: 'saude_financeira', label: 'Saúde Financeira', icon: '💰' },
+                    { key: 'eficiencia', label: 'Eficiência', icon: '⚡' },
+                    { key: 'controle_custos', label: 'Controle de Custos', icon: '📊' },
+                    { key: 'crescimento', label: 'Crescimento', icon: '📈' },
+                    { key: 'nivel_risco', label: 'Nível de Risco', icon: '🛡️' },
+                    { key: 'nota_geral', label: 'Nota Geral', icon: '🏆' }
+                ];
+
+                html += `
+                    <div style="margin-bottom: 1rem;">
+                        <strong style="color: #ff6b35;">🏆 Score Executivo</strong>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
+                            ${scoreItems.map(({ key, label, icon }) => {
+                                const value = executive_score[key];
+                                if (value === undefined || value === null) return '';
+                                
+                                const isNumber = typeof value === 'number';
+                                const color = isNumber ? 
+                                    (value >= 7 ? '#48bb78' : value >= 5 ? '#f5a623' : '#f56565') : 
+                                    (value === 'Baixo' ? '#48bb78' : value === 'Moderado' ? '#f5a623' : '#f56565');
+                                
+                                return `
+                                    <div style="background: rgba(0,0,0,0.1); padding: 0.4rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.03);">
+                                        <div style="font-size: 0.4rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.3px;">${label}</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: ${color};">
+                                            ${icon} ${isNumber ? value.toFixed(1) : value}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 2. Resumo Executivo
+            if (executive_summary) {
+                html += `
+                    <div style="margin-bottom: 0.8rem; padding: 0.8rem; background: rgba(255,107,53,0.05); border-radius: 8px; border-left: 3px solid #ff6b35;">
+                        <strong style="color: #ff6b35;">📋 Resumo Executivo</strong>
+                        <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-top: 0.3rem; line-height: 1.5;">
+                            ${executive_summary}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 3. Comparação
+            if (comparison && Object.keys(comparison).length > 0) {
+                const compItems = [
+                    { key: 'best_revenue', label: 'Melhor Receita', icon: '💰' },
+                    { key: 'best_profit', label: 'Melhor Lucro', icon: '💵' },
+                    { key: 'best_growth', label: 'Melhor Crescimento', icon: '📈' },
+                    { key: 'highest_risk', label: 'Maior Risco', icon: '⚠️' }
+                ];
+
+                html += `
+                    <div style="margin-bottom: 0.8rem; padding: 0.6rem; background: rgba(74,158,255,0.05); border-radius: 8px; border-left: 3px solid #4a9eff;">
+                        <strong style="color: #4a9eff;">📊 Comparação</strong>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; margin-top: 0.3rem;">
+                            ${compItems.map(({ key, label, icon }) => {
+                                const value = comparison[key];
+                                return value ? `
+                                    <div style="font-size: 0.65rem; color: rgba(255,255,255,0.5);">
+                                        ${icon} ${label}: <strong style="color: rgba(255,255,255,0.8);">${value}</strong>
+                                    </div>
+                                ` : '';
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 4. Tendência
+            if (trend && trend.description) {
+                const directionEmoji = trend.direction === 'crescente' ? '📈' : 
+                                       trend.direction === 'decrescente' ? '📉' : '➡️';
+                const color = trend.direction === 'crescente' ? '#48bb78' : 
+                              trend.direction === 'decrescente' ? '#f56565' : '#f5a623';
+                
+                html += `
+                    <div style="margin-bottom: 0.8rem; padding: 0.6rem; background: rgba(245,166,35,0.05); border-radius: 8px; border-left: 3px solid ${color};">
+                        <strong style="color: ${color};">${directionEmoji} Tendência: ${trend.direction.charAt(0).toUpperCase() + trend.direction.slice(1)}</strong>
+                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.2rem;">
+                            ${trend.description}
+                        </div>
+                        ${trend.key_observations && trend.key_observations.length > 0 ? `
+                            <div style="margin-top: 0.2rem; font-size: 0.65rem; color: rgba(255,255,255,0.3);">
+                                ${trend.key_observations.map(o => `• ${o}`).join(' ')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            // 5. Recomendações Priorizadas
+            if (recommendations && recommendations.length > 0) {
+                const priorityEmojis = {
+                    'alta': '🔴',
+                    'media': '🟡',
+                    'baixa': '🟢'
+                };
+                
+                const priorityColors = {
+                    'alta': '#f56565',
+                    'media': '#f5a623',
+                    'baixa': '#48bb78'
+                };
+
+                html += `
+                    <div style="margin-bottom: 0.8rem;">
+                        <strong style="color: #ff6b35;">🎯 Recomendações Priorizadas</strong>
+                        <ul style="margin: 0.3rem 0 0 0; padding-left: 0; list-style: none; font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                            ${recommendations.slice(0, 5).map(r => {
+                                const priority = r.priority || 'media';
+                                const emoji = priorityEmojis[priority] || '📌';
+                                const color = priorityColors[priority] || '#ff6b35';
+                                const desc = r.description || r;
+                                const category = r.category || 'geral';
+                                const impact = r.expected_impact || '';
+                                const effort = r.effort || 'medio';
+                                
+                                return `
+                                    <li style="padding: 0.3rem 0.4rem; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; align-items: flex-start; gap: 0.5rem;">
+                                        <span style="color: ${color}; font-size: 0.6rem; margin-top: 0.1rem;">${emoji}</span>
+                                        <div style="flex: 1;">
+                                            <div>${typeof desc === 'string' ? desc : desc.description || ''}</div>
+                                            <div style="display: flex; gap: 0.5rem; margin-top: 0.1rem; font-size: 0.55rem; color: rgba(255,255,255,0.2);">
+                                                <span>📂 ${category}</span>
+                                                ${impact ? `<span>💥 ${impact}</span>` : ''}
+                                                <span>⚡ ${effort}</span>
+                                            </div>
+                                        </div>
+                                    </li>
+                                `;
+                            }).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            // 6. Previsão
+            if (forecast) {
+                html += `
+                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(74,158,255,0.05); border-radius: 6px; border-left: 3px solid #4a9eff;">
+                        <strong style="color: #4a9eff;">🔮 Previsão</strong>
+                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.2rem;">
+                            ${forecast}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 7. Conclusão Geral
+            if (general_conclusion) {
+                html += `
+                    <div style="padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
+                        <strong style="color: #ff6b35;">📌 Conclusão Geral</strong>
+                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-top: 0.2rem; line-height: 1.5;">
+                            ${general_conclusion}
+                        </div>
+                    </div>
+                `;
+            }
+
+            reportContainer.innerHTML = html || '<div style="color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 1rem;">Análise concluída com sucesso</div>';
+        }
+
+        // ==========================================
+        // 🔥 ATUALIZAR MÉTRICAS
+        // ==========================================
+
+        async _updateMetrics(data) {
+            const { executive_score, chart_data } = data;
+
+            const metricsContainer = document.getElementById('resultMetrics');
+            if (!metricsContainer) return;
+
+            const score = executive_score?.nota_geral || executive_score?.saude_financeira || 0;
+            const revenue = chart_data?.weekly?.revenue?.reduce((a, b) => a + b, 0) || 0;
+            const services = chart_data?.performance?.services?.reduce((a, b) => a + b, 0) || 0;
+            const risk = executive_score?.nivel_risco || 'Moderado';
+            const margin = chart_data?.weekly?.revenue?.length > 0 ? 
+                Math.round((revenue - (chart_data?.weekly?.costs?.reduce((a, b) => a + b, 0) || 0)) / revenue * 100) : 0;
+
+            const metrics = [
+                { value: typeof score === 'number' ? score.toFixed(1) : score, label: 'Score Geral', icon: '📊' },
+                { value: typeof revenue === 'number' ? 'R$ ' + (revenue / 1000).toFixed(1) + 'k' : revenue, label: 'Receita Total', icon: '💰' },
+                { value: typeof services === 'number' ? services.toFixed(0) : services, label: 'Serviços', icon: '🔧' },
+                { value: margin + '%', label: 'Margem', icon: '📈' }
+            ];
+
+            metricsContainer.innerHTML = metrics.map(m => `
+                <div class="result-stat">
+                    <div class="stat-value" style="color: ${m.label === 'Margem' && parseInt(m.value) > 30 ? '#48bb78' : m.label === 'Margem' && parseInt(m.value) < 15 ? '#f56565' : '#ff6b35'}">
+                        ${m.icon} ${m.value}
+                    </div>
+                    <div class="stat-label">${m.label}</div>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // 🔥 UI HELPERS
+        // ==========================================
+
+        _showUploadStatus(icon, title, subtitle, progress) {
+            const statusEl = document.getElementById('analysisStatus');
+            if (!statusEl) return;
+
+            statusEl.classList.add('show');
+            document.getElementById('statusIcon').textContent = icon;
+            document.getElementById('statusText').textContent = title;
+            document.getElementById('statusSub').textContent = subtitle || '';
+            
+            const progressBar = document.getElementById('statusProgressBar');
+            if (progressBar && progress !== undefined) {
+                progressBar.style.width = Math.min(100, progress) + '%';
+            }
+        }
+
+        _showResult() {
+            const resultContainer = document.getElementById('resultContainer');
+            const resultPlaceholder = document.getElementById('resultPlaceholder');
+            
+            if (resultContainer) {
+                resultContainer.classList.add('show');
+                resultContainer.style.display = 'block';
+            }
+            if (resultPlaceholder) {
+                resultPlaceholder.style.display = 'none';
+            }
+        }
+
+        _showToast(message, type = 'info') {
+            if (window.toastr) {
+                const methods = {
+                    'success': toastr.success,
+                    'error': toastr.error,
+                    'warning': toastr.warning,
+                    'info': toastr.info
+                };
+                const method = methods[type] || toastr.info;
+                method(message, '', { timeOut: 5000, closeButton: true });
+            } else {
+                console.log(`[${type}] ${message}`);
+            }
+        }
+
+        _updateCreditDisplay(credits) {
+            const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay');
+            elements.forEach(el => {
+                if (el) el.textContent = credits;
+            });
+        }
+
+        _resetUploadArea() {
+            // Limpar seleção de arquivos
+            const fileInput = document.getElementById('fileInput');
+            if (fileInput) fileInput.value = '';
+            
+            // Limpar preview
+            const previewContainer = document.getElementById('filePreviewContainer');
+            if (previewContainer) previewContainer.innerHTML = '';
+            
+            // Reset status
+            const statusEl = document.getElementById('analysisStatus');
+            if (statusEl) statusEl.classList.remove('show');
+            
+            // Scroll para o upload
+            const dropArea = document.getElementById('dropArea');
+            if (dropArea) dropArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ==========================================
+        // 🔥 DOWNLOAD DE RELATÓRIO
+        // ==========================================
+
+        async _downloadReport() {
+            try {
+                this._showToast('⏳ Gerando PDF do relatório...', 'info');
+
+                const activeAnalysis = this.tabManager.getActiveAnalysis();
+                if (!activeAnalysis) {
+                    this._showToast('⚠️ Nenhuma análise ativa para gerar PDF.', 'warning');
+                    return;
+                }
+
+                // Buscar dados da análise
+                const token = Utils.getToken();
+                if (!token) {
+                    this._showToast('❌ Token não encontrado.', 'error');
+                    return;
+                }
+
+                const response = await fetch(`/api/analysis/result/${activeAnalysis.process_id || activeAnalysis.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar dados da análise');
+                }
+
+                const data = await response.json();
+
+                // Preparar dados para o PDF
+                const analysisData = {
+                    metrics: data.prediction_stats || {},
+                    predictions: data.predictions || [],
+                    insights: data.insights || {},
+                    recommendations: data.recommendations || [],
+                    chart_data: data.chart_data || {},
+                    filename: data.filename || 'Análise',
+                    ai_report: data.ai_report || ''
+                };
+
+                // Gerar PDF
+                if (window.generateFinancePDF) {
+                    window.generateFinancePDF(analysisData);
+                } else {
+                    // Fallback: usar a função global
+                    const pdfBtn = document.getElementById('downloadPdfBtn');
+                    if (pdfBtn) pdfBtn.click();
+                }
+
+                this._showToast('✅ PDF gerado com sucesso!', 'success');
+
+            } catch (error) {
+                console.error('❌ Erro ao gerar PDF:', error);
+                this._showToast(`❌ ${error.message || 'Erro ao gerar PDF'}`, 'error');
+            }
+        }
+
+        // ==========================================
+        // 🔥 MÉTODOS PÚBLICOS
+        // ==========================================
+
+        getActiveAnalysis() {
+            return this.tabManager.getActiveAnalysis();
+        }
+
+        getAllAnalyses() {
+            return this.tabManager.getAllAnalyses();
         }
 
         destroy() {
             if (this._pollingInterval) {
                 clearInterval(this._pollingInterval);
                 this._pollingInterval = null;
+            }
+            if (this._uploadStatusTimeout) {
+                clearTimeout(this._uploadStatusTimeout);
+                this._uploadStatusTimeout = null;
             }
             this.tabManager.destroy();
             this._initialized = false;
@@ -2077,11 +2539,12 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v10.0 carregado - VERSÃO PROFISSIONAL');
-    console.log('   🎨 Design com gradientes, glassmorphism e animações');
-    console.log('   📊 Cards de métricas com KPIs em tempo real');
-    console.log('   🔄 Tabs elegantes com indicadores visuais');
-    console.log('   📝 Relatório da IA com formatação rica');
+    console.log('🔥 dashboard.js v11.0 carregado - ANÁLISE MÚLTIPLA INTEGRADA');
+    console.log('   ✅ Upload múltiplo com relatório executivo');
+    console.log('   ✅ Score Executivo com cards visuais');
+    console.log('   ✅ Recomendações priorizadas');
+    console.log('   ✅ Previsão e tendência');
+    console.log('   ✅ Download de relatório em PDF');
     console.log('   📡 Use window.__dashboard para acesso');
     console.log('=' .repeat(60));
 

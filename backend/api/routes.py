@@ -1,16 +1,25 @@
-# backend/api/routes.py - VERSÃO CORRIGIDA V3.3
+# backend/api/routes.py - VERSÃO 4.1 COM MELHORIAS COMPLETAS
 """
-ROUTES.PY - Rotas base da API (Gemini, Health, Admin)
+ROUTES.PY - Rotas base da API (Gemini, Health, Admin, Análise Múltipla)
+================================================================================
 ✅ CORRIGIDO: /ml/predict agora é síncrono (sem await) com executor
 ✅ CORRIGIDO: Serialização de tipos NumPy/Pandas para JSON
 ✅ CORRIGIDO: db.commit() explícito para dedução de créditos
 ✅ SINCRONIZADO: Com upload_routes.py e preprocessing.py
 ✅ REMOVIDO: Endpoint /upload duplicado (usar upload_routes.py)
 ✅ MANTIDO: /analyze (Gemini), /health, /test, /admin/diagnostics
+✅ NOVO: /analyze-multiple - Análise múltipla com relatório executivo
+✅ NOVO: /report/{id} - Download de relatório em PDF/HTML/JSON
+✅ NOVO: /analyze-multiple-status - Status de análise múltipla
+✅ NOVO: Cache inteligente para análises múltiplas
+✅ NOVO: Validação avançada de arquivos
+✅ NOVO: Rate limiting específico para análise múltipla
+✅ NOVO: Logging estruturado com correlação de requisições
+================================================================================
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, Form
+from fastapi.responses import JSONResponse, Response
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from datetime import datetime, date
@@ -23,10 +32,13 @@ from typing import Dict, Any, List, Optional
 import traceback
 import logging
 import asyncio
+import hashlib
+import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 # ==============================================
-# IMPORTS CENTRALIZADOS (todos no topo)
+# IMPORTS CENTRALIZADOS
 # ==============================================
 
 # Banco de dados e modelos
@@ -39,7 +51,7 @@ from backend.crud import get_credits_display, check_credits, deduct_credits
 # Configurações
 from backend.config.settings import settings
 
-# Service Factory (centralizado)
+# Service Factory
 from backend.services.service_factory import (
     get_service_factory,
     get_file_manager,
@@ -50,11 +62,30 @@ from backend.services.service_factory import (
     is_gemini_available
 )
 
-# 🔥 IMPORTANTE: Importar o pipeline ML para sincronização
+# ML Pipeline
 from backend.preprocessing import pipeline, process_file_content
+
+# 🔥 NOVOS MÓDULOS
+from backend.ml.multi_analysis import analyze_multiple_files
+from backend.ml.report_builder import report_builder, ReportFormat, build_executive_report
 
 # Configurar logging
 logger = logging.getLogger(__name__)
+
+# ==============================================
+# CONFIGURAÇÕES
+# ==============================================
+
+class RoutesConfig:
+    """Configurações centralizadas para routes.py"""
+    MAX_FILES_MULTI_ANALYZE = 3
+    MAX_FILE_SIZE = 200 * 1024  # 200KB
+    ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.tsv'}
+    CACHE_TTL = 300  # 5 minutos
+    RATE_LIMIT_MULTI_ANALYZE = 5  # 5 requisições por minuto
+    RATE_LIMIT_WINDOW = 60  # 1 minuto
+    PROCESSING_TIMEOUT = 300  # 5 minutos
+
 
 # ==============================================
 # INICIALIZAÇÃO
@@ -62,13 +93,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Cache em memória para processamentos ativos
+# Cache em memória
 processing_cache = {}
+analysis_cache = {}  # 🔥 NOVO: Cache para análises múltiplas
+rate_limit_cache = {}  # 🔥 NOVO: Rate limiting
 
-# ThreadPoolExecutor para operações síncronas pesadas
+# ThreadPoolExecutor
 _executor = ThreadPoolExecutor(max_workers=4)
 
-# Obtém fábrica de serviços
+# Service Factory
 service_factory = get_service_factory()
 SERVICES_STATUS = service_factory.get_status()
 CRITICAL_SERVICES_OK = service_factory.get_critical_services_status()
@@ -78,7 +111,7 @@ logger.info(f"✅ Serviços críticos OK: {CRITICAL_SERVICES_OK}")
 
 
 # ==============================================
-# FUNÇÃO AUXILIAR PARA SERIALIZAÇÃO
+# FUNÇÕES AUXILIARES - SERIALIZAÇÃO
 # ==============================================
 
 def serialize_dataframe(df: pd.DataFrame) -> List[Dict]:
@@ -86,10 +119,8 @@ def serialize_dataframe(df: pd.DataFrame) -> List[Dict]:
     if df is None or df.empty:
         return []
     
-    # Converte para dicionário e trata tipos
     records = df.to_dict(orient='records')
     
-    # Converte todos os valores para tipos serializáveis
     def serialize_value(v):
         if pd.isna(v):
             return None
@@ -138,13 +169,235 @@ def serialize_numpy(data: Any) -> Any:
 
 def safe_json_response(data: Any) -> Dict:
     """Garante que a resposta seja serializável para JSON"""
-    # Usa jsonable_encoder do FastAPI como primeira camada
     try:
         return jsonable_encoder(data)
     except Exception as e:
         logger.warning(f"⚠️ jsonable_encoder falhou, usando fallback: {e}")
-        # Fallback manual
         return serialize_numpy(data)
+
+
+# ==============================================
+# FUNÇÕES AUXILIARES - RATE LIMITING
+# ==============================================
+
+def check_rate_limit(user_id: int, endpoint: str) -> bool:
+    """
+    🔥 Verifica rate limit para um usuário e endpoint
+    
+    Args:
+        user_id: ID do usuário
+        endpoint: Nome do endpoint
+    
+    Returns:
+        bool: True se permitido, False se bloqueado
+    """
+    key = f"{endpoint}:{user_id}"
+    now = time.time()
+    window = RoutesConfig.RATE_LIMIT_WINDOW
+    limit = RoutesConfig.RATE_LIMIT_MULTI_ANALYZE
+    
+    if key not in rate_limit_cache:
+        rate_limit_cache[key] = []
+    
+    # Limpar requisições antigas
+    rate_limit_cache[key] = [t for t in rate_limit_cache[key] if now - t < window]
+    
+    if len(rate_limit_cache[key]) >= limit:
+        return False
+    
+    rate_limit_cache[key].append(now)
+    return True
+
+
+# ==============================================
+# FUNÇÕES AUXILIARES - CACHE
+# ==============================================
+
+def get_cached_analysis(cache_key: str) -> Optional[Dict[str, Any]]:
+    """Obtém análise do cache"""
+    if cache_key in analysis_cache:
+        data, timestamp = analysis_cache[cache_key]
+        if time.time() - timestamp < RoutesConfig.CACHE_TTL:
+            logger.info(f"📦 Cache hit para {cache_key[:8]}")
+            return data
+        else:
+            del analysis_cache[cache_key]
+    return None
+
+
+def set_cached_analysis(cache_key: str, data: Dict[str, Any]) -> None:
+    """Salva análise no cache"""
+    analysis_cache[cache_key] = (data, time.time())
+    logger.info(f"💾 Cache salvo para {cache_key[:8]}")
+
+
+def get_cache_key(files: List[UploadFile], user_id: int) -> str:
+    """Gera chave de cache para arquivos"""
+    content = "".join([f.filename + str(f.size) for f in files])
+    return hashlib.md5(f"{content}:{user_id}".encode()).hexdigest()
+
+
+# ==============================================
+# FUNÇÕES AUXILIARES - ARQUIVOS
+# ==============================================
+
+async def validate_and_read_files(files: List[UploadFile]) -> Dict[str, Any]:
+    """
+    🔥 Valida e lê múltiplos arquivos
+    
+    Args:
+        files: Lista de arquivos
+    
+    Returns:
+        Dict: Arquivos válidos e erros
+    """
+    valid_files = []
+    errors = []
+    
+    for idx, file in enumerate(files):
+        try:
+            # Validar nome
+            if not file.filename:
+                errors.append({"filename": f"arquivo_{idx}", "error": "Arquivo sem nome"})
+                continue
+            
+            # Validar extensão
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in RoutesConfig.ALLOWED_EXTENSIONS:
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"Formato não suportado. Use: {', '.join(RoutesConfig.ALLOWED_EXTENSIONS)}"
+                })
+                continue
+            
+            # Ler conteúdo
+            content = await file.read()
+            
+            # Validar tamanho
+            if len(content) == 0:
+                errors.append({"filename": file.filename, "error": "Arquivo vazio"})
+                continue
+            
+            if len(content) > RoutesConfig.MAX_FILE_SIZE:
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"Arquivo excede {RoutesConfig.MAX_FILE_SIZE//1024}KB"
+                })
+                continue
+            
+            valid_files.append({
+                'content': content,
+                'filename': file.filename,
+                'file_size': len(content),
+                'file_extension': file_ext
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao ler arquivo {file.filename if hasattr(file, 'filename') else 'unknown'}: {e}")
+            errors.append({
+                "filename": file.filename if hasattr(file, 'filename') else f"arquivo_{idx}",
+                "error": str(e)
+            })
+    
+    return {
+        "valid": valid_files,
+        "errors": errors,
+        "valid_count": len(valid_files),
+        "error_count": len(errors),
+        "total": len(files)
+    }
+
+
+# ==============================================
+# FUNÇÕES AUXILIARES - PROCESSAMENTO
+# ==============================================
+
+async def process_with_multi_analysis(
+    file_data_list: List[Dict[str, Any]],
+    user_id: int,
+    user_email: str,
+    force_reload: bool = False
+) -> Dict[str, Any]:
+    """
+    🔥 Processa arquivos com multi_analysis.py
+    
+    Args:
+        file_data_list: Lista de arquivos
+        user_id: ID do usuário
+        user_email: Email do usuário
+        force_reload: Forçar recarregamento
+    
+    Returns:
+        Dict: Resultado da análise
+    """
+    logger.info(f"📚 Processando {len(file_data_list)} arquivos com multi_analysis...")
+    
+    try:
+        result = await analyze_multiple_files(
+            files=file_data_list,
+            user_id=user_id,
+            user_email=user_email,
+            force_reload=force_reload
+        )
+        
+        logger.info(f"✅ Análise multi_analysis concluída: {result.get('processed_files', 0)} arquivos processados")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no multi_analysis: {e}")
+        raise
+
+
+def generate_report_content(
+    analysis_result: Dict[str, Any],
+    user_name: str,
+    format: str = "html"
+) -> Dict[str, Any]:
+    """
+    🔥 Gera relatório com report_builder.py
+    
+    Args:
+        analysis_result: Resultado da análise
+        user_name: Nome do usuário
+        format: Formato do relatório
+    
+    Returns:
+        Dict: Relatório gerado
+    """
+    logger.info(f"📄 Gerando relatório em {format}...")
+    
+    format_map = {
+        'html': ReportFormat.HTML,
+        'pdf': ReportFormat.PDF,
+        'json': ReportFormat.JSON
+    }
+    report_format = format_map.get(format.lower(), ReportFormat.HTML)
+    
+    report = build_executive_report(
+        analysis_result=analysis_result,
+        user_name=user_name
+    )
+    
+    if report_format == ReportFormat.HTML:
+        content = report_builder.to_html(report)
+        content_type = "text/html"
+        extension = "html"
+    elif report_format == ReportFormat.PDF:
+        content = report_builder.to_pdf(report)
+        content_type = "application/pdf"
+        extension = "pdf"
+    else:
+        content = json.dumps(report.to_dict(), indent=2, ensure_ascii=False)
+        content_type = "application/json"
+        extension = "json"
+    
+    return {
+        "report": report,
+        "content": content,
+        "content_type": content_type,
+        "extension": extension,
+        "filename": f"relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{extension}"
+    }
 
 
 # ==============================================
@@ -199,142 +452,12 @@ async def get_available_gemini():
 async def get_available_predictor():
     """Dependency que fornece o predictor se disponível (opcional)"""
     if not service_factory.is_available('predictor'):
-        return None  # Predictor é opcional
+        return None
     return get_predictor()
 
 
-async def get_file_manager_dependency():
-    """Dependency que fornece o FileManager"""
-    FileManager = service_factory.get_service('file_manager')
-    if FileManager is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "file_manager_unavailable",
-                "message": "Gerenciador de arquivos não disponível"
-            }
-        )
-    return FileManager
-
-
 # ==============================================
-# FUNÇÕES AUXILIARES
-# ==============================================
-
-def update_status(process_id: str, status: str, progress: int, message: str = ""):
-    """Atualiza status do processamento no cache"""
-    if process_id in processing_cache:
-        processing_cache[process_id].update({
-            "status": status,
-            "progress": progress,
-            "updated_at": datetime.now().isoformat(),
-            "stage": message or status
-        })
-        logger.debug(f"   [{progress}%] {message}")
-
-
-def check_user_credits_before_upload(user: User, db: Session) -> Dict:
-    """Verifica créditos antes do upload"""
-    if user.is_admin:
-        return {
-            "can_proceed": True,
-            "credits_display": "∞",
-            "credits_remaining": "∞",
-            "message": "👑 Admin - créditos ilimitados",
-            "is_admin": True
-        }
-    
-    if user.credits <= 0:
-        is_premium = user.plan == UserPlan.PREMIUM_MENSAL and user.is_premium()
-        
-        if is_premium:
-            return {
-                "can_proceed": False,
-                "credits_display": "0",
-                "credits_remaining": 0,
-                "message": "Você usou todos seus créditos diários. Amanhã você ganha mais créditos!",
-                "suggestion": "Volte amanhã ou adquira o plano premium",
-                "is_premium": True
-            }
-        else:
-            return {
-                "can_proceed": False,
-                "credits_display": "0",
-                "credits_remaining": 0,
-                "message": "Você não tem créditos suficientes",
-                "suggestion": "Compre créditos na página de planos",
-                "is_premium": False
-            }
-    
-    return {
-        "can_proceed": True,
-        "credits_display": str(user.credits),
-        "credits_remaining": user.credits - 1,
-        "credits_before": user.credits,
-        "message": f"Você tem {user.credits} crédito(s). Esta análise consumirá 1 crédito."
-    }
-
-
-def update_user_credits_after_upload(db: Session, user: User, filename: str, is_admin: bool = False) -> Dict:
-    """Atualiza créditos após upload"""
-    if is_admin or user.is_admin:
-        return {
-            "success": True,
-            "credits_before": "∞",
-            "credits_after": "∞",
-            "credits_display": "∞",
-            "message": "👑 Admin - créditos ilimitados, nenhum crédito foi consumido",
-            "credits_consumed": 0
-        }
-    
-    credits_before = user.credits
-    
-    success = deduct_credits(db, user, 1, f"Análise Gemini: {filename}")
-    
-    # 🔥 CORREÇÃO: db.commit() explícito para garantir persistência
-    if success:
-        db.commit()
-        db.refresh(user)
-        return {
-            "success": True,
-            "credits_before": credits_before,
-            "credits_after": user.credits,
-            "credits_display": str(user.credits),
-            "message": f"✅ 1 crédito consumido. Saldo restante: {user.credits}",
-            "credits_consumed": 1
-        }
-    else:
-        db.rollback()
-        return {
-            "success": False,
-            "credits_before": credits_before,
-            "credits_after": credits_before,
-            "credits_display": str(credits_before),
-            "message": "❌ Erro ao consumir crédito",
-            "credits_consumed": 0
-        }
-
-
-def calculate_prediction_stats(predictions: List) -> Dict:
-    """Calcula estatísticas das previsões"""
-    if not predictions:
-        return {}
-    
-    try:
-        df = pd.DataFrame(predictions)
-        return {
-            "total_predictions": len(predictions),
-            "prediction_distribution": df.value_counts().to_dict() if not df.empty else {},
-            "unique_predictions": df.nunique().to_dict() if not df.empty else {},
-            "most_common": df.mode().iloc[0].to_dict() if not df.empty and len(df) > 0 else {}
-        }
-    except Exception as e:
-        logger.warning(f"Erro ao calcular stats de previsões: {e}")
-        return {"total_predictions": len(predictions)}
-
-
-# ==============================================
-# ENDPOINTS PÚBLICOS (COM response_model=None)
+# ENDPOINTS PÚBLICOS
 # ==============================================
 
 @router.get("/test", response_model=None)
@@ -349,14 +472,15 @@ async def test_endpoint():
         "missing_critical": service_factory.get_missing_critical_services(),
         "gemini_available": is_gemini_available(),
         "ml_pipeline_available": pipeline.is_initialized,
-        "version": "3.3.0"
+        "multi_analysis_available": True,
+        "report_builder_available": True,
+        "version": "4.1.0"
     }
 
 
 @router.get("/health", response_model=None)
 async def health_check():
     """Health check com diagnóstico detalhado"""
-    # Verificar pipeline ML
     ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
     
     return {
@@ -374,19 +498,23 @@ async def health_check():
             "boosting_ensemble": "online" if SERVICES_STATUS.get("boosting") else "offline",
             "daily_credits": "online" if SERVICES_STATUS.get("daily_credits") else "offline",
             "jwt_auth": "enabled",
-            "ml_pipeline": ml_status
+            "ml_pipeline": ml_status,
+            "multi_analysis": True,
+            "report_builder": True
         },
         "critical_services_ok": CRITICAL_SERVICES_OK,
+        "cache": {
+            "analysis_cache_size": len(analysis_cache),
+            "processing_cache_size": len(processing_cache)
+        },
         "recommendations": [
             "Configure GEMINI_API_KEY no arquivo .env" if not SERVICES_STATUS.get("gemini_api_configured") else None,
-            "Verifique a instalação dos pacotes necessários" if not SERVICES_STATUS.get("gemini") else None,
-            "Execute: pip install -r requirements.txt" if not SERVICES_STATUS.get("file_manager") else None
         ]
     }
 
 
 # ==============================================
-# 🔥 ENDPOINT /analyze - GEMINI (COM response_model=None)
+# 🔥 ENDPOINT /analyze - GEMINI (EXISTENTE)
 # ==============================================
 
 @router.post("/analyze", response_model=None)
@@ -406,7 +534,6 @@ async def analyze_data(
     try:
         logger.info(f"🤖 Análise Gemini solicitada por: {current_user.email}")
         
-        # Verificar créditos
         if not current_user.is_admin and current_user.credits <= 0:
             raise HTTPException(
                 status_code=402,
@@ -418,10 +545,8 @@ async def analyze_data(
                 }
             )
         
-        # Buscar análises recentes do usuário para contexto
         user_analyses = crud.get_user_analyses(db, current_user.id, limit=5)
         
-        # Preparar dados para análise
         analysis_data = {
             "user_email": current_user.email,
             "workshop_name": current_user.workshop_name or "Oficina",
@@ -438,7 +563,6 @@ async def analyze_data(
             "timestamp": datetime.now().isoformat()
         }
         
-        # Se tiver análises, adiciona dados mais detalhados
         if user_analyses:
             latest = user_analyses[0]
             if latest.result:
@@ -447,7 +571,6 @@ async def analyze_data(
                     "result": latest.result
                 }
         
-        # 🔥 Chamar Gemini
         logger.info(f"📤 Enviando dados para Gemini: {analysis_type}")
         
         ai_response = await gemini_service.analyze_office_data(
@@ -458,11 +581,10 @@ async def analyze_data(
         if not ai_response.get('success', False):
             logger.warning(f"⚠️ Gemini retornou erro: {ai_response.get('message', 'Unknown error')}")
         
-        # 🔥 CORREÇÃO: Consumir crédito com commit explícito
         if not current_user.is_admin:
             credits_consumed = deduct_credits(db, current_user, 1, f"Análise Gemini: {analysis_type}")
             if credits_consumed:
-                db.commit()  # 🔥 FORÇA O COMMIT
+                db.commit()
                 logger.info(f"💰 Crédito consumido para {current_user.email}. Saldo: {current_user.credits}")
             else:
                 logger.warning(f"⚠️ Falha ao consumir crédito para {current_user.email}")
@@ -497,7 +619,7 @@ async def analyze_data(
 
 
 # ==============================================
-# ENDPOINT /analyze-with-data - ANÁLISE COM DADOS ENVIADOS
+# 🔥 ENDPOINT /analyze-with-data (EXISTENTE)
 # ==============================================
 
 @router.post("/analyze-with-data", response_model=None)
@@ -508,11 +630,7 @@ async def analyze_with_data(
     db: Session = Depends(get_db),
     gemini_service: Any = Depends(get_available_gemini)
 ):
-    """
-    🔥 Análise com dados enviados diretamente no body
-    - Útil para análise de dados já processados
-    - Usa Gemini para insights em linguagem natural
-    """
+    """🔥 Análise com dados enviados diretamente no body"""
     try:
         logger.info(f"🤖 Análise Gemini com dados recebidos: {current_user.email}")
         
@@ -526,7 +644,6 @@ async def analyze_with_data(
                 }
             )
         
-        # Preparar dados para Gemini
         analysis_data = {
             "user_email": current_user.email,
             "workshop_name": current_user.workshop_name or "Oficina",
@@ -537,10 +654,8 @@ async def analyze_with_data(
             "timestamp": datetime.now().isoformat()
         }
         
-        # Chamar Gemini
         ai_response = await gemini_service.analyze_office_data(analysis_type, analysis_data)
         
-        # 🔥 CORREÇÃO: Consumir crédito com commit explícito
         if not current_user.is_admin:
             credits_consumed = deduct_credits(db, current_user, 1, f"Análise Gemini com dados: {analysis_type}")
             if credits_consumed:
@@ -573,6 +688,430 @@ async def analyze_with_data(
 
 
 # ==============================================
+# 🔥 NOVO ENDPOINT: ANÁLISE MÚLTIPLA COM RELATÓRIO
+# ==============================================
+
+@router.post("/analyze-multiple", response_model=None)
+async def analyze_multiple_endpoint(
+    files: List[UploadFile] = File(..., description="Arquivos para análise (máx 3)"),
+    analysis_type: str = Form("auto", description="Tipo de análise"),
+    report_format: str = Form("html", description="html, pdf, json"),
+    force_reload: bool = Form(False, description="Forçar recarregamento, ignorar cache"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 ANÁLISE MÚLTIPLA COM RELATÓRIO EXECUTIVO
+    
+    Recursos:
+    - Envia até 3 arquivos (CSV, Excel, TSV)
+    - Processa com multi_analysis.py (ML + Gemini)
+    - Gera relatório com report_builder.py (HTML, PDF, JSON)
+    - Cache inteligente (5 minutos)
+    - Rate limiting (5 requisições por minuto)
+    - Consome 1 crédito por arquivo
+    
+    Retorna:
+    - HTML: relatório renderizado para exibição
+    - PDF: download do relatório
+    - JSON: dados estruturados
+    """
+    start_time = time.time()
+    client_ip = request.client.host if request.client else "unknown"
+    request_id = str(uuid.uuid4())[:8]
+    
+    logger.info(f"📚 [REQ-{request_id}] Análise múltipla solicitada por: {current_user.email}")
+    
+    # ==========================================
+    # PASSO 1: VALIDAR QUANTIDADE
+    # ==========================================
+    
+    total_files = len(files)
+    if total_files == 0:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
+    
+    if total_files > RoutesConfig.MAX_FILES_MULTI_ANALYZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Limite de {RoutesConfig.MAX_FILES_MULTI_ANALYZE} arquivos por vez. Enviados: {total_files}"
+        )
+    
+    # ==========================================
+    # PASSO 2: RATE LIMITING
+    # ==========================================
+    
+    if not check_rate_limit(current_user.id, "analyze_multiple"):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": f"Muitas requisições. Aguarde {RoutesConfig.RATE_LIMIT_WINDOW} segundos.",
+                "limit": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE,
+                "window": RoutesConfig.RATE_LIMIT_WINDOW
+            }
+        )
+    
+    # ==========================================
+    # PASSO 3: VALIDAR CRÉDITOS
+    # ==========================================
+    
+    if not current_user.is_admin:
+        if current_user.credits < total_files:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de {total_files}.",
+                    "credits_available": current_user.credits,
+                    "credits_needed": total_files
+                }
+            )
+    
+    # ==========================================
+    # PASSO 4: VALIDAR ARQUIVOS
+    # ==========================================
+    
+    validation_result = await validate_and_read_files(files)
+    
+    if validation_result["valid_count"] == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "no_valid_files",
+                "message": "Nenhum arquivo válido para processar",
+                "errors": validation_result["errors"]
+            }
+        )
+    
+    file_data_list = validation_result["valid"]
+    errors = validation_result["errors"]
+    
+    # ==========================================
+    # PASSO 5: VERIFICAR CACHE
+    # ==========================================
+    
+    cache_key = get_cache_key(files, current_user.id)
+    
+    if not force_reload:
+        cached_result = get_cached_analysis(cache_key)
+        if cached_result:
+            logger.info(f"📦 [REQ-{request_id}] Retornando resultado em cache")
+            
+            # Gerar relatório do cache
+            report_data = generate_report_content(
+                analysis_result=cached_result,
+                user_name=current_user.name or current_user.email,
+                format=report_format
+            )
+            
+            # Atualizar créditos (não consome novamente)
+            db.refresh(current_user)
+            
+            return {
+                "success": True,
+                "message": "Análise retornada do cache",
+                "cached": True,
+                "analysis": {
+                    "executive_score": cached_result.get('executive_score', {}),
+                    "executive_summary": cached_result.get('executive_summary', ''),
+                    "recommendations": cached_result.get('recommendations', []),
+                    "forecast": cached_result.get('forecast', ''),
+                    "general_conclusion": cached_result.get('general_conclusion', '')
+                },
+                "report": {
+                    "content": report_data["content"],
+                    "format": report_data["extension"],
+                    "filename": report_data["filename"]
+                },
+                "chart_data": cached_result.get('chart_data', {}),
+                "credits": {
+                    "remaining": current_user.credits if not current_user.is_admin else "∞",
+                    "is_admin": current_user.is_admin
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    # ==========================================
+    # PASSO 6: PROCESSAR COM MULTI_ANALYSIS
+    # ==========================================
+    
+    try:
+        logger.info(f"🤖 [REQ-{request_id}] Processando {len(file_data_list)} arquivos...")
+        
+        analysis_result = await process_with_multi_analysis(
+            file_data_list=file_data_list,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            force_reload=force_reload
+        )
+        
+        if not analysis_result.get('success'):
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "analysis_failed",
+                    "message": analysis_result.get('error', 'Erro na análise')
+                }
+            )
+        
+        # Salvar no cache
+        set_cached_analysis(cache_key, analysis_result)
+        
+    except Exception as e:
+        logger.error(f"❌ [REQ-{request_id}] Erro no multi_analysis: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "analysis_failed",
+                "message": f"Erro na análise: {str(e)}"
+            }
+        )
+    
+    # ==========================================
+    # PASSO 7: CONSUMIR CRÉDITOS
+    # ==========================================
+    
+    if not current_user.is_admin:
+        consumed = 0
+        for file_info in file_data_list:
+            success = deduct_credits(db, current_user, 1, f"Análise múltipla: {file_info['filename']}")
+            if success:
+                consumed += 1
+                db.commit()
+                logger.info(f"💰 [REQ-{request_id}] Crédito consumido: {file_info['filename']}")
+            else:
+                db.rollback()
+                logger.warning(f"⚠️ [REQ-{request_id}] Falha ao consumir crédito: {file_info['filename']}")
+        
+        if consumed < len(file_data_list):
+            logger.warning(f"⚠️ [REQ-{request_id}] Apenas {consumed}/{len(file_data_list)} créditos consumidos")
+    
+    db.refresh(current_user)
+    
+    # ==========================================
+    # PASSO 8: GERAR RELATÓRIO
+    # ==========================================
+    
+    report_data = generate_report_content(
+        analysis_result=analysis_result,
+        user_name=current_user.name or current_user.email,
+        format=report_format
+    )
+    
+    processing_time_ms = (time.time() - start_time) * 1000
+    logger.info(f"✅ [REQ-{request_id}] Análise concluída em {processing_time_ms:.0f}ms")
+    
+    # ==========================================
+    # PASSO 9: RESPOSTA
+    # ==========================================
+    
+    # Se for PDF, retorna para download
+    if report_format.lower() == 'pdf':
+        return Response(
+            content=report_data["content"],
+            media_type=report_data["content_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={report_data['filename']}",
+                "Access-Control-Expose-Headers": "Content-Disposition",
+                "X-Request-ID": request_id
+            }
+        )
+    
+    # Se for JSON, retorna dados estruturados
+    if report_format.lower() == 'json':
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": f"Análise consolidada de {analysis_result.get('processed_files', 0)} arquivo(s) concluída",
+                "request_id": request_id,
+                "analysis": {
+                    "executive_score": analysis_result.get('executive_score', {}),
+                    "executive_summary": analysis_result.get('executive_summary', ''),
+                    "comparison": analysis_result.get('comparison', {}),
+                    "trend": analysis_result.get('trend', {}),
+                    "recommendations": analysis_result.get('recommendations', []),
+                    "forecast": analysis_result.get('forecast', ''),
+                    "general_conclusion": analysis_result.get('general_conclusion', '')
+                },
+                "report": {
+                    "content": report_data["content"],
+                    "format": report_data["extension"],
+                    "filename": report_data["filename"]
+                },
+                "chart_data": analysis_result.get('chart_data', {}),
+                "credits": {
+                    "remaining": current_user.credits if not current_user.is_admin else "∞",
+                    "is_admin": current_user.is_admin
+                },
+                "performance": {
+                    "processing_time_ms": round(processing_time_ms, 2)
+                },
+                "cache": {
+                    "hit": force_reload,
+                    "key": cache_key[:8]
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
+    # HTML: retorna JSON com HTML embutido
+    return {
+        "success": True,
+        "message": f"Análise consolidada de {analysis_result.get('processed_files', 0)} arquivo(s) concluída",
+        "request_id": request_id,
+        "analysis": {
+            "executive_score": analysis_result.get('executive_score', {}),
+            "executive_summary": analysis_result.get('executive_summary', ''),
+            "comparison": analysis_result.get('comparison', {}),
+            "trend": analysis_result.get('trend', {}),
+            "recommendations": analysis_result.get('recommendations', []),
+            "forecast": analysis_result.get('forecast', ''),
+            "general_conclusion": analysis_result.get('general_conclusion', '')
+        },
+        "report": {
+            "content": report_data["content"],
+            "format": report_data["extension"],
+            "filename": report_data["filename"]
+        },
+        "chart_data": analysis_result.get('chart_data', {}),
+        "credits": {
+            "remaining": current_user.credits if not current_user.is_admin else "∞",
+            "is_admin": current_user.is_admin
+        },
+        "performance": {
+            "processing_time_ms": round(processing_time_ms, 2)
+        },
+        "cache": {
+            "hit": force_reload,
+            "key": cache_key[:8]
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ==============================================
+# 🔥 NOVO ENDPOINT: STATUS DE ANÁLISE MÚLTIPLA
+# ==============================================
+
+@router.get("/analyze-multiple-status", response_model=None)
+async def analyze_multiple_status(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🔥 Retorna status do serviço de análise múltipla
+    
+    Retorna:
+    - Configurações atuais
+    - Status do cache
+    - Rate limiting
+    - Estatísticas de uso
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
+        )
+    
+    # Estatísticas do cache
+    cache_size = len(analysis_cache)
+    cache_memory = 0
+    for key, (data, _) in analysis_cache.items():
+        cache_memory += len(json.dumps(data))
+    
+    # Estatísticas de rate limit
+    rate_limit_entries = len(rate_limit_cache)
+    
+    return {
+        "success": True,
+        "config": {
+            "max_files": RoutesConfig.MAX_FILES_MULTI_ANALYZE,
+            "max_file_size_kb": RoutesConfig.MAX_FILE_SIZE // 1024,
+            "cache_ttl_seconds": RoutesConfig.CACHE_TTL,
+            "rate_limit_per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE,
+            "rate_limit_window_seconds": RoutesConfig.RATE_LIMIT_WINDOW,
+            "processing_timeout_seconds": RoutesConfig.PROCESSING_TIMEOUT,
+            "allowed_extensions": list(RoutesConfig.ALLOWED_EXTENSIONS)
+        },
+        "cache": {
+            "size": cache_size,
+            "memory_usage_kb": round(cache_memory / 1024, 2),
+            "max_size": 100
+        },
+        "rate_limit": {
+            "active_entries": rate_limit_entries
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ==============================================
+# 🔥 NOVO ENDPOINT: DOWNLOAD RELATÓRIO
+# ==============================================
+
+@router.get("/report/{analysis_id}", response_model=None)
+async def download_report_endpoint(
+    analysis_id: int,
+    format: str = Query("pdf", description="pdf, html, json"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Baixa relatório de uma análise existente
+    
+    Args:
+        analysis_id: ID da análise
+        format: Formato do relatório (pdf, html, json)
+    """
+    analysis = crud.get_analysis(db, analysis_id)
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+    
+    if analysis.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    if analysis.status != "completed":
+        raise HTTPException(status_code=400, detail="Análise não concluída")
+    
+    # Construir resultado a partir dos dados salvos
+    analysis_result = {
+        "success": True,
+        "total_files": 1,
+        "processed_files": 1,
+        "failed_files": 0,
+        "executive_score": analysis.predictions_summary or {},
+        "executive_summary": analysis.insights.get('summary', {}).get('mensagem', '') if analysis.insights else '',
+        "files": [
+            {
+                "filename": analysis.filename,
+                "success": True,
+                "processed_rows": analysis.rows_processed or 0,
+                "metrics": analysis.predictions_summary or {},
+                "chart_data": analysis.chart_data or {}
+            }
+        ],
+        "recommendations": analysis.recommendations or [],
+        "chart_data": analysis.chart_data or {}
+    }
+    
+    # Gerar relatório
+    report_data = generate_report_content(
+        analysis_result=analysis_result,
+        user_name=current_user.name or current_user.email,
+        format=format
+    )
+    
+    return Response(
+        content=report_data["content"],
+        media_type=report_data["content_type"],
+        headers={
+            "Content-Disposition": f"attachment; filename={report_data['filename']}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
+# ==============================================
 # ENDPOINTS DE STATUS (MANTIDOS)
 # ==============================================
 
@@ -590,7 +1129,6 @@ async def get_status(
     
     process_data = processing_cache[process_id].copy()
     
-    # Verificar permissão
     if process_data.get("user_id") != current_user.id and not current_user.is_admin:
         raise HTTPException(
             status_code=403,
@@ -670,7 +1208,7 @@ async def get_user_analyses(
 
 
 # ==============================================
-# ADMIN DIAGNOSTICS (COM response_model=None)
+# ADMIN DIAGNOSTICS
 # ==============================================
 
 @router.get("/admin/diagnostics", response_model=None)
@@ -685,10 +1223,7 @@ async def get_diagnostics(
             detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
         )
     
-    # Contar análises por status
     analyses_stats = crud.get_analyses_stats(db)
-    
-    # Status do ML Pipeline
     ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
     encoding_stats = pipeline.get_encoding_stats() if hasattr(pipeline, 'get_encoding_stats') else {}
     
@@ -710,7 +1245,15 @@ async def get_diagnostics(
                 "size": len(processing_cache),
                 "active_processes": list(processing_cache.keys())[:10]
             },
-            "analyses": analyses_stats
+            "analyses": analyses_stats,
+            "analysis_cache": {
+                "size": len(analysis_cache),
+                "ttl": RoutesConfig.CACHE_TTL
+            },
+            "rate_limit": {
+                "active_entries": len(rate_limit_cache),
+                "per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE
+            }
         }
     }
 
@@ -745,7 +1288,7 @@ async def get_ml_pipeline_status(
 
 
 # ==============================================
-# 🔥 ENDPOINT ML PREDICT (CORRIGIDO - SÍNCRONO E SERIALIZADO)
+# 🔥 ENDPOINT ML PREDICT (EXISTENTE)
 # ==============================================
 
 @router.post("/ml/predict", response_model=None)
@@ -754,17 +1297,10 @@ async def ml_predict(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    🔥 Predição direta com ML Pipeline
-    - Envia dados e recebe predições
-    - Útil para integração com frontend
-    - 🔥 CORRIGIDO: Processamento síncrono com executor
-    - 🔥 CORRIGIDO: Serialização de tipos NumPy/Pandas
-    """
+    """🔥 Predição direta com ML Pipeline"""
     try:
         logger.info(f"🤖 ML Predict solicitado por: {current_user.email}")
         
-        # Verificar créditos
         if not current_user.is_admin and current_user.credits <= 0:
             raise HTTPException(
                 status_code=402,
@@ -776,7 +1312,6 @@ async def ml_predict(
                 }
             )
         
-        # Converter dados para DataFrame
         input_data = data.get("data", [])
         if not input_data:
             raise HTTPException(
@@ -794,16 +1329,11 @@ async def ml_predict(
         
         logger.info(f"📊 DataFrame recebido: {len(df)} linhas, {len(df.columns)} colunas")
         
-        # 🔥 CORREÇÃO 1: Executar predição de forma síncrona (sem await)
-        # Usa ThreadPoolExecutor para não bloquear o event loop
         def run_prediction():
             try:
-                # Verifica se pipeline tem método predict
                 if hasattr(pipeline, 'predict'):
-                    # Tenta usar o método predict do pipeline
                     result = pipeline.predict(df)
                     
-                    # Se for um objeto com atributos, extrai
                     if hasattr(result, 'success'):
                         return {
                             "success": result.success,
@@ -819,10 +1349,8 @@ async def ml_predict(
                     elif isinstance(result, dict):
                         return result
                     else:
-                        # Fallback: tentar converter para dict
                         return {"success": True, "predictions": result}
                 else:
-                    # Fallback: simular predição
                     logger.warning("⚠️ Pipeline sem método predict, usando fallback")
                     return {
                         "success": True,
@@ -835,7 +1363,6 @@ async def ml_predict(
                 logger.error(f"❌ Erro na predição: {e}")
                 return {"success": False, "error": str(e)}
         
-        # Executa em thread separada
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(_executor, run_prediction)
         
@@ -846,10 +1373,8 @@ async def ml_predict(
                 detail={"error": "prediction_failed", "message": error_msg}
             )
         
-        # 🔥 CORREÇÃO 2: Serializar resultado para JSON
         serialized_result = safe_json_response(result)
         
-        # 🔥 CORREÇÃO 3: Consumir crédito com commit explícito
         if not current_user.is_admin:
             credits_consumed = deduct_credits(db, current_user, 1, "Predição ML")
             if credits_consumed:
@@ -861,7 +1386,6 @@ async def ml_predict(
         
         db.refresh(current_user)
         
-        # Adiciona informações de créditos
         serialized_result["credits_remaining"] = current_user.credits if not current_user.is_admin else "∞"
         serialized_result["is_admin"] = current_user.is_admin
         serialized_result["processed_rows"] = len(df)
@@ -881,7 +1405,7 @@ async def ml_predict(
 
 
 # ==============================================
-# 🔥 ENDPOINT ML PREDICT BATCH (LOTE)
+# 🔥 ENDPOINT ML PREDICT BATCH (EXISTENTE)
 # ==============================================
 
 @router.post("/ml/predict-batch", response_model=None)
@@ -890,11 +1414,7 @@ async def ml_predict_batch(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    🔥 Predição em lote com ML Pipeline
-    - Processa múltiplos DataFrames de uma vez
-    - Útil para grandes volumes de dados
-    """
+    """🔥 Predição em lote com ML Pipeline"""
     try:
         logger.info(f"🤖 ML Predict Batch solicitado por: {current_user.email}")
         
@@ -914,9 +1434,6 @@ async def ml_predict_batch(
                 status_code=400,
                 detail={"error": "empty_data", "message": "Nenhum dataset fornecido"}
             )
-        
-        results = []
-        total_rows = 0
         
         def run_batch_prediction():
             results_batch = []
@@ -977,10 +1494,8 @@ async def ml_predict_batch(
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(_executor, run_batch_prediction)
         
-        # Serializar resultados
         serialized_results = safe_json_response(results)
         
-        # Consumir 1 crédito por lote (não por dataset)
         if not current_user.is_admin:
             credits_consumed = deduct_credits(db, current_user, 1, "Predição ML em lote")
             if credits_consumed:
@@ -1013,16 +1528,21 @@ async def ml_predict_batch(
 # ==============================================
 # 🔥 IMPORTANTE: NÃO INCLUIR /upload AQUI
 # ==============================================
-# O endpoint /upload está em upload_routes.py
-# Usar upload_routes.py para upload de arquivos com ML Pipeline
 
-
-print("✅ routes.py v3.3 carregado com correções:")
-print("   🔥 /ml/predict → Síncrono (sem await) com executor")
+print("=" * 80)
+print("✅ routes.py v4.1 carregado com melhorias:")
+print("   🔥 /ml/predict → Síncrono com executor")
 print("   🔥 Serialização de tipos NumPy/Pandas para JSON")
 print("   🔥 db.commit() explícito para dedução de créditos")
 print("   🔥 /ml/predict-batch → Processamento em lote")
 print("   🔥 /analyze → Gemini IA (response_model=None)")
 print("   🔥 /analyze-with-data → Gemini com dados enviados")
+print("   🔥 /analyze-multiple → Análise múltipla com relatório")
+print("   🔥 /analyze-multiple-status → Status do serviço")
+print("   🔥 /report/{id} → Download de relatório")
+print("   🔥 Cache inteligente com TTL de 5 minutos")
+print("   🔥 Rate limiting para análise múltipla")
+print("   🔥 Logging com correlation ID")
 print("   🔥 /admin/diagnostics → Diagnóstico admin")
 print("   ⚠️  /upload removido - usar upload_routes.py")
+print("=" * 80)
