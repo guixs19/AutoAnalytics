@@ -1322,6 +1322,218 @@ async def startup_event():
     logger.info("🚀 Sistema de upload otimizado inicializado")
 
 
+
+# ==============================================
+# 🔥 NOVA ROTA: UPLOAD MÚLTIPLO COM ANÁLISE CONSOLIDADA
+# ==============================================
+
+@router.post("/upload-multi-analyze")
+async def upload_multi_analyze(
+    request: Request,
+    pow_valid: bool = Depends(validate_pow_request),
+    files: List[UploadFile] = File(..., description="Arquivos para análise (máx 3)"),
+    analysis_type: str = Form("auto", description="Tipo de análise"),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 UPLOAD MÚLTIPLO COM ANÁLISE CONSOLIDADA
+    
+    - Envia até 3 arquivos de uma vez
+    - Processa todos em paralelo
+    - UMA ÚNICA chamada ao Gemini para análise consolidada
+    - Resultados organizados por arquivo + análise geral
+    - Consome 1 crédito por arquivo (total = número de arquivos)
+    """
+    start_time = time.time()
+    client_ip = request.client.host if request.client else "unknown"
+    
+    total_files = len(files)
+    if total_files == 0:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
+    
+    if total_files > 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Limite de 3 arquivos por vez. Enviados: {total_files}"
+        )
+    
+    logger.info(f"📚 [MULTI-UPLOAD] {current_user.email} | {total_files} arquivos | IP: {client_ip}")
+    
+    # Verificar créditos (1 por arquivo)
+    if not current_user.is_admin:
+        if current_user.credits < total_files:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de {total_files}.",
+                    "credits_available": current_user.credits,
+                    "credits_needed": total_files
+                }
+            )
+    
+    # 🔥 PASSO 1: Ler e validar todos os arquivos
+    file_data_list = []
+    validation_errors = []
+    
+    for idx, file in enumerate(files):
+        try:
+            # Validar extensão
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in UploadConfig.ALLOWED_EXTENSIONS:
+                validation_errors.append({
+                    "filename": file.filename,
+                    "error": f"Formato não suportado: {file_ext}"
+                })
+                continue
+            
+            # Ler conteúdo
+            content = await file.read()
+            
+            if len(content) == 0:
+                validation_errors.append({
+                    "filename": file.filename,
+                    "error": "Arquivo vazio"
+                })
+                continue
+            
+            if len(content) > UploadConfig.MAX_FILE_SIZE:
+                validation_errors.append({
+                    "filename": file.filename,
+                    "error": f"Arquivo excede {UploadConfig.MAX_FILE_SIZE//1024}KB"
+                })
+                continue
+            
+            file_data_list.append({
+                'content': content,
+                'filename': file.filename,
+                'file_size': len(content)
+            })
+            
+        except Exception as e:
+            validation_errors.append({
+                "filename": file.filename if hasattr(file, 'filename') else f"arquivo_{idx}",
+                "error": str(e)
+            })
+    
+    if not file_data_list:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "no_valid_files",
+                "message": "Nenhum arquivo válido para processar",
+                "errors": validation_errors
+            }
+        )
+    
+    # 🔥 PASSO 2: Importar o multi_analyzer
+    try:
+        from backend.ml.multi_analysis import analyze_multiple_files
+    except ImportError:
+        logger.error("❌ multi_analysis não encontrado")
+        raise HTTPException(
+            status_code=503,
+            detail="Módulo de análise múltipla não disponível"
+        )
+    
+    # 🔥 PASSO 3: Processar todos os arquivos (PARALELO + UMA CHAMADA GEMINI)
+    logger.info(f"🤖 Processando {len(file_data_list)} arquivos em paralelo com análise consolidada")
+    
+    result = await analyze_multiple_files(
+        files=file_data_list,
+        user_id=current_user.id,
+        user_email=current_user.email
+    )
+    
+    # 🔥 PASSO 4: Salvar análises no banco de dados
+    from backend.models import Analysis
+    
+    analyses_created = []
+    for file_result in result.get('files', []):
+        try:
+            analysis = Analysis(
+                user_id=current_user.id,
+                filename=file_result.get('filename', 'unknown'),
+                file_size=file_result.get('file_size', 0),
+                analysis_type=analysis_type,
+                model_used=file_result.get('model_used', 'default'),
+                status="completed" if file_result.get('success') else "error",
+                rows_processed=file_result.get('processed_rows', 0),
+                uploaded_at=datetime.now(),
+                processed_at=datetime.now() if file_result.get('success') else None,
+                encoding_used=file_result.get('encoding_used'),
+                pow_verified=pow_valid,
+                client_ip=client_ip,
+                # 🔥 Salva o chart_data de cada arquivo
+                chart_data=file_result.get('chart_data', {})
+            )
+            db.add(analysis)
+            analyses_created.append(analysis.id)
+        except Exception as e:
+            logger.error(f"❌ Erro ao salvar análise: {e}")
+    
+    db.commit()
+    
+    # 🔥 PASSO 5: Consumir créditos (1 por arquivo processado)
+    if not current_user.is_admin:
+        for _ in range(len(file_data_list)):
+            success = deduct_credits(db, current_user, 1, f"Análise múltipla: {', '.join([f['filename'] for f in file_data_list[:3]])}")
+            if success:
+                db.commit()
+                logger.info(f"💰 Crédito consumido para {current_user.email}")
+            else:
+                db.rollback()
+                logger.warning(f"⚠️ Falha ao consumir crédito para {current_user.email}")
+    
+    db.refresh(current_user)
+    
+    # 🔥 PASSO 6: Resposta
+    processing_time_ms = (time.time() - start_time) * 1000
+    
+    return {
+        "success": result.get('success', False),
+        "message": f"Análise consolidada de {result.get('processed_files', 0)} arquivo(s) concluída",
+        "data": {
+            "total_files": result.get('total_files', 0),
+            "processed_files": result.get('processed_files', 0),
+            "failed_files": result.get('failed_files', 0),
+            "files": [
+                {
+                    "filename": f.get('filename'),
+                    "success": f.get('success', False),
+                    "rows": f.get('processed_rows', 0),
+                    "predictions_count": len(f.get('predictions', [])),
+                    "error": f.get('error')
+                }
+                for f in result.get('files', [])
+            ],
+            "validation_errors": validation_errors,
+            "analyses_ids": analyses_created
+        },
+        "analysis": {
+            "consolidated_insights": result.get('consolidated_insights', []),
+            "consolidated_recommendations": result.get('consolidated_recommendations', []),
+            "comparative_analysis": result.get('comparative_analysis', {}),
+            "summary": result.get('summary', {})
+        },
+        "chart_data": result.get('chart_data', {}),
+        "credits": {
+            "before": current_user.credits + len(file_data_list) if not current_user.is_admin else "∞",
+            "consumed": len(file_data_list) if not current_user.is_admin else 0,
+            "remaining": current_user.credits if not current_user.is_admin else "∞",
+            "is_admin": current_user.is_admin
+        },
+        "performance": {
+            "processing_time_ms": round(processing_time_ms, 2),
+            "files_processed": len(file_data_list)
+        },
+        "security": {
+            "pow_validated": pow_valid,
+            "client_ip": client_ip
+        },
+        "timestamp": datetime.now().isoformat()
+    }
 print("=" * 80)
 print("🚀 UPLOAD_ROUTES.PY - VERSÃO 4.2 COM CHART_DATA")
 print("=" * 80)
