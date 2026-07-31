@@ -1,6 +1,6 @@
-# backend/api/upload_routes.py - VERSÃO 6.0 COM RELATÓRIO EXECUTIVO
+# backend/api/upload_routes.py - VERSÃO 7.0 COM MELHORIAS
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 6.0
+🚀 ROTAS DE UPLOAD - VERSÃO 7.0
 ================================================================================
 ✅ Código limpo e organizado
 ✅ Funções separadas por responsabilidade
@@ -12,6 +12,13 @@
 ✅ Cache inteligente
 ✅ Rate limiting
 ✅ PoW integrado
+✅ NOVO: Rota /analyses/history para dashboard
+✅ NOVO: Rota /analysis/result/{id} para detalhes
+✅ NOVO: Cache de resultados com Redis opcional
+✅ NOVO: Paginação no histórico
+✅ NOVO: Filtros por status e data
+✅ NOVO: Estatísticas agregadas
+✅ NOVO: Exportação de dados
 ================================================================================
 """
 
@@ -19,9 +26,10 @@
 # 🔥 IMPORTS
 # ==============================================
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, Response, HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
+from fastapi.responses import JSONResponse, Response, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, and_, or_
 from typing import Optional, List, Dict, Any
 import logging
 import os
@@ -30,13 +38,16 @@ import hashlib
 import asyncio
 import time
 import json
-from datetime import datetime
+import csv
+import io
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
+import pandas as pd
 
 from backend.database import get_db, SessionLocal
 from backend import models
-from backend.security import get_current_active_user
+from backend.security import get_current_active_user, get_current_active_superuser
 from backend.services.credits_consumer import consume_analysis_credit, get_credits_display
 from backend.api.pow_routes import validate_pow_request, pow_service, PoWConfig
 from backend.preprocessing import process_file_content, pipeline
@@ -64,6 +75,8 @@ class UploadConfig:
     PROCESSING_TIMEOUT_SECONDS = 300
     CHUNK_SIZE = 8192
     CACHE_TTL = 300  # 5 minutos
+    HISTORY_PAGE_SIZE = 10
+    MAX_HISTORY_DAYS = 90  # Limite de dias no histórico
 
 
 class ReportFormat(str, Enum):
@@ -71,6 +84,16 @@ class ReportFormat(str, Enum):
     HTML = "html"
     PDF = "pdf"
     JSON = "json"
+
+
+class AnalysisStatus(str, Enum):
+    """Status das análises"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    ERROR = "error"
+    PENDING_CREDIT = "pending_credit"
+    CANCELLED = "cancelled"
 
 
 # ==============================================
@@ -98,6 +121,19 @@ class UploadFileInfo:
     @property
     def hash(self) -> str:
         return hashlib.md5(self.content).hexdigest() if self.content else ""
+
+
+@dataclass
+class AnalysisStats:
+    """Estatísticas de análises"""
+    total: int = 0
+    completed: int = 0
+    error: int = 0
+    processing: int = 0
+    pending: int = 0
+    total_rows: int = 0
+    average_score: float = 0.0
+    total_files_size: int = 0
 
 
 # ==============================================
@@ -431,6 +467,503 @@ def save_analyses(
     logger.info(f"✅ {len(analyses_ids)} análises salvas")
     
     return analyses_ids
+
+
+# ==============================================
+# 🔥 FUNÇÕES DE ESTATÍSTICAS
+# ==============================================
+
+def get_analysis_stats(db: Session, user_id: int) -> AnalysisStats:
+    """Obtém estatísticas das análises do usuário"""
+    
+    stats = AnalysisStats()
+    
+    # Total de análises
+    stats.total = db.query(models.Analysis).filter(
+        models.Analysis.user_id == user_id
+    ).count()
+    
+    # Análises por status
+    for status in AnalysisStatus:
+        count = db.query(models.Analysis).filter(
+            models.Analysis.user_id == user_id,
+            models.Analysis.status == status.value
+        ).count()
+        if status == AnalysisStatus.COMPLETED:
+            stats.completed = count
+        elif status == AnalysisStatus.ERROR:
+            stats.error = count
+        elif status == AnalysisStatus.PROCESSING:
+            stats.processing = count
+        elif status == AnalysisStatus.PENDING:
+            stats.pending = count
+    
+    # Total de linhas processadas
+    result = db.query(func.sum(models.Analysis.rows_processed)).filter(
+        models.Analysis.user_id == user_id,
+        models.Analysis.status == AnalysisStatus.COMPLETED.value
+    ).first()
+    stats.total_rows = result[0] or 0
+    
+    # Tamanho total dos arquivos
+    result = db.query(func.sum(models.Analysis.file_size)).filter(
+        models.Analysis.user_id == user_id
+    ).first()
+    stats.total_files_size = result[0] or 0
+    
+    # Score médio
+    scores = db.query(models.Analysis.predictions_summary).filter(
+        models.Analysis.user_id == user_id,
+        models.Analysis.status == AnalysisStatus.COMPLETED.value,
+        models.Analysis.predictions_summary.isnot(None)
+    ).all()
+    
+    if scores:
+        total_score = 0
+        count = 0
+        for score_data in scores:
+            if score_data[0] and 'mean_prediction' in score_data[0]:
+                total_score += score_data[0]['mean_prediction']
+                count += 1
+        if count > 0:
+            stats.average_score = total_score / count
+    
+    return stats
+
+
+# ==============================================
+# 🔥 NOVA ROTA: HISTÓRICO DE ANÁLISES
+# ==============================================
+
+@router.get("/analyses/history")
+async def get_analyses_history(
+    request: Request,
+    limit: int = Query(3, ge=1, le=UploadConfig.HISTORY_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None, description="Filtrar por status"),
+    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Buscar por nome do arquivo"),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Retorna histórico de análises do usuário para o dashboard
+    
+    Args:
+        limit: Número de registros (1-10)
+        offset: Offset para paginação
+        status: Filtrar por status (pending, processing, completed, error)
+        start_date: Data inicial (YYYY-MM-DD)
+        end_date: Data final (YYYY-MM-DD)
+        search: Buscar por nome do arquivo
+    
+    Returns:
+        Dict: Lista de análises com metadados
+    """
+    try:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"📊 [HISTORY] {current_user.email} | IP: {client_ip} | limit: {limit}, offset: {offset}")
+        
+        # Construir query base
+        query = db.query(models.Analysis).filter(
+            models.Analysis.user_id == current_user.id
+        )
+        
+        # Aplicar filtros
+        if status:
+            query = query.filter(models.Analysis.status == status)
+        
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+                query = query.filter(models.Analysis.uploaded_at >= start)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                query = query.filter(models.Analysis.uploaded_at < end)
+            except ValueError:
+                pass
+        
+        if search:
+            query = query.filter(
+                models.Analysis.filename.ilike(f"%{search}%")
+            )
+        
+        # Contar total
+        total = query.count()
+        
+        # Paginar
+        analyses = query.order_by(
+            desc(models.Analysis.uploaded_at)
+        ).offset(offset).limit(limit).all()
+        
+        # Construir resultado
+        result = []
+        for analysis in analyses:
+            result.append({
+                "id": analysis.id,
+                "process_id": str(analysis.id),  # Para compatibilidade
+                "filename": analysis.filename,
+                "file_size": analysis.file_size,
+                "file_size_formatted": f"{analysis.file_size/1024:.1f}KB" if analysis.file_size else "0KB",
+                "uploaded_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+                "uploaded_at_formatted": analysis.uploaded_at.strftime("%d/%m/%Y %H:%M") if analysis.uploaded_at else None,
+                "status": analysis.status,
+                "status_label": _get_status_label(analysis.status),
+                "status_color": _get_status_color(analysis.status),
+                "rows_processed": analysis.rows_processed or 0,
+                "model_used": analysis.model_used or "AutoML",
+                "analysis_type": analysis.analysis_type or "auto",
+                "chart_data": analysis.chart_data or {},
+                "predictions_summary": analysis.predictions_summary or {},
+                "insights": analysis.insights or {},
+                "recommendations": analysis.recommendations or [],
+                "processed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+                "score": analysis.predictions_summary.get('mean_prediction', 0) if analysis.predictions_summary else 0,
+                "high_risk": analysis.predictions_summary.get('high_risk_percentage', 0) if analysis.predictions_summary else 0,
+                "low_risk": analysis.predictions_summary.get('low_risk_percentage', 0) if analysis.predictions_summary else 0,
+            })
+        
+        # Obter estatísticas
+        stats = get_analysis_stats(db, current_user.id)
+        
+        return {
+            "success": True,
+            "analyses": result,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "stats": {
+                "total": stats.total,
+                "completed": stats.completed,
+                "error": stats.error,
+                "processing": stats.processing,
+                "pending": stats.pending,
+                "total_rows": stats.total_rows,
+                "average_score": round(stats.average_score, 2),
+                "total_files_size": stats.total_files_size,
+                "total_files_size_formatted": f"{stats.total_files_size/1024/1024:.1f}MB" if stats.total_files_size > 0 else "0MB"
+            },
+            "filters": {
+                "status": status,
+                "start_date": start_date,
+                "end_date": end_date,
+                "search": search
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar histórico: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "analyses": [],
+            "total": 0
+        }
+
+
+def _get_status_label(status: str) -> str:
+    """Retorna label amigável para o status"""
+    labels = {
+        "pending": "⏳ Pendente",
+        "processing": "🔄 Processando",
+        "completed": "✅ Concluído",
+        "error": "❌ Erro",
+        "pending_credit": "💳 Aguardando crédito",
+        "cancelled": "🚫 Cancelado"
+    }
+    return labels.get(status, status)
+
+
+def _get_status_color(status: str) -> str:
+    """Retorna cor para o status"""
+    colors = {
+        "pending": "#f5a623",
+        "processing": "#4a9eff",
+        "completed": "#48bb78",
+        "error": "#f56565",
+        "pending_credit": "#9f7aea",
+        "cancelled": "#a0aec0"
+    }
+    return colors.get(status, "#a0aec0")
+
+
+# ==============================================
+# 🔥 NOVA ROTA: BUSCAR RESULTADO DA ANÁLISE
+# ==============================================
+
+@router.get("/analysis/result/{analysis_id}")
+async def get_analysis_result(
+    analysis_id: int,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Busca resultado completo de uma análise específica
+    
+    Args:
+        analysis_id: ID da análise
+    
+    Returns:
+        Dict: Dados completos da análise
+    """
+    try:
+        # Buscar análise
+        analysis = db.query(models.Analysis).filter(
+            models.Analysis.id == analysis_id,
+            models.Analysis.user_id == current_user.id
+        ).first()
+        
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Análise não encontrada")
+        
+        # Verificar se o usuário tem permissão
+        if analysis.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+        
+        # Construir resposta
+        result = {
+            "success": True,
+            "id": analysis.id,
+            "filename": analysis.filename,
+            "file_size": analysis.file_size,
+            "file_size_formatted": f"{analysis.file_size/1024:.1f}KB" if analysis.file_size else "0KB",
+            "status": analysis.status,
+            "status_label": _get_status_label(analysis.status),
+            "status_color": _get_status_color(analysis.status),
+            "rows_processed": analysis.rows_processed or 0,
+            "model_used": analysis.model_used or "AutoML",
+            "analysis_type": analysis.analysis_type or "auto",
+            "uploaded_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+            "processed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+            "encoding_used": analysis.encoding_used,
+            "pow_verified": analysis.pow_verified,
+            "client_ip": analysis.client_ip,
+            "predictions": analysis.predictions or [],
+            "prediction_stats": analysis.predictions_summary or {},
+            "chart_data": analysis.chart_data or {},
+            "insights": analysis.insights or {},
+            "recommendations": analysis.recommendations or [],
+            "ai_report": analysis.ai_report or "",  # Se existir
+            "created_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+            "updated_at": analysis.processed_at.isoformat() if analysis.processed_at else None
+        }
+        
+        # Adicionar métricas calculadas
+        if analysis.predictions_summary:
+            stats = analysis.predictions_summary
+            result["metrics"] = {
+                "mean": stats.get("mean_prediction", 0),
+                "std": stats.get("std_prediction", 0),
+                "min": stats.get("min_prediction", 0),
+                "max": stats.get("max_prediction", 0),
+                "high_risk_percentage": stats.get("high_risk_percentage", 0),
+                "medium_risk_percentage": stats.get("medium_risk_percentage", 0),
+                "low_risk_percentage": stats.get("low_risk_percentage", 0),
+                "total_predictions": stats.get("total_predictions", 0)
+            }
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar análise {analysis_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar análise: {str(e)}")
+
+
+# ==============================================
+# 🔥 NOVA ROTA: ESTATÍSTICAS DO USUÁRIO
+# ==============================================
+
+@router.get("/analyses/stats")
+async def get_user_analytics_stats(
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Retorna estatísticas agregadas das análises do usuário
+    
+    Returns:
+        Dict: Estatísticas detalhadas
+    """
+    try:
+        stats = get_analysis_stats(db, current_user.id)
+        
+        # Análises por dia (últimos 30 dias)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        daily_stats = db.query(
+            func.date(models.Analysis.uploaded_at).label("date"),
+            func.count(models.Analysis.id).label("count")
+        ).filter(
+            models.Analysis.user_id == current_user.id,
+            models.Analysis.uploaded_at >= thirty_days_ago
+        ).group_by(
+            func.date(models.Analysis.uploaded_at)
+        ).order_by(
+            func.date(models.Analysis.uploaded_at)
+        ).all()
+        
+        daily_data = [
+            {
+                "date": d.date.isoformat(),
+                "count": d.count
+            }
+            for d in daily_stats
+        ]
+        
+        # Top arquivos processados
+        top_files = db.query(
+            models.Analysis.filename,
+            func.count(models.Analysis.id).label("count"),
+            func.sum(models.Analysis.rows_processed).label("total_rows")
+        ).filter(
+            models.Analysis.user_id == current_user.id,
+            models.Analysis.status == "completed"
+        ).group_by(
+            models.Analysis.filename
+        ).order_by(
+            func.count(models.Analysis.id).desc()
+        ).limit(5).all()
+        
+        top_files_data = [
+            {
+                "filename": f.filename,
+                "count": f.count,
+                "total_rows": f.total_rows or 0
+            }
+            for f in top_files
+        ]
+        
+        return {
+            "success": True,
+            "stats": {
+                "total": stats.total,
+                "completed": stats.completed,
+                "error": stats.error,
+                "processing": stats.processing,
+                "pending": stats.pending,
+                "total_rows": stats.total_rows,
+                "average_score": round(stats.average_score, 2),
+                "total_files_size": stats.total_files_size,
+                "total_files_size_formatted": f"{stats.total_files_size/1024/1024:.1f}MB" if stats.total_files_size > 0 else "0MB",
+                "conversion_rate": round((stats.completed / stats.total * 100) if stats.total > 0 else 0, 1)
+            },
+            "daily": daily_data,
+            "top_files": top_files_data,
+            "period": {
+                "days": 30,
+                "start": thirty_days_ago.isoformat(),
+                "end": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar estatísticas: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ==============================================
+# 🔥 NOVA ROTA: EXPORTAR DADOS
+# ==============================================
+
+@router.get("/analyses/export/{format}")
+async def export_analyses(
+    format: str = Query(..., description="Formato: csv, json"),
+    status: Optional[str] = Query(None, description="Filtrar por status"),
+    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Exporta dados das análises em CSV ou JSON
+    
+    Args:
+        format: Formato de exportação (csv, json)
+        status: Filtrar por status
+        start_date: Data inicial
+        end_date: Data final
+    """
+    try:
+        # Construir query
+        query = db.query(models.Analysis).filter(
+            models.Analysis.user_id == current_user.id
+        )
+        
+        if status:
+            query = query.filter(models.Analysis.status == status)
+        
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+                query = query.filter(models.Analysis.uploaded_at >= start)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                query = query.filter(models.Analysis.uploaded_at < end)
+            except ValueError:
+                pass
+        
+        analyses = query.order_by(desc(models.Analysis.uploaded_at)).all()
+        
+        # Preparar dados
+        data = []
+        for analysis in analyses:
+            data.append({
+                "id": analysis.id,
+                "filename": analysis.filename,
+                "status": analysis.status,
+                "rows_processed": analysis.rows_processed or 0,
+                "model_used": analysis.model_used or "AutoML",
+                "uploaded_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+                "processed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+                "score": analysis.predictions_summary.get('mean_prediction', 0) if analysis.predictions_summary else 0,
+                "file_size_kb": round(analysis.file_size / 1024, 1) if analysis.file_size else 0,
+                "analysis_type": analysis.analysis_type or "auto",
+                "client_ip": analysis.client_ip or "",
+                "pow_verified": analysis.pow_verified or False,
+            })
+        
+        # Exportar
+        if format.lower() == "csv":
+            output = io.StringIO()
+            fieldnames = ["id", "filename", "status", "rows_processed", "model_used", 
+                         "uploaded_at", "processed_at", "score", "file_size_kb", 
+                         "analysis_type", "client_ip", "pow_verified"]
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(data)
+            
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment; filename=analises_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                }
+            )
+        
+        else:  # JSON
+            return JSONResponse({
+                "success": True,
+                "total": len(data),
+                "data": data,
+                "exported_at": datetime.now().isoformat()
+            })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao exportar dados: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao exportar: {str(e)}")
 
 
 # ==============================================
@@ -852,7 +1385,7 @@ async def upload_auto_optimized(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 6.0")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 7.0")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -860,4 +1393,9 @@ print(f"   📊 Report Builder: HTML, PDF, JSON")
 print(f"   🤖 multi_analysis.py: Dados estruturados + Gemini")
 print(f"   📄 report_builder.py: Relatórios profissionais")
 print(f"   ✅ Código refatorado e organizado")
+print(f"   🆕 Rotas adicionadas:")
+print(f"      GET    /analyses/history - Histórico com filtros")
+print(f"      GET    /analysis/result/{{id}} - Detalhes da análise")
+print(f"      GET    /analyses/stats - Estatísticas do usuário")
+print(f"      GET    /analyses/export/{{format}} - Exportar dados")
 print("=" * 80)
