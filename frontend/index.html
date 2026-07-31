@@ -6,6 +6,16 @@
     <title>AutoAnalytics - IA para Mecânicos</title>
     
     <!-- ============================================== -->
+    <!-- 🔥 PRÉ-CONEXÃO COM CDNs (Performance) -->
+    <!-- ============================================== -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    
+    <!-- ============================================== -->
     <!-- 🔥 CDN BIBLIOTECAS -->
     <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -34,7 +44,7 @@
         .navbar-modern {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(20px);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);  /* ← CORRIGIDO: 0, 0, 0 */
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
     padding: 0.6rem 0;
     position: fixed;
     width: 100%;
@@ -1406,33 +1416,35 @@
     </template>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS -->
+    <!-- 🔥 SCRIPTS - VERSÕES ATUALIZADAS -->
     <!-- ============================================== -->
     
-    <!-- 1️⃣ BIBLIOTECAS -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- 1️⃣ BIBLIOTECAS (Carregamento otimizado) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
-    <!-- 2️⃣ SCRIPTS PRÓPRIOS -->
-    <script src="/static/js/pow-client.js?ver=5.1"></script>
-    <script src="/static/js/app.js?ver=7.3.0"></script>
-    <script src="/static/js/auth.js?ver=4.1.0"></script>
-    <script src="/static/js/payment.js?ver=7.1.0"></script>
-    <script src="/static/js/dashboard.js?ver=9.1"></script>
+    <!-- 2️⃣ SCRIPTS PRÓPRIOS (COM VERSÕES ATUALIZADAS) -->
+    <script src="/static/js/pow-client.js?ver=5.2" defer></script>
+    <script src="/static/js/app.js?ver=7.4.0" defer></script>
+    <script src="/static/js/auth.js?ver=4.2.0" defer></script>
+    <script src="/static/js/payment.js?ver=7.2.0" defer></script>
+    
+    <!-- 🔥 DASHBOARD v12.0 - CORRIGE BUGS 404 E 428 -->
+    <script src="/static/js/dashboard.js?ver=12.0" defer></script>
 
     <!-- 3️⃣ UPLOAD E RELATÓRIO -->
-    <script src="/static/js/upload-report-system.js?ver=2.0"></script>
-    <script src="/static/js/pdf-generator.js?ver=1.0"></script>
+    <script src="/static/js/upload-report-system.js?ver=2.1" defer></script>
+    <script src="/static/js/pdf-generator.js?ver=1.1" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
@@ -1450,7 +1462,6 @@
             // Cores
             const primaryColor = [255, 107, 53];
             const secondaryColor = [72, 187, 120];
-            const textColor = [50, 50, 50];
             
             // ==============================================
             // 1. CABEÇALHO
@@ -1467,7 +1478,6 @@
             doc.setFont('helvetica', 'normal');
             doc.text('Relatório de Análise Financeira', 20, 33);
             
-            // Data
             doc.setFontSize(8);
             doc.setTextColor(200, 200, 200);
             doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
@@ -1483,10 +1493,8 @@
             doc.text('📈 Métricas da Análise', 20, yPos);
             yPos += 8;
             
-            // Buscar métricas
             const metrics = analysisData?.metrics || {};
             const predictions = analysisData?.predictions || [];
-            const insights = analysisData?.insights || {};
             const recommendations = analysisData?.recommendations || [];
             const aiReport = analysisData?.ai_report || '';
             
@@ -1495,7 +1503,6 @@
             const highRisk = metrics.high_risk_percentage || 0;
             const lowRisk = metrics.low_risk_percentage || 0;
             
-            // Grid de métricas
             const metricsData = [
                 { label: 'Total Registros', value: totalRegistros.toLocaleString(), icon: '📋' },
                 { label: 'Score Médio', value: (scoreMedio * 100).toFixed(0) + '%', icon: '📈' },
@@ -1509,7 +1516,6 @@
             metricsData.forEach((item, index) => {
                 const x = startX + (index * colWidth);
                 
-                // Card
                 doc.setFillColor(245, 245, 245);
                 doc.roundedRect(x, yPos, colWidth - 2, 28, 3, 3, 'F');
                 
@@ -1538,7 +1544,6 @@
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             
-            // Usar o relatório da IA ou gerar um fallback
             let reportText = aiReport || '';
             
             if (!reportText) {
@@ -1596,7 +1601,6 @@
                 doc.text('📊 Dados Semanais', 20, yPos);
                 yPos += 7;
                 
-                // Cabeçalho da tabela
                 doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
                 doc.rect(20, yPos, 170, 6, 'F');
                 doc.setTextColor(255, 255, 255);
@@ -1613,7 +1617,6 @@
                 
                 yPos += 8;
                 
-                // Dados de receita
                 doc.setTextColor(50, 50, 50);
                 doc.setFontSize(6);
                 doc.setFont('helvetica', 'normal');
@@ -1627,7 +1630,6 @@
                 
                 yPos += 6;
                 
-                // Dados de custos
                 xPos = 22;
                 costs.forEach((val, i) => {
                     const formatted = 'R$ ' + (val || 0).toFixed(0);
@@ -1657,7 +1659,7 @@
             console.log('✅ PDF gerado com sucesso!');
         };
 
-        // 🔥 Event listener para o botão de PDF
+        // Event listener para o botão de PDF
         document.addEventListener('DOMContentLoaded', function() {
             const pdfBtn = document.getElementById('downloadPdfBtn');
             if (pdfBtn) {
@@ -1693,22 +1695,26 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO MELHORADO -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
-            console.log('🔐 Inicializando fallback de autenticação...');
+            console.log('🔐 Inicializando fallback de autenticação v2...');
+            
             function getApp() { return window.App || window.app || window.autoAnalytics; }
+            
             function isAppReady() {
                 var app = getApp();
                 if (app && typeof app.isReady === 'function') { return app.isReady(); }
                 return !!window._appReadyFired;
             }
+            
             function redirectToLogin() {
                 console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
                 window.location.replace('/login');
             }
+            
             function checkAuth() {
                 if (isAppReady()) {
                     console.log('🔐 App pronto - verificando autenticação...');
@@ -1735,6 +1741,7 @@
                     document.body.classList.remove('loading-state');
                     console.log('🔐 Autenticação verificada com sucesso!');
                 });
+                
                 var timeoutId = setTimeout(function() {
                     document.removeEventListener('app:ready', function() {});
                     console.warn('🔐 Timeout: app não respondeu, verificando token...');
@@ -1747,13 +1754,15 @@
                 document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
                 return null;
             }
+            
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
             } else {
                 setTimeout(checkAuth, 100);
             }
+            
             window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady };
-            console.log('✅ Fallback de autenticação carregado!');
+            console.log('✅ Fallback de autenticação v2 carregado!');
         })();
     </script>
 
@@ -1763,7 +1772,8 @@
     <script>
         (function() {
             'use strict';
-            console.log('📢 Inicializando MessageRenderer...');
+            console.log('📢 Inicializando MessageRenderer v2...');
+            
             class MessageRenderer {
                 constructor() {
                     this.container = document.getElementById('messageContainer');
@@ -1774,8 +1784,9 @@
                     this._loadDismissedState();
                     this._setupListeners();
                     setTimeout(() => this.render(), 400);
-                    console.log('✅ MessageRenderer inicializado');
+                    console.log('✅ MessageRenderer v2 inicializado');
                 }
+                
                 _loadDismissedState() {
                     try {
                         var saved = localStorage.getItem('_dismissed_messages');
@@ -1785,12 +1796,14 @@
                         }
                     } catch (e) {}
                 }
+                
                 _saveDismissedState() {
                     try {
                         var arr = Array.from(this._dismissedMessages);
                         localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
                     } catch (e) {}
                 }
+                
                 _setupListeners() {
                     window.addEventListener('app:state_changed', (e) => {
                         var detail = e.detail || {};
@@ -1804,6 +1817,7 @@
                     window.addEventListener('authReady', (e) => { setTimeout(() => this.render(), 500); });
                     window.addEventListener('authLoginSuccess', (e) => { setTimeout(() => this.render(), 600); });
                 }
+                
                 render() {
                     var state = window.__APP_STATE || window.App?.State;
                     if (!state) return;
@@ -1816,6 +1830,7 @@
                     this._renderMessage(message, segment, credits);
                     this._lastRendered = messageId;
                 }
+                
                 _renderMessage(message, segment, credits) {
                     if (!this.container) return;
                     var title = message.title || 'Mensagem';
@@ -1833,6 +1848,7 @@
                     var segmentClass = segment === 'new' ? 'new-user-message' : segment === 'premium' ? 'premium-message' : '';
                     var isExternal = action_url.startsWith('http') || action_url.startsWith('//');
                     var targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
+                    
                     this.container.innerHTML = `
                         <div class="message-banner message-${colorClass} ${segmentClass}" data-message-id="${message_id}" data-priority="${priority}">
                             <div class="message-content">
@@ -1847,6 +1863,7 @@
                         </div>
                     `;
                     this.container.style.display = 'block';
+                    
                     var dismissBtn = this.container.querySelector('.message-dismiss');
                     if (dismissBtn) {
                         dismissBtn.addEventListener('click', () => {
@@ -1856,10 +1873,12 @@
                             window.dispatchEvent(new CustomEvent('message:dismissed', { detail: { messageId: id, segment: segment, credits: credits } }));
                         });
                     }
+                    
                     requestAnimationFrame(() => {
                         var banner = this.container.querySelector('.message-banner');
                         if (banner) { banner.classList.add('message-visible'); }
                     });
+                    
                     if (priority <= 1 && dismissible) {
                         clearTimeout(this._autoDismissTimer);
                         this._autoDismissTimer = setTimeout(() => {
@@ -1869,22 +1888,26 @@
                         }, 8000);
                     }
                 }
+                
                 _getColorClass(color) {
                     var map = { 'success': 'success', 'warning': 'warning', 'info': 'info', 'danger': 'danger', 'primary': 'primary', 'premium': 'premium', 'dark': 'dark' };
                     return map[color] || 'info';
                 }
+                
                 _hideContainer() {
                     if (this.container) { this.container.style.display = 'none'; this.container.innerHTML = ''; }
                     clearTimeout(this._autoDismissTimer);
                 }
+                
                 refresh() { this._dismissedMessages.clear(); this._saveDismissedState(); this.render(); }
             }
+            
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => { window.messageRenderer = new MessageRenderer(); });
             } else {
                 setTimeout(() => { window.messageRenderer = new MessageRenderer(); }, 300);
             }
-            console.log('✅ MessageRenderer carregado');
+            console.log('✅ MessageRenderer v2 carregado');
         })();
     </script>
 
@@ -1894,7 +1917,8 @@
     <script>
         (function() {
             'use strict';
-            console.log('🔔 Inicializando sistema de notificação de boas-vindas...');
+            console.log('🔔 Inicializando sistema de notificação de boas-vindas v2...');
+            
             var NOTIF_CONFIG = { AUTO_CLOSE_DELAY: 6000, STORAGE_KEY: '_aa_welcome_shown', WELCOME_PERMANENT_KEY: '_aa_welcome_permanent', INITIAL_CREDITS: 3 };
             var notification = document.getElementById('welcomeNotification');
             var notifClose = document.getElementById('notifClose');
@@ -1905,14 +1929,17 @@
             var notifTitle = document.getElementById('notifTitle');
             var notifSubtitle = document.getElementById('notifSubtitle');
             var progressBar = document.getElementById('notifProgressBar');
+            
             function getUserData() {
                 try { var userData = localStorage.getItem('user_data'); if (userData) { return JSON.parse(userData); } } catch (e) {}
                 return null;
             }
+            
             function getCreditsFromState() {
                 try { if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) { return window.__APP_STATE.credits; } if (window.App && typeof window.App.getCredits === 'function') { return window.App.getCredits(); } } catch (e) {}
                 return null;
             }
+            
             function shouldShowWelcome() {
                 try {
                     if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') { return false; }
@@ -1934,6 +1961,7 @@
                     return false;
                 } catch (e) { return false; }
             }
+            
             function setupNotificationContent() {
                 var user = getUserData();
                 var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
@@ -1949,6 +1977,7 @@
                     }
                 }
             }
+            
             function showWelcomeNotification() {
                 if (!notification) return;
                 setupNotificationContent();
@@ -1958,6 +1987,7 @@
                 window.dispatchEvent(new CustomEvent('welcome:shown', { detail: { credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS, timestamp: Date.now() } }));
                 console.log('🔔 Notificação de boas-vindas exibida!');
             }
+            
             function startAutoClose() {
                 if (!progressBar) return;
                 progressBar.style.width = '100%';
@@ -1968,6 +1998,7 @@
                 clearTimeout(window._notifTimer);
                 window._notifTimer = setTimeout(function() { dismissNotification(); }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
             }
+            
             function dismissNotification() {
                 if (!notification) return;
                 notification.classList.remove('show');
@@ -1977,10 +2008,12 @@
                 window.dispatchEvent(new CustomEvent('welcome:dismissed', { detail: { timestamp: Date.now() } }));
                 console.log('🔔 Notificação fechada');
             }
+            
             function goToDashboard() {
                 dismissNotification();
                 window.location.href = '/dashboard';
             }
+            
             function setupEvents() {
                 if (notifClose) notifClose.addEventListener('click', dismissNotification);
                 if (notifDismiss) notifDismiss.addEventListener('click', dismissNotification);
@@ -2013,6 +2046,7 @@
                     });
                 }
             }
+            
             function listenAppEvents() {
                 document.addEventListener('authLoginSuccess', function(e) {
                     var data = e.detail || {};
@@ -2030,6 +2064,7 @@
                     }
                 });
             }
+            
             function init() {
                 setupEvents();
                 listenAppEvents();
@@ -2042,15 +2077,17 @@
                         setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
                     }
                 }
-                console.log('✅ Sistema de notificação inicializado!');
+                console.log('✅ Sistema de notificação v2 inicializado!');
             }
+            
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', init);
             } else {
                 setTimeout(init, 300);
             }
+            
             window.WelcomeNotif = { show: showWelcomeNotification, dismiss: dismissNotification, shouldShow: shouldShowWelcome };
-            console.log('✅ welcome-notification.js carregado!');
+            console.log('✅ welcome-notification.js v2 carregado!');
         })();
     </script>
 
