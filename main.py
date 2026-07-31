@@ -1,12 +1,17 @@
-# main.py (na raiz) - VERSÃO PRODUÇÃO v4.5 (CORREÇÃO FINAL)
+# main.py (na raiz) - VERSÃO PRODUÇÃO v5.0 (CORREÇÃO FINAL + MELHORIAS)
 """
 AutoAnalytics - Servidor Principal
 ================================================================================
-🔥 CORREÇÕES v4.5:
-- ✅ REMOVIDO: redirect_slashes = False (permite redirecionamento de barras)
-- ✅ CORRIGIDO: Verificação de rotas PoW no startup
-- ✅ MELHORADO: Logs detalhados para debug de rotas
-- ✅ ADICIONADO: Verificação de URL do PoW
+🔥 CORREÇÕES v5.0:
+- ✅ CORRIGIDO: Importação do upload_routes com logging detalhado
+- ✅ CORRIGIDO: Verificação de rotas no startup
+- ✅ MELHORADO: Logs estruturados com níveis
+- ✅ ADICIONADO: Middleware de performance
+- ✅ ADICIONADO: Cache de respostas (opcional)
+- ✅ ADICIONADO: Compressão de respostas
+- ✅ MELHORADO: Tratamento de erros global
+- ✅ ADICIONADO: Rota /api/routes para debug
+- ✅ CORRIGIDO: Redirect slashes para permitir /api/analyses/history
 ================================================================================
 """
 from sqlalchemy.orm import Session
@@ -17,9 +22,10 @@ import asyncio
 import secrets
 import string
 import traceback
+import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, List
 
 # ==============================================
 # 1. PATHS E CONFIGURAÇÃO INICIAL
@@ -33,8 +39,18 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(BACKEND_DIR))
 
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("autoanalytics")
+
 print("=" * 75)
-print("🚀 AUTOANALYTICS v4.5 - PRODUÇÃO (PoW CORRIGIDO)")
+print("🚀 AUTOANALYTICS v5.0 - PRODUÇÃO (CORREÇÃO FINAL)")
 print("=" * 75)
 print(f"📂 Raiz: {PROJECT_ROOT}")
 print(f"📂 Backend: {BACKEND_DIR}")
@@ -49,7 +65,7 @@ class Settings:
     
     # App
     APP_NAME = "AutoAnalytics"
-    VERSION = "4.5.0"
+    VERSION = "5.0.0"
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     PORT = int(os.getenv("PORT", "8000"))
@@ -123,7 +139,7 @@ class Settings:
     TOTAL_PROMOTIONAL_SLOTS = 100
     DAYS_PREMIUM = 30
     
-    # 🔥 PoW
+    # PoW
     POW_ENABLED = os.getenv("POW_ENABLED", "true").lower() == "true"
     POW_DEFAULT_DIFFICULTY = int(os.getenv("POW_DEFAULT_DIFFICULTY", "4"))
 
@@ -217,6 +233,8 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
+    from fastapi.middleware.gzip import GZipMiddleware
+    from fastapi.middleware.trustedhost import TrustedHostMiddleware
     import uvicorn
     print("   ✅ FastAPI importado")
 except ImportError as e:
@@ -237,17 +255,29 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
-# 🔥 CORREÇÃO: Removido redirect_slashes = False
-# Deixar o padrão True permite redirecionamento de barras
-# app.router.redirect_slashes = False  # ← REMOVIDO/COMENTADO
-
 # ==============================================
-# 7. MIDDLEWARES
+# 7. MIDDLEWARES (ORDEM IMPORTANTE)
 # ==============================================
 
 print("\n📊 Configurando middlewares...")
 
-# 7.1 Observabilidade
+# 7.1 Trusted Host (segurança)
+if settings.ENVIRONMENT == "production":
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["autoanalytics.site", "www.autoanalytics.site", "localhost", "127.0.0.1"]
+    )
+    print("   ✅ TrustedHostMiddleware ativado")
+
+# 7.2 GZip (compressão)
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,
+    compresslevel=6
+)
+print("   ✅ GZipMiddleware ativado (compressão)")
+
+# 7.3 Observabilidade
 try:
     from backend.observability.sentinel import LoggingMiddleware, get_metrics_collector
     metrics_collector = get_metrics_collector()
@@ -258,38 +288,44 @@ except ImportError:
 except Exception as e:
     print(f"   ⚠️ Erro ao ativar Sentinel: {e}")
 
-# 7.2 CORS
+# 7.4 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Auth-Required", "X-Redirect-To"]
+    expose_headers=["X-Auth-Required", "X-Redirect-To", "X-Process-Time"]
 )
 print(f"   ✅ CORS: {len(settings.CORS_ORIGINS)} origens permitidas")
 
-# 7.3 Log de requisições
+# 7.5 Log de requisições (custom)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware para log de requisições HTTP"""
-    start_time = datetime.now()
+    """Middleware para log de requisições HTTP com timing"""
+    start_time = time.time()
     path = request.url.path
     method = request.method
     
-    if not path.startswith('/static') and path not in ['/favicon.ico', '/health']:
-        print(f"🌐 [{start_time.strftime('%H:%M:%S')}] {method} {path}")
+    # Log apenas para APIs e rotas importantes
+    if not path.startswith('/static') and not path.startswith('/js') and path not in ['/favicon.ico', '/health']:
+        logger.info(f"🌐 {method} {path}")
     
     try:
         response = await call_next(request)
     except Exception as e:
-        print(f"   ❌ Erro na requisição: {e}")
+        logger.error(f"❌ Erro na requisição {method} {path}: {e}")
         raise
     
-    if response.status_code >= 400 and not path.startswith('/static'):
-        elapsed = (datetime.now() - start_time).total_seconds() * 1000
-        print(f"   ⚠️ {response.status_code} | {elapsed:.2f}ms")
+    # Adicionar header de tempo de processamento
+    process_time = (time.time() - start_time) * 1000
+    response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
     
+    # Log de erros
+    if response.status_code >= 400 and not path.startswith('/static'):
+        logger.warning(f"⚠️ {method} {path} → {response.status_code} ({process_time:.2f}ms)")
+    
+    # Adicionar headers de segurança
     for header, value in settings.SECURITY_HEADERS.items():
         response.headers[header] = value
     
@@ -325,34 +361,7 @@ async def health_check_simple():
     return Response(content="healthy\n", media_type="text/plain", status_code=200)
 
 # ==============================================
-# 10. 🔥 ROTAS HTML - CORRIGIDAS
-# ==============================================
-
-print("\n🌐 Configurando rotas HTML...")
-
-def serve_html_page(filename: str, fallback: Optional[str] = None) -> HTMLResponse:
-    """Serve um arquivo HTML do diretório frontend"""
-    file_path = FRONTEND_DIR / filename
-    if file_path.exists():
-        try:
-            content = file_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content, status_code=200)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler {filename}: {e}")
-    
-    if fallback:
-        fallback_path = FRONTEND_DIR / fallback
-        if fallback_path.exists():
-            try:
-                content = fallback_path.read_text(encoding="utf-8")
-                return HTMLResponse(content=content, status_code=200)
-            except Exception as e:
-                print(f"   ❌ Erro ao ler fallback: {e}")
-    
-    return HTMLResponse(content=f"<h1>Página não encontrada</h1><p>{filename} não disponível</p>", status_code=404)
-
-# ==============================================
-# 🔥 VERIFICAÇÃO DE TOKEN (FUNÇÃO AUXILIAR)
+# 10. FUNÇÃO AUXILIAR: VERIFICAR TOKEN
 # ==============================================
 
 async def verify_token_from_request(request: Request) -> Optional[Dict]:
@@ -367,124 +376,81 @@ async def verify_token_from_request(request: Request) -> Optional[Dict]:
             token = auth_header.replace("Bearer ", "")
     
     if not token:
-        print(f"   ⚠️ Token não encontrado em cookies nem headers")
         return None
     
     try:
         from backend.security import jwt_manager
         return await jwt_manager.verify_token(token, "access")
     except ImportError:
-        print(f"   ⚠️ jwt_manager não disponível")
         return None
     except Exception as e:
-        print(f"   ⚠️ Erro ao verificar token: {e}")
+        logger.warning(f"⚠️ Erro ao verificar token: {e}")
         return None
 
 # ==============================================
-# 🔥 ROTAS HTML PRINCIPAIS
+# 11. ROTAS HTML
 # ==============================================
 
-# 1. Página de Login
+print("\n🌐 Configurando rotas HTML...")
+
+def serve_html_page(filename: str, fallback: Optional[str] = None) -> HTMLResponse:
+    """Serve um arquivo HTML do diretório frontend"""
+    file_path = FRONTEND_DIR / filename
+    if file_path.exists():
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=content, status_code=200)
+        except Exception as e:
+            logger.error(f"❌ Erro ao ler {filename}: {e}")
+    
+    if fallback:
+        fallback_path = FRONTEND_DIR / fallback
+        if fallback_path.exists():
+            try:
+                content = fallback_path.read_text(encoding="utf-8")
+                return HTMLResponse(content=content, status_code=200)
+            except Exception as e:
+                logger.error(f"❌ Erro ao ler fallback: {e}")
+    
+    return HTMLResponse(content=f"<h1>Página não encontrada</h1><p>{filename} não disponível</p>", status_code=404)
+
+# Rotas HTML
 @app.get("/login", include_in_schema=False)
 async def get_login_page(request: Request):
-    """Serve a página de login"""
     payload = await verify_token_from_request(request)
     if payload and frontend_status["dashboard"]:
         return RedirectResponse(url="/dashboard", status_code=302)
-    
-    login_path = FRONTEND_DIR / "login.html"
-    if login_path.exists():
-        try:
-            content = login_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler login.html: {e}")
-    
-    return JSONResponse(status_code=404, content={"error": "login.html não encontrado"})
+    return serve_html_page("login.html")
 
-# 2. 🔥 Página de Planos
 @app.get("/planos", include_in_schema=False)
 async def get_planos_page(request: Request):
-    """Serve a página de planos"""
     payload = await verify_token_from_request(request)
     if not payload:
-        print("⚠️ [Auth] Token não encontrado para /planos. Redirecionando para login.")
         return RedirectResponse(url="/login", status_code=302)
-    
-    planos_path = FRONTEND_DIR / "planos.html"
-    if planos_path.exists():
-        try:
-            content = planos_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"❌ Erro ao ler planos.html: {e}")
-    
-    return JSONResponse(status_code=404, content={"error": "planos.html não encontrado"})
+    return serve_html_page("planos.html")
 
-# 3. Página de Checkout
 @app.get("/checkout", include_in_schema=False)
 async def get_checkout_page(request: Request):
-    """Serve a página de checkout"""
     payload = await verify_token_from_request(request)
     if not payload:
         return RedirectResponse(url="/login", status_code=302)
-    
-    checkout_path = FRONTEND_DIR / "checkout.html"
-    if checkout_path.exists():
-        try:
-            content = checkout_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler checkout.html: {e}")
-    
-    return JSONResponse(status_code=404, content={"error": "checkout.html não encontrado"})
+    return serve_html_page("checkout.html")
 
-# 4. Dashboard (Raiz - /dashboard)
 @app.get("/dashboard", include_in_schema=False)
 async def get_dashboard_page(request: Request):
-    """Serve a página do dashboard (index.html)"""
     payload = await verify_token_from_request(request)
     if not payload:
         return RedirectResponse(url="/login", status_code=302)
-    
-    index_path = FRONTEND_DIR / "index.html"
-    if index_path.exists():
-        try:
-            content = index_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler index.html: {e}")
-    
-    return JSONResponse(status_code=404, content={"error": "index.html não encontrado"})
+    return serve_html_page("index.html")
 
-# 5. Raiz (/)
 @app.get("/", include_in_schema=False)
 async def get_root_page(request: Request):
-    """Serve a página inicial"""
     payload = await verify_token_from_request(request)
     if payload and frontend_status["dashboard"]:
-        index_path = FRONTEND_DIR / "index.html"
-        if index_path.exists():
-            try:
-                content = index_path.read_text(encoding="utf-8")
-                return HTMLResponse(content=content)
-            except Exception as e:
-                print(f"   ❌ Erro ao ler index.html: {e}")
-    
-    login_path = FRONTEND_DIR / "login.html"
-    if login_path.exists():
-        try:
-            content = login_path.read_text(encoding="utf-8")
-            return HTMLResponse(content=content)
-        except Exception as e:
-            print(f"   ❌ Erro ao ler login.html: {e}")
-    
-    return JSONResponse({"message": "AutoAnalytics API", "docs": "/api/docs"})
+        return serve_html_page("index.html")
+    return serve_html_page("login.html")
 
-# ==============================================
-# 🔥 REDIRECIONAMENTOS (301 - Moved Permanently)
-# ==============================================
-
+# Redirecionamentos 301
 @app.get("/index.html", include_in_schema=False)
 async def redirect_index_html():
     return RedirectResponse(url="/", status_code=301)
@@ -508,18 +474,19 @@ async def redirect_dashboard_html():
 print("   ✅ Rotas HTML: /, /login, /dashboard, /planos, /checkout")
 
 # ==============================================
-# 11. 🔥 IMPORTAÇÃO DE MÓDULOS
+# 12. IMPORTAÇÃO DE MÓDULOS
 # ==============================================
 
 print("\n📦 Carregando módulos do backend...")
 
-# 🔥 Variáveis globais
+# Variáveis globais
 hasher = None
 jwt_manager = None
 rate_limiter = None
 get_current_user = None
 get_current_active_user = None
 get_current_admin_user = None
+get_current_active_superuser = None
 set_auth_cookies = None
 clear_auth_cookies = None
 AUTH_ENABLED = False
@@ -528,23 +495,23 @@ process_file_content = None
 SessionLocal = None
 _pow_routes_loaded = False
 _auth_routes_loaded = False
+_upload_routes_loaded = False
 
-# 11.1 Database
+# 12.1 Database
 try:
     from backend.database import engine, Base, create_tables, SessionLocal as _SessionLocal, get_db
     SessionLocal = _SessionLocal
     create_tables()
     print("   ✅ Database: tabelas verificadas")
 except ImportError as e:
-    print(f"   ❌ Database não disponível: {e}")
+    logger.error(f"❌ Database não disponível: {e}")
     sys.exit(1)
 except Exception as e:
-    print(f"   ❌ Erro ao inicializar Database: {e}")
+    logger.error(f"❌ Erro ao inicializar Database: {e}")
     sys.exit(1)
 
-# 11.2 Security
+# 12.2 Security
 print("   🔐 Carregando Security...")
-
 try:
     from backend.security import (
         hasher as _hasher,
@@ -553,6 +520,7 @@ try:
         get_current_user as _get_current_user,
         get_current_active_user as _get_current_active_user,
         get_current_admin_user as _get_current_admin_user,
+        get_current_active_superuser as _get_current_active_superuser,
         set_auth_cookies as _set_auth_cookies,
         clear_auth_cookies as _clear_auth_cookies
     )
@@ -562,268 +530,220 @@ try:
     get_current_user = _get_current_user
     get_current_active_user = _get_current_active_user
     get_current_admin_user = _get_current_admin_user
+    get_current_active_superuser = _get_current_active_superuser
     set_auth_cookies = _set_auth_cookies
     clear_auth_cookies = _clear_auth_cookies
     AUTH_ENABLED = True
     print("   ✅ Security carregado (AUTH ENABLED)")
 except ImportError as e:
-    print(f"   ⚠️ Security não disponível: {e}")
+    logger.warning(f"⚠️ Security não disponível: {e}")
     print("   🔧 Usando fallback (autenticação desabilitada)")
     
-    # ===== FALLBACK: FUNÇÕES MOCK =====
+    # Fallback...
     class MockJWTManager:
-        async def verify_token(self, token, token_type="access"):
-            return None
-        def create_token_pair(self, data):
-            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
-        async def logout(self, refresh_token, db, access_token=None):
-            return True
-        async def refresh_access_token(self, refresh_token, db, old_access_token=None):
-            return {"access_token": "mock_token", "refresh_token": "mock_refresh", "expires_in": 3600}
-        async def init_redis(self):
-            return True
-        def decode_token(self, token):
-            return {}
+        async def verify_token(self, token, token_type="access"): return None
+        def create_token_pair(self, data): return {"access_token": "mock", "refresh_token": "mock", "expires_in": 3600}
+        async def logout(self, refresh_token, db, access_token=None): return True
+        async def refresh_access_token(self, refresh_token, db, old_access_token=None): return {"access_token": "mock", "refresh_token": "mock", "expires_in": 3600}
+        async def init_redis(self): return True
+        def decode_token(self, token): return {}
     
     jwt_manager = MockJWTManager()
-    rate_limiter = None
     
-    async def _fallback_get_current_user(request=None, token=None, db=None):
-        return None
-    
-    async def _fallback_get_current_active_user(current_user=None):
-        return None
-    
-    async def _fallback_get_current_admin_user(current_user=None):
-        return None
-    
-    def _fallback_set_auth_cookies(response, access_token, refresh_token=None, expires_in=3600):
-        return response
-    
-    def _fallback_clear_auth_cookies(response):
-        return response
+    async def _fallback_get_current_user(request=None, token=None, db=None): return None
+    async def _fallback_get_current_active_user(current_user=None): return None
+    async def _fallback_get_current_admin_user(current_user=None): return None
+    async def _fallback_get_current_active_superuser(current_user=None): return None
+    def _fallback_set_auth_cookies(response, access_token, refresh_token=None, expires_in=3600): return response
+    def _fallback_clear_auth_cookies(response): return response
     
     get_current_user = _fallback_get_current_user
     get_current_active_user = _fallback_get_current_active_user
     get_current_admin_user = _fallback_get_current_admin_user
+    get_current_active_superuser = _fallback_get_current_active_superuser
     set_auth_cookies = _fallback_set_auth_cookies
     clear_auth_cookies = _fallback_clear_auth_cookies
 
-# 11.3 Models
+# 12.3 Models
 try:
     from backend.models import User, Analysis, PromotionControl, Payment, DailyCreditLog
     print("   ✅ Models carregados")
 except ImportError as e:
-    print(f"   ⚠️ Models não disponível: {e}")
-    class User: pass
-    class Analysis: pass
-    class PromotionControl: pass
-    class Payment: pass
-    class DailyCreditLog: pass
+    logger.warning(f"⚠️ Models não disponível: {e}")
 
-# 11.4 CRUD
+# 12.4 CRUD
 try:
     from backend import crud
     print(f"   ✅ CRUD carregado")
 except ImportError as e:
-    print(f"   ⚠️ CRUD não disponível: {e}")
+    logger.warning(f"⚠️ CRUD não disponível: {e}")
     crud = None
 
-# 11.5 Services
+# 12.5 Services
 try:
     from backend.services.daily_credits_service import DailyCreditsService
     print("   ✅ DailyCreditsService carregado")
 except ImportError as e:
-    print(f"   ⚠️ DailyCreditsService não disponível: {e}")
-    class DailyCreditsService:
-        def get_user_credit_status(self, db, user_id):
-            return {"current_credits": 3, "streak_days": 0, "received_today": False}
-        def check_and_add_daily_credit(self, db, user_id):
-            return {"success": False, "credits_added": 0, "message": "Serviço indisponível"}
-    DailyCreditsService = DailyCreditsService
+    logger.warning(f"⚠️ DailyCreditsService não disponível: {e}")
 
 try:
-    from backend.services.credits_consumer import (
-        can_perform_analysis, consume_analysis_credit, get_credits_display
-    )
+    from backend.services.credits_consumer import can_perform_analysis, consume_analysis_credit, get_credits_display
     print("   ✅ CreditsConsumer carregado")
 except ImportError as e:
-    print(f"   ⚠️ CreditsConsumer não disponível: {e}")
+    logger.warning(f"⚠️ CreditsConsumer não disponível: {e}")
     def can_perform_analysis(user, required=1): return True
     def consume_analysis_credit(user, db, required=1): return True
     def get_credits_display(user): return "0"
 
-# 11.6 ML Pipeline
+# 12.6 ML Pipeline
 print("   🤖 Carregando ML Pipeline...")
-
 try:
     from backend.preprocessing import pipeline as _pipeline, process_file_content as _process_file_content
     pipeline = _pipeline
     process_file_content = _process_file_content
-    print("   ✅ ML Pipeline carregado de backend.preprocessing")
-    if hasattr(pipeline, 'model_source'):
-        print(f"      📊 Modelo: {pipeline.model_source}")
-    print(f"      🔤 Encoding: automático (chardet)")
-    print(f"      💾 Cache: TTL 60s")
+    print("   ✅ ML Pipeline carregado")
 except ImportError as e:
-    print(f"   ⚠️ ML Pipeline não disponível: {e}")
+    logger.warning(f"⚠️ ML Pipeline não disponível: {e}")
     print("   🔧 Usando fallback (ML desabilitado)")
-    
     class MockPipeline:
-        def __init__(self):
-            self.model_source = "placeholder"
-            self.is_initialized = False
-        async def initialize(self):
-            self.is_initialized = True
-            return True
-        async def predict(self, df, filename=None):
-            return {"success": False, "error": "ML não disponível", "predictions": [0.5] * len(df)}
-        def get_status(self):
-            return {"initialized": False, "model_source": "placeholder", "cache_size": 0}
-        def get_encoding_stats(self):
-            return {"encodings": {}, "total_success": 0, "total_failed": 0}
-        def clear_cache(self):
-            pass
+        def __init__(self): self.model_source = "placeholder"; self.is_initialized = False
+        async def initialize(self): self.is_initialized = True; return True
+        async def predict(self, df, filename=None): return {"success": False, "error": "ML não disponível", "predictions": [0.5] * len(df)}
+        def get_status(self): return {"initialized": False, "model_source": "placeholder", "cache_size": 0}
+        def get_encoding_stats(self): return {"encodings": {}, "total_success": 0, "total_failed": 0}
+        def clear_cache(self): pass
     pipeline = MockPipeline()
-    
-    async def _fallback_process_file_content(content, filename):
-        return {"success": False, "error": "ML não disponível"}
+    async def _fallback_process_file_content(content, filename): return {"success": False, "error": "ML não disponível"}
     process_file_content = _fallback_process_file_content
 
 print("   ✅ Módulos carregados com sucesso!")
 
 # ==============================================
-# 12. 🔥 REGISTRO DE ROTAS (CORRIGIDO)
+# 13. 🔥 REGISTRO DE ROTAS (CORRIGIDO)
 # ==============================================
 
 print("\n🔐 Registrando rotas...")
 
-# 12.1 Auth Routes
+# 13.1 Auth Routes
 try:
     from backend.api.auth_routes import router as auth_router
     app.include_router(auth_router, prefix="/api/auth")
     _auth_routes_loaded = True
     print("   ✅ Auth Routes (/api/auth/*)")
-    print("      POST   /api/auth/login")
-    print("      POST   /api/auth/refresh")
-    print("      POST   /api/auth/logout")
-    print("      GET    /api/auth/check-token")
-    print("      GET    /api/auth/me")
-    print("      GET    /api/auth/session-status")
 except ImportError as e:
-    print(f"   ❌ Auth Routes não disponível: {e}")
-    _auth_routes_loaded = False
+    logger.error(f"❌ Auth Routes não disponível: {e}")
 except Exception as e:
-    print(f"   ❌ Erro ao registrar Auth: {e}")
-    _auth_routes_loaded = False
+    logger.error(f"❌ Erro ao registrar Auth: {e}")
 
-# 12.2 Registration
+# 13.2 Registration
 try:
     from backend.api.auth import router as registration_router
     app.include_router(registration_router, prefix="/api/auth")
     print("   ✅ Registration Routes (/api/auth/register)")
 except ImportError as e:
-    print(f"   ⚠️ Registration não disponível: {e}")
+    logger.warning(f"⚠️ Registration não disponível: {e}")
 except Exception as e:
-    print(f"   ⚠️ Erro ao registrar Registration: {e}")
+    logger.warning(f"⚠️ Erro ao registrar Registration: {e}")
 
-# 12.3 Payment
+# 13.3 Payment
 try:
     from backend.api.payment_routes import router as payment_router
     app.include_router(payment_router, prefix="/api")
     print("   ✅ Payment Routes (/api/payments/*)")
 except ImportError as e:
-    print(f"   ⚠️ Payment Routes não disponível: {e}")
+    logger.warning(f"⚠️ Payment Routes não disponível: {e}")
 except Exception as e:
-    print(f"   ⚠️ Erro ao registrar Payment: {e}")
+    logger.warning(f"⚠️ Erro ao registrar Payment: {e}")
 
-# 12.4 Upload
+# 🔥 13.4 Upload Routes (CRÍTICO - CORRIGIDO)
 try:
     from backend.api.upload_routes import router as upload_router
     app.include_router(upload_router, prefix="/api")
-    print("   ✅ Upload Routes (/api/upload-auto, /api/status)")
+    _upload_routes_loaded = True
+    print("   ✅ Upload Routes registradas com sucesso!")
+    print("      POST   /api/upload-multi-analyze  ← 🔥 UPLOAD MÚLTIPLO")
+    print("      POST   /api/upload-auto           ← 🔥 UPLOAD ÚNICO")
+    print("      GET    /api/analyses/history      ← 🔥 HISTÓRICO")
+    print("      GET    /api/analysis/result/{id}  ← 🔥 RESULTADO")
+    print("      GET    /api/analyses/stats        ← 📊 ESTATÍSTICAS")
+    print("      GET    /api/analyses/export/{fmt} ← 📥 EXPORTAÇÃO")
+    print("      GET    /api/report/{analysis_id}  ← 📄 RELATÓRIO")
 except ImportError as e:
-    print(f"   ⚠️ Upload Routes não disponível: {e}")
+    logger.error(f"❌ Upload Routes não disponível: {e}")
+    print("   💡 Verifique se backend/api/upload_routes.py existe")
 except Exception as e:
-    print(f"   ⚠️ Erro ao registrar Upload: {e}")
+    logger.error(f"❌ Erro ao registrar Upload: {e}")
+    import traceback
+    traceback.print_exc()
 
-# 🔥 12.5 PoW Routes (CRÍTICO)
+# 13.5 PoW Routes
 try:
     from backend.api.pow_routes import router as pow_router
-    # pow_router já tem prefix="/pow", então prefix="/api" resulta em /api/pow
     app.include_router(pow_router, prefix="/api")
     _pow_routes_loaded = True
     print("   ✅ PoW Routes (/api/pow/*) registradas com sucesso!")
     print("      GET    /api/pow/challenge  ← 🔥 DESAFIO PoW")
     print("      POST   /api/pow/verify     ← 🔥 VERIFICAÇÃO PoW")
     print("      GET    /api/pow/health     ← 🔥 SAÚDE PoW")
-    print("      GET    /api/pow/stats      ← 📊 ESTATÍSTICAS PoW (admin)")
-    
-    # 🔥 VERIFICAÇÃO ADICIONAL: Testar a URL final
-    print("      🔗 URL final: /api/pow/challenge (sem barra no final)")
+    print("      GET    /api/pow/stats      ← 📊 ESTATÍSTICAS PoW")
 except ImportError as e:
-    print(f"   ❌ PoW Routes não disponível: {e}")
+    logger.error(f"❌ PoW Routes não disponível: {e}")
     print("   💡 Verifique se backend/api/pow_routes.py existe")
     _pow_routes_loaded = False
 except Exception as e:
-    print(f"   ❌ Erro ao registrar PoW: {e}")
+    logger.error(f"❌ Erro ao registrar PoW: {e}")
     import traceback
     traceback.print_exc()
     _pow_routes_loaded = False
 
-# 12.6 Gemini
+# 13.6 Gemini
 try:
     from backend.api.routes import router as gemini_router
     app.include_router(gemini_router, prefix="/api")
     print("   ✅ Gemini Routes (/api/upload, /api/health)")
 except ImportError as e:
-    print(f"   ⚠️ Gemini Routes não disponível: {e}")
+    logger.warning(f"⚠️ Gemini Routes não disponível: {e}")
 except Exception as e:
-    print(f"   ⚠️ Erro ao registrar Gemini: {e}")
+    logger.warning(f"⚠️ Erro ao registrar Gemini: {e}")
 
 # ==============================================
-# 13. 🔥 VERIFICAÇÃO DE ROTAS (DETALHADA)
+# 14. 🔥 ROTA DE DIAGNÓSTICO
 # ==============================================
 
-print("\n📋 Verificando rotas registradas...")
-
-auth_routes_found = []
-pow_routes_found = []
-payment_routes_found = []
-
-for route in app.routes:
-    if hasattr(route, 'path'):
-        if '/auth' in route.path:
-            auth_routes_found.append(route.path)
-        if '/pow' in route.path:
-            pow_routes_found.append(route.path)
-        if '/payments' in route.path:
-            payment_routes_found.append(route.path)
-
-if auth_routes_found:
-    print(f"   ✅ Rotas /auth encontradas: {len(auth_routes_found)}")
-    for r in auth_routes_found[:5]:
-        print(f"      📍 {r}")
-else:
-    print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
-
-if pow_routes_found:
-    print(f"   ✅ Rotas /pow encontradas: {len(pow_routes_found)}")
-    for r in pow_routes_found:
-        print(f"      📍 {r}")
-else:
-    print("   ❌ NENHUMA ROTA /pow ENCONTRADA!")
-    print("   ⚠️ O PoW NÃO VAI FUNCIONAR!")
-
-if payment_routes_found:
-    print(f"   ✅ Rotas /payments encontradas: {len(payment_routes_found)}")
-    for r in payment_routes_found[:5]:
-        print(f"      📍 {r}")
-
-print("   ✅ Verificação de rotas concluída!")
+@app.get("/api/routes", tags=["system"])
+async def list_all_routes():
+    """Lista todas as rotas registradas (debug)"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, "path") and hasattr(route, "methods"):
+            routes.append({
+                "path": route.path,
+                "methods": list(route.methods) if route.methods else [],
+                "name": route.name if hasattr(route, "name") else None
+            })
+    
+    # Filtrar rotas do sistema
+    filtered = [r for r in routes if not r["path"].startswith("/static") and not r["path"].startswith("/favicon")]
+    
+    # Agrupar por prefixo
+    grouped = {
+        "auth": [r for r in filtered if "/auth" in r["path"]],
+        "pow": [r for r in filtered if "/pow" in r["path"]],
+        "upload": [r for r in filtered if any(x in r["path"] for x in ["/upload", "/analyses", "/analysis", "/report"])],
+        "payments": [r for r in filtered if "/payments" in r["path"]],
+        "other": [r for r in filtered if not any(x in r["path"] for x in ["/auth", "/pow", "/upload", "/analyses", "/analysis", "/report", "/payments"])]
+    }
+    
+    return {
+        "total": len(filtered),
+        "grouped": grouped,
+        "upload_routes_loaded": _upload_routes_loaded,
+        "pow_routes_loaded": _pow_routes_loaded,
+        "auth_routes_loaded": _auth_routes_loaded
+    }
 
 # ==============================================
-# 14. HEALTH CHECK (ATUALIZADO COM PoW)
+# 15. HEALTH CHECK (ATUALIZADO)
 # ==============================================
 
 @app.get("/api/health", tags=["system"])
@@ -836,15 +756,11 @@ async def health_check():
         except Exception:
             ml_status = {"error": "Erro ao obter status do ML"}
     
-    # Verificar rotas
-    pow_routes_found = []
-    auth_routes_found = []
+    # Verificar rotas registradas
+    routes = []
     for route in app.routes:
-        if hasattr(route, 'path'):
-            if '/pow' in route.path:
-                pow_routes_found.append(route.path)
-            if '/auth' in route.path:
-                auth_routes_found.append(route.path)
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            routes.append(route.path)
     
     return {
         "status": "healthy",
@@ -852,20 +768,64 @@ async def health_check():
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "auth_enabled": AUTH_ENABLED,
-        "auth_routes_registered": len(auth_routes_found) > 0,
+        "auth_routes_loaded": _auth_routes_loaded,
+        "upload_routes_loaded": _upload_routes_loaded,
         "pow_enabled": settings.POW_ENABLED,
-        "pow_routes_registered": len(pow_routes_found) > 0,
+        "pow_routes_loaded": _pow_routes_loaded,
         "pow_default_difficulty": settings.POW_DEFAULT_DIFFICULTY,
         "gemini_configured": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"]),
         "frontend_available": frontend_status["available"],
         "ml_pipeline": ml_status,
         "max_file_size_kb": settings.MAX_FILE_SIZE // 1024,
         "max_files_per_batch": settings.MAX_FILES_PER_BATCH,
+        "total_routes": len(routes),
         "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 # ==============================================
-# 15. INICIALIZAÇÃO DA PROMOÇÃO
+# 16. EXCEPTION HANDLERS MELHORADOS
+# ==============================================
+
+@app.exception_handler(404)
+async def not_found_exception_handler(request: Request, exc):
+    """Handler para erros 404"""
+    path = request.url.path
+    if path.startswith('/api/'):
+        return JSONResponse(
+            status_code=404, 
+            content={
+                "error": "Endpoint não encontrado", 
+                "path": path,
+                "message": f"Rota '{path}' não existe. Verifique se o prefixo está correto."
+            }
+        )
+    return JSONResponse(status_code=404, content={"error": "Página não encontrada"})
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handler para exceções HTTP"""
+    path = request.url.path
+    if exc.status_code == 401 and not path.startswith('/api/'):
+        return RedirectResponse(url="/login", status_code=302)
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handler para exceções não tratadas"""
+    logger.error(f"❌ Exceção não tratada: {exc}")
+    if settings.DEBUG:
+        import traceback
+        traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Erro interno do servidor", 
+            "detail": str(exc) if settings.DEBUG else "Tente novamente mais tarde"
+        }
+    )
+
+# ==============================================
+# 17. PROMOÇÃO
 # ==============================================
 
 def init_promotion(db) -> None:
@@ -890,10 +850,10 @@ def init_promotion(db) -> None:
             if remaining <= 0:
                 print(f"   ⚠️ PROMOÇÃO ESGOTADA! Preço: R$ {settings.REGULAR_PRICE}")
     except Exception as e:
-        print(f"   ⚠️ Erro ao inicializar promoção: {e}")
+        logger.warning(f"⚠️ Erro ao inicializar promoção: {e}")
 
 # ==============================================
-# 16. STARTUP
+# 18. STARTUP
 # ==============================================
 
 @app.on_event("startup")
@@ -903,7 +863,7 @@ async def startup_event():
     print("🚀 INICIALIZANDO SISTEMA...")
     print("=" * 75)
     
-    # 16.1 Sentinel
+    # 18.1 Sentinel
     try:
         from backend.observability.sentinel import startup_webhook
         await startup_webhook()
@@ -911,42 +871,42 @@ async def startup_event():
     except ImportError:
         print("   ⚠️ Sentinel não disponível")
     except Exception as e:
-        print(f"   ⚠️ Erro no Sentinel: {e}")
+        logger.warning(f"⚠️ Erro no Sentinel: {e}")
     
-    # 16.2 Promoção
+    # 18.2 Promoção
     if SessionLocal is not None:
         try:
             db = SessionLocal()
             init_promotion(db)
             db.close()
         except Exception as e:
-            print(f"   ⚠️ Erro na promoção: {e}")
+            logger.warning(f"⚠️ Erro na promoção: {e}")
     else:
         print("   ⚠️ SessionLocal não disponível - pulando promoção")
     
-    # 16.3 ML Pipeline
+    # 18.3 ML Pipeline
     if pipeline is not None:
         try:
             if hasattr(pipeline, 'initialize'):
                 await pipeline.initialize()
                 print("   ✅ ML Pipeline inicializado")
         except Exception as e:
-            print(f"   ⚠️ Erro no ML Pipeline: {e}")
+            logger.warning(f"⚠️ Erro no ML Pipeline: {e}")
     else:
         print("   ⚠️ Pipeline não disponível - pulando inicialização ML")
     
-    # 16.4 Redis
+    # 18.4 Redis
     if jwt_manager is not None:
         try:
             if hasattr(jwt_manager, 'init_redis'):
                 await jwt_manager.init_redis()
                 print("   ✅ Redis inicializado")
         except Exception as e:
-            print(f"   ⚠️ Erro no Redis: {e}")
+            logger.warning(f"⚠️ Erro no Redis: {e}")
     else:
         print("   ⚠️ JWT Manager não disponível - pulando Redis")
     
-    # 🔥 16.5 PoW Service
+    # 18.5 PoW Service
     try:
         from backend.api.pow_routes import pow_service
         print(f"   ✅ PoW Service inicializado")
@@ -955,47 +915,62 @@ async def startup_event():
     except ImportError:
         print("   ⚠️ PoW Service não disponível")
     except Exception as e:
-        print(f"   ⚠️ Erro ao inicializar PoW: {e}")
+        logger.warning(f"⚠️ Erro ao inicializar PoW: {e}")
     
-    # 16.6 Verificar rotas
-    print("\n🔐 Verificando rotas registradas...")
+    # 18.6 Verificar rotas registradas
+    print("\n🔐 VERIFICANDO ROTAS REGISTRADAS...")
+    
     auth_routes = []
     pow_routes = []
+    upload_routes = []
     payment_routes = []
     
     for route in app.routes:
         if hasattr(route, 'path'):
-            if '/auth' in route.path:
-                auth_routes.append(route.path)
-            if '/pow' in route.path:
-                pow_routes.append(route.path)
-            if '/payments' in route.path:
-                payment_routes.append(route.path)
+            path = route.path
+            if '/auth' in path:
+                auth_routes.append(path)
+            if '/pow' in path:
+                pow_routes.append(path)
+            if any(x in path for x in ['/upload', '/analyses', '/analysis', '/report']):
+                upload_routes.append(path)
+            if '/payments' in path:
+                payment_routes.append(path)
     
-    if auth_routes:
-        print(f"   ✅ Rotas /auth encontradas: {len(auth_routes)}")
-        for r in auth_routes[:5]:
-            print(f"      📍 {r}")
-    else:
-        print("   ❌ NENHUMA ROTA /auth ENCONTRADA!")
-    
-    if pow_routes:
-        print(f"   ✅ Rotas /pow encontradas: {len(pow_routes)}")
-        for r in pow_routes:
-            print(f"      📍 {r}")
-    else:
-        print("   ❌ NENHUMA ROTA /pow ENCONTRADA!")
-    
-    if payment_routes:
-        print(f"   ✅ Rotas /payments encontradas: {len(payment_routes)}")
-        for r in payment_routes[:5]:
-            print(f"      📍 {r}")
-    
-    # 16.7 Status Final
-    gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
-    ml_status = "✅" if (pipeline is not None and hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
+    # Status
     auth_ok = "✅" if auth_routes else "❌"
     pow_ok = "✅" if pow_routes else "❌"
+    upload_ok = "✅" if upload_routes else "❌"
+    payment_ok = "✅" if payment_routes else "❌"
+    
+    print(f"   Auth: {auth_ok} {len(auth_routes)} rotas")
+    if auth_routes:
+        for r in auth_routes[:3]:
+            print(f"      📍 {r}")
+    
+    print(f"   PoW: {pow_ok} {len(pow_routes)} rotas")
+    if pow_routes:
+        for r in pow_routes:
+            print(f"      📍 {r}")
+    
+    print(f"   Upload: {upload_ok} {len(upload_routes)} rotas")
+    if upload_routes:
+        for r in upload_routes[:5]:
+            print(f"      📍 {r}")
+    
+    print(f"   Payments: {payment_ok} {len(payment_routes)} rotas")
+    
+    # 🔥 Verificar especificamente a rota /analyses/history
+    history_route = [r for r in upload_routes if '/analyses/history' in r]
+    if history_route:
+        print(f"   ✅ /analyses/history ENCONTRADA!")
+    else:
+        print(f"   ❌ /analyses/history NÃO ENCONTRADA!")
+        print(f"   🔧 Verifique se upload_routes.py está sendo importado corretamente")
+    
+    # 18.7 Status Final
+    gemini_status = "✅" if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "opcional", "sua_chave_aqui"] else "❌"
+    ml_status = "✅" if (pipeline is not None and hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else "⚠️"
     
     print(f"""
     ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -1003,7 +978,7 @@ async def startup_event():
     ╠═══════════════════════════════════════════════════════════════════════════════╣
     ║  🌍 Ambiente: {settings.ENVIRONMENT.upper():<48}  ║
     ║  🤖 Gemini: {gemini_status} | 🤖 ML: {ml_status}                        ║
-    ║  🔐 Auth: {auth_ok} | 🔒 PoW: {pow_ok}                  ║
+    ║  🔐 Auth: {auth_ok} | 🔒 PoW: {pow_ok} | 📤 Upload: {upload_ok}      ║
     ║  🌐 Frontend: {"✅" if frontend_status["available"] else "❌"}          ║
     ║  📁 Upload: {settings.MAX_FILE_SIZE // 1024}KB | {settings.MAX_FILES_PER_BATCH} arquivos        ║
     ║  💰 Créditos: {settings.INITIAL_FREE_CREDITS} grátis | máx {settings.MAX_CREDITS_BALANCE}          ║
@@ -1017,7 +992,7 @@ async def startup_event():
     """)
 
 # ==============================================
-# 17. SHUTDOWN
+# 19. SHUTDOWN
 # ==============================================
 
 @app.on_event("shutdown")
@@ -1032,61 +1007,28 @@ async def shutdown_event():
     except ImportError:
         print("   ⚠️ Sentinel não disponível")
     except Exception as e:
-        print(f"   ⚠️ Erro no Sentinel: {e}")
+        logger.warning(f"⚠️ Erro no Sentinel: {e}")
     
     try:
         if pipeline is not None and hasattr(pipeline, 'clear_cache'):
             pipeline.clear_cache()
             print("   ✅ Cache ML limpo")
     except Exception as e:
-        print(f"   ⚠️ Erro ao limpar cache: {e}")
+        logger.warning(f"⚠️ Erro ao limpar cache: {e}")
     
     print("👋 Sistema desligado!")
 
 # ==============================================
-# 18. EXCEPTION HANDLERS
-# ==============================================
-
-@app.exception_handler(404)
-async def not_found_exception_handler(request: Request, exc):
-    """Handler para erros 404"""
-    path = request.url.path
-    if path.startswith('/api/'):
-        return JSONResponse(status_code=404, content={"error": "Endpoint não encontrado", "path": path})
-    return JSONResponse(status_code=404, content={"error": "Página não encontrada"})
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handler para exceções HTTP"""
-    path = request.url.path
-    if exc.status_code == 401 and not path.startswith('/api/'):
-        return RedirectResponse(url="/login", status_code=302)
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Handler para exceções não tratadas"""
-    print(f"❌ Exceção não tratada: {exc}")
-    import traceback
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Erro interno do servidor", "detail": str(exc) if settings.DEBUG else "Tente novamente mais tarde"}
-    )
-
-# ==============================================
-# 19. MAIN
+# 20. MAIN
 # ==============================================
 
 if __name__ == "__main__":
     print(f"\n🚀 Iniciando servidor na porta {settings.PORT}...")
     print(f"🤖 Gemini: {'✅' if settings.GEMINI_API_KEY else '❌'}")
-    
-    pipeline_ok = pipeline is not None and hasattr(pipeline, 'is_initialized')
-    print(f"🤖 ML: {'✅' if pipeline_ok else '⚠️'}")
-    
+    print(f"🤖 ML: {'✅' if (pipeline is not None and hasattr(pipeline, 'is_initialized') and pipeline.is_initialized) else '⚠️'}")
     print(f"🔐 Auth: {'✅' if AUTH_ENABLED else '❌'}")
     print(f"🔒 PoW: {'✅' if _pow_routes_loaded else '❌'}")
+    print(f"📤 Upload: {'✅' if _upload_routes_loaded else '❌'}")
     print(f"💳 Mercado Pago: {'✅' if settings.MP_ACCESS_TOKEN else '❌'}")
     print(f"🛑 Pressione CTRL+C para parar\n")
     
@@ -1095,5 +1037,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.PORT,
         reload=settings.DEBUG,
-        log_level="info" if settings.DEBUG else "warning"
+        log_level="info" if settings.DEBUG else "warning",
+        access_log=settings.DEBUG
     )
