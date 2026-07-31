@@ -14,6 +14,7 @@ MÓDULO DE SEGURANÇA - VERSÃO FINAL
 - ✅ pending_blacklist NÃO é mais exposta diretamente
 - ✅ Memory cache limitado a 1000 entradas (apenas cache)
 - ✅ Fallback seguro: permite em caso de erro
+- ✅ get_current_active_superuser() ADICIONADA
 ================================================================================
 """
 
@@ -958,7 +959,27 @@ async def get_current_manager_user(current_user = Depends(get_current_active_use
 
 
 # ==============================================
-# 11. FUNÇÕES DE UTILIDADE
+# 11. 🔥 FUNÇÃO FALTANTE - SUPERSUSER
+# ==============================================
+
+async def get_current_active_superuser(current_user = Depends(get_current_active_user)):
+    """
+    🔥 Verifica se o usuário é superusuário (admin)
+    
+    Usado em rotas que exigem permissões administrativas.
+    Esta função é equivalente ao get_current_admin_user,
+    mantida para compatibilidade com código existente.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Requer permissão de administrador."
+        )
+    return current_user
+
+
+# ==============================================
+# 12. FUNÇÕES DE UTILIDADE
 # ==============================================
 
 def generate_api_key() -> str:
@@ -1014,7 +1035,7 @@ def verify_password_reset_token(token: str) -> Optional[str]:
 
 
 # ==============================================
-# 12. FUNÇÕES PARA COOKIES
+# 13. FUNÇÕES PARA COOKIES
 # ==============================================
 
 def set_auth_cookies(
@@ -1054,7 +1075,7 @@ def clear_auth_cookies(response: Response) -> Response:
 
 
 # ==============================================
-# 13. EXPORTAÇÕES
+# 14. EXPORTAÇÕES
 # ==============================================
 
 __all__ = [
@@ -1070,6 +1091,7 @@ __all__ = [
     'get_current_active_user',
     'get_current_admin_user',
     'get_current_manager_user',
+    'get_current_active_superuser',  # 🔥 ADICIONADO
     
     # Funções de blacklist
     'blacklist_token',
@@ -1111,4 +1133,5 @@ print("   ✅ Memory cache limitado (1000 entradas, 5min TTL)")
 print("   ✅ Fallback seguro: permite em caso de erro")
 print("   ✅ Rate limiting com janela deslizante")
 print("   ✅ pending_blacklist NÃO é exposta diretamente")
+print("   ✅ get_current_active_superuser() ADICIONADA")  # 🔥 NOVO
 print("=" * 70)
