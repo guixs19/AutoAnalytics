@@ -1,21 +1,23 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.4 (REFATORADO)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.5 (COM INATIVIDADE)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.4:
+ * 🏗️ ARQUITETURA V7.5:
  * 1. 🔥 CORRIGIDO: URLs absolutas com /api/
  * 2. 🔥 ADICIONADO: Helper buildApiUrl global
  * 3. 🔥 MELHORADO: Estrutura modular do Pow
  * 4. 🔥 OTIMIZADO: Cache e performance
  * 5. 🔥 ADICIONADO: Logging estruturado
  * 6. 🔥 CORRIGIDO: Tratamento de erros avançado
+ * 7. 🔥 NOVO: Sistema de inatividade e limpeza automática
  * 
- * 🔥 CORREÇÕES V7.4:
+ * 🔥 CORREÇÕES V7.5:
  * - URLs absolutas em todas as chamadas fetch
  * - buildApiUrl para evitar duplicação
  * - Pow manager com fallback robusto
  * - Melhor tratamento de rate limit
  * - Cache com invalidação automática
+ * - Sistema de inatividade com limpeza automática após 15 minutos
  */
 
 (function() {
@@ -27,7 +29,7 @@
 
     const CONFIG = Object.freeze({
         // App
-        VERSION: '7.4.0',
+        VERSION: '7.5.0',
         
         // Upload
         MAX_FILES: 3,
@@ -46,6 +48,11 @@
         // Token
         TOKEN_EXPIRY_MINUTES: 15,
         SESSION_TIMEOUT: 15 * 60 * 1000,
+        
+        // 🔥 INATIVIDADE
+        INACTIVITY_TIMEOUT: 15 * 60 * 1000, // 15 minutos
+        INACTIVITY_CHECK_INTERVAL: 30000, // 30 segundos
+        INACTIVITY_WARNING_TIME: 60, // 60 segundos antes de expirar
         
         // Rate Limit
         RATE_LIMIT_LOGIN_MAX: 5,
@@ -348,6 +355,393 @@
         
         getHistory: function() {
             return this._eventHistory;
+        }
+    };
+
+    // ==============================================
+    // 🔥 GERENCIADOR DE INATIVIDADE (NOVO)
+    // ==============================================
+
+    const InactivityManager = {
+        _timeoutId: null,
+        _checkInterval: null,
+        _inactivityLimit: CONFIG.INACTIVITY_TIMEOUT,
+        _lastActivity: Date.now(),
+        _isExpired: false,
+        _cleanupCallbacks: [],
+        _isInitialized: false,
+        _warningShown: false,
+        
+        // 🔥 Registrar callback para limpeza
+        registerCleanup: function(callback) {
+            if (typeof callback === 'function') {
+                this._cleanupCallbacks.push(callback);
+            }
+            return this;
+        },
+        
+        // 🔥 Resetar timer de inatividade
+        resetTimer: function() {
+            this._lastActivity = Date.now();
+            this._warningShown = false;
+            this._isExpired = false;
+            this._clearTimeout();
+            this._startTimer();
+            this._hideWarning();
+        },
+        
+        _startTimer: function() {
+            this._clearTimeout();
+            
+            this._timeoutId = setTimeout(() => {
+                Logger.info('⏰ Inatividade detectada - limpando dados...');
+                this._performCleanup();
+            }, this._inactivityLimit);
+            
+            // 🔥 Check interval para aviso prévio
+            if (this._checkInterval) {
+                clearInterval(this._checkInterval);
+            }
+            
+            this._checkInterval = setInterval(() => {
+                const elapsed = Date.now() - this._lastActivity;
+                const remaining = this._inactivityLimit - elapsed;
+                
+                // 🔥 Aviso 60 segundos antes
+                if (remaining < CONFIG.INACTIVITY_WARNING_TIME * 1000 && 
+                    remaining > 0 && 
+                    !this._warningShown && 
+                    !this._isExpired) {
+                    this._warningShown = true;
+                    this._showWarning(Math.ceil(remaining / 1000));
+                }
+                
+                // 🔥 Se já expirou e não foi limpo
+                if (remaining <= 0 && !this._isExpired) {
+                    this._isExpired = true;
+                    this._performCleanup();
+                }
+            }, 10000);
+        },
+        
+        _clearTimeout: function() {
+            if (this._timeoutId) {
+                clearTimeout(this._timeoutId);
+                this._timeoutId = null;
+            }
+            if (this._checkInterval) {
+                clearInterval(this._checkInterval);
+                this._checkInterval = null;
+            }
+        },
+        
+        _showWarning: function(seconds) {
+            // 🔥 Mostrar toast de aviso
+            if (window.toastr) {
+                window.toastr.warning(
+                    `⏰ Sua sessão expirará em ${seconds} segundos por inatividade.`,
+                    '⚠️ Atenção',
+                    {
+                        timeOut: 10000,
+                        closeButton: true,
+                        progressBar: true,
+                        positionClass: 'toast-top-center'
+                    }
+                );
+            }
+            
+            // 🔥 Mostrar notificação na UI
+            const container = document.getElementById('messageContainer');
+            if (container) {
+                const existing = container.querySelector('.inactivity-warning');
+                if (existing) existing.remove();
+                
+                const warning = document.createElement('div');
+                warning.className = 'message-banner message-warning message-visible inactivity-warning';
+                warning.style.cssText = `
+                    background: linear-gradient(145deg, rgba(40, 40, 60, 0.98), rgba(30, 30, 50, 0.98));
+                    border-left-color: #f5a623;
+                    padding: 10px 14px;
+                    margin-bottom: 6px;
+                    border-radius: 10px;
+                    backdrop-filter: blur(20px);
+                    border: 1px solid rgba(255, 193, 7, 0.2);
+                `;
+                warning.innerHTML = `
+                    <div class="message-content">
+                        <div class="message-icon" style="color: #f5a623; font-size: 18px;">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="message-text">
+                            <div class="message-title" style="color: #f5a623; font-size: 0.8rem; font-weight: 700;">
+                                ⏰ Sessão expirando
+                            </div>
+                            <div class="message-body" style="font-size: 0.7rem; color: rgba(255,255,255,0.7);">
+                                Sua sessão expirará em <strong id="inactivityCountdown">${seconds}</strong> segundos por inatividade.
+                                <br><small style="color: rgba(255,255,255,0.4);">Clique em qualquer lugar para continuar</small>
+                            </div>
+                        </div>
+                        <button class="message-dismiss" onclick="window.InactivityManager?.resetTimer()" style="background:transparent; border:none; color:rgba(255,255,255,0.3); font-size:0.8rem; padding:2px;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(warning);
+                container.style.display = 'block';
+                
+                // 🔥 Atualizar contador
+                let remaining = seconds;
+                const countdownEl = warning.querySelector('#inactivityCountdown');
+                if (countdownEl) {
+                    const interval = setInterval(() => {
+                        remaining--;
+                        if (remaining <= 0 || this._isExpired) {
+                            clearInterval(interval);
+                            if (warning.parentNode) warning.remove();
+                            return;
+                        }
+                        countdownEl.textContent = remaining;
+                    }, 1000);
+                }
+            }
+            
+            Logger.info(`⚠️ Aviso de inatividade: ${seconds}s restantes`);
+        },
+        
+        _hideWarning: function() {
+            const container = document.getElementById('messageContainer');
+            if (container) {
+                const warnings = container.querySelectorAll('.inactivity-warning');
+                warnings.forEach(el => el.remove());
+            }
+        },
+        
+        _performCleanup: function() {
+            if (this._isExpired) return;
+            this._isExpired = true;
+            
+            Logger.info('🧹 Executando limpeza por inatividade...');
+            
+            // 🔥 Executar todos os callbacks de limpeza
+            this._cleanupCallbacks.forEach(cb => {
+                try { 
+                    cb(); 
+                } catch (e) { 
+                    Logger.warn('⚠️ Erro no callback de limpeza:', e); 
+                }
+            });
+            
+            // 🔥 Limpar dados do dashboard
+            this._clearDashboardData();
+            
+            // 🔥 Limpar upload
+            this._clearUploadData();
+            
+            // 🔥 Limpar gráficos
+            this._clearCharts();
+            
+            // 🔥 Mostrar notificação
+            const message = '⏰ Sessão expirada por inatividade. Recarregue a página para continuar.';
+            
+            if (window.toastr) {
+                window.toastr.warning(message, 'Sessão expirada', {
+                    timeOut: 5000,
+                    closeButton: true,
+                    progressBar: true,
+                    positionClass: 'toast-top-center'
+                });
+            }
+            
+            // 🔥 Recarregar a página após 3 segundos
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+            
+            Logger.info('✅ Limpeza por inatividade concluída');
+        },
+        
+        _clearDashboardData: function() {
+            try {
+                // 🔥 Limpar cache do dashboard
+                if (window.__dashboard) {
+                    const dashboard = window.__dashboard;
+                    if (dashboard.cache) {
+                        dashboard.cache.clear().catch(() => {});
+                    }
+                    if (dashboard.tabManager) {
+                        dashboard.tabManager.destroy();
+                        // 🔥 Limpar abas
+                        const tabList = document.getElementById('gpsaTabs');
+                        if (tabList) tabList.innerHTML = '';
+                        const tabContent = document.getElementById('gpsaTabContent');
+                        if (tabContent) tabContent.innerHTML = '';
+                    }
+                    if (dashboard.state) {
+                        dashboard.state.reset();
+                    }
+                }
+                
+                // 🔥 Limpar métricas
+                const metricsContainer = document.getElementById('metricsContainer');
+                if (metricsContainer) metricsContainer.innerHTML = '';
+                
+                // 🔥 Limpar relatório da IA
+                const aiReport = document.getElementById('aiReportContent');
+                if (aiReport) {
+                    aiReport.innerHTML = `
+                        <div style="color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 1rem;">
+                            ⏰ Sessão expirada. Faça um novo upload para gerar o relatório.
+                        </div>
+                    `;
+                }
+                
+                // 🔥 Limpar health indicator
+                const healthIndicator = document.getElementById('gpsaHealthIndicator');
+                if (healthIndicator) {
+                    healthIndicator.style.cssText = `
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        background: rgba(255,255,255,0.03);
+                        color: rgba(255,255,255,0.3);
+                        border: 1px solid rgba(255,255,255,0.05);
+                        border-radius: 20px;
+                        padding: 0.3rem 1rem;
+                        font-size: 0.7rem;
+                    `;
+                    healthIndicator.innerHTML = '⏳ Sessão expirada';
+                }
+                
+                // 🔥 Esconder resultado
+                const resultContainer = document.getElementById('resultContainer');
+                if (resultContainer) {
+                    resultContainer.classList.remove('show');
+                    resultContainer.style.display = 'none';
+                }
+                const resultPlaceholder = document.getElementById('resultPlaceholder');
+                if (resultPlaceholder) resultPlaceholder.style.display = 'block';
+                
+                // 🔥 Limpar status
+                const statusEl = document.getElementById('analysisStatus');
+                if (statusEl) statusEl.classList.remove('show');
+                
+                Logger.info('🧹 Dados do dashboard limpos');
+            } catch (e) {
+                Logger.warn('⚠️ Erro ao limpar dashboard:', e);
+            }
+        },
+        
+        _clearUploadData: function() {
+            try {
+                // 🔥 Limpar preview de arquivos
+                const previewContainer = document.getElementById('filePreviewContainer');
+                if (previewContainer) previewContainer.innerHTML = '';
+                
+                // 🔥 Limpar input
+                const fileInput = document.getElementById('fileInput');
+                if (fileInput) fileInput.value = '';
+                
+                // 🔥 Limpar área de upload
+                const dropArea = document.getElementById('dropArea');
+                if (dropArea) {
+                    dropArea.classList.remove('success', 'error', 'uploading');
+                }
+                
+                // 🔥 Resetar estado do upload via window.UploadSystem
+                if (window.UploadSystem && typeof window.UploadSystem.clearFiles === 'function') {
+                    window.UploadSystem.clearFiles();
+                }
+                
+                Logger.info('🧹 Dados de upload limpos');
+            } catch (e) {
+                Logger.warn('⚠️ Erro ao limpar upload:', e);
+            }
+        },
+        
+        _clearCharts: function() {
+            try {
+                // 🔥 Limpar gráficos do Chart.js
+                if (window._chartInstances) {
+                    Object.keys(window._chartInstances).forEach(key => {
+                        try {
+                            window._chartInstances[key].destroy();
+                            delete window._chartInstances[key];
+                        } catch (e) {}
+                    });
+                    window._chartInstances = {};
+                }
+                
+                // 🔥 Limpar gráficos do dashboard
+                if (window.__dashboard && window.__dashboard.tabManager) {
+                    const chartRenderer = window.__dashboard.tabManager._chartRenderer;
+                    if (chartRenderer && typeof chartRenderer.destroyAll === 'function') {
+                        chartRenderer.destroyAll();
+                    }
+                }
+                
+                Logger.info('🧹 Gráficos limpos');
+            } catch (e) {
+                Logger.warn('⚠️ Erro ao limpar gráficos:', e);
+            }
+        },
+        
+        // 🔥 Iniciar monitoramento
+        init: function() {
+            if (this._isInitialized) return;
+            this._isInitialized = true;
+            
+            // 🔥 Resetar timer em eventos de atividade
+            const events = ['click', 'mousemove', 'keydown', 'scroll', 'touchstart', 'wheel'];
+            const resetHandler = () => {
+                if (!this._isExpired) {
+                    this.resetTimer();
+                }
+            };
+            
+            events.forEach(event => {
+                document.addEventListener(event, resetHandler);
+            });
+            
+            // 🔥 Iniciar timer
+            this._startTimer();
+            
+            // 🔥 Registrar limpeza do dashboard
+            this.registerCleanup(() => {
+                if (window.__dashboard && window.__dashboard.state) {
+                    window.__dashboard.state.reset();
+                }
+            });
+            
+            Logger.info(`✅ InactivityManager inicializado (timeout: ${this._inactivityLimit/60000} minutos)`);
+            
+            // 🔥 Expor globalmente
+            window.InactivityManager = this;
+        },
+        
+        // 🔥 Método para estender o tempo
+        extend: function(extraMinutes = 5) {
+            if (this._isExpired) return false;
+            
+            const extraMs = extraMinutes * 60 * 1000;
+            const newLimit = this._inactivityLimit + extraMs;
+            this._inactivityLimit = newLimit;
+            this.resetTimer();
+            
+            Logger.info(`⏰ Tempo de inatividade estendido em ${extraMinutes} minutos`);
+            return true;
+        },
+        
+        // 🔥 Obter status
+        getStatus: function() {
+            const elapsed = Date.now() - this._lastActivity;
+            const remaining = Math.max(0, this._inactivityLimit - elapsed);
+            return {
+                isActive: !this._isExpired,
+                secondsRemaining: Math.ceil(remaining / 1000),
+                minutesRemaining: Math.ceil(remaining / 60000),
+                isExpired: this._isExpired,
+                lastActivity: new Date(this._lastActivity).toISOString()
+            };
         }
     };
 
@@ -1907,7 +2301,7 @@
     // ==============================================
 
     async function initApp() {
-        Logger.info('🚀 Inicializando App (Orquestrador) v7.4...');
+        Logger.info('🚀 Inicializando App (Orquestrador) v7.5...');
 
         try {
             ReloadManager.reset();
@@ -2000,6 +2394,16 @@
                 version: CONFIG.VERSION
             };
 
+            // 🔥 INICIAR GERENCIADOR DE INATIVIDADE
+            InactivityManager.init();
+            
+            // 🔥 Registrar callbacks de limpeza
+            InactivityManager.registerCleanup(() => {
+                if (window.__dashboard && window.__dashboard.state) {
+                    window.__dashboard.state.reset();
+                }
+            });
+
             EventBus.emit('app:ready', appReadyData);
             window.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
             document.dispatchEvent(new CustomEvent('app:ready', { detail: appReadyData }));
@@ -2008,7 +2412,7 @@
                 detail: { isReady: true, version: CONFIG.VERSION }
             }));
 
-            Logger.info('✅ App (Orquestrador) v7.4 inicializado com sucesso!');
+            Logger.info('✅ App (Orquestrador) v7.5 inicializado com sucesso!');
             Logger.info(`📌 Autenticado: ${isAuth}`);
             Logger.info(`📌 Página: ${currentPath}`);
             Logger.info(`📌 Admin: ${State.isAdmin}`);
@@ -2016,6 +2420,7 @@
             Logger.info(`📌 Créditos: ${State.creditsDisplay}`);
             Logger.info(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
             Logger.info(`📌 Mensagem: ${State.currentMessage?.message_id || 'Nenhuma'}`);
+            Logger.info(`⏰ Inatividade: ${CONFIG.INACTIVITY_TIMEOUT/60000} minutos`);
             Logger.info('🌉 window.appAuth centralizado');
             Logger.info('📦 AppUtils disponível');
             Logger.info('⚡ fetchWithAuth com refresh automático');
@@ -2023,8 +2428,8 @@
             Logger.info('📡 EventBus com fila de eventos');
             Logger.info('📢 Sistema de mensagens inteligentes ativo');
             Logger.info('🔗 Integrado com auth.js, payment.js, dashboard.js');
-            Logger.info('🔧 CORREÇÃO V7.4: URLs absolutas e buildApiUrl');
-            Logger.info('🔧 CORREÇÃO V7.4: Logger estruturado');
+            Logger.info('🔧 CORREÇÃO V7.5: Sistema de inatividade implementado');
+            Logger.info('🔧 CORREÇÃO V7.5: Limpeza automática após 15 minutos');
 
         } catch (error) {
             Logger.error('❌ Erro na inicialização do App:', error);
@@ -2059,6 +2464,9 @@
         Pow,
         Analysis,
         Sync,
+        
+        // 🔥 NOVO: InactivityManager
+        InactivityManager,
         
         init: initApp,
         isInitialized: function() {
@@ -2192,6 +2600,7 @@
     window.__APP_STATE_MANAGER = StateManager;
     window.__APP_CONFIG = CONFIG;
     window.AppUtils = AppUtils;
+    window.InactivityManager = InactivityManager;
     
     window.showNotification = Utils.showNotification;
     window.isAuthenticated = Utils.isAuthenticated;
@@ -2219,14 +2628,16 @@
         }
     }
 
-    Logger.info('✅ app.js (Orquestrador) v7.4 carregado!');
+    Logger.info('✅ app.js (Orquestrador) v7.5 carregado!');
     Logger.info('   🔥 CORRIGIDO: URLs absolutas com /api/');
     Logger.info('   🔥 ADICIONADO: Helper buildApiUrl global');
     Logger.info('   🔥 MELHORADO: Estrutura modular do Pow');
     Logger.info('   🔥 OTIMIZADO: Cache e performance');
     Logger.info('   🔥 ADICIONADO: Logging estruturado');
     Logger.info('   🔥 CORRIGIDO: Tratamento de erros avançado');
+    Logger.info('   🔥 NOVO: Sistema de inatividade (15 min)');
     Logger.info('   📢 Sistema de mensagens inteligentes integrado');
     Logger.info('   🔗 Integrado com auth.js, payment.js, dashboard.js');
+    Logger.info('   ⏰ Use window.InactivityManager.getStatus() para ver status');
 
 })();

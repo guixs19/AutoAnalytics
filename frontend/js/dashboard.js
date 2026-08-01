@@ -1,6 +1,6 @@
-// frontend/js/dashboard.js - VERSÃO 13.0 COM CORREÇÕES E MELHORIAS
+// frontend/js/dashboard.js - VERSÃO 14.0 (COM INATIVIDADE E LIMPEZA)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v13.0
+ * 🔥 Dashboard Module - AutoAnalytics v14.0
  * 
  * ✅ CORREÇÕES CRÍTICAS:
  * - 🔥 PoW CORRIGIDO: Usa getSolutionForUpload() em vez de getSolution()
@@ -27,6 +27,7 @@
  * - 🔄 Polling inteligente com backoff
  * - 💾 Cache local com IndexedDB
  * - 🚀 Upload com progresso
+ * - ⏰ Sistema de inatividade com limpeza automática
  */
 
 (function() {
@@ -782,6 +783,7 @@
         constructor() {
             this._chartInstances = {};
             this._initialized = false;
+            this._cleanupInterval = null;
         }
 
         async init() {
@@ -799,7 +801,41 @@
             }
             
             this._initialized = true;
+            // 🔥 Iniciar limpeza automática de gráficos antigos
+            this._startAutoCleanup();
             console.log('✅ GPSAChartRenderer inicializado');
+        }
+
+        // 🔥 NOVO: Limpeza automática de gráficos antigos
+        _startAutoCleanup() {
+            if (this._cleanupInterval) {
+                clearInterval(this._cleanupInterval);
+            }
+            
+            this._cleanupInterval = setInterval(() => {
+                this._cleanupOldCharts();
+            }, 5 * 60 * 1000); // A cada 5 minutos
+        }
+
+        _cleanupOldCharts() {
+            const maxAge = 15 * 60 * 1000; // 15 minutos
+            const now = Date.now();
+            let removed = 0;
+
+            Object.keys(this._chartInstances).forEach(key => {
+                const chart = this._chartInstances[key];
+                if (chart && chart._createdAt && (now - chart._createdAt) > maxAge) {
+                    try {
+                        chart.destroy();
+                        delete this._chartInstances[key];
+                        removed++;
+                    } catch (e) {}
+                }
+            });
+
+            if (removed > 0) {
+                console.log(`🧹 ${removed} gráfico(s) removido(s) por inatividade`);
+            }
         }
 
         createGPSAChart(canvasId, data, options = {}) {
@@ -1061,11 +1097,17 @@
                 plugins: [gradientPlugin]
             });
 
+            // 🔥 Marcar data de criação para limpeza
+            chart._createdAt = Date.now();
             this._chartInstances[canvasId] = chart;
             return chart;
         }
 
         destroyAll() {
+            if (this._cleanupInterval) {
+                clearInterval(this._cleanupInterval);
+                this._cleanupInterval = null;
+            }
             for (const key in this._chartInstances) {
                 try {
                     this._chartInstances[key].destroy();
@@ -1771,6 +1813,8 @@
             this._metrics = new DashboardMetrics();
             this._uploadStatusTimeout = null;
             this._retryCount = 0;
+            // 🔥 NOVO: Flag para controle de limpeza
+            this._cleanupDone = false;
         }
 
         async init() {
@@ -1779,7 +1823,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v13.0] Inicializando com correções de PoW...');
+            console.log('🚀 [Dashboard v14.0] Inicializando com correções de PoW e inatividade...');
 
             await this.cache.init();
             await this.tabManager.init();
@@ -1792,17 +1836,145 @@
             this._startPolling();
             this._setupUploadHandlers();
 
+            // 🔥 NOVO: Registrar limpeza no InactivityManager
+            this._setupInactivityCleanup();
+
             this._initialized = true;
 
-            console.log('✅ [Dashboard v13.0] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v14.0] Inicializado com sucesso!');
             console.log('   🔥 PoW: CORRIGIDO com getSolutionForUpload()');
             console.log('   🔥 Fallback: 5 níveis de segurança');
             console.log('   🔥 Renovação automática de PoW');
             console.log('   📊 Upload múltiplo com relatório executivo');
             console.log('   💾 Cache ativo');
             console.log('   🔄 Polling com backoff');
+            console.log('   ⏰ Inatividade: limpeza automática registrada');
 
             return this;
+        }
+
+        // ==========================================
+        // 🔥 NOVO: SETUP INATIVIDADE
+        // ==========================================
+
+        _setupInactivityCleanup() {
+            // 🔥 Verificar se o InactivityManager existe
+            if (window.InactivityManager && typeof window.InactivityManager.registerCleanup === 'function') {
+                // Registrar callback para limpeza do dashboard
+                window.InactivityManager.registerCleanup(() => {
+                    this._cleanupInactiveData();
+                });
+                console.log('✅ [Dashboard] Limpeza por inatividade registrada');
+            } else {
+                console.warn('⚠️ [Dashboard] InactivityManager não disponível');
+            }
+        }
+
+        // ==========================================
+        // 🔥 NOVO: LIMPEZA POR INATIVIDADE
+        // ==========================================
+
+        _cleanupInactiveData() {
+            if (this._cleanupDone) return;
+            this._cleanupDone = true;
+
+            console.log('🧹 [Dashboard] Limpando dados por inatividade...');
+
+            try {
+                // 1. Limpar gráficos
+                if (this.tabManager && this.tabManager._chartRenderer) {
+                    this.tabManager._chartRenderer.destroyAll();
+                    console.log('   ✅ Gráficos destruídos');
+                }
+
+                // 2. Limpar cache
+                if (this.cache) {
+                    this.cache.clear().catch(() => {});
+                    console.log('   ✅ Cache limpo');
+                }
+
+                // 3. Limpar arquivos
+                const fileInput = document.getElementById('fileInput');
+                if (fileInput) fileInput.value = '';
+                
+                const previewContainer = document.getElementById('filePreviewContainer');
+                if (previewContainer) previewContainer.innerHTML = '';
+                console.log('   ✅ Arquivos limpos');
+
+                // 4. Limpar abas
+                const tabList = document.getElementById('gpsaTabs');
+                if (tabList) tabList.innerHTML = '';
+                
+                const tabContent = document.getElementById('gpsaTabContent');
+                if (tabContent) tabContent.innerHTML = '';
+                console.log('   ✅ Abas limpas');
+
+                // 5. Limpar métricas
+                const metricsContainer = document.getElementById('metricsContainer');
+                if (metricsContainer) metricsContainer.innerHTML = '';
+                console.log('   ✅ Métricas limpas');
+
+                // 6. Limpar relatório da IA
+                const aiReport = document.getElementById('aiReportContent');
+                if (aiReport) {
+                    aiReport.innerHTML = `
+                        <div style="color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 1rem;">
+                            ⏰ Sessão expirada. Faça um novo upload para gerar o relatório.
+                        </div>
+                    `;
+                    console.log('   ✅ Relatório da IA limpo');
+                }
+
+                // 7. Limpar health indicator
+                const healthIndicator = document.getElementById('gpsaHealthIndicator');
+                if (healthIndicator) {
+                    healthIndicator.style.cssText = `
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        background: rgba(255,255,255,0.03);
+                        color: rgba(255,255,255,0.3);
+                        border: 1px solid rgba(255,255,255,0.05);
+                        border-radius: 20px;
+                        padding: 0.3rem 1rem;
+                        font-size: 0.7rem;
+                    `;
+                    healthIndicator.innerHTML = '⏳ Sessão expirada';
+                    console.log('   ✅ Health indicator limpo');
+                }
+
+                // 8. Esconder resultado
+                const resultContainer = document.getElementById('resultContainer');
+                if (resultContainer) {
+                    resultContainer.classList.remove('show');
+                    resultContainer.style.display = 'none';
+                }
+                const resultPlaceholder = document.getElementById('resultPlaceholder');
+                if (resultPlaceholder) resultPlaceholder.style.display = 'block';
+                console.log('   ✅ Resultado escondido');
+
+                // 9. Limpar status
+                const statusEl = document.getElementById('analysisStatus');
+                if (statusEl) statusEl.classList.remove('show');
+                console.log('   ✅ Status limpo');
+
+                // 10. Resetar estado
+                if (this.state) {
+                    this.state.reset();
+                    console.log('   ✅ Estado resetado');
+                }
+
+                // 11. Limpar área de upload
+                const dropArea = document.getElementById('dropArea');
+                if (dropArea) {
+                    dropArea.classList.remove('success', 'error', 'uploading');
+                }
+
+                console.log('✅ [Dashboard] Limpeza por inatividade concluída');
+
+            } catch (e) {
+                console.warn('⚠️ [Dashboard] Erro na limpeza por inatividade:', e);
+            }
         }
 
         // ==========================================
@@ -2016,6 +2188,19 @@
                 if (!document.hidden) {
                     this._loadAnalysesForTabs();
                 }
+            });
+
+            // 🔥 Resetar timer de inatividade em eventos do dashboard
+            const resetInactivity = () => {
+                if (window.InactivityManager && typeof window.InactivityManager.resetTimer === 'function') {
+                    window.InactivityManager.resetTimer();
+                }
+            };
+
+            // Eventos que indicam atividade do usuário no dashboard
+            const events = ['upload:started', 'analysis:success', 'tab:changed', 'chart:rendered'];
+            events.forEach(event => {
+                document.addEventListener(event, resetInactivity);
             });
         }
 
@@ -2902,12 +3087,14 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v13.0 carregado - CORREÇÕES DE PoW');
+    console.log('🔥 dashboard.js v14.0 carregado - CORREÇÕES DE PoW + INATIVIDADE');
     console.log('   ✅ PoW: getSolutionForUpload() em vez de getSolution()');
     console.log('   ✅ 5 níveis de fallback para PoW');
     console.log('   ✅ Renovação automática de PoW');
     console.log('   ✅ Tratamento robusto do erro 428');
     console.log('   ✅ Upload com progresso detalhado');
+    console.log('   ⏰ Sistema de inatividade com limpeza automática');
+    console.log('   🧹 Limpeza de gráficos antigos a cada 5 minutos');
     console.log('   📡 Use window.__dashboard para acesso');
     console.log('=' .repeat(60));
 
