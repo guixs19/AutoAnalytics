@@ -1,14 +1,24 @@
-// frontend/js/dashboard.js - VERSÃO 12.0 COM MELHORIAS AVANÇADAS
+// frontend/js/dashboard.js - VERSÃO 13.0 COM CORREÇÕES E MELHORIAS
 /**
- * 🔥 Dashboard Module - AutoAnalytics v12.0
+ * 🔥 Dashboard Module - AutoAnalytics v13.0
  * 
- * ✅ CORREÇÕES:
- * - 🔥 PoW integrado corretamente com pow-client.js
- * - 🔥 Upload múltiplo com validação robusta
- * - 🔥 Tratamento de erros 404 e 428
- * - 🔥 Cache de análises com fallback
+ * ✅ CORREÇÕES CRÍTICAS:
+ * - 🔥 PoW CORRIGIDO: Usa getSolutionForUpload() em vez de getSolution()
+ * - 🔥 Múltiplos níveis de fallback para PoW (5 níveis)
+ * - 🔥 Renovação automática de PoW em caso de erro 428
+ * - 🔥 Tratamento robusto de erros com retry inteligente
+ * 
+ * ✅ MELHORIAS:
+ * - 📊 Upload com progresso detalhado
+ * - 🔄 Retry automático com backoff exponencial
+ * - 💾 Cache com invalidação inteligente
+ * - 📈 Métricas em tempo real
+ * - 🎯 Recomendações priorizadas
+ * - 📥 Exportação de dados
+ * - 🛡️ Segurança aprimorada
  * 
  * ✅ NOVAS FUNCIONALIDADES:
+ * - 🔄 Renovação automática de PoW
  * - 📊 Dashboard com métricas em tempo real
  * - 📈 Gráficos GPSA interativos
  * - 📄 Relatório executivo da IA
@@ -17,12 +27,6 @@
  * - 🔄 Polling inteligente com backoff
  * - 💾 Cache local com IndexedDB
  * - 🚀 Upload com progresso
- * 
- * ✅ OTIMIZAÇÕES:
- * - Debounce/throttle em eventos
- * - Lazy loading de gráficos
- * - Memoização de dados
- * - Virtual scrolling (preparado)
  */
 
 (function() {
@@ -47,6 +51,8 @@
         CACHE_TTL: 300000, // 5 minutos
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
+        POW_MAX_ATTEMPTS: 3,
+        POW_RETRY_DELAY: 1000,
         
         COLORS: {
             primary: '#ff6b35',
@@ -210,27 +216,22 @@
 
         sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
 
-        // 🔥 CORRIGIDO: Função de token mais robusta
         getToken: () => {
             try {
-                // 1. Verificar localStorage
                 const token = localStorage.getItem('access_token');
                 if (token && token !== 'undefined' && token !== 'null' && token.length > 10) {
                     return token;
                 }
                 
-                // 2. Verificar sessionStorage
                 const sessionToken = sessionStorage.getItem('access_token');
                 if (sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null' && sessionToken.length > 10) {
                     return sessionToken;
                 }
                 
-                // 3. Verificar window.__APP_STATE
                 if (window.__APP_STATE && window.__APP_STATE.token) {
                     return window.__APP_STATE.token;
                 }
                 
-                // 4. Verificar window.auth
                 if (window.auth && typeof window.auth.getToken === 'function') {
                     try {
                         const authToken = window.auth.getToken();
@@ -245,7 +246,6 @@
             }
         },
 
-        // 🔥 CORRIGIDO: Verificação de autenticação mais robusta
         isAuthenticated: () => {
             const token = Utils.getToken();
             if (token) return true;
@@ -519,7 +519,6 @@
         }
 
         async get(key) {
-            // Primeiro verificar memória
             if (this._memoryCache.has(key)) {
                 const entry = this._memoryCache.get(key);
                 if (Date.now() - entry.timestamp < CONFIG.CACHE_TTL) {
@@ -528,7 +527,6 @@
                 this._memoryCache.delete(key);
             }
 
-            // Depois verificar IndexedDB
             try {
                 const value = await Utils.cache.get(key);
                 if (value !== null) {
@@ -544,13 +542,11 @@
         }
 
         async set(key, value, userId = 'default') {
-            // Salvar em memória
             this._memoryCache.set(key, {
                 value: value,
                 timestamp: Date.now()
             });
 
-            // Salvar em IndexedDB
             try {
                 await Utils.cache.set(key, value, userId);
             } catch (e) {
@@ -791,7 +787,6 @@
         async init() {
             if (this._initialized) return;
             
-            // Aguardar Chart.js carregar
             let attempts = 0;
             while (typeof Chart === 'undefined' && attempts < 20) {
                 await Utils.sleep(200);
@@ -1267,7 +1262,6 @@
             
             this._tabContent.innerHTML = html;
             
-            // Renderizar gráficos
             analyses.forEach((analysis, index) => {
                 const canvasId = `gpsaChart-${index}`;
                 const canvas = document.getElementById(canvasId);
@@ -1785,12 +1779,9 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v12.0] Inicializando com melhorias avançadas...');
+            console.log('🚀 [Dashboard v13.0] Inicializando com correções de PoW...');
 
-            // Inicializar cache
             await this.cache.init();
-
-            // Inicializar TabManager
             await this.tabManager.init();
 
             await this._waitForApp();
@@ -1799,13 +1790,14 @@
 
             await this._loadAnalysesForTabs();
             this._startPolling();
-
-            // Configurar upload
             this._setupUploadHandlers();
 
             this._initialized = true;
 
-            console.log('✅ [Dashboard v12.0] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v13.0] Inicializado com sucesso!');
+            console.log('   🔥 PoW: CORRIGIDO com getSolutionForUpload()');
+            console.log('   🔥 Fallback: 5 níveis de segurança');
+            console.log('   🔥 Renovação automática de PoW');
             console.log('   📊 Upload múltiplo com relatório executivo');
             console.log('   💾 Cache ativo');
             console.log('   🔄 Polling com backoff');
@@ -1852,19 +1844,16 @@
                     return;
                 }
 
-                // Tentar cache primeiro
                 const cacheKey = `analyses_${this.state.state.user.email}`;
                 let analyses = await this.cache.get(cacheKey);
 
                 if (analyses) {
                     console.log('📦 [Dashboard] Usando cache de análises');
                     this._renderAnalyses(analyses);
-                    // Atualizar em background
                     this._fetchAnalysesInBackground(token, cacheKey);
                     return;
                 }
 
-                // Buscar do servidor
                 const response = await fetch('/api/analyses/history?limit=3', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -1872,14 +1861,10 @@
                 if (response.ok) {
                     const data = await response.json();
                     analyses = data.analyses || [];
-                    
-                    // Salvar em cache
                     await this.cache.set(cacheKey, analyses, this.state.state.user.email);
-                    
                     this._renderAnalyses(analyses);
                 } else if (response.status === 404) {
                     console.warn('⚠️ [Dashboard] Rota /analyses/history não encontrada');
-                    // Fallback: usar dados locais
                     this._renderFallbackAnalyses();
                 }
             } catch (error) {
@@ -1911,7 +1896,6 @@
                 return;
             }
 
-            // Buscar detalhes completos
             Promise.all(
                 analyses.map(async (analysis) => {
                     try {
@@ -1941,15 +1925,12 @@
         }
 
         _renderFallbackAnalyses() {
-            // Usar dados de exemplo ou localStorage
             try {
                 const localAnalyses = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
                 if (localAnalyses.length > 0) {
                     this.tabManager.renderTabs(localAnalyses);
                 }
-            } catch (e) {
-                // Silencioso
-            }
+            } catch (e) {}
         }
 
         async _fetchAnalysisResult(processId) {
@@ -1957,7 +1938,6 @@
                 const token = Utils.getToken();
                 if (!token) return null;
                 
-                // Tentar cache
                 const cacheKey = `analysis_${processId}`;
                 let result = await this.cache.get(cacheKey);
                 
@@ -1991,7 +1971,6 @@
             
             this._pollingInterval = setInterval(() => {
                 this._loadAnalysesForTabs();
-                // Reset backoff on success
                 this._pollingBackoff = CONFIG.POLLING_INTERVAL;
             }, this._pollingBackoff);
         }
@@ -2018,7 +1997,6 @@
             document.addEventListener('analysis:success', (e) => {
                 const data = e.detail || {};
                 if (data.result) {
-                    // Limpar cache e recarregar
                     this.cache.clear();
                     setTimeout(() => this._loadAnalysesForTabs(), 1500);
                 }
@@ -2034,7 +2012,6 @@
                 this._updateCreditDisplay(data.credits || 0);
             });
 
-            // Evento para recarregar quando a página ficar visível
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
                     this._loadAnalysesForTabs();
@@ -2051,7 +2028,6 @@
             const dropArea = document.getElementById('dropArea');
             const uploadBtn = document.querySelector('.btn-select');
 
-            // Botão de seleção
             if (uploadBtn) {
                 uploadBtn.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -2059,18 +2035,16 @@
                 });
             }
 
-            // Input de arquivos
             if (fileInput) {
                 fileInput.addEventListener('change', (e) => {
                     const files = Array.from(e.target.files);
                     if (files.length > 0) {
                         this.uploadMultipleFiles(files);
                     }
-                    e.target.value = ''; // Reset
+                    e.target.value = '';
                 });
             }
 
-            // Drop area
             if (dropArea) {
                 dropArea.addEventListener('dragover', (e) => {
                     e.preventDefault();
@@ -2092,7 +2066,6 @@
                 });
             }
 
-            // Botão PDF
             const pdfBtn = document.getElementById('downloadPdfBtn');
             if (pdfBtn) {
                 pdfBtn.addEventListener('click', () => {
@@ -2100,7 +2073,6 @@
                 });
             }
 
-            // Botão Nova Análise
             const newAnalysisBtn = document.getElementById('newAnalysisBtn');
             if (newAnalysisBtn) {
                 newAnalysisBtn.addEventListener('click', () => {
@@ -2110,7 +2082,62 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS COM PoW
+        // 🔥 RENOVAR PoW (NOVO MÉTODO)
+        // ==========================================
+
+        async _renewPow() {
+            console.log('🔄 [Dashboard] Renovando PoW...');
+            
+            try {
+                if (!window.powClient) {
+                    console.warn('⚠️ [Dashboard] powClient não disponível');
+                    return false;
+                }
+                
+                if (typeof window.powClient.clearCache === 'function') {
+                    window.powClient.clearCache();
+                    console.log('✅ [Dashboard] Cache do PoW limpo');
+                }
+                
+                if (typeof window.powClient.reset === 'function') {
+                    window.powClient.reset();
+                    console.log('✅ [Dashboard] PoW resetado');
+                }
+                
+                if (typeof window.powClient.prepareForUpload === 'function') {
+                    const prepared = await window.powClient.prepareForUpload();
+                    if (prepared) {
+                        console.log('✅ [Dashboard] PoW preparado com sucesso');
+                        
+                        if (typeof window.powClient.getStats === 'function') {
+                            const stats = window.powClient.getStats();
+                            if (stats && stats.cache && stats.cache.hasSolution) {
+                                console.log('✅ [Dashboard] PoW pronto para uso');
+                                return true;
+                            }
+                        }
+                    }
+                }
+                
+                if (typeof window.powClient.getSolutionForUpload === 'function') {
+                    const solution = await window.powClient.getSolutionForUpload();
+                    if (solution && solution.nonce) {
+                        console.log('✅ [Dashboard] PoW obtido diretamente');
+                        return true;
+                    }
+                }
+                
+                console.warn('⚠️ [Dashboard] Não foi possível renovar o PoW');
+                return false;
+                
+            } catch (error) {
+                console.error('❌ [Dashboard] Erro ao renovar PoW:', error);
+                return false;
+            }
+        }
+
+        // ==========================================
+        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS COM PoW (CORRIGIDO)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -2121,7 +2148,6 @@
                     return null;
                 }
 
-                // Validar número de arquivos
                 if (files.length === 0) {
                     this._showToast('⚠️ Selecione pelo menos um arquivo.', 'warning');
                     return null;
@@ -2132,7 +2158,6 @@
                     return null;
                 }
 
-                // Validar tamanho dos arquivos
                 for (const file of files) {
                     if (file.size > CONFIG.MAX_FILE_SIZE_KB * 1024) {
                         this._showToast(`⚠️ Arquivo ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB.`, 'warning');
@@ -2140,7 +2165,6 @@
                     }
                 }
 
-                // Validar extensões
                 const allowedExtensions = ['.csv', '.xlsx', '.xls', '.tsv'];
                 for (const file of files) {
                     const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -2150,16 +2174,14 @@
                     }
                 }
 
-                // Atualizar UI
-                this._showUploadStatus('⏳', 'Enviando arquivos...', 'Aguarde, estamos processando seus dados', 10);
+                this._showUploadStatus('⏳', 'Preparando upload...', 'Inicializando segurança...', 5);
                 this.state.set('ui', {
                     isUploading: true,
-                    progress: 10,
-                    status: 'uploading',
-                    message: 'Enviando arquivos...'
+                    progress: 5,
+                    status: 'preparing',
+                    message: 'Preparando upload...'
                 });
 
-                // Criar FormData
                 const formData = new FormData();
                 for (const file of files) {
                     formData.append('files', file);
@@ -2167,63 +2189,148 @@
                 formData.append('analysis_type', 'auto');
                 formData.append('report_format', 'html');
 
-                // 🔥 OBTER PoW DO CLIENT
+                // ==========================================
+                // 🔥 CORREÇÃO: OBTER PoW DE FORMA SEGURA
+                // ==========================================
                 let powHeaders = {};
-                try {
-                    // Verificar se o powClient está disponível
-                    if (window.powClient) {
-                        // Usar o pow-client.js
-                        const powSolution = await window.powClient.getSolution();
-                        if (powSolution) {
-                            powHeaders = {
-                                'X-PoW-Nonce': powSolution.nonce,
-                                'X-PoW-Challenge': powSolution.challenge,
-                                'X-PoW-Difficulty': String(powSolution.difficulty),
-                                'X-PoW-Solution': powSolution.solution || powSolution.hash,
-                                'X-PoW-Timestamp': String(powSolution.timestamp || Date.now())
-                            };
-                            console.log('✅ [Dashboard] PoW obtido com sucesso');
+                let powAttempts = 0;
+                const maxPowAttempts = CONFIG.POW_MAX_ATTEMPTS || 3;
+
+                while (powAttempts < maxPowAttempts) {
+                    powAttempts++;
+                    try {
+                        this._showUploadStatus('⏳', `Obtendo prova de trabalho (${powAttempts}/${maxPowAttempts})...`, 'Aguarde, estamos protegendo sua análise', 10 + powAttempts * 5);
+
+                        if (window.powClient) {
+                            let powSolution = null;
+
+                            // 🔥 NÍVEL 1: getSolutionForUpload (CORRETO)
+                            if (typeof window.powClient.getSolutionForUpload === 'function') {
+                                try {
+                                    powSolution = await window.powClient.getSolutionForUpload();
+                                    if (powSolution && powSolution.nonce) {
+                                        powHeaders = {
+                                            'X-PoW-Nonce': powSolution.nonce,
+                                            'X-PoW-Challenge': powSolution.prefix || powSolution.challenge || '',
+                                            'X-PoW-Difficulty': String(powSolution.complexity || powSolution.difficulty || 4),
+                                            'X-PoW-Solution': powSolution.solution || powSolution.hash || '',
+                                            'X-PoW-Timestamp': String(powSolution.solvedAt || powSolution.timestamp || Date.now())
+                                        };
+                                        console.log('✅ [Dashboard] PoW via getSolutionForUpload()');
+                                        break;
+                                    }
+                                } catch (e) {
+                                    console.warn(`⚠️ getSolutionForUpload falhou (${powAttempts}):`, e.message);
+                                }
+                            }
+
+                            // 🔥 NÍVEL 2: prepareForUpload + getSolutionForUpload
+                            if (typeof window.powClient.prepareForUpload === 'function' && !powSolution) {
+                                try {
+                                    const prepared = await window.powClient.prepareForUpload();
+                                    if (prepared && typeof window.powClient.getSolutionForUpload === 'function') {
+                                        powSolution = await window.powClient.getSolutionForUpload();
+                                        if (powSolution && powSolution.nonce) {
+                                            powHeaders = {
+                                                'X-PoW-Nonce': powSolution.nonce,
+                                                'X-PoW-Challenge': powSolution.prefix || powSolution.challenge || '',
+                                                'X-PoW-Difficulty': String(powSolution.complexity || powSolution.difficulty || 4),
+                                                'X-PoW-Solution': powSolution.solution || powSolution.hash || '',
+                                                'X-PoW-Timestamp': String(powSolution.solvedAt || powSolution.timestamp || Date.now())
+                                            };
+                                            console.log('✅ [Dashboard] PoW via prepareForUpload');
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn(`⚠️ prepareForUpload falhou (${powAttempts}):`, e.message);
+                                }
+                            }
+
+                            // 🔥 NÍVEL 3: Cache do powClient (getStats)
+                            if (typeof window.powClient.getStats === 'function') {
+                                try {
+                                    const stats = window.powClient.getStats();
+                                    if (stats && stats.cache && stats.cache.hasSolution && stats.cache.solution) {
+                                        const cachedSolution = stats.cache.solution;
+                                        if (cachedSolution.nonce) {
+                                            powHeaders = {
+                                                'X-PoW-Nonce': cachedSolution.nonce,
+                                                'X-PoW-Challenge': cachedSolution.prefix || cachedSolution.challenge || '',
+                                                'X-PoW-Difficulty': String(cachedSolution.complexity || cachedSolution.difficulty || 4),
+                                                'X-PoW-Solution': cachedSolution.solution || cachedSolution.hash || '',
+                                                'X-PoW-Timestamp': String(cachedSolution.solvedAt || cachedSolution.timestamp || Date.now())
+                                            };
+                                            console.log('✅ [Dashboard] PoW do cache do powClient');
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn('⚠️ Erro ao ler cache do powClient:', e);
+                                }
+                            }
                         }
-                    } else if (window._powSolution) {
-                        // Fallback: usar solução armazenada
-                        const pow = window._powSolution;
-                        powHeaders = {
-                            'X-PoW-Nonce': pow.nonce,
-                            'X-PoW-Challenge': pow.challenge,
-                            'X-PoW-Difficulty': String(pow.difficulty),
-                            'X-PoW-Solution': pow.solution || pow.hash,
-                            'X-PoW-Timestamp': String(pow.timestamp || Date.now())
-                        };
-                        console.log('✅ [Dashboard] PoW obtido do fallback');
-                    } else {
-                        console.warn('⚠️ [Dashboard] PoW não disponível, tentando sem...');
-                        // Tentar obter do localStorage
-                        const powNonce = localStorage.getItem('pow_nonce');
-                        const powChallenge = localStorage.getItem('pow_challenge');
-                        const powSolution = localStorage.getItem('pow_solution');
-                        if (powNonce && powChallenge && powSolution) {
-                            powHeaders = {
-                                'X-PoW-Nonce': powNonce,
-                                'X-PoW-Challenge': powChallenge,
-                                'X-PoW-Difficulty': '4',
-                                'X-PoW-Solution': powSolution,
-                                'X-PoW-Timestamp': String(Date.now())
-                            };
-                            console.log('✅ [Dashboard] PoW obtido do localStorage');
+
+                        // 🔥 NÍVEL 4: window._powSolution
+                        if (Object.keys(powHeaders).length === 0 && window._powSolution) {
+                            const pow = window._powSolution;
+                            if (pow && pow.nonce) {
+                                powHeaders = {
+                                    'X-PoW-Nonce': pow.nonce,
+                                    'X-PoW-Challenge': pow.challenge || pow.prefix || '',
+                                    'X-PoW-Difficulty': String(pow.difficulty || 4),
+                                    'X-PoW-Solution': pow.solution || pow.hash || '',
+                                    'X-PoW-Timestamp': String(pow.timestamp || Date.now())
+                                };
+                                console.log('✅ [Dashboard] PoW do fallback _powSolution');
+                                break;
+                            }
+                        }
+
+                        // 🔥 NÍVEL 5: localStorage
+                        if (Object.keys(powHeaders).length === 0) {
+                            const powNonce = localStorage.getItem('pow_nonce');
+                            const powChallenge = localStorage.getItem('pow_challenge');
+                            const powSolution = localStorage.getItem('pow_solution');
+                            if (powNonce && powChallenge && powSolution) {
+                                powHeaders = {
+                                    'X-PoW-Nonce': powNonce,
+                                    'X-PoW-Challenge': powChallenge,
+                                    'X-PoW-Difficulty': '4',
+                                    'X-PoW-Solution': powSolution,
+                                    'X-PoW-Timestamp': String(Date.now())
+                                };
+                                console.log('✅ [Dashboard] PoW do localStorage');
+                                break;
+                            }
+                        }
+
+                        if (Object.keys(powHeaders).length === 0 && powAttempts < maxPowAttempts) {
+                            console.warn(`⚠️ PoW não disponível, tentativa ${powAttempts}/${maxPowAttempts}, aguardando...`);
+                            await Utils.sleep(CONFIG.POW_RETRY_DELAY * powAttempts);
+                            if (window.powClient && typeof window.powClient.clearCache === 'function') {
+                                window.powClient.clearCache();
+                            }
+                        }
+
+                    } catch (powError) {
+                        console.warn(`⚠️ Erro ao obter PoW (${powAttempts}):`, powError);
+                        if (powAttempts >= maxPowAttempts) {
+                            console.warn('⚠️ PoW não disponível após múltiplas tentativas, continuando sem...');
                         }
                     }
-                } catch (powError) {
-                    console.warn('⚠️ [Dashboard] Erro ao obter PoW:', powError);
                 }
 
-                // Headers
+                if (Object.keys(powHeaders).length === 0) {
+                    console.warn('⚠️ Nenhum PoW disponível, enviando sem proteção');
+                }
+
                 const headers = {
                     'Authorization': `Bearer ${token}`,
                     ...powHeaders
                 };
 
-                // 🔥 CHAMAR O ENDPOINT
-                this._showUploadStatus('⏳', 'Processando análise...', 'A IA está analisando seus dados', 30);
+                this._showUploadStatus('⏳', 'Enviando arquivos...', 'A IA está analisando seus dados', 30);
 
                 const response = await fetch('/api/upload-multi-analyze', {
                     method: 'POST',
@@ -2231,16 +2338,19 @@
                     body: formData
                 });
 
-                // Verificar resposta
+                // 🔥 TRATAMENTO DO ERRO 428
                 if (response.status === 428) {
-                    // Precondition Required - PoW inválido
-                    console.warn('⚠️ [Dashboard] PoW inválido, tentando renovar...');
-                    // Tentar renovar PoW e repetir
-                    if (window.powClient && typeof window.powClient.refresh === 'function') {
-                        await window.powClient.refresh();
-                        return this.uploadMultipleFiles(files); // Tentar novamente
+                    console.warn('⚠️ [Dashboard] PoW inválido (428), tentando renovar...');
+                    this._showUploadStatus('🔄', 'Renovando prova de trabalho...', 'Aguarde, estamos preparando uma nova', 20);
+                    
+                    const renewed = await this._renewPow();
+                    
+                    if (renewed) {
+                        this._showToast('🔄 PoW renovado, tentando novamente...', 'info');
+                        return this.uploadMultipleFiles(files);
+                    } else {
+                        throw new Error('Não foi possível renovar o PoW. Tente recarregar a página.');
                     }
-                    throw new Error('PoW inválido. Tente novamente.');
                 }
 
                 if (!response.ok) {
@@ -2250,7 +2360,6 @@
 
                 const result = await response.json();
 
-                // Atualizar UI - Sucesso
                 this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
                 this.state.set('ui', {
                     isUploading: false,
@@ -2259,20 +2368,16 @@
                     message: 'Análise concluída!'
                 });
 
-                // Processar o resultado
                 await this._processMultiAnalysisResult(result);
 
-                // Disparar evento
                 document.dispatchEvent(new CustomEvent('analysis:success', {
                     detail: { result: result }
                 }));
 
-                // Atualizar créditos
                 if (result.credits) {
                     this._updateCreditDisplay(result.credits.remaining);
                 }
 
-                // Salvar análise recente no localStorage
                 try {
                     const recent = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
                     recent.unshift({
@@ -2284,13 +2389,9 @@
                     localStorage.setItem('recentAnalyses', JSON.stringify(recent));
                 } catch (e) {}
 
-                // Limpar cache
                 await this.cache.clear();
 
-                // Mostrar toast de sucesso
                 this._showToast('✅ Análise concluída com sucesso!', 'success');
-
-                // Mostrar resultado
                 this._showResult();
 
                 return result;
@@ -2304,8 +2405,13 @@
                     message: error.message || 'Erro ao processar'
                 });
 
-                this._showUploadStatus('❌', 'Erro', error.message || 'Falha no processamento', 0);
-                this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
+                if (error.message && error.message.includes('PoW')) {
+                    this._showUploadStatus('❌', 'Erro no PoW', 'Tente novamente ou recarregue a página', 0);
+                    this._showToast('❌ Erro na prova de trabalho. Recarregue a página e tente novamente.', 'error');
+                } else {
+                    this._showUploadStatus('❌', 'Erro', error.message || 'Falha no processamento', 0);
+                    this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
+                }
                 
                 return null;
             }
@@ -2323,7 +2429,6 @@
 
             const { analysis, report, chart_data, credits } = result;
 
-            // Extrair dados
             const executiveScore = analysis?.executive_score || {};
             const executiveSummary = analysis?.executive_summary || '';
             const recommendations = analysis?.recommendations || [];
@@ -2332,7 +2437,6 @@
             const comparison = analysis?.comparison || {};
             const trend = analysis?.trend || {};
 
-            // 1. Atualizar relatório da IA
             await this._updateAIReport({
                 executive_score: executiveScore,
                 executive_summary: executiveSummary,
@@ -2344,13 +2448,11 @@
                 chart_data: chart_data || {}
             });
 
-            // 2. Atualizar métricas
             await this._updateMetrics({
                 executive_score: executiveScore,
                 chart_data: chart_data || {}
             });
 
-            // 3. Renderizar abas GPSA
             if (result.data?.files && result.data.files.length > 0) {
                 const analyses = result.data.files.map((file) => ({
                     filename: file.filename || 'Arquivo',
@@ -2379,9 +2481,7 @@
                 this.tabManager.renderTabs(analyses);
             }
 
-            // 4. Mostrar resultado
             this._showResult();
-
             console.log('✅ Análise múltipla processada com sucesso!');
         }
 
@@ -2405,7 +2505,6 @@
 
             let html = '';
 
-            // 1. Score Executivo
             if (executive_score && Object.keys(executive_score).length > 0) {
                 const scoreItems = [
                     { key: 'saude_financeira', label: 'Saúde Financeira', icon: '💰' },
@@ -2443,7 +2542,6 @@
                 `;
             }
 
-            // 2. Resumo Executivo
             if (executive_summary) {
                 html += `
                     <div style="margin-bottom: 0.8rem; padding: 0.8rem; background: rgba(255,107,53,0.05); border-radius: 8px; border-left: 3px solid #ff6b35;">
@@ -2455,7 +2553,6 @@
                 `;
             }
 
-            // 3. Comparação
             if (comparison && Object.keys(comparison).length > 0) {
                 const compItems = [
                     { key: 'best_revenue', label: 'Melhor Receita', icon: '💰' },
@@ -2481,7 +2578,6 @@
                 `;
             }
 
-            // 4. Tendência
             if (trend && trend.description) {
                 const directionEmoji = trend.direction === 'crescente' ? '📈' : 
                                        trend.direction === 'decrescente' ? '📉' : '➡️';
@@ -2503,7 +2599,6 @@
                 `;
             }
 
-            // 5. Recomendações Priorizadas
             if (recommendations && recommendations.length > 0) {
                 const priorityEmojis = {
                     'alta': '🔴',
@@ -2549,7 +2644,6 @@
                 `;
             }
 
-            // 6. Previsão
             if (forecast) {
                 html += `
                     <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(74,158,255,0.05); border-radius: 6px; border-left: 3px solid #4a9eff;">
@@ -2561,7 +2655,6 @@
                 `;
             }
 
-            // 7. Conclusão Geral
             if (general_conclusion) {
                 html += `
                     <div style="padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
@@ -2787,7 +2880,6 @@
         return dashboardInstance;
     }
 
-    // Inicialização automática
     document.addEventListener('DOMContentLoaded', function() {
         if (window._appReadyFired || window.__APP_STATE?.isAppReady) {
             console.log('✅ [Dashboard] App já pronto, inicializando...');
@@ -2810,14 +2902,12 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v12.0 carregado - MELHORIAS AVANÇADAS');
-    console.log('   ✅ Upload com PoW integrado');
-    console.log('   ✅ Cache com IndexedDB');
-    console.log('   ✅ Polling com backoff');
-    console.log('   ✅ Tratamento de erros 404 e 428');
-    console.log('   ✅ Upload múltiplo com relatório executivo');
-    console.log('   ✅ Score Executivo com cards visuais');
-    console.log('   ✅ Recomendações priorizadas');
+    console.log('🔥 dashboard.js v13.0 carregado - CORREÇÕES DE PoW');
+    console.log('   ✅ PoW: getSolutionForUpload() em vez de getSolution()');
+    console.log('   ✅ 5 níveis de fallback para PoW');
+    console.log('   ✅ Renovação automática de PoW');
+    console.log('   ✅ Tratamento robusto do erro 428');
+    console.log('   ✅ Upload com progresso detalhado');
     console.log('   📡 Use window.__dashboard para acesso');
     console.log('=' .repeat(60));
 
