@@ -1,19 +1,24 @@
-// frontend/js/dashboard.js - VERSÃO 15.0 (CORREÇÃO DE CRÉDITOS + OTIMIZAÇÃO)
+// frontend/js/dashboard.js - VERSÃO 15.1 (CORREÇÃO DE LOOP + MELHORIAS DE CRÉDITOS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v15.0
+ * 🔥 Dashboard Module - AutoAnalytics v15.1
+ * 
+ * ✅ CORREÇÕES v15.1:
+ * - 🔥 CORRIGIDO: Loop infinito entre dashboard.js e app.js
+ * - 🔥 ADICIONADO: Throttle para atualizações de UI
+ * - 🔥 ADICIONADO: Flag _silent para eventos internos
+ * - 🔥 OTIMIZADO: Sincronização de créditos com debounce
+ * - 🔥 MELHORADO: Verificação de mudança real antes de atualizar
  * 
  * ✅ CORREÇÕES CRÍTICAS v15.0:
- * - 🔥 CONSUMO DE CRÉDITOS: Agora consome APENAS 1 crédito por upload
- * - 🔥 SINCERONIZAÇÃO: Verificação de saldo antes/depois do upload
- * - 🔥 CORREÇÃO: Detecta e corrige consumo excessivo automaticamente
- * - 🔥 ROLLBACK: Devolve créditos se o consumo for maior que o esperado
+ * - 🔥 CONSUMO DE CRÉDITOS: 1 crédito por upload
+ * - 🔥 SINCERONIZAÇÃO: Verificação de saldo antes/depois
+ * - 🔥 DETECÇÃO: Consumo excessivo com rollback automático
  * 
- * ✅ MELHORIAS:
- * - 📊 Upload com progresso detalhado (0-100%)
- * - 🔄 Sincronização automática de créditos com o backend
- * - 💾 Cache inteligente com invalidação
- * - 🎯 Validação de saldo antes do upload
- * - 🛡️ Tratamento robusto de erros
+ * ✅ MELHORIAS v15.1:
+ * - 📊 Prevenção de stack overflow
+ * - 🔄 Sincronização inteligente
+ * - 💾 Cache com invalidação controlada
+ * - 🛡️ Tratamento robusto de eventos
  * - ⚡ Performance otimizada
  */
 
@@ -34,12 +39,13 @@
         RETRY_DELAY: 1000,
         POW_MAX_ATTEMPTS: 3,
         
-        // 🔥 NOVO: Configuração de créditos
         CREDITS: {
-            COST_PER_UPLOAD: 1,  // 🔥 Consome apenas 1 crédito por upload
+            COST_PER_UPLOAD: 1,
             MAX_CREDITS_PREMIUM: 3,
             INITIAL_FREE_CREDITS: 3,
-            SYNC_INTERVAL: 10000, // Sincronizar a cada 10 segundos
+            SYNC_INTERVAL: 15000, // 15 segundos
+            UI_THROTTLE: 300, // 300ms entre atualizações
+            SYNC_DEBOUNCE: 500, // 500ms de debounce
         },
         
         COLORS: {
@@ -50,11 +56,10 @@
             secondary: '#4a9eff',
         },
         
-        // 🔥 NOVO: Timeouts
         TIMEOUTS: {
-            UPLOAD: 120000, // 2 minutos
-            SYNC: 5000, // 5 segundos
-            TOAST: 5000, // 5 segundos
+            UPLOAD: 120000,
+            SYNC: 5000,
+            TOAST: 5000,
         }
     };
 
@@ -75,9 +80,7 @@
             }
         },
 
-        isAuthenticated: () => {
-            return !!Utils.getToken();
-        },
+        isAuthenticated: () => !!Utils.getToken(),
 
         formatCurrency: (value) => {
             if (value === undefined || value === null || isNaN(value)) return 'R$ 0,00';
@@ -96,7 +99,6 @@
             return { status: 'critico', color: '#f56565', icon: '🔴', label: 'Crítico' };
         },
 
-        // 🔥 NOVO: Verificar se precisa de correção de créditos
         detectCreditDiscrepancy: (before, after, expectedCost) => {
             const actualCost = before - after;
             return {
@@ -106,11 +108,24 @@
                 difference: actualCost - expectedCost,
                 shouldRefund: actualCost > expectedCost
             };
+        },
+        
+        // 🔥 NOVO: Debounce para sincronização
+        debounce: (func, wait) => {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
         }
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER - GERENCIADOR DE CRÉDITOS
+    // 🔥 CREDIT MANAGER - GERENCIADOR DE CRÉDITOS (CORRIGIDO)
     // ==============================================
 
     class CreditManager {
@@ -121,20 +136,31 @@
             this._lastSync = 0;
             this._pendingRefund = 0;
             this._syncInProgress = false;
+            
+            // 🔥 NOVO: Controle de throttling
+            this._updatingUI = false;
+            this._lastUpdate = 0;
+            this._uiThrottle = CONFIG.CREDITS.UI_THROTTLE;
+            this._updateQueue = [];
+            this._isProcessingQueue = false;
+            
+            // 🔥 NOVO: Cache do display atual
+            this._cachedDisplay = null;
         }
 
         get balance() { return this._balance; }
         get isPremium() { return this._isPremium; }
         get isAdmin() { return this._isAdmin; }
+        
         get display() {
             if (this._isAdmin) return '∞';
             if (this._isPremium) return `${this._balance}/${CONFIG.CREDITS.MAX_CREDITS_PREMIUM}`;
             return String(this._balance);
         }
 
-        // 🔥 Sincronizar com o backend
-        async sync() {
-            if (this._syncInProgress) return this._balance;
+        // 🔥 Sincronizar com o backend (com debounce)
+        async sync(force = false) {
+            if (this._syncInProgress && !force) return this._balance;
             
             this._syncInProgress = true;
             try {
@@ -147,12 +173,25 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    this._balance = data.credits || 0;
-                    this._isPremium = data.is_premium || false;
-                    this._isAdmin = data.is_admin || false;
-                    this._lastSync = Date.now();
+                    const newBalance = data.credits || 0;
+                    const newIsPremium = data.is_premium || false;
+                    const newIsAdmin = data.is_admin || false;
                     
-                    this._updateUI();
+                    // 🔥 Verificar se houve mudança real
+                    const changed = (
+                        newBalance !== this._balance ||
+                        newIsPremium !== this._isPremium ||
+                        newIsAdmin !== this._isAdmin
+                    );
+                    
+                    if (changed) {
+                        this._balance = newBalance;
+                        this._isPremium = newIsPremium;
+                        this._isAdmin = newIsAdmin;
+                        this._lastSync = Date.now();
+                        this._updateUI();
+                    }
+                    
                     return this._balance;
                 }
             } catch (e) {
@@ -162,6 +201,11 @@
             }
             return this._balance;
         }
+
+        // 🔥 Sincronização com debounce
+        syncDebounced = Utils.debounce(() => {
+            this.sync().catch(() => {});
+        }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
         // 🔥 Verificar se tem créditos suficientes
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
@@ -198,7 +242,6 @@
                     return { success: false, error: 'Token não encontrado' };
                 }
 
-                // 🔥 Consumir via backend
                 const response = await fetch('/api/credits/consume', {
                     method: 'POST',
                     headers: {
@@ -210,13 +253,14 @@
 
                 if (response.ok) {
                     const data = await response.json();
+                    const before = this._balance;
                     this._balance = data.remaining || 0;
                     this._updateUI();
                     return { 
                         success: true, 
                         balance: this._balance,
                         consumed: amount,
-                        before: this._balance + amount
+                        before: before
                     };
                 } else {
                     const error = await response.json();
@@ -258,27 +302,84 @@
             return false;
         }
 
-        // 🔥 Atualizar UI
+        // 🔥 ATUALIZAR UI (COM THROTTLE E PREVENÇÃO DE LOOP)
         _updateUI() {
-            const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
-            elements.forEach(el => {
-                if (el) el.textContent = this.display;
-            });
-            
-            // Disparar evento
-            document.dispatchEvent(new CustomEvent('creditsUpdated', {
-                detail: {
-                    credits: this._balance,
-                    display: this.display,
-                    isPremium: this._isPremium,
-                    isAdmin: this._isAdmin
+            // 🔥 Throttle: não atualizar mais de uma vez a cada X ms
+            const now = Date.now();
+            if (now - this._lastUpdate < this._uiThrottle) {
+                // 🔥 Agendar para depois se necessário
+                if (!this._updateQueue.includes('update')) {
+                    this._updateQueue.push('update');
+                    setTimeout(() => this._processQueue(), this._uiThrottle);
                 }
-            }));
+                return;
+            }
+            
+            if (this._updatingUI) return;
+            this._updatingUI = true;
+
+            try {
+                const display = this.display;
+                
+                // 🔥 Verificar se o display mudou realmente
+                if (this._cachedDisplay === display) {
+                    this._updatingUI = false;
+                    return;
+                }
+                
+                // 🔥 Atualizar elementos DOM
+                const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
+                let updated = false;
+                
+                elements.forEach(el => {
+                    if (el && el.textContent !== display) {
+                        el.textContent = display;
+                        updated = true;
+                    }
+                });
+                
+                if (updated) {
+                    this._cachedDisplay = display;
+                    this._lastUpdate = now;
+                    
+                    // 🔥 Disparar evento com flag _silent para evitar loop
+                    const event = new CustomEvent('creditsUpdated', {
+                        detail: {
+                            credits: this._balance,
+                            display: display,
+                            isPremium: this._isPremium,
+                            isAdmin: this._isAdmin,
+                            _silent: true  // 🔥 Flag crítica para evitar loop
+                        }
+                    });
+                    document.dispatchEvent(event);
+                }
+                
+            } catch (e) {
+                console.warn('⚠️ Erro ao atualizar UI de créditos:', e);
+            } finally {
+                this._updatingUI = false;
+                this._lastUpdate = Date.now();
+            }
+        }
+
+        _processQueue() {
+            if (this._isProcessingQueue) return;
+            this._isProcessingQueue = true;
+            
+            try {
+                while (this._updateQueue.length > 0) {
+                    this._updateQueue.shift();
+                    this._updateUI();
+                }
+            } finally {
+                this._isProcessingQueue = false;
+            }
         }
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (VERSÃO OTIMIZADA)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (CORRIGIDA)
     // ==============================================
 
     class Dashboard {
@@ -294,6 +395,7 @@
             this.uploadMultipleFiles = this.uploadMultipleFiles.bind(this);
             this._processUploadResult = this._processUploadResult.bind(this);
             this._syncCredits = this._syncCredits.bind(this);
+            this._handleCreditsUpdated = this._handleCreditsUpdated.bind(this);
         }
 
         // ==========================================
@@ -306,7 +408,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v15.0] Inicializando com correção de créditos...');
+            console.log('🚀 [Dashboard v15.1] Inicializando com correção de loop...');
 
             // Sincronizar créditos
             await this._creditManager.sync();
@@ -318,9 +420,10 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v15.0] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v15.1] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Consumo: ${CONFIG.CREDITS.COST_PER_UPLOAD} crédito por upload`);
+            console.log(`   🛡️ Throttle: ${CONFIG.CREDITS.UI_THROTTLE}ms`);
             
             return this;
         }
@@ -374,18 +477,16 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS (CORRIGIDO)
+        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS
         // ==========================================
 
         async uploadMultipleFiles(files) {
-            // 🔥 Prevenir uploads simultâneos
             if (this._uploadInProgress) {
                 this._showToast('⏳ Um upload já está em andamento. Aguarde.', 'warning');
                 return null;
             }
 
             try {
-                // 🔥 VALIDAÇÕES INICIAIS
                 if (!Utils.isAuthenticated()) {
                     this._showToast('❌ Faça login para realizar uploads.', 'error');
                     return null;
@@ -408,7 +509,7 @@
                     }
                 }
 
-                // 🔥 VERIFICAR CRÉDITOS (APENAS 1)
+                // 🔥 VERIFICAR CRÉDITOS
                 const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
                 if (!hasCredits) {
                     this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
@@ -416,15 +517,12 @@
                     return null;
                 }
 
-                // 🔥 MOSTRAR STATUS
                 this._showUploadStatus('⏳', 'Preparando upload...', 'Verificando créditos', 5);
                 this._uploadInProgress = true;
 
-                // 🔥 SALVAR SALDO ANTES
                 const balanceBefore = this._creditManager.balance;
                 console.log(`💰 Saldo antes: ${balanceBefore}`);
 
-                // 🔥 PREPARAR FORM DATA
                 const formData = new FormData();
                 for (const file of files) {
                     formData.append('files', file);
@@ -432,16 +530,13 @@
                 formData.append('analysis_type', 'auto');
                 formData.append('report_format', 'html');
 
-                // 🔥 OBTER PoW
                 const token = Utils.getToken();
                 let powHeaders = await this._getPowHeaders();
 
-                // 🔥 ENVIAR REQUEST
                 this._showUploadStatus('⏳', 'Enviando arquivos...', `Processando ${files.length} arquivo(s)`, 30);
 
                 const headers = {
                     'Authorization': `Bearer ${token}`,
-                    // 🔥 NOVO: Informar ao backend que é um upload único
                     'X-Files-Count': String(files.length),
                     'X-Expected-Cost': String(CONFIG.CREDITS.COST_PER_UPLOAD),
                     ...powHeaders
@@ -453,7 +548,6 @@
                     body: formData
                 });
 
-                // 🔥 TRATAR ERROS
                 if (!response.ok) {
                     let errorDetail = 'Erro no upload';
                     try {
@@ -461,7 +555,6 @@
                         errorDetail = errorData.detail?.message || errorData.message || errorDetail;
                     } catch (e) {}
 
-                    // 🔥 ERRO 428 = PoW inválido
                     if (response.status === 428) {
                         this._showUploadStatus('🔄', 'Renovando segurança...', 'Tentando novamente', 20);
                         await this._renewPow();
@@ -469,7 +562,6 @@
                         return this.uploadMultipleFiles(files);
                     }
 
-                    // 🔥 ERRO 402 = Créditos insuficientes
                     if (response.status === 402) {
                         this._showUploadStatus('❌', 'Créditos insuficientes', 'Adquira o plano Premium', 0);
                         this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
@@ -480,14 +572,12 @@
                     throw new Error(errorDetail);
                 }
 
-                // 🔥 PROCESSAR RESPOSTA
                 const result = await response.json();
 
                 // 🔥 VERIFICAR CONSUMO DE CRÉDITOS
                 const balanceAfter = await this._creditManager.sync();
                 console.log(`💰 Saldo depois: ${balanceAfter}`);
 
-                // 🔥 DETECTAR DISCREPÂNCIA
                 const discrepancy = Utils.detectCreditDiscrepancy(
                     balanceBefore,
                     balanceAfter,
@@ -498,7 +588,6 @@
                     console.warn(`⚠️ Consumo excessivo detectado: ${discrepancy.actualCost} créditos consumidos (esperado: ${discrepancy.expectedCost})`);
                     console.log(`🔄 Devolvendo ${discrepancy.difference} crédito(s)...`);
                     
-                    // 🔥 DEVOLVER CRÉDITOS EXCEDENTES
                     const refunded = await this._creditManager.refund(
                         discrepancy.difference,
                         `Correção: consumo excessivo de ${discrepancy.actualCost} créditos`
@@ -510,15 +599,12 @@
                     }
                 }
 
-                // 🔥 PROCESSAR RESULTADO
                 await this._processUploadResult(result, files);
 
-                // 🔥 ATUALIZAR UI
                 this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
                 this._showToast('✅ Upload concluído com sucesso!', 'success');
                 this._showResult();
 
-                // 🔥 ATUALIZAR CACHE E ESTADO
                 await this._invalidateCache();
                 this._fileCache.clear();
 
@@ -531,7 +617,6 @@
                 this._showUploadStatus('❌', 'Erro', error.message || 'Falha no processamento', 0);
                 this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
                 
-                // 🔥 TENTAR RECUPERAR CRÉDITOS
                 try {
                     await this._creditManager.sync();
                 } catch (e) {}
@@ -551,14 +636,12 @@
                 return;
             }
 
-            // 🔥 Extrair dados
             const analysis = result.analysis || {};
             const chartData = result.chart_data || {};
             const recommendations = analysis.recommendations || [];
             const executiveScore = analysis.executive_score || {};
             const executiveSummary = analysis.executive_summary || '';
 
-            // 🔥 Atualizar relatório da IA
             await this._updateAIReport({
                 executive_score: executiveScore,
                 executive_summary: executiveSummary,
@@ -570,13 +653,11 @@
                 trend: analysis.trend || {}
             });
 
-            // 🔥 Atualizar métricas
             await this._updateMetrics({
                 executive_score: executiveScore,
                 chart_data: chartData
             });
 
-            // 🔥 Renderizar análises nas abas
             if (result.data?.files && result.data.files.length > 0) {
                 const analyses = result.data.files.map((file, index) => ({
                     filename: file.filename || `Arquivo ${index + 1}`,
@@ -600,14 +681,12 @@
                     model_used: file.model_used || 'AutoML'
                 }));
 
-                // 🔥 Renderizar abas
                 const tabManager = this._getTabManager();
                 if (tabManager) {
                     tabManager.renderTabs(analyses);
                 }
             }
 
-            // 🔥 Salvar no cache local
             try {
                 const recent = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
                 recent.unshift({
@@ -619,7 +698,6 @@
                 localStorage.setItem('recentAnalyses', JSON.stringify(recent));
             } catch (e) {}
 
-            // 🔥 Disparar evento
             document.dispatchEvent(new CustomEvent('analysis:success', {
                 detail: { result: result }
             }));
@@ -648,7 +726,6 @@
 
             let html = '';
 
-            // 🔥 Score Executivo
             if (executive_score && Object.keys(executive_score).length > 0) {
                 const scoreItems = [
                     { key: 'nota_geral', label: 'Nota Geral', icon: '🏆' },
@@ -686,7 +763,6 @@
                 `;
             }
 
-            // 🔥 Resumo Executivo
             if (executive_summary) {
                 html += `
                     <div style="margin-bottom: 0.8rem; padding: 0.8rem; background: rgba(255,107,53,0.05); border-radius: 8px; border-left: 3px solid #ff6b35;">
@@ -698,7 +774,6 @@
                 `;
             }
 
-            // 🔥 Recomendações
             if (recommendations && recommendations.length > 0) {
                 const priorityColors = { alta: '#f56565', media: '#f5a623', baixa: '#48bb78' };
                 const priorityEmojis = { alta: '🔴', media: '🟡', baixa: '🟢' };
@@ -724,7 +799,6 @@
                 `;
             }
 
-            // 🔥 Tendência
             if (trend && trend.description) {
                 const directionEmoji = trend.direction === 'crescente' ? '📈' : 
                                        trend.direction === 'decrescente' ? '📉' : '➡️';
@@ -741,7 +815,6 @@
                 `;
             }
 
-            // 🔥 Previsão
             if (forecast) {
                 html += `
                     <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(74,158,255,0.05); border-radius: 6px; border-left: 3px solid #4a9eff;">
@@ -753,7 +826,6 @@
                 `;
             }
 
-            // 🔥 Conclusão
             if (general_conclusion) {
                 html += `
                     <div style="padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
@@ -801,7 +873,7 @@
         }
 
         // ==========================================
-        // 🔥 POBTER HEADERS PoW
+        // 🔥 OBTER HEADERS PoW
         // ==========================================
 
         async _getPowHeaders() {
@@ -813,7 +885,6 @@
                 attempts++;
                 try {
                     if (window.powClient) {
-                        // 🔥 NÍVEL 1: getSolutionForUpload
                         if (typeof window.powClient.getSolutionForUpload === 'function') {
                             const solution = await window.powClient.getSolutionForUpload();
                             if (solution && solution.nonce) {
@@ -827,7 +898,6 @@
                             }
                         }
 
-                        // 🔥 NÍVEL 2: prepareForUpload
                         if (typeof window.powClient.prepareForUpload === 'function') {
                             await window.powClient.prepareForUpload();
                             const stats = window.powClient.getStats?.();
@@ -844,7 +914,6 @@
                         }
                     }
 
-                    // 🔥 NÍVEL 3: localStorage
                     const nonce = localStorage.getItem('pow_nonce');
                     const challenge = localStorage.getItem('pow_challenge');
                     const solution = localStorage.getItem('pow_solution');
@@ -903,16 +972,44 @@
         }
 
         // ==========================================
+        // 🔥 HANDLER DE CRÉDITOS ATUALIZADOS (CORRIGIDO)
+        // ==========================================
+
+        _handleCreditsUpdated(e) {
+            const data = e.detail || {};
+            
+            // 🔥 IGNORAR eventos com flag _silent (já processados)
+            if (data._silent) {
+                return;
+            }
+            
+            // 🔥 Verificar se houve mudança real
+            if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
+                this._creditManager._balance = data.credits;
+                this._creditManager._isPremium = data.isPremium || false;
+                this._creditManager._isAdmin = data.isAdmin || false;
+                
+                // 🔥 Atualizar UI sem disparar novo evento
+                const display = this._creditManager.display;
+                const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
+                elements.forEach(el => {
+                    if (el) el.textContent = display;
+                });
+                
+                this._creditManager._cachedDisplay = display;
+                this._creditManager._lastUpdate = Date.now();
+            }
+        }
+
+        // ==========================================
         // 🔥 INVALIDAR CACHE
         // ==========================================
 
         async _invalidateCache() {
             try {
-                // Limpar cache do IndexedDB
                 if (Utils.cache && typeof Utils.cache.clear === 'function') {
                     await Utils.cache.clear();
                 }
-                // Limpar cache do navegador
                 this._analysisCache.clear();
                 this._fileCache.clear();
                 console.log('🧹 Cache invalidado');
@@ -926,12 +1023,10 @@
         // ==========================================
 
         _getTabManager() {
-            // 🔥 Verificar se o TabManager foi inicializado
             if (window.__dashboard && window.__dashboard.tabManager) {
                 return window.__dashboard.tabManager;
             }
             
-            // 🔥 Tentar criar uma instância
             try {
                 const { TabManager } = window;
                 if (TabManager) {
@@ -1001,13 +1096,11 @@
         }
 
         _showUpgradePrompt() {
-            // 🔥 Mostrar modal de upgrade
             const modal = document.getElementById('upgradeModal');
             if (modal) {
                 const instance = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
                 instance.show();
             } else {
-                // 🔥 Fallback: redirecionar para planos
                 setTimeout(() => {
                     if (confirm('💎 Créditos insuficientes! Deseja ver os planos Premium?')) {
                         window.location.href = '/planos';
@@ -1017,28 +1110,22 @@
         }
 
         // ==========================================
-        // 🔥 SETUP EVENTS E POLLING
+        // 🔥 SETUP EVENTS E POLLING (CORRIGIDO)
         // ==========================================
 
         _setupEvents() {
-            // 🔥 Eventos de créditos
-            document.addEventListener('creditsUpdated', (e) => {
-                const data = e.detail || {};
-                if (data.credits !== undefined) {
-                    this._creditManager._balance = data.credits;
-                    this._creditManager._updateUI();
-                }
-            });
+            // 🔥 CORRIGIDO: Eventos de créditos com prevenção de loop
+            document.addEventListener('creditsUpdated', this._handleCreditsUpdated);
 
             // 🔥 Eventos de análise
             document.addEventListener('analysis:success', () => {
                 this._invalidateCache();
             });
 
-            // 🔥 Visibility change
+            // 🔥 Visibility change com debounce
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
-                    this._creditManager.sync();
+                    this._creditManager.syncDebounced();
                 }
             });
         }
@@ -1049,8 +1136,7 @@
             }
 
             this._pollingInterval = setInterval(() => {
-                // 🔥 Sincronizar créditos periodicamente
-                this._creditManager.sync().catch(() => {});
+                this._creditManager.syncDebounced();
             }, CONFIG.CREDITS.SYNC_INTERVAL);
         }
 
@@ -1075,7 +1161,7 @@
         }
 
         async refreshCredits() {
-            return await this._creditManager.sync();
+            return await this._creditManager.sync(true);
         }
 
         destroy() {
@@ -1083,6 +1169,10 @@
                 clearInterval(this._pollingInterval);
                 this._pollingInterval = null;
             }
+            
+            // 🔥 Remover event listeners para evitar memory leaks
+            document.removeEventListener('creditsUpdated', this._handleCreditsUpdated);
+            
             this._initialized = false;
             console.log('🧹 [Dashboard] Destruído');
         }
@@ -1115,7 +1205,6 @@
         return dashboardInstance;
     }
 
-    // 🔥 Aguardar app.js
     document.addEventListener('DOMContentLoaded', function() {
         if (window._appReadyFired || window.__APP_STATE?.isAppReady) {
             console.log('✅ [Dashboard] App já pronto, inicializando...');
@@ -1138,12 +1227,13 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v15.0 carregado - CORREÇÃO DE CRÉDITOS');
-    console.log('   ✅ Consumo: 1 crédito por upload (independente de arquivos)');
+    console.log('🔥 dashboard.js v15.1 carregado - CORREÇÃO DE LOOP + MELHORIAS');
+    console.log('   ✅ Consumo: 1 crédito por upload');
     console.log('   ✅ Detecção automática de consumo excessivo');
     console.log('   ✅ Rollback automático com devolução de créditos');
-    console.log('   ✅ Sincronização contínua com o backend');
-    console.log('   ✅ UI atualizada em tempo real');
+    console.log('   ✅ Sincronização com debounce e throttle');
+    console.log('   ✅ PREVENÇÃO DE LOOP INFINITO');
+    console.log('   ✅ UI atualizada com throttling');
     console.log('=' .repeat(60));
 
 })();
