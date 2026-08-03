@@ -1,30 +1,24 @@
-# backend/api/upload_routes.py - VERSÃO 11.0 (CORREÇÃO DECIMAL + MELHORIAS)
+# backend/api/upload_routes.py - VERSÃO 12.0 (CORREÇÃO DE CRÉDITOS + HEADERS)
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 11.0
+🚀 ROTAS DE UPLOAD - VERSÃO 12.0
 ================================================================================
-✅ CORREÇÕES CRÍTICAS:
-   - 🔥 CORRIGIDO: Decimal não serializável para JSON (jsonable_encoder)
-   - 🔥 CORRIGIDO: Consumo de créditos com crud.deduct_credits()
-   - 🔥 CORRIGIDO: Refresh de sessão em todas as funções
-   - 🔥 CORRIGIDO: Validação de saldo antes do consumo
+✅ CORREÇÕES CRÍTICAS v12.0:
+   - 🔥 REFATORAÇÃO: consume_credits_advanced() agora aceita amount (int)
+   - 🔥 HEADERS: X-Credits-* para sincronização com frontend
+   - 🔥 RESPOSTA: credits_per_file, files_uploaded, total_cost
+   - 🔥 CACHE: Headers no-cache para evitar dados desatualizados
+   - 🔥 LOGS: Mais detalhados sobre consumo de créditos
+
+✅ REGRA DE NEGÓCIO (MANTIDA):
+   - 📁 1 arquivo = 1 crédito = 1 análise
+   - 📁 2 arquivos = 2 créditos = 2 análises
+   - 📁 3 arquivos = 3 créditos = 3 análises (máximo)
 
 ✅ MELHORIAS:
-   - 📊 jsonable_encoder para todos os retornos JSON
-   - 📈 Métricas de performance detalhadas
-   - 🛡️ Validação robusta de arquivos e créditos
-   - 📝 Logs estruturados com níveis
-   - 🔄 Rate limiting por usuário
-   - 📋 Respostas padronizadas com todos os dados
-   - ⏱️ Timeout configurável por operação
-
-✅ NOVAS FUNCIONALIDADES:
-   - GET /analyses/count - Total de análises do usuário
-   - GET /analyses/credits - Status completo de créditos
-   - GET /analyses/stats - Estatísticas avançadas
-   - GET /analyses/history - Histórico com filtros
-   - GET /analysis/result/{id} - Resultado detalhado
-   - POST /upload-multi-analyze - Upload múltiplo com relatório
-   - POST /upload-auto - Upload único (legado)
+   - 📊 Respostas mais claras para o frontend
+   - 📈 Headers para sincronização automática
+   - 🛡️ Validação de saldo mais robusta
+   - 🔄 Suporte a rollback automático em caso de erro
 ================================================================================
 """
 
@@ -34,7 +28,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
-from fastapi.encoders import jsonable_encoder  # 🔥 CRÍTICO: Para serializar Decimal
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, and_, or_
 from typing import Optional, List, Dict, Any, Tuple
@@ -50,7 +44,7 @@ import re
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from decimal import Decimal  # 🔥 Para tratar valores decimais
+from decimal import Decimal
 import pandas as pd
 
 from backend.database import get_db
@@ -155,6 +149,7 @@ class UploadConfig:
     # Créditos
     MAX_CREDITS_PREMIUM = 3
     INITIAL_FREE_CREDITS = 3
+    CREDITS_PER_FILE = 1  # 🔥 NOVO: 1 crédito por arquivo
     
     # Status
     STATUS_LABELS = {
@@ -437,7 +432,7 @@ async def validate_files_advanced(files: List[UploadFile]) -> Dict[str, Any]:
 
 
 # ==============================================
-# 🔥 FUNÇÕES DE CRÉDITOS (CORRIGIDAS E MELHORADAS)
+# 🔥 FUNÇÕES DE CRÉDITOS (VERSÃO 12.0 - REFATORADA)
 # ==============================================
 
 def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
@@ -459,7 +454,7 @@ def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
     days_left = user_refresh.get_premium_days_left() if hasattr(user_refresh, 'get_premium_days_left') else 0
     
     return {
-        "balance": int(user_refresh.credits) if user_refresh.credits else 0,  # 🔥 Converter para int
+        "balance": int(user_refresh.credits) if user_refresh.credits else 0,
         "display": crud.get_credits_display(user_refresh) if hasattr(crud, 'get_credits_display') else str(user_refresh.credits or 0),
         "is_premium": is_premium,
         "is_admin": user_refresh.is_admin or False,
@@ -471,7 +466,7 @@ def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
 
 def check_credits_advanced(db: Session, user: models.User, required: int) -> Dict[str, Any]:
     """
-    🔥 CORRIGIDO: Verifica créditos com refresh da sessão e integração com crud
+    🔥 Verifica créditos com refresh da sessão e integração com crud
     """
     if user.is_admin:
         return {
@@ -484,7 +479,7 @@ def check_credits_advanced(db: Session, user: models.User, required: int) -> Dic
             "remaining_after": "∞"
         }
     
-    # 🔥 Buscar usuário atualizado da sessão
+    # Buscar usuário atualizado da sessão
     user_refresh = db.query(models.User).filter(models.User.id == user.id).first()
     if not user_refresh:
         return {
@@ -523,9 +518,24 @@ def check_credits_advanced(db: Session, user: models.User, required: int) -> Dic
     }
 
 
-def consume_credits_advanced(db: Session, user: models.User, file_list: List[UploadFileInfo]) -> Dict[str, Any]:
+# 🔥🔥🔥 FUNÇÃO REFATORADA - VERSÃO 12.0
+def consume_credits_advanced(
+    db: Session, 
+    user: models.User, 
+    amount: int = 1,  # 🔥 MUDANÇA: amount em vez de file_list
+    description: str = "Upload"
+) -> Dict[str, Any]:
     """
-    🔥 CORRIGIDO: Consome créditos usando crud.deduct_credits()
+    🔥 V12.0: Consome créditos usando crud.deduct_credits()
+    
+    Args:
+        db: Sessão do banco
+        user: Usuário
+        amount: Quantidade de créditos a consumir (1 por arquivo)
+        description: Descrição do consumo
+    
+    Returns:
+        Dict com status, consumido, restante, etc.
     """
     
     if user.is_admin:
@@ -537,12 +547,8 @@ def consume_credits_advanced(db: Session, user: models.User, file_list: List[Upl
             "is_admin": True
         }
     
-    total_files = len(file_list)
-    consumed = 0
-    failed_files = []
-    
     try:
-        # 🔥 CORREÇÃO CRÍTICA: Buscar usuário novamente dentro da sessão atual
+        # Buscar usuário novamente dentro da sessão atual
         user_refresh = db.query(models.User).filter(models.User.id == user.id).first()
         
         if not user_refresh:
@@ -557,59 +563,49 @@ def consume_credits_advanced(db: Session, user: models.User, file_list: List[Upl
         
         credits_before = user_refresh.credits
         
-        # 🔥 Verificar se tem créditos suficientes
-        if user_refresh.credits < total_files:
-            logger.warning(f"⚠️ Créditos insuficientes: {user_refresh.credits} < {total_files}")
+        # Verificar se tem créditos suficientes
+        if user_refresh.credits < amount:
+            logger.warning(f"⚠️ Créditos insuficientes: {user_refresh.credits} < {amount}")
             return {
                 "success": False,
-                "message": f"Créditos insuficientes. Você tem {user_refresh.credits}, precisa de {total_files}.",
+                "message": f"Créditos insuficientes. Você tem {user_refresh.credits}, precisa de {amount}.",
+                "consumed": 0,
+                "remaining": user_refresh.credits,
+                "is_admin": False,
+                "needed": amount
+            }
+        
+        # 🔥 CONSUME A QUANTIDADE ESPECIFICADA (NÃO EM LOOP)
+        success = crud.deduct_credits(db, user_refresh, amount, description)
+        
+        if not success:
+            db.rollback()
+            return {
+                "success": False,
+                "message": "Falha ao consumir créditos",
                 "consumed": 0,
                 "remaining": user_refresh.credits,
                 "is_admin": False
             }
         
-        for i, file_info in enumerate(file_list):
-            filename = file_info.filename
-            
-            # 🔥 USAR CRUD.DEDUCT_CREDITS
-            success = crud.deduct_credits(db, user_refresh, 1, f"Análise: {filename}")
-            
-            if success:
-                consumed += 1
-                logger.info(f"💰 Crédito {i+1}/{total_files} consumido: {filename}")
-            else:
-                logger.error(f"❌ Falha ao consumir crédito para {filename}")
-                failed_files.append(filename)
-                db.rollback()
-                return {
-                    "success": False,
-                    "message": f"Falha ao consumir crédito para {', '.join(failed_files)}",
-                    "consumed": consumed,
-                    "remaining": user_refresh.credits,
-                    "failed_files": failed_files,
-                    "is_admin": False
-                }
-        
         db.commit()
         db.refresh(user_refresh)
         
-        # 🔥 Atualizar o objeto original com os novos dados
+        # Atualizar o objeto original com os novos dados
         user.credits = user_refresh.credits
         
-        # 🔥 Obter display formatado
+        # Obter display formatado
         display = crud.get_credits_display(user_refresh) if hasattr(crud, 'get_credits_display') else str(user_refresh.credits or 0)
         
-        logger.info(f"💰 {consumed} créditos consumidos. Saldo: {user_refresh.credits}")
+        logger.info(f"💰 {amount} crédito(s) consumido(s) para {user.email}. Saldo: {user_refresh.credits}")
         
         return {
             "success": True,
-            "message": f"✅ {consumed} crédito(s) consumido(s)",
-            "consumed": consumed,
+            "message": f"✅ {amount} crédito(s) consumido(s)",
+            "consumed": amount,
             "remaining": user_refresh.credits,
             "before": credits_before,
             "is_admin": False,
-            "total_files": total_files,
-            "consumed_count": consumed,
             "display": display
         }
         
@@ -621,7 +617,7 @@ def consume_credits_advanced(db: Session, user: models.User, file_list: List[Upl
         return {
             "success": False,
             "message": f"Erro ao consumir créditos: {str(e)}",
-            "consumed": consumed,
+            "consumed": 0,
             "remaining": user.credits if user else 0,
             "error": str(e),
             "is_admin": False
@@ -719,7 +715,7 @@ async def get_user_analyses_count_endpoint(
     """
     try:
         total = get_user_analyses_count(db, current_user.id)
-        return jsonable_encoder({  # 🔥 Usar jsonable_encoder
+        return jsonable_encoder({
             "success": True,
             "total_analyses": total,
             "user_id": current_user.id,
@@ -774,7 +770,7 @@ async def get_user_credits_status(
 
 
 # ==============================================
-# 🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (CORRIGIDA)
+# 🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (VERSÃO 12.0)
 # ==============================================
 
 @router.post("/upload-multi-analyze")
@@ -790,13 +786,19 @@ async def upload_multi_analyze(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD MÚLTIPLO COM RELATÓRIO EXECUTIVO (VERSÃO 11.0)
+    🔥 UPLOAD MÚLTIPLO COM RELATÓRIO EXECUTIVO (VERSÃO 12.0)
     
-    - Envia até 3 arquivos de uma vez
-    - Processa todos em paralelo
-    - Gera relatório em HTML/PDF/JSON
-    - Consome 1 crédito por arquivo
-    - Retorna estatísticas completas do usuário
+    📌 REGRA DE NEGÓCIO:
+       - 1 arquivo = 1 crédito = 1 análise
+       - 2 arquivos = 2 créditos = 2 análises
+       - 3 arquivos = 3 créditos = 3 análises (máximo)
+    
+    📊 RESPOSTA:
+       - Inclui créditos antes/depois/consumidos
+       - credits_per_file: 1
+       - files_uploaded: N
+       - total_cost: N
+       - Headers X-Credits-* para sincronização
     """
     start_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
@@ -837,9 +839,10 @@ async def upload_multi_analyze(
         )
     
     # ==========================================
-    # PASSO 3: VALIDAR CRÉDITOS (INTEGRADO COM CRUD)
+    # PASSO 3: VALIDAR CRÉDITOS (1 POR ARQUIVO)
     # ==========================================
     
+    # 🔥 CORRETO: total_files = quantidade de créditos necessários
     credit_check = check_credits_advanced(db, current_user, total_files)
     if not credit_check["valid"]:
         raise HTTPException(
@@ -849,7 +852,9 @@ async def upload_multi_analyze(
                 "message": credit_check["message"],
                 "credits_available": credit_check["available"],
                 "credits_needed": credit_check["required"],
-                "suggestion": credit_check.get("suggestion")
+                "suggestion": credit_check.get("suggestion"),
+                "files_uploaded": total_files,
+                "credits_per_file": UploadConfig.CREDITS_PER_FILE
             }
         )
     
@@ -931,10 +936,16 @@ async def upload_multi_analyze(
     )
     
     # ==========================================
-    # PASSO 7: CONSUMIR CRÉDITOS (CORRIGIDO)
+    # PASSO 7: CONSUMIR CRÉDITOS (1 POR ARQUIVO)
     # ==========================================
     
-    credit_result = consume_credits_advanced(db, current_user, valid_files)
+    # 🔥 CORRETO: Consome 1 crédito por arquivo válido
+    credit_result = consume_credits_advanced(
+        db=db, 
+        user=current_user, 
+        amount=len(valid_files),  # 🔥 1 por arquivo
+        description=f"Análise de {len(valid_files)} arquivo(s)"
+    )
     
     if not credit_result["success"]:
         for analysis_id in analyses_ids:
@@ -986,7 +997,7 @@ async def upload_multi_analyze(
     credits_info = get_user_credits_info(db, current_user)
     
     # ==========================================
-    # PASSO 11: RESPOSTA (COM jsonable_encoder)
+    # PASSO 11: RESPOSTA (VERSÃO 12.0)
     # ==========================================
     
     processing_time_ms = (time.time() - start_time) * 1000
@@ -1010,6 +1021,14 @@ async def upload_multi_analyze(
     
     # 🔥 Limpar cache de estatísticas
     _stats_cache.clear(current_user.id)
+    
+    # 🔥 Calcular o consumo esperado
+    files_uploaded = len(valid_files)
+    credits_per_file = UploadConfig.CREDITS_PER_FILE
+    total_cost = files_uploaded * credits_per_file
+    credits_before = int(credit_result.get("before", current_user.credits))
+    credits_consumed = int(credit_result.get("consumed", 0))
+    credits_remaining = int(credit_result.get("remaining", current_user.credits))
     
     response_data = {
         "success": True,
@@ -1049,14 +1068,20 @@ async def upload_multi_analyze(
             "content_type": report_data["content_type"]
         },
         "chart_data": analysis_result.get('chart_data', {}),
+        # 🔥 SEÇÃO DE CRÉDITOS MELHORADA (V12.0)
         "credits": {
-            "before": int(credit_result.get("before", current_user.credits)),
-            "consumed": int(credit_result.get("consumed", 0)),
-            "remaining": int(credit_result.get("remaining", current_user.credits)),
+            "before": credits_before,
+            "consumed": credits_consumed,
+            "remaining": credits_remaining,
             "display": credit_result.get("display", "0"),
             "is_admin": current_user.is_admin,
             "is_premium": credits_info.get("is_premium", False),
-            "max_credits": credits_info.get("max_credits")
+            "max_credits": credits_info.get("max_credits"),
+            # 🔥 NOVO: Informação detalhada por arquivo
+            "credits_per_file": credits_per_file,
+            "files_uploaded": files_uploaded,
+            "total_cost": total_cost,
+            "consumption_matches_files": credits_consumed == files_uploaded
         },
         "user_stats": {
             "total_analyses": user_stats.get("total_analyses", 0),
@@ -1086,6 +1111,20 @@ async def upload_multi_analyze(
     # 🔥 CRÍTICO: Usar jsonable_encoder para serializar Decimal e outros tipos
     response_data_encoded = jsonable_encoder(response_data)
     
+    # 🔥 HEADERS PARA SINCRONIZAÇÃO (V12.0)
+    response_headers = {
+        "X-Credits-Before": str(credits_before),
+        "X-Credits-Consumed": str(credits_consumed),
+        "X-Credits-Remaining": str(credits_remaining),
+        "X-Files-Processed": str(files_uploaded),
+        "X-Credits-Per-File": str(credits_per_file),
+        "X-Total-Cost": str(total_cost),
+        "X-Analyses-Created": str(len(analyses_ids)),
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+    
     # Se for PDF, retorna para download
     if report_format.lower() == "pdf":
         return Response(
@@ -1093,15 +1132,22 @@ async def upload_multi_analyze(
             media_type=report_data["content_type"],
             headers={
                 "Content-Disposition": f"attachment; filename={report_data['filename']}",
-                "Access-Control-Expose-Headers": "Content-Disposition"
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Credits-*, X-Files-Processed, X-Analyses-Created",
+                **response_headers
             }
         )
     
     # Se for JSON, retorna como JSON
     if report_format.lower() == "json":
-        return JSONResponse(content=response_data_encoded)
+        return JSONResponse(
+            content=response_data_encoded,
+            headers=response_headers
+        )
     
-    return JSONResponse(content=response_data_encoded)
+    return JSONResponse(
+        content=response_data_encoded,
+        headers=response_headers
+    )
 
 
 # ==============================================
@@ -1535,6 +1581,7 @@ async def upload_auto_optimized(
     
     logger.info(f"📤 [UPLOAD] {current_user.email} | {total_files} arquivos | IP: {client_ip}")
     
+    # 🔥 V12.0: Verifica 1 crédito por arquivo
     credit_check = check_credits_advanced(db, current_user, total_files)
     if not credit_check["valid"]:
         raise HTTPException(
@@ -1543,7 +1590,9 @@ async def upload_auto_optimized(
                 "error": "insufficient_credits",
                 "message": credit_check["message"],
                 "credits_available": credit_check["available"],
-                "credits_needed": credit_check["required"]
+                "credits_needed": credit_check["required"],
+                "credits_per_file": UploadConfig.CREDITS_PER_FILE,
+                "files_uploaded": total_files
             }
         )
     
@@ -1562,7 +1611,14 @@ async def upload_auto_optimized(
             }
         )
     
-    # Processamento básico para compatibilidade
+    # 🔥 V12.0: Consome 1 crédito por arquivo válido
+    credit_result = consume_credits_advanced(
+        db=db,
+        user=current_user,
+        amount=validation_result["valid_count"],
+        description=f"Upload de {validation_result['valid_count']} arquivo(s)"
+    )
+    
     response_data = {
         "success": True,
         "message": f"Processado {validation_result['valid_count']} de {total_files} arquivo(s)",
@@ -1573,7 +1629,11 @@ async def upload_auto_optimized(
         "credits": {
             "before": current_user.credits if not current_user.is_admin else "∞",
             "consumed": validation_result["valid_count"] if not current_user.is_admin else 0,
-            "display": crud.get_credits_display(current_user) if hasattr(crud, 'get_credits_display') else str(current_user.credits or 0)
+            "remaining": current_user.credits - validation_result["valid_count"] if not current_user.is_admin else "∞",
+            "display": crud.get_credits_display(current_user) if hasattr(crud, 'get_credits_display') else str(current_user.credits or 0),
+            "credits_per_file": UploadConfig.CREDITS_PER_FILE,
+            "files_uploaded": validation_result["valid_count"],
+            "total_cost": validation_result["valid_count"]
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -1586,7 +1646,7 @@ async def upload_auto_optimized(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 11.0 (CORREÇÃO DECIMAL)")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.0 (CORREÇÃO DE CRÉDITOS + HEADERS)")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -1596,13 +1656,12 @@ print(f"   🔧 Preprocessing: { '✅' if _preprocessing_available else '⚠️ 
 print(f"   🚦 Rate Limit: {UploadConfig.RATE_LIMIT_PER_USER} req/hora")
 print(f"   ⏱️ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   💰 Créditos: {UploadConfig.INITIAL_FREE_CREDITS} grátis | máx premium {UploadConfig.MAX_CREDITS_PREMIUM}")
-print(f"   ✅ CORREÇÕES V11.0:")
-print(f"      - 🔥 DECIMAL: jsonable_encoder para serialização")
-print(f"      - 🔥 CONSUMO DE CRÉDITOS: crud.deduct_credits()")
-print(f"      - 🔥 OBJETO USER: Refresh em todas as funções")
-print(f"      - 🔥 VALIDAÇÃO: Saldo verificado antes do consumo")
-print(f"      - 📊 DISPLAY: Formatado para frontend")
-print(f"      - 📈 ESTATÍSTICAS: Tempo médio de processamento")
-print(f"      - 🔄 CACHE: Invalidação automática")
-print(f"      - 🆕 ROTA /analyses/credits - Status completo")
+print(f"   📌 Regra: 1 arquivo = 1 crédito = 1 análise")
+print(f"")
+print(f"   ✅ CORREÇÕES V12.0:")
+print(f"      - 🔥 REFATORAÇÃO: consume_credits_advanced() aceita amount (int)")
+print(f"      - 🔥 HEADERS: X-Credits-* para sincronização com frontend")
+print(f"      - 🔥 RESPOSTA: credits_per_file, files_uploaded, total_cost")
+print(f"      - 🔥 CACHE: Headers no-cache, no-store, must-revalidate")
+print(f"      - 🔥 LOGS: Mais detalhados sobre consumo")
 print("=" * 80)

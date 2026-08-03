@@ -62,3 +62,4 @@ pytz==2023.3
 Pillow                   # 🔥 ADICIONE ESTE (Para o CAPTCHA do security.py)
 email-validator>=2.0.0
 mercadopago==2.1.0
+weasyprint
