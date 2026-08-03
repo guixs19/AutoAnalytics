@@ -1,20 +1,21 @@
-# backend/api/upload_routes.py - VERSÃO 10.0 (REVISÃO COMPLETA)
+# backend/api/upload_routes.py - VERSÃO 11.0 (CORREÇÃO DECIMAL + MELHORIAS)
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 10.0
+🚀 ROTAS DE UPLOAD - VERSÃO 11.0
 ================================================================================
 ✅ CORREÇÕES CRÍTICAS:
-   - 🔥 CONSUMO DE CRÉDITOS: Integração com crud.deduct_credits()
-   - 🔥 OBJETO USER: Refresh dentro da sessão atual em todas as funções
-   - 🔥 VALIDAÇÃO: Verificação de saldo antes de consumir créditos
-   - 🔥 RETORNO: Display formatado de créditos para o frontend
+   - 🔥 CORRIGIDO: Decimal não serializável para JSON (jsonable_encoder)
+   - 🔥 CORRIGIDO: Consumo de créditos com crud.deduct_credits()
+   - 🔥 CORRIGIDO: Refresh de sessão em todas as funções
+   - 🔥 CORRIGIDO: Validação de saldo antes do consumo
 
 ✅ MELHORIAS:
-   - 📊 Cache de estatísticas com invalidação automática
+   - 📊 jsonable_encoder para todos os retornos JSON
    - 📈 Métricas de performance detalhadas
    - 🛡️ Validação robusta de arquivos e créditos
    - 📝 Logs estruturados com níveis
    - 🔄 Rate limiting por usuário
    - 📋 Respostas padronizadas com todos os dados
+   - ⏱️ Timeout configurável por operação
 
 ✅ NOVAS FUNCIONALIDADES:
    - GET /analyses/count - Total de análises do usuário
@@ -33,6 +34,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
+from fastapi.encoders import jsonable_encoder  # 🔥 CRÍTICO: Para serializar Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, and_, or_
 from typing import Optional, List, Dict, Any, Tuple
@@ -46,13 +48,14 @@ import csv
 import io
 import re
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
+from decimal import Decimal  # 🔥 Para tratar valores decimais
 import pandas as pd
 
 from backend.database import get_db
 from backend import models
-from backend import crud  # 🔥 IMPORT DO CRUD
+from backend import crud
 from backend.security import get_current_active_user
 from backend.api.pow_routes import validate_pow_request
 
@@ -456,13 +459,13 @@ def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
     days_left = user_refresh.get_premium_days_left() if hasattr(user_refresh, 'get_premium_days_left') else 0
     
     return {
-        "balance": user_refresh.credits or 0,
+        "balance": int(user_refresh.credits) if user_refresh.credits else 0,  # 🔥 Converter para int
         "display": crud.get_credits_display(user_refresh) if hasattr(crud, 'get_credits_display') else str(user_refresh.credits or 0),
         "is_premium": is_premium,
         "is_admin": user_refresh.is_admin or False,
         "max_credits": UploadConfig.MAX_CREDITS_PREMIUM if is_premium else None,
         "days_left_premium": days_left if is_premium else 0,
-        "can_receive_daily": False  # Será preenchido por outra função se necessário
+        "can_receive_daily": False
     }
 
 
@@ -716,19 +719,19 @@ async def get_user_analyses_count_endpoint(
     """
     try:
         total = get_user_analyses_count(db, current_user.id)
-        return {
+        return jsonable_encoder({  # 🔥 Usar jsonable_encoder
             "success": True,
             "total_analyses": total,
             "user_id": current_user.id,
             "email": current_user.email
-        }
+        })
     except Exception as e:
         logger.error(f"❌ Erro ao buscar total de análises: {e}")
-        return {
+        return jsonable_encoder({
             "success": False,
             "error": str(e),
             "total_analyses": 0
-        }
+        })
 
 
 @router.get("/analyses/credits")
@@ -743,16 +746,16 @@ async def get_user_credits_status(
         # Buscar usuário atualizado
         user = db.query(models.User).filter(models.User.id == current_user.id).first()
         if not user:
-            return {
+            return jsonable_encoder({
                 "success": False,
                 "error": "Usuário não encontrado"
-            }
+            })
         
         # Estatísticas
         stats = get_user_stats_advanced(db, user.id)
         credits_info = get_user_credits_info(db, user)
         
-        return {
+        return jsonable_encoder({
             "success": True,
             "credits": credits_info,
             "analyses": stats,
@@ -761,17 +764,17 @@ async def get_user_credits_status(
                 "email": user.email,
                 "name": user.name
             }
-        }
+        })
     except Exception as e:
         logger.error(f"❌ Erro ao buscar status de créditos: {e}")
-        return {
+        return jsonable_encoder({
             "success": False,
             "error": str(e)
-        }
+        })
 
 
 # ==============================================
-# 🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO
+# 🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (CORRIGIDA)
 # ==============================================
 
 @router.post("/upload-multi-analyze")
@@ -787,7 +790,7 @@ async def upload_multi_analyze(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD MÚLTIPLO COM RELATÓRIO EXECUTIVO (VERSÃO 10.0)
+    🔥 UPLOAD MÚLTIPLO COM RELATÓRIO EXECUTIVO (VERSÃO 11.0)
     
     - Envia até 3 arquivos de uma vez
     - Processa todos em paralelo
@@ -983,7 +986,7 @@ async def upload_multi_analyze(
     credits_info = get_user_credits_info(db, current_user)
     
     # ==========================================
-    # PASSO 11: RESPOSTA
+    # PASSO 11: RESPOSTA (COM jsonable_encoder)
     # ==========================================
     
     processing_time_ms = (time.time() - start_time) * 1000
@@ -1047,9 +1050,9 @@ async def upload_multi_analyze(
         },
         "chart_data": analysis_result.get('chart_data', {}),
         "credits": {
-            "before": credit_result.get("before", current_user.credits),
-            "consumed": credit_result.get("consumed", 0),
-            "remaining": credit_result.get("remaining", current_user.credits),
+            "before": int(credit_result.get("before", current_user.credits)),
+            "consumed": int(credit_result.get("consumed", 0)),
+            "remaining": int(credit_result.get("remaining", current_user.credits)),
             "display": credit_result.get("display", "0"),
             "is_admin": current_user.is_admin,
             "is_premium": credits_info.get("is_premium", False),
@@ -1059,9 +1062,9 @@ async def upload_multi_analyze(
             "total_analyses": user_stats.get("total_analyses", 0),
             "today_analyses": user_stats.get("today_analyses", 0),
             "status_counts": user_stats.get("status_counts", {}),
-            "total_rows_processed": user_stats.get("total_rows_processed", 0),
-            "average_score": user_stats.get("average_score", 0),
-            "avg_processing_time_ms": user_stats.get("avg_processing_time_ms", 0),
+            "total_rows_processed": int(user_stats.get("total_rows_processed", 0)),
+            "average_score": float(user_stats.get("average_score", 0)),
+            "avg_processing_time_ms": int(user_stats.get("avg_processing_time_ms", 0)),
             "last_analysis_at": user_stats.get("last_analysis_at"),
             "last_analysis_filename": user_stats.get("last_analysis_filename")
         },
@@ -1080,6 +1083,9 @@ async def upload_multi_analyze(
         "timestamp": datetime.now().isoformat()
     }
     
+    # 🔥 CRÍTICO: Usar jsonable_encoder para serializar Decimal e outros tipos
+    response_data_encoded = jsonable_encoder(response_data)
+    
     # Se for PDF, retorna para download
     if report_format.lower() == "pdf":
         return Response(
@@ -1093,9 +1099,9 @@ async def upload_multi_analyze(
     
     # Se for JSON, retorna como JSON
     if report_format.lower() == "json":
-        return JSONResponse(content=response_data)
+        return JSONResponse(content=response_data_encoded)
     
-    return JSONResponse(content=response_data)
+    return JSONResponse(content=response_data_encoded)
 
 
 # ==============================================
@@ -1198,7 +1204,7 @@ def generate_report_advanced(
             <h1>📊 Relatório Executivo</h1>
             <p>Usuário: {user_name}</p>
             <p>Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-            <pre>{json.dumps(analysis_result, indent=2, ensure_ascii=False)[:1000]}</pre>
+            <pre>{json.dumps(analysis_result, indent=2, ensure_ascii=False, default=str)[:1000]}</pre>
         </body>
         </html>
         """
@@ -1218,7 +1224,7 @@ def generate_report_advanced(
         format_map = {
             'html': ('text/html', 'html', report_builder.to_html(report)),
             'pdf': ('application/pdf', 'pdf', report_builder.to_pdf(report)),
-            'json': ('application/json', 'json', json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+            'json': ('application/json', 'json', json.dumps(report.to_dict(), indent=2, ensure_ascii=False, default=str))
         }
         
         content_type, extension, content = format_map.get(format.lower(), format_map['html'])
@@ -1233,7 +1239,7 @@ def generate_report_advanced(
     except Exception as e:
         logger.error(f"❌ Erro ao gerar relatório: {e}")
         return {
-            "content": json.dumps({"error": str(e), "analysis": analysis_result}, indent=2, ensure_ascii=False),
+            "content": json.dumps({"error": str(e), "analysis": analysis_result}, indent=2, ensure_ascii=False, default=str),
             "content_type": "application/json",
             "extension": "json",
             "filename": f"relatorio_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1279,7 +1285,7 @@ def save_analyses_advanced(
                 total_columns=metrics.get('total_columns', 0),
                 numeric_columns=metrics.get('numeric_columns', 0),
                 categorical_columns=metrics.get('categorical_columns', 0),
-                confidence_score=metrics.get('mean_prediction', 0)
+                confidence_score=float(metrics.get('mean_prediction', 0)) if metrics.get('mean_prediction') else 0
             )
             db.add(analysis)
             db.flush()
@@ -1301,7 +1307,7 @@ async def send_callback(callback_url: str, result: Dict[str, Any]):
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
-            async with session.post(callback_url, json=result, timeout=10) as response:
+            async with session.post(callback_url, json=jsonable_encoder(result), timeout=10) as response:
                 if response.status == 200:
                     logger.info(f"✅ Callback enviado com sucesso para {callback_url}")
                 else:
@@ -1396,14 +1402,14 @@ async def get_analyses_history(
                 "insights": analysis.insights or {},
                 "recommendations": analysis.recommendations or [],
                 "processed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
-                "score": predictions.get('mean_prediction', 0),
-                "high_risk": predictions.get('high_risk_percentage', 0),
-                "low_risk": predictions.get('low_risk_percentage', 0),
+                "score": float(predictions.get('mean_prediction', 0)),
+                "high_risk": float(predictions.get('high_risk_percentage', 0)),
+                "low_risk": float(predictions.get('low_risk_percentage', 0)),
                 "processing_time_ms": analysis.processing_time_ms,
                 "pow_verified": analysis.pow_verified,
             })
         
-        return {
+        return jsonable_encoder({
             "success": True,
             "analyses": result,
             "total": total,
@@ -1417,16 +1423,16 @@ async def get_analyses_history(
                 "sort_by": sort_by,
                 "sort_order": sort_order
             }
-        }
+        })
         
     except Exception as e:
         logger.error(f"❌ Erro ao buscar histórico: {e}")
-        return {
+        return jsonable_encoder({
             "success": False,
             "error": str(e),
             "analyses": [],
             "total": 0
-        }
+        })
 
 
 @router.get("/analysis/result/{analysis_id}")
@@ -1479,23 +1485,23 @@ async def get_analysis_result(
             "total_columns": analysis.total_columns,
             "numeric_columns": analysis.numeric_columns,
             "categorical_columns": analysis.categorical_columns,
-            "confidence_score": analysis.confidence_score,
+            "confidence_score": float(analysis.confidence_score) if analysis.confidence_score else 0,
             "metrics": {
-                "mean": predictions_summary.get("mean_prediction", 0),
-                "std": predictions_summary.get("std_prediction", 0),
-                "min": predictions_summary.get("min_prediction", 0),
-                "max": predictions_summary.get("max_prediction", 0),
-                "high_risk_percentage": predictions_summary.get("high_risk_percentage", 0),
-                "medium_risk_percentage": predictions_summary.get("medium_risk_percentage", 0),
-                "low_risk_percentage": predictions_summary.get("low_risk_percentage", 0),
-                "total_predictions": predictions_summary.get("total_predictions", 0)
+                "mean": float(predictions_summary.get("mean_prediction", 0)),
+                "std": float(predictions_summary.get("std_prediction", 0)),
+                "min": float(predictions_summary.get("min_prediction", 0)),
+                "max": float(predictions_summary.get("max_prediction", 0)),
+                "high_risk_percentage": float(predictions_summary.get("high_risk_percentage", 0)),
+                "medium_risk_percentage": float(predictions_summary.get("medium_risk_percentage", 0)),
+                "low_risk_percentage": float(predictions_summary.get("low_risk_percentage", 0)),
+                "total_predictions": int(predictions_summary.get("total_predictions", 0))
             }
         }
         
         if include_predictions and analysis.predictions:
-            result["predictions"] = analysis.predictions
+            result["predictions"] = [float(p) for p in analysis.predictions]
         
-        return result
+        return jsonable_encoder(result)
         
     except HTTPException:
         raise
@@ -1557,7 +1563,7 @@ async def upload_auto_optimized(
         )
     
     # Processamento básico para compatibilidade
-    return {
+    response_data = {
         "success": True,
         "message": f"Processado {validation_result['valid_count']} de {total_files} arquivo(s)",
         "data": {
@@ -1571,6 +1577,8 @@ async def upload_auto_optimized(
         },
         "timestamp": datetime.now().isoformat()
     }
+    
+    return jsonable_encoder(response_data)
 
 
 # ==============================================
@@ -1578,7 +1586,7 @@ async def upload_auto_optimized(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 10.0 (REVISÃO COMPLETA)")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 11.0 (CORREÇÃO DECIMAL)")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -1588,7 +1596,8 @@ print(f"   🔧 Preprocessing: { '✅' if _preprocessing_available else '⚠️ 
 print(f"   🚦 Rate Limit: {UploadConfig.RATE_LIMIT_PER_USER} req/hora")
 print(f"   ⏱️ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   💰 Créditos: {UploadConfig.INITIAL_FREE_CREDITS} grátis | máx premium {UploadConfig.MAX_CREDITS_PREMIUM}")
-print(f"   ✅ CORREÇÕES V10.0:")
+print(f"   ✅ CORREÇÕES V11.0:")
+print(f"      - 🔥 DECIMAL: jsonable_encoder para serialização")
 print(f"      - 🔥 CONSUMO DE CRÉDITOS: crud.deduct_credits()")
 print(f"      - 🔥 OBJETO USER: Refresh em todas as funções")
 print(f"      - 🔥 VALIDAÇÃO: Saldo verificado antes do consumo")
