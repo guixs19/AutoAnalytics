@@ -1,10 +1,10 @@
-// frontend/js/upload-report-system.js - v2.3 (MELHORIAS DE ERRO 400)
+// frontend/js/upload-report-system.js - v2.4 (INTELIGENTE E ROBUSTO)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
 
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v2.3...');
+    console.log('📊 Inicializando UploadReportSystem v2.4...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -18,19 +18,21 @@
         MAX_POLLING_ATTEMPTS: 90,
         API_BASE: '/api',
         UPLOAD_ENDPOINT: '/upload-multi-analyze',
-        UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',  // 🔥 NOVO: fallback
+        UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',
         UPLOAD_RETRY_ATTEMPTS: 3,
         UPLOAD_RETRY_DELAY: 2000,
-        GLOBAL_TIMEOUT: 180000, // 3 minutos
+        GLOBAL_TIMEOUT: 180000,
         RESULT_ENDPOINTS: [
             '/analysis/result/',
             '/result/',
             '/analysis/',
             '/analyses/',
         ],
-        // 🔥 NOVO: Configurações de PoW
-        POW_MAX_AGE: 600000, // 10 minutos
+        POW_MAX_AGE: 600000,
         POW_RETRY_ATTEMPTS: 2,
+        // 🔥 NOVO
+        MAX_RETRY_BACKOFF: 10000,
+        HEALTH_CHECK_INTERVAL: 30000,
     };
 
     // ==============================================
@@ -47,7 +49,11 @@
         lastResult: null,
         uploadRetryCount: 0,
         startTime: null,
-        powLastRefresh: 0,  // 🔥 NOVO: controle de refresh do PoW
+        powLastRefresh: 0,
+        powRecoveryAttempts: 0,      // 🔥 NOVO
+        lastError: null,             // 🔥 NOVO
+        errorCount: 0,               // 🔥 NOVO
+        isRecovering: false,         // 🔥 NOVO
     };
 
     // ==============================================
@@ -84,7 +90,7 @@
     }
 
     // ==============================================
-    // 🔥 UTILITÁRIOS
+    // 🔥 UTILITÁRIOS MELHORADOS
     // ==============================================
 
     function getApp() {
@@ -94,7 +100,9 @@
     function getToken() {
         try {
             const token = localStorage.getItem('access_token');
-            if (!token || token === 'undefined' || token === 'null') return null;
+            if (!token || token === 'undefined' || token === 'null' || token.length < 10) {
+                return null;
+            }
             return token;
         } catch (e) {
             return null;
@@ -134,6 +142,12 @@
 
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 🔥 NOVO: Exponential backoff
+    function getBackoffDelay(attempt, baseDelay = CONFIG.UPLOAD_RETRY_DELAY) {
+        const delay = baseDelay * Math.pow(1.5, attempt - 1);
+        return Math.min(delay, CONFIG.MAX_RETRY_BACKOFF);
     }
 
     function showNotification(message, type = 'info') {
@@ -184,6 +198,22 @@
             }
         } catch (e) {}
         return 'Usuário';
+    }
+
+    // 🔥 NOVO: Verificar se é erro de PoW
+    function isPowError(error) {
+        if (!error) return false;
+        const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
+        const patterns = ['pow', 'proof', 'nonce', 'challenge', '428', 'precondition'];
+        return patterns.some(p => errorStr.toLowerCase().includes(p));
+    }
+
+    // 🔥 NOVO: Verificar se é erro de créditos
+    function isCreditsError(error) {
+        if (!error) return false;
+        const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
+        const patterns = ['crédito', 'credits', '402', 'payment', 'insufficient'];
+        return patterns.some(p => errorStr.toLowerCase().includes(p));
     }
 
     // ==============================================
@@ -456,7 +486,7 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (MELHORADO)
+    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (INTELIGENTE)
     // ==============================================
 
     async function getPowSolution(forceRefresh = false) {
@@ -472,6 +502,24 @@
         console.log('🔐 [PoW] Tentando obter solução...');
         console.log('   📦 app disponível?', !!app);
         console.log('   📦 powClient disponível?', !!window.powClient);
+        
+        // 🔥 Verificar saúde do PoW
+        if (window.powClient && typeof window.powClient.isPowHealthy === 'function') {
+            try {
+                const healthy = await window.powClient.isPowHealthy();
+                if (healthy) {
+                    console.log('   ✅ PoW saudável');
+                } else {
+                    console.log('   ⚠️ PoW não saudável, tentando recuperar...');
+                    if (typeof window.powClient.autoRecover === 'function') {
+                        await window.powClient.autoRecover();
+                        state.powRecoveryAttempts++;
+                    }
+                }
+            } catch (e) {
+                console.warn('   ⚠️ Erro ao verificar saúde do PoW:', e.message);
+            }
+        }
         
         // 🔥 TENTATIVA 1: Via app.Pow
         if (app && app.Pow) {
@@ -532,7 +580,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD E ANÁLISE
+    // 🔥 UPLOAD E ANÁLISE (CORRIGIDO)
     // ==============================================
 
     async function startAnalysis() {
@@ -545,6 +593,11 @@
             showNotification('Selecione pelo menos um arquivo.', 'warning');
             return;
         }
+
+        // 🔥 Resetar estado de erro
+        state.errorCount = 0;
+        state.lastError = null;
+        state.isRecovering = false;
 
         const app = getApp();
         const creditsNeeded = state.files.length * CONFIG.CREDITS_PER_FILE;
@@ -638,8 +691,21 @@
         } catch (error) {
             console.error('❌ Erro na análise:', error);
             
+            const errorMsg = error.message || 'Erro ao processar análise.';
+            state.lastError = errorMsg;
+            state.errorCount++;
+            
             const userName = getUserName();
-            showNotification(`${userName}, ${error.message || 'Erro ao processar análise.'}`, 'error');
+            showNotification(`${userName}, ${errorMsg}`, 'error');
+            
+            // 🔥 Se for erro de PoW, oferecer recuperação
+            if (isPowError(errorMsg)) {
+                setTimeout(() => {
+                    if (confirm('⚠️ Erro de segurança (PoW) detectado. Deseja tentar recuperar automaticamente?')) {
+                        refreshPowAndRetry();
+                    }
+                }, 500);
+            }
             
             if (elements.dropArea) elements.dropArea.classList.add('error');
             resetAnalysisStatus();
@@ -651,6 +717,36 @@
         }
     }
 
+    // 🔥 NOVO: Função para renovar PoW e tentar novamente
+    async function refreshPowAndRetry() {
+        if (state.isRecovering) return;
+        state.isRecovering = true;
+        
+        try {
+            showNotification('🔄 Tentando recuperar conexão...', 'info');
+            showAnalysisStatus('🔄', 'Recuperando segurança...', 20);
+            
+            // Limpar PoW
+            if (window.powClient) {
+                window.powClient.clearCache();
+                window.powClient.reset();
+            }
+            state.powLastRefresh = 0;
+            
+            // Aguardar um pouco
+            await sleep(1000);
+            
+            // Tentar novamente
+            await startAnalysis();
+            
+        } catch (e) {
+            console.error('❌ Erro na recuperação:', e);
+            showNotification('❌ Falha na recuperação. Recarregue a página.', 'error');
+        } finally {
+            state.isRecovering = false;
+        }
+    }
+
     // ==============================================
     // 🔥 UPLOAD COM RETRY (CORRIGIDO E MELHORADO)
     // ==============================================
@@ -659,13 +755,15 @@
         let lastError = null;
         const maxRetries = CONFIG.UPLOAD_RETRY_ATTEMPTS;
         
-        // 🔥 Lista de endpoints para tentar
         const endpoints = [
             CONFIG.UPLOAD_ENDPOINT,
             CONFIG.UPLOAD_ENDPOINT_FALLBACK
         ];
         
+        // 🔥 TENTAR CADA ENDPOINT
         for (let endpoint of endpoints) {
+            let endpointFailed = false;
+            
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     const token = getToken();
@@ -704,10 +802,9 @@
                         credentials: 'include',
                     });
 
-                    // 🔥 LOG DA RESPOSTA
                     console.log(`📡 Resposta: ${response.status} ${response.statusText}`);
 
-                    // 🔥 TENTAR LER O CORPO DA RESPOSTA (MESMO EM ERRO)
+                    // 🔥 TENTAR LER O CORPO DA RESPOSTA
                     let responseData = null;
                     let responseText = null;
                     
@@ -741,19 +838,17 @@
                             }
                         }
                         
-                        console.error(`❌ Erro 400: ${errorMessage}`);
+                        // 🔥 GARANTIR QUE É STRING
+                        const errorStr = typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage);
+                        console.error(`❌ Erro 400: ${errorStr}`);
                         
                         // 🔥 SE FOR ERRO DE PoW, TENTAR RENOVAR
-                        if (errorMessage.toLowerCase().includes('pow') || 
-                            errorMessage.toLowerCase().includes('proof') ||
-                            errorMessage.toLowerCase().includes('nonce') ||
-                            errorMessage.toLowerCase().includes('challenge')) {
+                        if (isPowError(errorStr)) {
                             console.log('🔄 Erro de PoW detectado, renovando...');
                             if (window.powClient) {
                                 window.powClient.clearCache();
                                 window.powClient.reset();
                             }
-                            // 🔥 TENTAR OBTER NOVA SOLUÇÃO
                             try {
                                 const newSolution = await getPowSolution(true);
                                 if (newSolution) {
@@ -767,13 +862,18 @@
                         }
                         
                         // 🔥 SE FOR ERRO DE CRÉDITOS
-                        if (errorMessage.toLowerCase().includes('crédito') || 
-                            errorMessage.toLowerCase().includes('credits') ||
-                            errorMessage.toLowerCase().includes('saldo')) {
-                            throw new Error(`Créditos insuficientes: ${errorMessage}`);
+                        if (isCreditsError(errorStr)) {
+                            throw new Error(`Créditos insuficientes: ${errorStr}`);
                         }
                         
-                        throw new Error(errorMessage);
+                        // 🔥 SE O ENDPOINT FALHOU, TENTAR O PRÓXIMO
+                        if (errorStr.includes('not found') || errorStr.includes('404')) {
+                            console.log(`🔄 Endpoint ${endpoint} não encontrado, tentando próximo...`);
+                            endpointFailed = true;
+                            break;
+                        }
+                        
+                        throw new Error(errorStr);
                     }
 
                     if (response.status === 428) {
@@ -837,19 +937,29 @@
                     console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
                     
                     // 🔥 SE FOR ERRO DE CRÉDITOS OU VALIDAÇÃO, NÃO TENTA NOVAMENTE
-                    if (error.message.includes('Créditos') || 
-                        error.message.includes('insuficientes') ||
+                    if (isCreditsError(error.message) ||
                         error.message.includes('inválido') ||
                         error.message.includes('Sessão expirada')) {
                         throw error;
                     }
                     
+                    // 🔥 SE O ENDPOINT FALHOU, TENTAR PRÓXIMO
+                    if (endpointFailed) {
+                        break;
+                    }
+                    
                     if (attempt < maxRetries) {
-                        const delay = CONFIG.UPLOAD_RETRY_DELAY * attempt;
+                        const delay = getBackoffDelay(attempt);
                         console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
                         await sleep(delay);
                     }
                 }
+            }
+            
+            // 🔥 SE O ENDPOINT FALHOU, CONTINUAR PARA O PRÓXIMO
+            if (endpointFailed) {
+                console.log(`🔄 Pulando para próximo endpoint...`);
+                continue;
             }
         }
 
@@ -857,7 +967,7 @@
     }
 
     // ==============================================
-    // 🔥 POLLING
+    // 🔥 POLLING (CORRIGIDO)
     // ==============================================
 
     async function pollAnalysisStatus(processId) {
@@ -865,6 +975,7 @@
         const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;
         const interval = CONFIG.POLLING_INTERVAL;
         const startTime = Date.now();
+        let consecutiveErrors = 0;
         
         state.isPolling = true;
         state.pollAttempts = 0;
@@ -893,6 +1004,9 @@
 
                 if (!response.ok) {
                     if (response.status === 404) {
+                        // 🔥 Resetar contador de erros consecutivos
+                        consecutiveErrors = 0;
+                        
                         const progress = 50 + (attempts / maxAttempts) * 40;
                         const elapsed = Math.round((Date.now() - startTime) / 1000);
                         updateAnalysisProgress(
@@ -905,8 +1019,18 @@
                     if (response.status === 401) {
                         throw new Error('Sessão expirada. Faça login novamente.');
                     }
-                    throw new Error(`Erro ao verificar status: ${response.status}`);
+                    
+                    consecutiveErrors++;
+                    if (consecutiveErrors > 3) {
+                        throw new Error(`Erro repetido ao verificar status: ${response.status}`);
+                    }
+                    
+                    await sleep(interval * 1.5);
+                    continue;
                 }
+
+                // 🔥 Resetar contador de erros em caso de sucesso
+                consecutiveErrors = 0;
 
                 statusData = await response.json();
                 
@@ -1146,17 +1270,43 @@
         isUploading: function() { return state.isUploading; },
         updateCredits: updateCreditsDisplay,
         CONFIG: CONFIG,
-        // 🔥 NOVO: Função para forçar refresh do PoW
         refreshPow: async function() {
             state.powLastRefresh = 0;
+            state.powRecoveryAttempts = 0;
+            if (window.powClient) {
+                window.powClient.clearCache();
+                window.powClient.reset();
+            }
             return await getPowSolution(true);
+        },
+        // 🔥 NOVO: Forçar recuperação
+        recover: refreshPowAndRetry,
+        // 🔥 NOVO: Obter diagnóstico
+        getDiagnostics: function() {
+            return {
+                state: {
+                    files: state.files.length,
+                    isUploading: state.isUploading,
+                    isPolling: state.isPolling,
+                    pollAttempts: state.pollAttempts,
+                    errorCount: state.errorCount,
+                    lastError: state.lastError,
+                    powRecoveryAttempts: state.powRecoveryAttempts,
+                    isRecovering: state.isRecovering,
+                },
+                pow: window.powClient ? window.powClient.getStats() : null,
+                config: CONFIG,
+                appReady: !!getApp(),
+                token: !!getToken(),
+            };
         },
         debug: {
             state: state,
             pollStatus: async function(processId) {
                 return await fetchAnalysisResult(processId || state.currentProcessId);
             },
-            getPowSolution: getPowSolution
+            getPowSolution: getPowSolution,
+            refreshPowAndRetry: refreshPowAndRetry,
         }
     };
 
@@ -1165,7 +1315,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v2.3...');
+        console.log('🚀 Inicializando UploadReportSystem v2.4...');
         
         cacheElements();
         
@@ -1185,7 +1335,7 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v2.3 inicializado!');
+        console.log('✅ UploadReportSystem v2.4 inicializado!');
         console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
         console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
         console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
@@ -1193,13 +1343,16 @@
         console.log(`   ⏰ Global timeout: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
         console.log(`   🔄 Upload retries: ${CONFIG.UPLOAD_RETRY_ATTEMPTS}`);
         console.log(`   🔍 Result endpoints: ${CONFIG.RESULT_ENDPOINTS.join(', ')}`);
-        console.log(`   🔥 CORREÇÃO v2.3:`);
-        console.log(`      ✅ Rota correta: ${CONFIG.UPLOAD_ENDPOINT}`);
-        console.log(`      ✅ Fallback: ${CONFIG.UPLOAD_ENDPOINT_FALLBACK}`);
-        console.log(`      ✅ Tratamento de erro 400 com PoW`);
-        console.log(`      ✅ Renovação automática de PoW`);
-        console.log(`      ✅ Log detalhado para debug`);
-        console.log(`   🔧 Use window.UploadSystem.refreshPow() para renovar PoW`);
+        console.log(`   🔥 MELHORIAS v2.4:`);
+        console.log(`      ✅ Detecção inteligente de erro de PoW`);
+        console.log(`      ✅ Auto-recuperação com retry`);
+        console.log(`      ✅ Exponential backoff para retries`);
+        console.log(`      ✅ Diagnóstico completo disponível`);
+        console.log(`      ✅ Tratamento robusto de erros`);
+        console.log(`      ✅ Fallback múltiplo de endpoints`);
+        console.log(`      ✅ Verificação de saúde do PoW`);
+        console.log(`   🔧 Use window.UploadSystem.getDiagnostics() para debug`);
+        console.log(`   🔧 Use window.UploadSystem.recover() para forçar recuperação`);
     }
 
     if (document.readyState === 'loading') {
@@ -1208,11 +1361,12 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v2.3 carregado');
+    console.log('📊 upload-report-system.js v2.4 carregado');
     console.log(`   🔥 Rota corrigida: /upload-multi-analyze`);
     console.log(`   🔄 Fallback: /upload-auto`);
     console.log('   📊 Polling inteligente com fallback');
     console.log('   📈 Busca resultado em múltiplos endpoints');
     console.log('   🔧 Tratamento de erro 400 com auto-recuperação');
+    console.log('   🛡️ Detecção de PoW e créditos');
 
 })();
