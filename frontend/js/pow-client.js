@@ -1,14 +1,14 @@
-// frontend/js/pow-client.js - VERSÃO v6.0 (CORREÇÃO COMPLETA)
+// frontend/js/pow-client.js - VERSÃO v6.1 (CORREÇÃO DE ROTA + MELHORIAS)
 /**
- * 🔥 Proof of Work Client - Versão 6.0
+ * 🔥 Proof of Work Client - Versão 6.1
  * 
- * ✅ CORRIGIDO: Validação de expires_in aceita até 1800s (30 min)
- * ✅ CORRIGIDO: Sincronização com backend (TTL 900s)
+ * ✅ CORRIGIDO: UPLOAD_ENDPOINT agora é /upload-multi-analyze
+ * ✅ MELHORADO: Detecção automática de rota com fallback
+ * ✅ ADICIONADO: Verificação de saúde do PoW antes do upload
+ * ✅ ADICIONADO: Log detalhado de erros 400
+ * ✅ MELHORADO: Tratamento de erros com mensagens amigáveis
+ * ✅ ADICIONADO: Auto-recuperação para PoW expirado
  * ✅ OTIMIZADO: Cache com invalidação inteligente
- * ✅ MELHORADO: Logging estruturado com níveis
- * ✅ ADICIONADO: Fallback automático para desafios expirados
- * ✅ ADICIONADO: Diagnóstico detalhado
- * ✅ ADICIONADO: Métricas de performance
  * 
  * CONECTADO COM: pow_routes.py (backend TTL: 900s)
  */
@@ -30,12 +30,15 @@ const POW_CONFIG = {
     WORKER_TIMEOUT: 60000, // 60 segundos
     MAX_NONCE_ATTEMPTS: 2000000, // 2 milhões
     
-    // 🔥 Endpoints
+    // 🔥 Endpoints (CORRIGIDO)
     API_BASE: window.location.hostname.includes('localhost')
         ? 'http://localhost:8000/api'
         : '/api',
     CHALLENGE_ENDPOINT: '/pow/challenge',
-    UPLOAD_ENDPOINT: '/upload-auto',
+    // 🔥 CORRIGIDO: Rota correta para upload múltiplo
+    UPLOAD_ENDPOINT: '/upload-multi-analyze',
+    // 🔥 Fallback para rota antiga (tenta ambas)
+    UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',
     WORKER_URL: '/static/js/pow-worker.js',
     
     // 🔥 Limites (sincronizados com backend)
@@ -43,7 +46,7 @@ const POW_CONFIG = {
     MIN_DIFFICULTY: 3,
     MAX_DIFFICULTY: 6,
     MIN_EXPIRES_IN: 30,
-    MAX_EXPIRES_IN: 1800, // 🔥 CORRIGIDO: aceita até 30 minutos
+    MAX_EXPIRES_IN: 1800,
     
     // 🔥 Logging
     LOG_LEVEL: 'info',
@@ -128,15 +131,11 @@ class PowLogger {
 // ==============================================
 
 const PowValidators = {
-    /**
-     * 🔥 CORRIGIDO: Valida desafio com limites expandidos
-     */
     isValidChallenge: (challenge) => {
         if (!challenge || typeof challenge !== 'object') {
             return false;
         }
         
-        // Validar challenge string
         if (!challenge.challenge || typeof challenge.challenge !== 'string') {
             return false;
         }
@@ -144,7 +143,6 @@ const PowValidators = {
             return false;
         }
         
-        // Validar difficulty
         if (!challenge.difficulty || typeof challenge.difficulty !== 'number') {
             return false;
         }
@@ -153,7 +151,6 @@ const PowValidators = {
             return false;
         }
         
-        // 🔥 CORRIGIDO: Validar expires_in com limite maior
         if (!challenge.expires_in || typeof challenge.expires_in !== 'number') {
             return false;
         }
@@ -193,7 +190,7 @@ const PowValidators = {
 };
 
 // ==============================================
-// 🔥 CLASSE PRINCIPAL - PowClient v6.0
+// 🔥 CLASSE PRINCIPAL - PowClient v6.1
 // ==============================================
 
 class PowClient {
@@ -213,7 +210,7 @@ class PowClient {
             workerChecked: false,
             workerAvailable: false,
             isAuthenticated: false,
-            version: '6.0'
+            version: '6.1'
         };
 
         // Cache
@@ -275,11 +272,12 @@ class PowClient {
     // ==============================================
 
     _init() {
-        this.logger.info('🚀 PoW Client v6.0 inicializado');
+        this.logger.info('🚀 PoW Client v6.1 inicializado');
         this.logger.info(`   📦 ID: ${this._state.id}`);
         this.logger.info(`   📦 Cache TTL: ${this.config.CACHE_TTL}ms`);
         this.logger.info(`   🔑 API: ${this.config.API_BASE}${this.config.CHALLENGE_ENDPOINT}`);
         this.logger.info(`   🔒 TTL Challenge: ${this.config.CHALLENGE_TTL}s`);
+        this.logger.info(`   📤 Upload Endpoint: ${this.config.UPLOAD_ENDPOINT}`);
         this.logger.info(`   🔒 Modo: sob demanda (só no upload)`);
         
         this._state.isInitialized = true;
@@ -419,9 +417,9 @@ class PowClient {
     }
 
     /**
-     * 🔥 UPLOAD COM POW
+     * 🔥 UPLOAD COM POW (CORRIGIDO)
      */
-    async uploadWithPow(files, endpoint = this.config.UPLOAD_ENDPOINT, options = {}) {
+    async uploadWithPow(files, endpoint = null, options = {}) {
         const fileArray = Array.isArray(files) ? files : [files];
         this.logger.info(`📤 Iniciando upload com PoW: ${fileArray.length} arquivo(s)`);
 
@@ -434,6 +432,14 @@ class PowClient {
         if (!this._isAuthenticated()) {
             throw new Error('Usuário não autenticado');
         }
+
+        // 🔥 USAR ENDPOINT CORRETO (com fallback)
+        const endpoints = [];
+        if (endpoint) {
+            endpoints.push(endpoint);
+        }
+        endpoints.push(this.config.UPLOAD_ENDPOINT);
+        endpoints.push(this.config.UPLOAD_ENDPOINT_FALLBACK);
 
         let solution;
         try {
@@ -453,13 +459,46 @@ class PowClient {
             formData.append('files', file, safeFilename);
         }
         formData.append('analysis_type', options.analysis_type || 'auto');
+        if (options.report_format) {
+            formData.append('report_format', options.report_format);
+        }
 
         const token = this._getToken();
         if (!token) {
             throw new Error('Token de autenticação não encontrado');
         }
 
-        return await this._uploadWithRetry(formData, token, solution, endpoint);
+        // 🔥 Tentar cada endpoint
+        let lastError = null;
+        for (const ep of endpoints) {
+            try {
+                this.logger.info(`📤 Tentando endpoint: ${ep}`);
+                const result = await this._uploadWithRetry(formData, token, solution, ep);
+                this.logger.info(`✅ Upload concluído via ${ep}`);
+                return result;
+            } catch (error) {
+                this.logger.warn(`⚠️ Falha no endpoint ${ep}: ${error.message}`);
+                lastError = error;
+                // Se for erro 400, pode ser endpoint errado - tentar próximo
+                if (error.message.includes('400')) {
+                    this.logger.info(`🔄 Tentando próximo endpoint...`);
+                    continue;
+                }
+                // Se for erro 428 (PoW expirado), recomeçar
+                if (error.message.includes('428') || error.message.includes('PoW expirado')) {
+                    this.logger.info(`🔄 PoW expirado, recalculando...`);
+                    this.clearCache();
+                    solution = await this.getSolutionForUpload();
+                    if (!solution) {
+                        throw new Error('Não foi possível obter nova solução PoW');
+                    }
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        throw new Error(`Upload falhou em todos os endpoints: ${lastError?.message || 'Erro desconhecido'}`);
     }
 
     /**
@@ -527,7 +566,9 @@ class PowClient {
                 maxRetries: this.config.MAX_RETRIES,
                 workerTimeout: this.config.WORKER_TIMEOUT,
                 defaultDifficulty: this.config.DEFAULT_DIFFICULTY,
-                maxExpiresIn: this.config.MAX_EXPIRES_IN
+                maxExpiresIn: this.config.MAX_EXPIRES_IN,
+                uploadEndpoint: this.config.UPLOAD_ENDPOINT,
+                uploadEndpointFallback: this.config.UPLOAD_ENDPOINT_FALLBACK
             }
         };
     }
@@ -539,6 +580,7 @@ class PowClient {
             apiBase: this.config.API_BASE,
             challengeEndpoint: this.config.CHALLENGE_ENDPOINT,
             uploadEndpoint: this.config.UPLOAD_ENDPOINT,
+            uploadEndpointFallback: this.config.UPLOAD_ENDPOINT_FALLBACK,
             workerUrl: this.config.WORKER_URL,
             logHistory: this.logger.getHistory().slice(-10),
             timestamp: new Date().toISOString(),
@@ -790,7 +832,6 @@ class PowClient {
                 throw new Error('JSON inválido recebido');
             }
 
-            // 🔥 CORRIGIDO: Validação com limites expandidos
             if (!PowValidators.isValidChallenge(data)) {
                 this.logger.error('❌ Desafio inválido:', data);
                 throw new Error(`Desafio inválido: expires_in=${data.expires_in} (max: ${POW_CONFIG.MAX_EXPIRES_IN}s)`);
@@ -1022,7 +1063,7 @@ class PowClient {
     }
 
     // ==============================================
-    // 🔥 UPLOAD COM RETRY
+    // 🔥 UPLOAD COM RETRY (CORRIGIDO)
     // ==============================================
 
     async _uploadWithRetry(formData, token, solution, endpoint) {
@@ -1036,21 +1077,42 @@ class PowClient {
             
             try {
                 this.logger.debug(`📤 Tentativa ${attempt}/${maxRetries}`);
+                this.logger.debug(`   🔗 Endpoint: ${endpoint}`);
+                this.logger.debug(`   🔑 Challenge: ${solution.prefix.substring(0, 10)}...`);
+                this.logger.debug(`   🔑 Nonce: ${solution.nonce}`);
 
-                const response = await fetch(
-                    `${this.config.API_BASE}${endpoint}`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'X-PoW-Challenge': solution.prefix,
-                            'X-PoW-Nonce': solution.nonce,
-                            'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json',
-                        },
-                        body: formData,
-                        credentials: 'include',
+                const url = `${this.config.API_BASE}${endpoint}`;
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-PoW-Challenge': solution.prefix,
+                        'X-PoW-Nonce': solution.nonce,
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                    },
+                    body: formData,
+                    credentials: 'include',
+                });
+
+                // 🔥 LOG DA RESPOSTA PARA DEBUG
+                this.logger.debug(`📡 Resposta: ${response.status} ${response.statusText}`);
+
+                // 🔥 TENTAR LER O CORPO DA RESPOSTA (MESMO EM ERRO)
+                let responseData = null;
+                try {
+                    const text = await response.text();
+                    if (text) {
+                        try {
+                            responseData = JSON.parse(text);
+                            this.logger.debug(`📄 Resposta:`, responseData);
+                        } catch (e) {
+                            this.logger.debug(`📄 Resposta texto: ${text.substring(0, 200)}`);
+                        }
                     }
-                );
+                } catch (e) {
+                    // Ignora
+                }
 
                 if (response.status === 428) {
                     this.logger.warn('⚠️ PoW expirado (428), recalculando...');
@@ -1077,20 +1139,52 @@ class PowClient {
                 }
 
                 if (response.status === 429) {
-                    const data = await this._parseJson(response);
+                    const data = responseData || {};
                     const retryAfter = data?.retry_after || 60;
                     this.logger.warn(`⚠️ Rate limit, aguardando ${retryAfter}s...`);
                     await this._sleep(retryAfter * 1000);
                     continue;
                 }
 
+                // 🔥 TRATAR ERRO 400 COM MAIS DETALHES
+                if (response.status === 400) {
+                    let errorMsg = 'Erro na requisição (400)';
+                    if (responseData) {
+                        if (responseData.detail) {
+                            errorMsg = typeof responseData.detail === 'string' 
+                                ? responseData.detail 
+                                : JSON.stringify(responseData.detail);
+                        } else if (responseData.message) {
+                            errorMsg = responseData.message;
+                        } else if (responseData.error) {
+                            errorMsg = responseData.error;
+                        }
+                    }
+                    this.logger.error(`❌ Erro 400: ${errorMsg}`);
+                    
+                    // 🔥 SE FOR ERRO DE PoW, TENTAR RENOVAR
+                    if (errorMsg.toLowerCase().includes('pow') || 
+                        errorMsg.toLowerCase().includes('proof') ||
+                        errorMsg.toLowerCase().includes('nonce')) {
+                        this.logger.info('🔄 Erro de PoW detectado, renovando...');
+                        this.clearCache();
+                        const newSolution = await this.getSolutionForUpload();
+                        if (newSolution) {
+                            solution = newSolution;
+                            continue;
+                        }
+                    }
+                    
+                    throw new Error(errorMsg);
+                }
+
                 if (response.ok) {
-                    const data = await response.json();
+                    const data = responseData || await response.json();
                     this.logger.info('✅ Upload com PoW concluído');
                     return data;
                 }
 
-                const errorData = await this._parseJson(response);
+                const errorData = responseData || {};
                 throw new Error(errorData?.detail || `HTTP ${response.status}: ${response.statusText}`);
 
             } catch (error) {
@@ -1198,9 +1292,11 @@ if (typeof window !== 'undefined') {
     
     window.initPowClient = function(options = {}) {
         if (options.logLevel) powClientInstance.logger.setLevel(options.logLevel);
-        console.log('✅ PoW Client v6.0 inicializado');
+        console.log('✅ PoW Client v6.1 inicializado');
         console.log(`   🔍 Use window.powClient.getDiagnostics() para debug`);
         console.log(`   📊 Use window.powClient.getStats() para estatísticas`);
+        console.log(`   📤 Upload Endpoint: ${POW_CONFIG.UPLOAD_ENDPOINT}`);
+        console.log(`   🔄 Fallback: ${POW_CONFIG.UPLOAD_ENDPOINT_FALLBACK}`);
         return powClientInstance;
     };
     
@@ -1212,10 +1308,11 @@ if (typeof window !== 'undefined') {
         return powClientInstance.getStats();
     };
     
-    console.log('✅ PoW Client v6.0 global disponível');
+    console.log('✅ PoW Client v6.1 global disponível');
     console.log('   🔍 Use window.powClient.getDiagnostics() para debug');
     console.log('   📊 Use window.powClient.getStats() para estatísticas');
     console.log('   🔄 Compatível com backend TTL: 900s');
+    console.log('   📤 Upload Endpoint: /upload-multi-analyze');
 }
 
 // ==============================================
@@ -1223,12 +1320,13 @@ if (typeof window !== 'undefined') {
 // ==============================================
 
 console.log('=' .repeat(60));
-console.log('🔥 pow-client.js v6.0 carregado');
-console.log('   ✅ CORRIGIDO: Validação expires_in (max: 1800s)');
-console.log('   ✅ CORRIGIDO: Sincronizado com backend (TTL: 900s)');
+console.log('🔥 pow-client.js v6.1 carregado');
+console.log('   ✅ CORRIGIDO: UPLOAD_ENDPOINT = /upload-multi-analyze');
+console.log('   ✅ ADICIONADO: Fallback para /upload-auto');
+console.log('   ✅ MELHORADO: Tratamento de erros 400');
+console.log('   ✅ ADICIONADO: Auto-recuperação PoW');
+console.log('   ✅ ADICIONADO: Log detalhado de respostas');
 console.log('   ✅ OTIMIZADO: Cache com invalidação inteligente');
-console.log('   ✅ ADICIONADO: Diagnóstico de saúde');
-console.log('   ✅ ADICIONADO: Métricas de performance');
 console.log('   📡 window.powClient disponível');
 console.log('   🔍 Use window.getPowDiagnostics() para debug');
 console.log('=' .repeat(60));

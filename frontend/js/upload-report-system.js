@@ -1,10 +1,10 @@
-// frontend/js/upload-report-system.js - v2.2 (CORREÇÃO DE ROTA)
+// frontend/js/upload-report-system.js - v2.3 (MELHORIAS DE ERRO 400)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
 
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v2.2...');
+    console.log('📊 Inicializando UploadReportSystem v2.3...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -17,8 +17,8 @@
         POLLING_INTERVAL: 2000,
         MAX_POLLING_ATTEMPTS: 90,
         API_BASE: '/api',
-        // 🔥 CORREÇÃO: Rota correta
-        UPLOAD_ENDPOINT: '/upload-multi-analyze',  // ANTES: '/upload-auto'
+        UPLOAD_ENDPOINT: '/upload-multi-analyze',
+        UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',  // 🔥 NOVO: fallback
         UPLOAD_RETRY_ATTEMPTS: 3,
         UPLOAD_RETRY_DELAY: 2000,
         GLOBAL_TIMEOUT: 180000, // 3 minutos
@@ -27,7 +27,10 @@
             '/result/',
             '/analysis/',
             '/analyses/',
-        ]
+        ],
+        // 🔥 NOVO: Configurações de PoW
+        POW_MAX_AGE: 600000, // 10 minutos
+        POW_RETRY_ATTEMPTS: 2,
     };
 
     // ==============================================
@@ -44,6 +47,7 @@
         lastResult: null,
         uploadRetryCount: 0,
         startTime: null,
+        powLastRefresh: 0,  // 🔥 NOVO: controle de refresh do PoW
     };
 
     // ==============================================
@@ -227,7 +231,6 @@
         if (added > 0) {
             const userName = getUserName();
             showNotification(`${userName}, ${added} arquivo(s) adicionado(s)!`, 'info');
-            // 🔥 INICIA ANÁLISE AUTOMATICAMENTE
             startAnalysis();
         }
 
@@ -453,26 +456,40 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO
+    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (MELHORADO)
     // ==============================================
 
-    async function getPowSolution() {
+    async function getPowSolution(forceRefresh = false) {
         const app = getApp();
         
+        // 🔥 Verificar se precisa renovar
+        const now = Date.now();
+        if (forceRefresh || (now - state.powLastRefresh) > CONFIG.POW_MAX_AGE) {
+            console.log('🔄 Renovando PoW (idade:', Math.round((now - state.powLastRefresh)/1000), 's)');
+            state.powLastRefresh = now;
+        }
+        
+        console.log('🔐 [PoW] Tentando obter solução...');
+        console.log('   📦 app disponível?', !!app);
+        console.log('   📦 powClient disponível?', !!window.powClient);
+        
+        // 🔥 TENTATIVA 1: Via app.Pow
         if (app && app.Pow) {
             try {
                 if (typeof app.Pow.prepareForUpload === 'function') {
                     const ready = await app.Pow.prepareForUpload();
+                    console.log('   🔐 app.Pow.prepareForUpload result:', ready);
                     if (!ready) {
-                        console.log('⏳ PoW não está pronto');
-                        return null;
+                        console.log('⏳ PoW não está pronto via app.Pow');
                     }
                 }
                 
                 if (window.powClient && typeof window.powClient.getSolutionForUpload === 'function') {
                     const solution = await window.powClient.getSolutionForUpload();
                     if (solution && solution.prefix && solution.nonce) {
-                        console.log('✅ PoW solução obtida');
+                        console.log('✅ PoW solução obtida via powClient');
+                        console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
+                        console.log(`   🔑 Nonce: ${solution.nonce}`);
                         return solution;
                     }
                 }
@@ -485,12 +502,14 @@
                     }
                 }
             } catch (e) {
-                console.warn('⚠️ Erro ao obter PoW:', e.message);
+                console.warn('⚠️ Erro ao obter PoW via app.Pow:', e.message);
             }
         }
         
+        // 🔥 TENTATIVA 2: Via powClient direto
         if (window.powClient) {
             try {
+                console.log('   🔐 Tentando via powClient direto...');
                 if (typeof window.powClient.prepareForUpload === 'function') {
                     await window.powClient.prepareForUpload();
                 }
@@ -498,6 +517,8 @@
                     const solution = await window.powClient.getSolutionForUpload();
                     if (solution && solution.prefix && solution.nonce) {
                         console.log('✅ PoW solução obtida via powClient');
+                        console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
+                        console.log(`   🔑 Nonce: ${solution.nonce}`);
                         return solution;
                     }
                 }
@@ -558,7 +579,14 @@
             formData.append('analysis_type', 'auto');
             formData.append('report_format', 'html');
 
-            const solution = await getPowSolution();
+            // 🔥 TENTAR OBTER POW (COM RENOVAÇÃO)
+            let solution = null;
+            try {
+                solution = await getPowSolution(true);
+            } catch (e) {
+                console.warn('⚠️ Erro ao obter PoW:', e.message);
+            }
+            
             const result = await uploadWithRetry(formData, solution, filesToUpload);
             
             if (!result) {
@@ -624,104 +652,203 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD COM RETRY (CORRIGIDO)
+    // 🔥 UPLOAD COM RETRY (CORRIGIDO E MELHORADO)
     // ==============================================
 
     async function uploadWithRetry(formData, solution, files) {
         let lastError = null;
         const maxRetries = CONFIG.UPLOAD_RETRY_ATTEMPTS;
         
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const token = getToken();
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/json',
-                };
+        // 🔥 Lista de endpoints para tentar
+        const endpoints = [
+            CONFIG.UPLOAD_ENDPOINT,
+            CONFIG.UPLOAD_ENDPOINT_FALLBACK
+        ];
+        
+        for (let endpoint of endpoints) {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const token = getToken();
+                    if (!token) {
+                        throw new Error('Token não encontrado. Faça login novamente.');
+                    }
+                    
+                    const headers = {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                    };
 
-                if (solution && solution.prefix && solution.nonce) {
-                    headers['X-PoW-Challenge'] = solution.prefix;
-                    headers['X-PoW-Nonce'] = solution.nonce;
-                    console.log(`📤 Upload com PoW (tentativa ${attempt})`);
-                }
+                    // 🔥 SÓ ADICIONAR POW SE TIVER SOLUÇÃO VÁLIDA
+                    if (solution && solution.prefix && solution.nonce) {
+                        headers['X-PoW-Challenge'] = solution.prefix;
+                        headers['X-PoW-Nonce'] = solution.nonce;
+                        console.log(`📤 Upload com PoW (tentativa ${attempt}/${maxRetries})`);
+                        console.log(`   🔑 Challenge: ${solution.prefix.substring(0, 10)}...`);
+                        console.log(`   🔑 Nonce: ${solution.nonce}`);
+                        console.log(`   🌐 Endpoint: ${endpoint}`);
+                    } else {
+                        console.log(`📤 Upload SEM PoW (tentativa ${attempt}/${maxRetries})`);
+                    }
 
-                // 🔥 CORREÇÃO: Usar a rota correta
-                const url = buildApiUrl(CONFIG.UPLOAD_ENDPOINT);
-                
-                updateAnalysisProgress(
-                    10 + (attempt - 1) * 15,
-                    `📤 Tentativa ${attempt}/${maxRetries}...`
-                );
+                    const url = buildApiUrl(endpoint);
+                    
+                    updateAnalysisProgress(
+                        10 + (attempt - 1) * 15,
+                        `📤 Tentativa ${attempt}/${maxRetries}...`
+                    );
 
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: headers,
-                    body: formData,
-                    credentials: 'include',
-                });
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: headers,
+                        body: formData,
+                        credentials: 'include',
+                    });
 
-                if (response.status === 428) {
-                    console.warn('⚠️ PoW expirado, obtendo novo...');
-                    const newSolution = await getPowSolution();
-                    if (newSolution) {
-                        solution = newSolution;
+                    // 🔥 LOG DA RESPOSTA
+                    console.log(`📡 Resposta: ${response.status} ${response.statusText}`);
+
+                    // 🔥 TENTAR LER O CORPO DA RESPOSTA (MESMO EM ERRO)
+                    let responseData = null;
+                    let responseText = null;
+                    
+                    try {
+                        responseText = await response.text();
+                        if (responseText) {
+                            try {
+                                responseData = JSON.parse(responseText);
+                                console.log(`📄 Resposta JSON:`, responseData);
+                            } catch (e) {
+                                console.log(`📄 Resposta texto: ${responseText.substring(0, 200)}...`);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Não foi possível ler a resposta');
+                    }
+
+                    // 🔥 TRATAMENTO ESPECÍFICO DE ERROS
+                    if (response.status === 400) {
+                        let errorMessage = 'Erro na requisição. Verifique os dados enviados.';
+                        
+                        if (responseData) {
+                            if (responseData.detail) {
+                                errorMessage = typeof responseData.detail === 'string' 
+                                    ? responseData.detail 
+                                    : JSON.stringify(responseData.detail);
+                            } else if (responseData.message) {
+                                errorMessage = responseData.message;
+                            } else if (responseData.error) {
+                                errorMessage = responseData.error;
+                            }
+                        }
+                        
+                        console.error(`❌ Erro 400: ${errorMessage}`);
+                        
+                        // 🔥 SE FOR ERRO DE PoW, TENTAR RENOVAR
+                        if (errorMessage.toLowerCase().includes('pow') || 
+                            errorMessage.toLowerCase().includes('proof') ||
+                            errorMessage.toLowerCase().includes('nonce') ||
+                            errorMessage.toLowerCase().includes('challenge')) {
+                            console.log('🔄 Erro de PoW detectado, renovando...');
+                            if (window.powClient) {
+                                window.powClient.clearCache();
+                                window.powClient.reset();
+                            }
+                            // 🔥 TENTAR OBTER NOVA SOLUÇÃO
+                            try {
+                                const newSolution = await getPowSolution(true);
+                                if (newSolution) {
+                                    solution = newSolution;
+                                    console.log('✅ PoW renovado, tentando novamente...');
+                                    continue;
+                                }
+                            } catch (e) {
+                                console.warn('⚠️ Falha ao renovar PoW:', e.message);
+                            }
+                        }
+                        
+                        // 🔥 SE FOR ERRO DE CRÉDITOS
+                        if (errorMessage.toLowerCase().includes('crédito') || 
+                            errorMessage.toLowerCase().includes('credits') ||
+                            errorMessage.toLowerCase().includes('saldo')) {
+                            throw new Error(`Créditos insuficientes: ${errorMessage}`);
+                        }
+                        
+                        throw new Error(errorMessage);
+                    }
+
+                    if (response.status === 428) {
+                        console.warn('⚠️ PoW expirado (428), obtendo novo...');
+                        if (window.powClient) {
+                            window.powClient.clearCache();
+                            window.powClient.reset();
+                        }
+                        try {
+                            const newSolution = await getPowSolution(true);
+                            if (newSolution) {
+                                solution = newSolution;
+                                continue;
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Falha ao obter novo PoW:', e.message);
+                        }
+                        throw new Error('PoW expirado. Tente novamente.');
+                    }
+
+                    if (response.status === 401) {
+                        console.warn('⚠️ Token expirado (401), tentando refresh...');
+                        const app = getApp();
+                        if (app && typeof app.refreshTokenSafely === 'function') {
+                            const refreshed = await app.refreshTokenSafely();
+                            if (refreshed) {
+                                continue;
+                            }
+                        }
+                        throw new Error('Sessão expirada. Faça login novamente.');
+                    }
+
+                    if (response.status === 429) {
+                        const data = responseData || {};
+                        const retryAfter = data.retry_after || 5;
+                        console.warn(`⚠️ Rate limit, aguardando ${retryAfter}s...`);
+                        await sleep(retryAfter * 1000);
                         continue;
                     }
-                    throw new Error('PoW expirado. Tente novamente.');
-                }
 
-                if (response.status === 401) {
-                    console.warn('⚠️ Token expirado, tentando refresh...');
-                    const app = getApp();
-                    if (app && typeof app.refreshTokenSafely === 'function') {
-                        const refreshed = await app.refreshTokenSafely();
-                        if (refreshed) {
-                            continue;
-                        }
+                    if (response.status === 402) {
+                        const data = responseData || {};
+                        throw new Error(data.message || data.detail || 'Créditos insuficientes.');
                     }
-                    throw new Error('Sessão expirada. Faça login novamente.');
-                }
 
-                if (response.status === 429) {
-                    const data = await response.json().catch(() => ({}));
-                    const retryAfter = data.retry_after || 5;
-                    console.warn(`⚠️ Rate limit, aguardando ${retryAfter}s...`);
-                    await sleep(retryAfter * 1000);
-                    continue;
-                }
-
-                if (response.status === 402) {
-                    const data = await response.json().catch(() => ({}));
-                    throw new Error(data.message || 'Créditos insuficientes.');
-                }
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('✅ Upload bem-sucedido');
-                    return data;
-                }
-
-                let errorMessage = `Erro ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    if (errorData.detail) {
-                        errorMessage = typeof errorData.detail === 'string' 
-                            ? errorData.detail 
-                            : JSON.stringify(errorData.detail);
-                    } else if (errorData.message) {
-                        errorMessage = errorData.message;
+                    if (response.ok) {
+                        const data = responseData || await response.json();
+                        console.log('✅ Upload bem-sucedido');
+                        return data;
                     }
-                } catch (e) {}
-                throw new Error(errorMessage);
 
-            } catch (error) {
-                lastError = error;
-                console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
-                
-                if (attempt < maxRetries) {
-                    const delay = CONFIG.UPLOAD_RETRY_DELAY * attempt;
-                    console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
-                    await sleep(delay);
+                    // 🔥 QUALQUER OUTRO ERRO
+                    let errorMsg = `Erro ${response.status}`;
+                    if (responseData) {
+                        errorMsg = responseData.detail || responseData.message || responseData.error || errorMsg;
+                    }
+                    throw new Error(errorMsg);
+
+                } catch (error) {
+                    lastError = error;
+                    console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
+                    
+                    // 🔥 SE FOR ERRO DE CRÉDITOS OU VALIDAÇÃO, NÃO TENTA NOVAMENTE
+                    if (error.message.includes('Créditos') || 
+                        error.message.includes('insuficientes') ||
+                        error.message.includes('inválido') ||
+                        error.message.includes('Sessão expirada')) {
+                        throw error;
+                    }
+                    
+                    if (attempt < maxRetries) {
+                        const delay = CONFIG.UPLOAD_RETRY_DELAY * attempt;
+                        console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
+                        await sleep(delay);
+                    }
                 }
             }
         }
@@ -1019,6 +1146,11 @@
         isUploading: function() { return state.isUploading; },
         updateCredits: updateCreditsDisplay,
         CONFIG: CONFIG,
+        // 🔥 NOVO: Função para forçar refresh do PoW
+        refreshPow: async function() {
+            state.powLastRefresh = 0;
+            return await getPowSolution(true);
+        },
         debug: {
             state: state,
             pollStatus: async function(processId) {
@@ -1033,7 +1165,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v2.2...');
+        console.log('🚀 Inicializando UploadReportSystem v2.3...');
         
         cacheElements();
         
@@ -1053,7 +1185,7 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v2.2 inicializado!');
+        console.log('✅ UploadReportSystem v2.3 inicializado!');
         console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
         console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
         console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
@@ -1061,8 +1193,13 @@
         console.log(`   ⏰ Global timeout: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
         console.log(`   🔄 Upload retries: ${CONFIG.UPLOAD_RETRY_ATTEMPTS}`);
         console.log(`   🔍 Result endpoints: ${CONFIG.RESULT_ENDPOINTS.join(', ')}`);
-        console.log(`   🔥 CORREÇÃO v2.2:`);
-        console.log(`      ✅ ROTA CORRETA: ${CONFIG.UPLOAD_ENDPOINT}`);
+        console.log(`   🔥 CORREÇÃO v2.3:`);
+        console.log(`      ✅ Rota correta: ${CONFIG.UPLOAD_ENDPOINT}`);
+        console.log(`      ✅ Fallback: ${CONFIG.UPLOAD_ENDPOINT_FALLBACK}`);
+        console.log(`      ✅ Tratamento de erro 400 com PoW`);
+        console.log(`      ✅ Renovação automática de PoW`);
+        console.log(`      ✅ Log detalhado para debug`);
+        console.log(`   🔧 Use window.UploadSystem.refreshPow() para renovar PoW`);
     }
 
     if (document.readyState === 'loading') {
@@ -1071,9 +1208,11 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v2.2 carregado');
+    console.log('📊 upload-report-system.js v2.3 carregado');
     console.log(`   🔥 Rota corrigida: /upload-multi-analyze`);
+    console.log(`   🔄 Fallback: /upload-auto`);
     console.log('   📊 Polling inteligente com fallback');
     console.log('   📈 Busca resultado em múltiplos endpoints');
+    console.log('   🔧 Tratamento de erro 400 com auto-recuperação');
 
 })();
