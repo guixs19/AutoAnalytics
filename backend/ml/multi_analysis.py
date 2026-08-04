@@ -1,6 +1,6 @@
-# backend/ml/multi_analysis.py - VERSÃO FINAL 4.0
+# backend/ml/multi_analysis.py - VERSÃO FINAL 4.1 (ENCODING PROPAGADO)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V4.0
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V4.1
 ================================================================================
 ✅ Processa até 3 arquivos simultaneamente
 ✅ Dados estruturados (ConsolidatedAnalysis)
@@ -13,6 +13,7 @@
 ✅ Cache inteligente com invalidação
 ✅ Tratamento de erros robusto
 ✅ Logging estruturado
+✅ ENCODING PROPAGADO para o resultado final
 ================================================================================
 """
 
@@ -78,6 +79,7 @@ class FileMetrics:
     chart_data: Dict[str, Any] = field(default_factory=dict)
     success: bool = True
     error: Optional[str] = None
+    encoding_used: Optional[str] = None  # 🔥 ADICIONADO: encoding usado no arquivo
 
 
 @dataclass
@@ -174,12 +176,14 @@ class ConsolidatedAnalysis:
                     "margin": round(f.margin, 1),
                     "avg_score": round(f.avg_score, 3),
                     "high_risk_percentage": round(f.high_risk_percentage, 1),
-                    "low_risk_percentage": round(f.low_risk_percentage, 1)
+                    "low_risk_percentage": round(f.low_risk_percentage, 1),
+                    "encoding_used": f.encoding_used  # 🔥 PROPAGADO
                 }
                 for f in self.files
             ],
             "ml_results": {
                 "models_used": self.ml_results.models_used if self.ml_results else [],
+                "encodings_used": self.ml_results.encodings_used if self.ml_results else [],
                 "total_predictions": self.ml_results.total_predictions if self.ml_results else 0,
                 "avg_score": round(self.ml_results.avg_score, 3) if self.ml_results else 0,
                 "risk_distribution": self.ml_results.risk_distribution if self.ml_results else {}
@@ -250,6 +254,7 @@ class MultiFileAnalysisResult:
     processing_time_ms: float = 0
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     cache_hit: bool = False
+    encodings_used: List[str] = field(default_factory=list)  # 🔥 ADICIONADO: lista de encodings usados
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -282,7 +287,8 @@ class MultiFileAnalysisResult:
             "error": self.error,
             "processing_time_ms": self.processing_time_ms,
             "timestamp": self.timestamp,
-            "cache_hit": self.cache_hit
+            "cache_hit": self.cache_hit,
+            "encodings_used": self.encodings_used  # 🔥 PROPAGADO
         }
 
 
@@ -308,9 +314,10 @@ class MultiFileAnalyzerV4:
             "started_at": datetime.now().isoformat()
         }
         self._load_dependencies()
-        logger.info("✅ MultiFileAnalyzerV4 inicializado")
+        logger.info("✅ MultiFileAnalyzerV4.1 inicializado")
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
+        logger.info(f"   🔥 ENCODING: Propagado para o resultado final")
     
     def _load_dependencies(self):
         """Carrega dependências necessárias"""
@@ -397,6 +404,7 @@ class MultiFileAnalyzerV4:
             self._stats["cache_misses"] += 1
             
             logger.info(f"✅ Análise avançada concluída em {result.processing_time_ms:.0f}ms")
+            logger.info(f"   📝 Encodings usados: {result.encodings_used}")
             
             return result
             
@@ -427,6 +435,16 @@ class MultiFileAnalyzerV4:
                 
                 result = await self.process_file(content, filename)
                 
+                # 🔥 GARANTIR que encoding_used seja capturado
+                encoding_used = result.get('encoding_used')
+                if not encoding_used:
+                    # Tentar extrair do metadata
+                    metadata = result.get('metadata', {})
+                    encoding_used = metadata.get('encoding_used', 'unknown')
+                
+                # 🔥 LOG do encoding capturado
+                logger.info(f"   📝 Arquivo '{filename}' - Encoding: {encoding_used}")
+                
                 return {
                     'success': result.get('success', False),
                     'filename': filename,
@@ -436,7 +454,7 @@ class MultiFileAnalyzerV4:
                     'recommendations': result.get('recommendations', []),
                     'chart_data': result.get('chart_data', {}),
                     'model_used': result.get('model_used', 'default'),
-                    'encoding_used': result.get('encoding_used', 'auto'),
+                    'encoding_used': encoding_used,  # 🔥 PROPAGADO
                     'processed_rows': result.get('processed_rows', 0),
                     'error': result.get('error')
                 }
@@ -479,6 +497,15 @@ class MultiFileAnalyzerV4:
         # Filtrar resultados com sucesso
         success_results = [r for r in processed_results if r.get('success')]
         
+        # 🔥 Coletar encodings usados
+        all_encodings = []
+        for result in success_results:
+            enc = result.get('encoding_used')
+            if enc:
+                all_encodings.append(enc)
+        
+        logger.info(f"   📝 Encodings detectados: {set(all_encodings) if all_encodings else 'nenhum'}")
+        
         # 1️⃣ Métricas por arquivo
         file_metrics_list = []
         all_predictions = []
@@ -501,6 +528,9 @@ class MultiFileAnalyzerV4:
             total_costs = sum(costs) if costs else 0
             profit = total_revenue - total_costs
             
+            # 🔥 ADICIONAR encoding_used ao FileMetrics
+            encoding_used = result.get('encoding_used')
+            
             file_metrics = FileMetrics(
                 filename=result.get('filename', 'unknown'),
                 total_rows=result.get('processed_rows', 0),
@@ -513,7 +543,8 @@ class MultiFileAnalyzerV4:
                 low_risk_percentage=metrics.get('low_risk_percentage', 0),
                 predictions=result.get('predictions', []),
                 chart_data=chart_data,
-                success=True
+                success=True,
+                encoding_used=encoding_used  # 🔥 PROPAGADO
             )
             file_metrics_list.append(file_metrics)
             
@@ -744,6 +775,18 @@ class MultiFileAnalyzerV4:
         
         success_count = sum(1 for r in processed_results if r.get('success'))
         
+        # 🔥 Coletar todos os encodings usados
+        encodings_used = []
+        for r in processed_results:
+            if r.get('encoding_used'):
+                encodings_used.append(r['encoding_used'])
+        
+        # 🔥 Se não tiver encodings, usar 'unknown'
+        if not encodings_used:
+            encodings_used = ['unknown']
+        
+        logger.info(f"   📝 Encodings no resultado final: {set(encodings_used)}")
+        
         return MultiFileAnalysisResult(
             success=success_count > 0,
             total_files=len(files),
@@ -759,7 +802,8 @@ class MultiFileAnalyzerV4:
             general_conclusion=gemini_analysis.get('conclusion', ''),
             chart_data=consolidated.chart_data,
             processing_time_ms=processing_time_ms,
-            cache_hit=False
+            cache_hit=False,
+            encodings_used=list(set(encodings_used))  # 🔥 PROPAGADO
         )
     
     # ==========================================
@@ -1106,7 +1150,8 @@ class MultiFileAnalyzerV4:
             'error': error,
             'predictions': [],
             'metrics': {},
-            'chart_data': {}
+            'chart_data': {},
+            'encoding_used': None  # 🔥 ADICIONADO
         }
     
     def get_stats(self) -> Dict[str, Any]:
@@ -1154,7 +1199,7 @@ async def analyze_multiple_files(
 async def test_multi_analysis():
     """Função de teste"""
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V4.0")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V4.1")
     print("=" * 70)
     
     import pandas as pd
@@ -1195,6 +1240,10 @@ async def test_multi_analysis():
     print(f"   ✅ Processados: {result['processed_files']}")
     print(f"   ❌ Falhas: {result['failed_files']}")
     print(f"   ⏱️ Tempo: {result['processing_time_ms']:.0f}ms")
+    
+    # 🔥 MOSTRAR ENCODINGS
+    encodings = result.get('encodings_used', [])
+    print(f"   📝 Encodings usados: {encodings if encodings else 'N/A'}")
     
     if result.get('executive_score'):
         print("\n🏆 SCORE EXECUTIVO:")

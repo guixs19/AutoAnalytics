@@ -1,8 +1,9 @@
-# backend/ml/predict.py - VERSÃO ATUALIZADA COM SUPORTE A MÚLTIPLOS ARQUIVOS
+# backend/ml/predict.py - VERSÃO CORRIGIDA COM ENCODING
 """
 Módulo de predição unificado para AutoAnalytics
 Integra: RandomForest, AutoMLOffice, BoostingEnsemble
 Suporte a processamento de múltiplos arquivos
+🔥 CORRIGIDO: Detecção e propagação de encoding
 """
 
 import numpy as np
@@ -11,6 +12,7 @@ import joblib
 import os
 import pickle
 import asyncio
+import chardet  # 🔥 ADICIONADO para detecção de encoding
 from typing import Dict, Any, List, Optional, Tuple, Union
 from datetime import datetime
 import warnings
@@ -32,6 +34,7 @@ class ModelPredictor:
     - AutoML Office (automl_simple)
     - Boosting Ensemble (boosting_ensemble)
     - Suporte a múltiplos arquivos
+    🔥 CORRIGIDO: Detecção de encoding
     """
     
     def __init__(self):
@@ -66,11 +69,25 @@ class ModelPredictor:
             "last_prediction_time": None
         }
         
+        # 🔥 ADICIONADO: Estatísticas de encoding
+        self.encoding_stats = {
+            "utf-8": 0,
+            "utf-8-sig": 0,
+            "cp1252": 0,
+            "latin1": 0,
+            "iso-8859-1": 0,
+            "excel": 0,
+            "detected": 0,
+            "fallback": 0,
+            "unknown": 0
+        }
+        self.last_encoding = None
+        
         # Importar módulos existentes
         self._import_modules()
         
         os.makedirs(self.models_dir, exist_ok=True)
-        print("✅ ModelPredictor inicializado")
+        print("✅ ModelPredictor inicializado (com encoding)")
     
     def _import_modules(self):
         """Importa módulos existentes se disponíveis"""
@@ -90,6 +107,136 @@ class ModelPredictor:
             self.boosting_ensemble = None
             print("   ⚠️ BoostingEnsemble não disponível")
     
+    # ==========================================
+    # 🔥 DETECÇÃO DE ENCODING
+    # ==========================================
+    
+    def _detect_encoding(self, content: bytes) -> Tuple[str, float]:
+        """
+        Detecta o encoding de um arquivo
+        Returns: (encoding, confidence)
+        """
+        if not content or len(content) == 0:
+            return 'utf-8', 0.0
+        
+        try:
+            # Verificar BOM
+            boms = [
+                (b'\xef\xbb\xbf', 'utf-8-sig'),
+                (b'\xff\xfe', 'utf-16-le'),
+                (b'\xfe\xff', 'utf-16-be'),
+            ]
+            
+            for bom, encoding in boms:
+                if content.startswith(bom):
+                    self.encoding_stats[encoding] = self.encoding_stats.get(encoding, 0) + 1
+                    self.encoding_stats['detected'] += 1
+                    self.last_encoding = encoding
+                    return encoding, 0.99
+            
+            # Usar chardet
+            result = chardet.detect(content[:min(len(content), 50000)])
+            if result and result.get('encoding'):
+                encoding = result['encoding'].lower().replace('_', '-')
+                confidence = result.get('confidence', 0)
+                
+                # Normalizar nome
+                if encoding == 'utf-8':
+                    encoding = 'utf-8'
+                elif encoding in ['windows-1252', 'cp1252']:
+                    encoding = 'cp1252'
+                elif encoding in ['iso-8859-1', 'latin-1']:
+                    encoding = 'latin1'
+                
+                if confidence > 0.3:
+                    self.encoding_stats[encoding] = self.encoding_stats.get(encoding, 0) + 1
+                    self.encoding_stats['detected'] += 1
+                    self.last_encoding = encoding
+                    return encoding, confidence
+        
+        except Exception as e:
+            print(f"   ⚠️ Erro na detecção de encoding: {e}")
+        
+        # Fallback: tentar encodings comuns
+        for enc in ['utf-8-sig', 'utf-8', 'cp1252', 'latin1']:
+            try:
+                content[:1000].decode(enc)
+                self.encoding_stats[enc] = self.encoding_stats.get(enc, 0) + 1
+                self.encoding_stats['fallback'] += 1
+                self.last_encoding = enc
+                return enc, 0.5
+            except UnicodeDecodeError:
+                continue
+        
+        # Último recurso
+        self.encoding_stats['unknown'] += 1
+        self.last_encoding = 'utf-8'
+        return 'utf-8', 0.1
+    
+    # ==========================================
+    # CARREGAMENTO DE ARQUIVOS COM ENCODING
+    # ==========================================
+    
+    def _load_file_with_encoding(self, content: bytes, filename: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+        """
+        Carrega arquivo com detecção automática de encoding
+        Returns: (DataFrame, encoding_used)
+        """
+        encoding_used = None
+        df = None
+        
+        try:
+            # Detectar encoding
+            encoding, confidence = self._detect_encoding(content)
+            encoding_used = encoding
+            
+            print(f"   🔍 Encoding detectado: {encoding} (conf: {confidence:.2%})")
+            
+            # Carregar baseado na extensão
+            if filename.endswith('.csv'):
+                # Tentar com o encoding detectado
+                try:
+                    df = pd.read_csv(pd.io.common.BytesIO(content), encoding=encoding)
+                    print(f"   ✅ CSV carregado com encoding: {encoding}")
+                    return df, encoding
+                except UnicodeDecodeError:
+                    # Tentar fallbacks
+                    for enc in ['utf-8-sig', 'utf-8', 'cp1252', 'latin1']:
+                        if enc == encoding:
+                            continue
+                        try:
+                            df = pd.read_csv(pd.io.common.BytesIO(content), encoding=enc)
+                            print(f"   ✅ CSV carregado com encoding: {enc} (fallback)")
+                            self.encoding_stats[enc] = self.encoding_stats.get(enc, 0) + 1
+                            self.encoding_stats['fallback'] += 1
+                            return df, enc
+                        except UnicodeDecodeError:
+                            continue
+                    
+                    # Último recurso: ignorar erros
+                    df = pd.read_csv(pd.io.common.BytesIO(content), encoding='utf-8', errors='ignore')
+                    print(f"   ⚠️ CSV carregado com utf-8 (erros ignorados)")
+                    return df, 'utf-8_ignore'
+            
+            elif filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(pd.io.common.BytesIO(content))
+                encoding_used = 'excel'
+                self.encoding_stats['excel'] = self.encoding_stats.get('excel', 0) + 1
+                print(f"   ✅ Excel carregado")
+                return df, encoding_used
+            
+            else:
+                print(f"   ⚠️ Formato não suportado: {filename}")
+                return None, None
+                
+        except Exception as e:
+            print(f"   ❌ Erro ao carregar arquivo: {e}")
+            return None, None
+    
+    # ==========================================
+    # MÉTODOS EXISTENTES (sem alterações)
+    # ==========================================
+    
     async def load_or_train_models(self, force_reload: bool = False):
         """Carrega modelos existentes ou cria modelos placeholder"""
         if self.is_loaded and not force_reload:
@@ -98,10 +245,7 @@ class ModelPredictor:
         
         print("\n🔧 Carregando modelos de ML...")
         
-        # Tentar carregar modelo da oficina
         office_loaded = self._load_office_model()
-        
-        # Tentar carregar modelo padrão
         default_loaded = self._load_default_model()
         
         if not office_loaded and not default_loaded:
@@ -121,9 +265,7 @@ class ModelPredictor:
             with open(self.office_model_path, 'rb') as f:
                 model_data = joblib.load(f)
             
-            # Caso 1: Dicionário com metadados
             if isinstance(model_data, dict):
-                # AutoML Office
                 if 'pipeline' in model_data:
                     self.office_model = model_data['pipeline']
                     self.model_source = 'automl'
@@ -131,16 +273,12 @@ class ModelPredictor:
                     self.last_metrics = model_data.get('metricas', {})
                     print("✅ Modelo AutoML Office carregado")
                     return True
-                
-                # Boosting Ensemble
                 elif 'ensemble' in model_data:
                     self.office_model = model_data
                     self.model_source = 'boosting_ensemble'
                     self.last_metrics = model_data.get('metrics', {})
                     print("✅ Modelo Boosting Ensemble carregado")
                     return True
-                
-                # RandomForest com scaler
                 elif 'model' in model_data:
                     self.office_model = model_data['model']
                     self.scaler = model_data.get('scaler')
@@ -149,29 +287,24 @@ class ModelPredictor:
                     self.last_metrics = model_data.get('metrics', {})
                     print("✅ Modelo RandomForest carregado")
                     return True
-                
-                # Fallback
                 else:
                     self.office_model = model_data
                     self.model_source = 'unknown'
                     print("⚠️ Modelo carregado (tipo desconhecido)")
                     return True
             
-            # Caso 2: Objeto modelo simples
             elif hasattr(model_data, 'predict'):
                 self.office_model = model_data
                 self.model_source = 'simple_model'
                 print("✅ Modelo simples carregado")
                 return True
             
-            # Caso 3: Try to extract from boosting_ensemble
             elif self.boosting_ensemble and self.boosting_ensemble.best_model:
                 self.office_model = self.boosting_ensemble.best_model
                 self.model_source = 'boosting_ensemble'
                 print("✅ Modelo do BoostingEnsemble carregado")
                 return True
             
-            # Caso 4: Try to extract from automl_office
             elif self.automl_office and self.automl_office.best_pipeline:
                 self.office_model = self.automl_office.best_pipeline
                 self.model_source = 'automl'
@@ -215,7 +348,6 @@ class ModelPredictor:
     def _create_placeholder_model(self):
         """Cria modelo placeholder para testes"""
         try:
-            # Criar modelo simples
             self.office_model = RandomForestClassifier(
                 n_estimators=50,
                 max_depth=5,
@@ -225,7 +357,6 @@ class ModelPredictor:
             self.scaler = StandardScaler()
             self.model_source = 'placeholder'
             
-            # Treinar com dados sintéticos
             X_dummy = np.random.randn(100, 10)
             y_dummy = (X_dummy[:, 0] + X_dummy[:, 1] > 0).astype(int)
             X_scaled = self.scaler.fit_transform(X_dummy)
@@ -417,17 +548,20 @@ class ModelPredictor:
         
         return predictions
     
-    # ========== 🔥 NOVO: SUPORTE A MÚLTIPLOS ARQUIVOS ==========
+    # ==========================================
+    # 🔥 MÉTODO PRINCIPAL - MÚLTIPLOS ARQUIVOS (CORRIGIDO)
+    # ==========================================
     
     async def predict_multiple_files(self, files_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Processa múltiplos arquivos em lote com o modelo ML
+        🔥 CORRIGIDO: Detecção e propagação de encoding
         
         Args:
             files_data: Lista de dicionários com 'content' (bytes), 'filename' e 'process_id'
         
         Returns:
-            Lista de resultados por arquivo
+            Lista de resultados por arquivo com encoding detectado
         """
         print(f"\n{'='*60}")
         print(f"📦 Processando lote de {len(files_data)} arquivo(s) com ML")
@@ -446,17 +580,16 @@ class ModelPredictor:
                 content = file_info['content']
                 process_id = file_info.get('process_id', f'file_{idx}')
                 
-                # Carregar arquivo baseado na extensão
-                if filename.endswith('.csv'):
-                    df = pd.read_csv(pd.io.common.BytesIO(content))
-                elif filename.endswith(('.xlsx', '.xls')):
-                    df = pd.read_excel(pd.io.common.BytesIO(content))
-                else:
+                # 🔥 CARREGAR COM DETECÇÃO DE ENCODING
+                df, encoding_used = self._load_file_with_encoding(content, filename)
+                
+                if df is None:
                     results.append({
                         'process_id': process_id,
                         'filename': filename,
                         'success': False,
-                        'error': f'Formato não suportado: {filename}'
+                        'encoding_used': encoding_used or 'unknown',
+                        'error': f'Falha ao carregar arquivo: {filename}'
                     })
                     continue
                 
@@ -466,6 +599,7 @@ class ModelPredictor:
                         'process_id': process_id,
                         'filename': filename,
                         'success': False,
+                        'encoding_used': encoding_used,
                         'error': 'Arquivo vazio'
                     })
                     continue
@@ -503,7 +637,6 @@ class ModelPredictor:
                         'low_risk_percentage': len([p for p in predictions if p < 0.3]) / len(predictions) * 100 if predictions else 0
                     }
                     
-                    # Amostra das previsões (primeiras 10)
                     predictions_sample = predictions[:10] if len(predictions) > 10 else predictions
                     
                 except Exception as ml_error:
@@ -524,6 +657,7 @@ class ModelPredictor:
                         feature_imp.sort(key=lambda x: x[1], reverse=True)
                         top_features = [{'name': f, 'importance': float(i)} for f, i in feature_imp[:5]]
                 
+                # 🔥 RESULTADO COM ENCODING
                 results.append({
                     'process_id': process_id,
                     'filename': filename,
@@ -534,6 +668,7 @@ class ModelPredictor:
                     'top_features': top_features,
                     'insights': insights,
                     'model_used': self.model_source,
+                    'encoding_used': encoding_used,  # 🔥 PROPAGADO
                     'processed_at': datetime.now().isoformat()
                 })
                 
@@ -541,6 +676,7 @@ class ModelPredictor:
                 
                 print(f"   ✅ {filename}: {len(df)} linhas, {len(predictions)} previsões")
                 print(f"      📊 Média: {pred_summary['mean']:.3f} | Alto risco: {pred_summary.get('high_risk_percentage', 0):.1f}%")
+                print(f"      📝 Encoding: {encoding_used}")
                 
             except Exception as e:
                 print(f"   ❌ Erro ao processar {file_info.get('filename', 'desconhecido')}: {e}")
@@ -548,18 +684,25 @@ class ModelPredictor:
                     'process_id': file_info.get('process_id', f'error_{idx}'),
                     'filename': file_info.get('filename', 'desconhecido'),
                     'success': False,
+                    'encoding_used': None,  # 🔥 PROPAGADO
                     'error': str(e)
                 })
         
         print(f"\n{'='*60}")
         print(f"📊 RESUMO DO LOTE:")
         success_count = len([r for r in results if r.get('success')])
+        encodings = set([r.get('encoding_used') for r in results if r.get('encoding_used')])
         print(f"   ✅ Sucesso: {success_count}/{len(results)}")
+        print(f"   📝 Encodings detectados: {encodings if encodings else 'N/A'}")
         print(f"   📁 Total arquivos processados: {self.stats['total_files_processed']}")
         print(f"   🎯 Total predições: {self.stats['total_predictions']}")
         print(f"{'='*60}\n")
         
         return results
+    
+    # ==========================================
+    # MÉTODOS EXISTENTES (sem alterações)
+    # ==========================================
     
     async def predict_proba_for_office(self, df: pd.DataFrame) -> List[float]:
         """Retorna probabilidades para classificação"""
@@ -683,6 +826,10 @@ class ModelPredictor:
         
         return recommendations
     
+    # ==========================================
+    # UTILITÁRIOS
+    # ==========================================
+    
     def get_model_summary(self) -> Dict[str, Any]:
         """Retorna resumo do modelo atual"""
         return {
@@ -700,7 +847,9 @@ class ModelPredictor:
                 "total_arquivos": self.stats['total_files_processed'],
                 "cache_hits": self.stats['cache_hits'],
                 "cache_hit_rate": self.stats['cache_hits'] / max(1, self.stats['total_predictions']) * 100
-            }
+            },
+            "encoding_stats": self.encoding_stats,  # 🔥 ADICIONADO
+            "last_encoding": self.last_encoding  # 🔥 ADICIONADO
         }
     
     def clear_cache(self):
@@ -750,10 +899,16 @@ class ModelPredictor:
         return {'success': True, 'score': float(score)}
 
 
-# Instância global
+# ==========================================
+# INSTÂNCIA GLOBAL
+# ==========================================
+
 predictor = ModelPredictor()
 
-# Funções de compatibilidade
+# ==========================================
+# FUNÇÕES DE COMPATIBILIDADE
+# ==========================================
+
 async def predict_office_data(df: pd.DataFrame) -> List[float]:
     return await predictor.predict_for_office(df)
 
@@ -770,10 +925,11 @@ def get_predictor_status() -> Dict[str, Any]:
     return predictor.get_model_summary()
 
 
-print("\n✅ predict.py carregado com sucesso!")
+print("\n✅ predict.py carregado com sucesso (com encoding)!")
 print("   Métodos disponíveis:")
 print("   → predictor.predict_for_office(df)")
-print("   → predictor.predict_multiple_files(files_data) 🔥 NOVO")
+print("   → predictor.predict_multiple_files(files_data) 🔥 CORRIGIDO")
 print("   → predictor.predict_proba_for_office(df)")
 print("   → predictor.get_ml_insights_for_gemini(df, predictions)")
 print("   → predictor.get_model_summary()")
+print("   📝 Encoding: Detecção automática com chardet")

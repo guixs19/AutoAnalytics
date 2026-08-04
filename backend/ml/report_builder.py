@@ -1,22 +1,14 @@
-# backend/ml/report_builder.py - VERSÃO 3.0 (INTEGRAÇÃO COM PREPROCESSING)
+# backend/ml/report_builder.py - VERSÃO 3.1 CORRIGIDA
 """
-🔥 EXECUTIVE REPORT BUILDER - AutoAnalytics V3.0
+🔥 EXECUTIVE REPORT BUILDER - AutoAnalytics V3.1
 ================================================================================
-VERSÃO 3.0 - INTEGRAÇÃO COMPLETA COM preprocessing.py
+VERSÃO 3.1 - CORREÇÃO DE ENCODING E DUPLICAÇÃO
 
 ✅ CORREÇÕES:
-   - 🔥 CHART_DATA: Extrai dados reais do preprocessing
-   - 🔥 INSIGHTS: Usa insights gerados pelo ML
-   - 🔥 PREDICTIONS: Usa predições reais
-   - 🔥 ENCODING: UTF-8 corrigido para PDF
-   - 🔥 DADOS REAIS: Não usa mais placeholders
-
-✅ MELHORIAS:
-   - 📊 Integração direta com MLPipelineResult
-   - 📈 Gráficos baseados em dados reais
-   - 💡 Insights e recomendações do ML
-   - 🎯 Score Executivo calculado
-   - 📝 Relatório completo com todos os dados
+   - 🔥 Removida duplicação da função to_html
+   - 🔥 Encoding UTF-8 garantido em todo o HTML
+   - 🔥 encoding_used propagado para o rodapé
+   - 🔥 Charset correto no head e meta tags
 ================================================================================
 """
 
@@ -78,7 +70,7 @@ class ExecutiveReport:
     files: List[Dict[str, Any]] = field(default_factory=list)
     table_of_contents: List[Dict[str, Any]] = field(default_factory=list)
     
-    # 🔥 NOVO: Dados do ML Pipeline
+    # Dados do ML Pipeline
     ml_predictions: List[float] = field(default_factory=list)
     ml_metrics: Dict[str, Any] = field(default_factory=dict)
     ml_insights: Dict[str, Any] = field(default_factory=dict)
@@ -119,7 +111,7 @@ class ExecutiveReport:
 
 class ExecutiveReportBuilder:
     """
-    🔥 Construtor de Relatórios Executivos - V3.0
+    🔥 Construtor de Relatórios Executivos - V3.1
     Integrado com preprocessing.py
     """
     
@@ -142,14 +134,13 @@ class ExecutiveReportBuilder:
             'baixa': '🟢 Baixa Prioridade'
         }
         
-        logger.info(f"✅ ExecutiveReportBuilder V3.0 inicializado")
+        logger.info(f"✅ ExecutiveReportBuilder V3.1 inicializado")
         logger.info(f"   🌐 Idioma: {language}")
         logger.info(f"   🎨 Tema: {theme}")
         logger.info(f"   🏢 Empresa: {company_name}")
-        logger.info(f"   🔥 Integração com preprocessing.py")
     
     # ==========================================
-    # 🔥 MÉTODO PRINCIPAL (INTEGRADO)
+    # MÉTODO PRINCIPAL
     # ==========================================
     
     def build(
@@ -157,16 +148,10 @@ class ExecutiveReportBuilder:
         analysis_result: Dict[str, Any],
         user_name: str = "Usuário"
     ) -> ExecutiveReport:
-        """
-        🔥 Constrói relatório a partir do resultado do preprocessing.py/multi_analysis.py
-        """
+        """Constrói relatório a partir do resultado do preprocessing.py/multi_analysis.py"""
         logger.info("📄 Construindo relatório executivo integrado...")
         
-        # ==========================================
-        # 1. EXTRAIR DADOS DO ML PIPELINE
-        # ==========================================
-        
-        # Dados do preprocessing
+        # 1. Extrair dados do ML Pipeline
         ml_predictions = analysis_result.get('predictions', [])
         ml_metrics = analysis_result.get('metrics', {})
         ml_insights = analysis_result.get('insights', {})
@@ -175,27 +160,16 @@ class ExecutiveReportBuilder:
         model_used = analysis_result.get('model_used', 'unknown')
         encoding_used = analysis_result.get('encoding_used', 'unknown')
         
-        # 🔥 Se não tem chart_data, tenta extrair do pipeline
-        if not ml_chart_data and 'chart_data' in analysis_result:
-            ml_chart_data = analysis_result.get('chart_data', {})
-        
-        # 🔥 Se ainda não tem, gera fallback
+        # Se não tem chart_data, gera fallback
         if not ml_chart_data:
             ml_chart_data = self._generate_fallback_chart_data(ml_predictions, ml_metrics)
         
-        # ==========================================
-        # 2. CALCULAR SCORE EXECUTIVO
-        # ==========================================
-        
+        # 2. Calcular score executivo
         executive_score = self._calculate_executive_score(ml_predictions, ml_metrics, ml_insights)
         
-        # ==========================================
-        # 3. EXTRAIR INSIGHTS E RECOMENDAÇÕES
-        # ==========================================
-        
+        # 3. Extrair insights e recomendações
         executive_summary = self._generate_executive_summary(ml_metrics, ml_insights)
         
-        # Converter recomendações do ML para formato do relatório
         formatted_recommendations = []
         for rec in ml_recommendations:
             if isinstance(rec, str):
@@ -217,19 +191,13 @@ class ExecutiveReportBuilder:
                     'effort': 'medio'
                 })
         
-        # ==========================================
-        # 4. ANÁLISE DE COMPARAÇÃO E TENDÊNCIA
-        # ==========================================
-        
+        # 4. Análises
         comparison = self._analyze_comparison(ml_predictions, ml_metrics)
         trend = self._analyze_trend(ml_predictions, ml_metrics)
         forecast = self._generate_forecast(ml_predictions, ml_metrics)
         general_conclusion = self._generate_conclusion(ml_predictions, ml_metrics, ml_insights)
         
-        # ==========================================
-        # 5. CONSTRUIR SEÇÕES E TABELAS
-        # ==========================================
-        
+        # 5. Construir seções e tabelas
         sections = self._build_sections_from_ml(
             executive_summary=executive_summary,
             comparison=comparison,
@@ -244,10 +212,7 @@ class ExecutiveReportBuilder:
         tables = self._build_tables_from_ml(ml_predictions, ml_metrics, ml_chart_data)
         toc = self._generate_table_of_contents(sections)
         
-        # ==========================================
-        # 6. CRIAR RELATÓRIO
-        # ==========================================
-        
+        # 6. Criar relatório
         return ExecutiveReport(
             title=f"📊 Relatório Executivo - {self.company_name}",
             subtitle=f"Análise de {analysis_result.get('total_files', 1)} arquivo(s)",
@@ -268,7 +233,6 @@ class ExecutiveReportBuilder:
             processing_time_ms=analysis_result.get('processing_time_ms', 0),
             files=analysis_result.get('files', []),
             table_of_contents=toc,
-            # 🔥 Dados do ML
             ml_predictions=ml_predictions,
             ml_metrics=ml_metrics,
             ml_insights=ml_insights,
@@ -279,18 +243,11 @@ class ExecutiveReportBuilder:
         )
     
     # ==========================================
-    # 🔥 FUNÇÕES DE ANÁLISE
+    # FUNÇÕES DE ANÁLISE
     # ==========================================
     
-    def _calculate_executive_score(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any],
-        insights: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _calculate_executive_score(self, predictions: List[float], metrics: Dict[str, Any], insights: Dict[str, Any]) -> Dict[str, Any]:
         """Calcula score executivo baseado nos dados do ML"""
-        
-        # Extrair predições seguras
         pred_list = self._safe_predictions_to_list(predictions)
         total_predictions = len(pred_list)
         
@@ -304,18 +261,14 @@ class ExecutiveReportBuilder:
                 'nota_geral': 5.0
             }
         
-        # Estatísticas
         mean_score = float(np.mean(pred_list)) if pred_list else 0.5
-        std_score = float(np.std(pred_list)) if pred_list else 0.2
         high_risk_pct = metrics.get('high_risk_percentage', 0) or 0
         
-        # Calcular notas (0-10)
         saude_financeira = min(10, max(0, mean_score * 10 + 1))
         eficiencia = min(10, max(0, mean_score * 9 + 0.5))
         controle_custos = min(10, max(0, mean_score * 8 + 1))
         crescimento = min(10, max(0, mean_score * 7 + 2))
         
-        # Nível de risco
         if high_risk_pct > 30:
             nivel_risco = 'Alto'
         elif high_risk_pct > 15:
@@ -323,7 +276,6 @@ class ExecutiveReportBuilder:
         else:
             nivel_risco = 'Baixo'
         
-        # Nota geral
         nota_geral = min(10, max(0, (saude_financeira + eficiencia + controle_custos + crescimento) / 4))
         
         return {
@@ -335,24 +287,16 @@ class ExecutiveReportBuilder:
             'nota_geral': round(nota_geral, 1)
         }
     
-    def _generate_executive_summary(
-        self,
-        metrics: Dict[str, Any],
-        insights: Dict[str, Any]
-    ) -> str:
+    def _generate_executive_summary(self, metrics: Dict[str, Any], insights: Dict[str, Any]) -> str:
         """Gera resumo executivo baseado nos dados"""
-        
         mean_score = metrics.get('mean_prediction', 0.5) * 100
         total_rows = metrics.get('processed_rows', 0)
         high_risk = metrics.get('high_risk_percentage', 0)
         low_risk = metrics.get('low_risk_percentage', 0)
         
         summary_parts = []
-        
-        # Dados gerais
         summary_parts.append(f"📊 **{total_rows} registros** analisados com um score médio de **{mean_score:.0f}%**.")
         
-        # Risco
         if high_risk > 30:
             summary_parts.append(f"🔴 **{high_risk:.0f}%** dos casos são de alto risco, indicando necessidade de revisão de processos.")
         elif high_risk > 15:
@@ -360,31 +304,15 @@ class ExecutiveReportBuilder:
         else:
             summary_parts.append(f"🟢 **{low_risk:.0f}%** dos casos são de baixo risco, demonstrando boa performance.")
         
-        # Insights adicionais
-        if insights and 'summary' in insights:
-            summary = insights.get('summary', {})
-            if summary.get('mean'):
-                summary_parts.append(f"📈 Score médio: **{(summary.get('mean', 0.5)*100):.0f}%**")
-        
         return " ".join(summary_parts)
     
-    def _analyze_comparison(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _analyze_comparison(self, predictions: List[float], metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Analisa comparação entre arquivos/períodos"""
-        
         pred_list = self._safe_predictions_to_list(predictions)
         total = len(pred_list)
         
         if total == 0:
-            return {
-                'best_revenue': 'N/A',
-                'best_profit': 'N/A',
-                'best_growth': 'N/A',
-                'highest_risk': 'N/A'
-            }
+            return {'best_revenue': 'N/A', 'best_profit': 'N/A', 'best_growth': 'N/A', 'highest_risk': 'N/A'}
         
         mean_score = np.mean(pred_list) if pred_list else 0.5
         high_risk_count = len([p for p in pred_list if p > 0.7])
@@ -397,13 +325,8 @@ class ExecutiveReportBuilder:
             'highest_risk': f'{high_risk_pct:.0f}% dos casos'
         }
     
-    def _analyze_trend(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _analyze_trend(self, predictions: List[float], metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Analisa tendência dos dados"""
-        
         pred_list = self._safe_predictions_to_list(predictions)
         total = len(pred_list)
         
@@ -416,7 +339,6 @@ class ExecutiveReportBuilder:
                 'key_observations': ['Carregue mais dados para análise de tendência']
             }
         
-        # Calcular tendência
         first_half = pred_list[:total//2]
         second_half = pred_list[total//2:]
         
@@ -446,13 +368,8 @@ class ExecutiveReportBuilder:
             ]
         }
     
-    def _generate_forecast(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any]
-    ) -> str:
+    def _generate_forecast(self, predictions: List[float], metrics: Dict[str, Any]) -> str:
         """Gera previsão baseada nos dados"""
-        
         pred_list = self._safe_predictions_to_list(predictions)
         total = len(pred_list)
         
@@ -460,8 +377,6 @@ class ExecutiveReportBuilder:
             return "Dados insuficientes para uma previsão confiável. Recomendamos carregar mais dados."
         
         mean_score = np.mean(pred_list) if pred_list else 0.5
-        std_score = np.std(pred_list) if pred_list else 0.2
-        
         high_risk_pct = metrics.get('high_risk_percentage', 0) or 0
         
         if high_risk_pct > 30:
@@ -478,14 +393,8 @@ class ExecutiveReportBuilder:
         
         return forecast
     
-    def _generate_conclusion(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any],
-        insights: Dict[str, Any]
-    ) -> str:
+    def _generate_conclusion(self, predictions: List[float], metrics: Dict[str, Any], insights: Dict[str, Any]) -> str:
         """Gera conclusão geral"""
-        
         pred_list = self._safe_predictions_to_list(predictions)
         total = len(pred_list)
         
@@ -498,7 +407,6 @@ class ExecutiveReportBuilder:
         
         conclusion_parts = []
         
-        # Análise geral
         if mean_score > 0.7:
             conclusion_parts.append("✅ A análise demonstra **alta performance**, com potencial significativo de crescimento.")
         elif mean_score > 0.4:
@@ -506,13 +414,11 @@ class ExecutiveReportBuilder:
         else:
             conclusion_parts.append("⚠️ A análise demonstra **baixa performance**, indicando necessidade de revisão estratégica.")
         
-        # Risco
         if high_risk_pct > 30:
             conclusion_parts.append(f"🔴 Atenção: {high_risk_pct:.0f}% dos casos são de alto risco.")
         elif low_risk_pct > 60:
             conclusion_parts.append(f"🟢 Excelente: {low_risk_pct:.0f}% dos casos são de baixo risco.")
         
-        # Recomendação final
         if high_risk_pct > 15:
             conclusion_parts.append("🎯 Recomenda-se revisão dos processos e investimento em treinamento.")
         else:
@@ -538,7 +444,7 @@ class ExecutiveReportBuilder:
         return "estavel"
     
     # ==========================================
-    # 🔥 FUNÇÕES DE CONSTRUÇÃO DE SEÇÕES
+    # CONSTRUÇÃO DE SEÇÕES
     # ==========================================
     
     def _build_sections_from_ml(
@@ -642,7 +548,6 @@ class ExecutiveReportBuilder:
         """Formata insights do ML"""
         lines = []
         
-        # Resumo
         summary = insights.get('summary', {})
         if summary:
             total = summary.get('total_predictions', 0)
@@ -650,14 +555,12 @@ class ExecutiveReportBuilder:
             lines.append(f"📊 Total de predições: {total}")
             lines.append(f"📈 Score médio: {(mean*100):.0f}%")
         
-        # Distribuição de risco
         risk = insights.get('risk_distribution', {})
         if risk:
             lines.append(f"🔴 Alto risco: {risk.get('high_percentage', 0):.0f}%")
             lines.append(f"🟡 Médio risco: {risk.get('medium_percentage', 0):.0f}%")
             lines.append(f"🟢 Baixo risco: {risk.get('low_percentage', 0):.0f}%")
         
-        # Informações do modelo
         model_info = insights.get('model_info', {})
         if model_info:
             source = model_info.get('source', 'unknown')
@@ -669,7 +572,6 @@ class ExecutiveReportBuilder:
     def _format_recommendations_text(self, recommendations: List[Dict[str, Any]]) -> str:
         """Formata recomendações para texto"""
         lines = []
-        
         priority_order = {'alta': 0, 'media': 1, 'baixa': 2}
         sorted_recs = sorted(recommendations, key=lambda x: priority_order.get(x.get('priority', 'media'), 1))
         
@@ -725,20 +627,14 @@ class ExecutiveReportBuilder:
         return "\n".join(lines)
     
     # ==========================================
-    # 🔥 CONSTRUÇÃO DE TABELAS
+    # CONSTRUÇÃO DE TABELAS
     # ==========================================
     
-    def _build_tables_from_ml(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any],
-        chart_data: Dict[str, Any]
-    ) -> List[ReportTable]:
+    def _build_tables_from_ml(self, predictions: List[float], metrics: Dict[str, Any], chart_data: Dict[str, Any]) -> List[ReportTable]:
         """Constrói tabelas baseadas nos dados do ML"""
         tables = []
         pred_list = self._safe_predictions_to_list(predictions)
         
-        # Tabela de métricas
         if pred_list:
             high_risk = len([p for p in pred_list if p > 0.7])
             medium_risk = len([p for p in pred_list if 0.3 <= p <= 0.7])
@@ -755,7 +651,6 @@ class ExecutiveReportBuilder:
                 caption="Distribuição dos casos por nível de risco"
             ))
         
-        # Tabela de métricas do ML
         if metrics:
             table_rows = []
             for key, value in metrics.items():
@@ -773,7 +668,6 @@ class ExecutiveReportBuilder:
                     caption="Métricas calculadas pelo modelo de ML"
                 ))
         
-        # Tabela de dados semanais (do chart_data)
         if chart_data and chart_data.get('weekly'):
             weekly = chart_data.get('weekly', {})
             labels = weekly.get('labels', ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'])
@@ -803,15 +697,14 @@ class ExecutiveReportBuilder:
         return tables
     
     # ==========================================
-    # 🔥 CHART_DATA FALLBACK
+    # FALLBACK
     # ==========================================
     
-    def _generate_fallback_chart_data(
-        self,
-        predictions: List[float],
-        metrics: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _generate_fallback_chart_data(self, predictions: List[float], metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Gera chart_data de fallback"""
+        import random
+        random.seed(42)
+        
         days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
         months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
         
@@ -822,8 +715,6 @@ class ExecutiveReportBuilder:
             weekly_revenue = [base_value * (0.5 + p * 0.6) for p in pred_list[:7]]
             weekly_services = [max(1, int(p * 15 + 2)) for p in pred_list[:7]]
         else:
-            import random
-            random.seed(42)
             weekly_revenue = [random.randint(500, 2000) + random.random() * 100 for _ in range(7)]
             weekly_services = [random.randint(2, 15) for _ in range(7)]
         
@@ -847,7 +738,7 @@ class ExecutiveReportBuilder:
         }
     
     # ==========================================
-    # 🔥 UTILITÁRIOS
+    # UTILITÁRIOS
     # ==========================================
     
     def _safe_predictions_to_list(self, predictions: Any) -> List[float]:
@@ -872,7 +763,7 @@ class ExecutiveReportBuilder:
         return [{"title": s.title, "level": s.level, "order": s.order} for s in sections]
     
     # ==========================================
-    # 🔥 EXPORTAÇÃO HTML (CORRIGIDO ENCODING)
+    # EXPORTAÇÃO HTML (CORRIGIDO)
     # ==========================================
     
     def to_html(self, report: ExecutiveReport) -> str:
@@ -993,14 +884,16 @@ class ExecutiveReportBuilder:
         }}
         """
         
+        # 🔥 CORREÇÃO: HTML com encoding UTF-8 garantido
         html = f"""
         <!DOCTYPE html>
         <html lang="pt-BR">
         <head>
             <meta charset="UTF-8">
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>{report.title}</title>
-            {css}
+            <style>{css}</style>
         </head>
         <body>
             <div class="report-header">
@@ -1036,10 +929,14 @@ class ExecutiveReportBuilder:
         for table in report.tables:
             html += self._render_table(table)
         
+        # 🔥 CORREÇÃO: Rodapé com encoding_used
+        encoding_info = f"• Encoding: {report.encoding_used}" if report.encoding_used else ""
         html += f"""
             <div class="footer">
-                {self.company_name} v3.0 • Relatório gerado automaticamente por IA • {report.generated_at}
-                <br><small style="color:rgba(255,255,255,0.15);">Modelo: {report.model_used} • {len(report.ml_predictions)} predições</small>
+                {self.company_name} v3.1 • Relatório gerado automaticamente por IA • {report.generated_at}
+                <br><small style="color:rgba(255,255,255,0.15);">
+                    Modelo: {report.model_used} • {len(report.ml_predictions)} predições {encoding_info}
+                </small>
             </div>
         </body>
         </html>
@@ -1048,7 +945,7 @@ class ExecutiveReportBuilder:
         return html
     
     # ==========================================
-    # 🔥 RENDERIZAÇÃO HTML
+    # RENDERIZAÇÃO HTML
     # ==========================================
     
     def _render_toc(self, toc: List[Dict[str, Any]]) -> str:
@@ -1154,7 +1051,7 @@ class ExecutiveReportBuilder:
         return html
     
     # ==========================================
-    # 🔥 EXPORTAÇÃO PDF (CORRIGIDO ENCODING)
+    # EXPORTAÇÃO PDF
     # ==========================================
     
     def to_pdf(self, report: ExecutiveReport) -> bytes:
@@ -1163,10 +1060,7 @@ class ExecutiveReportBuilder:
         
         try:
             from weasyprint import HTML
-            
-            # 🔥 CORREÇÃO: Usar UTF-8 explicitamente
             pdf_bytes = HTML(string=html_content, encoding='utf-8').write_pdf()
-            
             logger.info("✅ PDF gerado com sucesso")
             return pdf_bytes
             
@@ -1179,7 +1073,7 @@ class ExecutiveReportBuilder:
             return html_content.encode('utf-8')
     
     # ==========================================
-    # 🔥 SALVAR RELATÓRIO
+    # SALVAR RELATÓRIO
     # ==========================================
     
     def save(
@@ -1209,7 +1103,7 @@ class ExecutiveReportBuilder:
 
 
 # ==============================================
-# 🔥 INSTÂNCIA GLOBAL
+# INSTÂNCIA GLOBAL
 # ==============================================
 
 report_builder = ExecutiveReportBuilder(
@@ -1220,7 +1114,7 @@ report_builder = ExecutiveReportBuilder(
 
 
 # ==============================================
-# 🔥 FUNÇÃO DE COMPATIBILIDADE
+# FUNÇÃO DE COMPATIBILIDADE
 # ==============================================
 
 def build_executive_report(
