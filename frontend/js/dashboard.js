@@ -1,24 +1,23 @@
-// frontend/js/dashboard.js - VERSÃO 15.1 (CORREÇÃO DE LOOP + MELHORIAS DE CRÉDITOS)
+// frontend/js/dashboard.js - VERSÃO 16.0 (CORREÇÃO DE CRÉDITOS + MELHORIAS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v15.1
+ * 🔥 Dashboard Module - AutoAnalytics v16.0
+ * 
+ * ✅ CORREÇÕES CRÍTICAS v16.0:
+ * - 🔥 CORRIGIDO: Verificação de créditos usando App State primeiro
+ * - 🔥 CORRIGIDO: Sync de créditos com fallback múltiplo
+ * - 🔥 ADICIONADO: _loadFromAppState() para carregamento instantâneo
+ * - 🔥 MELHORADO: Detecção de token via appAuth
+ * - 🔥 OTIMIZADO: Sincronização com debounce e throttle
  * 
  * ✅ CORREÇÕES v15.1:
  * - 🔥 CORRIGIDO: Loop infinito entre dashboard.js e app.js
  * - 🔥 ADICIONADO: Throttle para atualizações de UI
  * - 🔥 ADICIONADO: Flag _silent para eventos internos
- * - 🔥 OTIMIZADO: Sincronização de créditos com debounce
- * - 🔥 MELHORADO: Verificação de mudança real antes de atualizar
  * 
- * ✅ CORREÇÕES CRÍTICAS v15.0:
- * - 🔥 CONSUMO DE CRÉDITOS: 1 crédito por upload
- * - 🔥 SINCERONIZAÇÃO: Verificação de saldo antes/depois
- * - 🔥 DETECÇÃO: Consumo excessivo com rollback automático
- * 
- * ✅ MELHORIAS v15.1:
- * - 📊 Prevenção de stack overflow
- * - 🔄 Sincronização inteligente
- * - 💾 Cache com invalidação controlada
- * - 🛡️ Tratamento robusto de eventos
+ * ✅ MELHORIAS v16.0:
+ * - 📊 Verificação de créditos ANTES do upload
+ * - 💰 Sincronização automática com App State
+ * - 🛡️ Fallback robusto para token
  * - ⚡ Performance otimizada
  */
 
@@ -80,7 +79,13 @@
             }
         },
 
-        isAuthenticated: () => !!Utils.getToken(),
+        isAuthenticated: () => {
+            // 🔥 CORRIGIDO: Usar appAuth primeiro
+            if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                return window.appAuth.isAuthenticated();
+            }
+            return !!Utils.getToken();
+        },
 
         formatCurrency: (value) => {
             if (value === undefined || value === null || isNaN(value)) return 'R$ 0,00';
@@ -110,7 +115,6 @@
             };
         },
         
-        // 🔥 NOVO: Debounce para sincronização
         debounce: (func, wait) => {
             let timeout;
             return function executedFunction(...args) {
@@ -125,7 +129,7 @@
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER - GERENCIADOR DE CRÉDITOS (CORRIGIDO)
+    // 🔥 CREDIT MANAGER - GERENCIADOR DE CRÉDITOS (CORRIGIDO V16.0)
     // ==============================================
 
     class CreditManager {
@@ -137,15 +141,92 @@
             this._pendingRefund = 0;
             this._syncInProgress = false;
             
-            // 🔥 NOVO: Controle de throttling
+            // Controle de throttling
             this._updatingUI = false;
             this._lastUpdate = 0;
             this._uiThrottle = CONFIG.CREDITS.UI_THROTTLE;
             this._updateQueue = [];
             this._isProcessingQueue = false;
-            
-            // 🔥 NOVO: Cache do display atual
             this._cachedDisplay = null;
+            
+            // 🔥 CARREGAR DO APP STATE PRIMEIRO
+            this._loadFromAppState();
+            
+            // 🔥 Escutar eventos de créditos
+            this._setupEventListeners();
+        }
+
+        // 🔥 Carregar do App State (mais rápido)
+        _loadFromAppState() {
+            try {
+                if (window.__APP_STATE) {
+                    const appCredits = window.__APP_STATE.credits;
+                    if (appCredits !== undefined) {
+                        this._balance = appCredits;
+                        this._isPremium = window.__APP_STATE.isPremium || false;
+                        this._isAdmin = window.__APP_STATE.isAdmin || false;
+                        console.log(`💰 [CreditManager] Carregado do App State: ${this._balance}`);
+                        this._updateUI();
+                        return true;
+                    }
+                }
+                
+                // Fallback: tentar do localStorage
+                try {
+                    const userData = localStorage.getItem('user_data');
+                    if (userData) {
+                        const parsed = JSON.parse(userData);
+                        if (parsed.credits !== undefined) {
+                            this._balance = parsed.credits;
+                            this._isPremium = parsed.is_premium || false;
+                            this._isAdmin = parsed.is_admin || false;
+                            console.log(`💰 [CreditManager] Carregado do localStorage: ${this._balance}`);
+                            this._updateUI();
+                            return true;
+                        }
+                    }
+                } catch (e) {}
+                
+                // Fallback: tentar do App
+                if (window.App && typeof window.App.getCredits === 'function') {
+                    const appCredits = window.App.getCredits();
+                    if (appCredits !== undefined) {
+                        this._balance = appCredits;
+                        this._isPremium = window.App.isPremium ? window.App.isPremium() : false;
+                        this._isAdmin = window.App.isAdmin ? window.App.isAdmin() : false;
+                        console.log(`💰 [CreditManager] Carregado do App: ${this._balance}`);
+                        this._updateUI();
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch (e) {
+                console.warn('⚠️ Erro ao carregar do App State:', e);
+                return false;
+            }
+        }
+
+        // 🔥 Configurar listeners de eventos
+        _setupEventListeners() {
+            document.addEventListener('creditsUpdated', (e) => {
+                const data = e.detail || {};
+                if (data._silent) return; // Evitar loop
+                
+                if (data.credits !== undefined) {
+                    this._balance = data.credits;
+                    this._isPremium = data.isPremium || false;
+                    this._isAdmin = data.isAdmin || false;
+                    this._updateUI();
+                }
+            });
+
+            document.addEventListener('app:state_changed', (e) => {
+                const data = e.detail || {};
+                if (data.key === 'credits' || data.key === 'isPremium' || data.key === 'isAdmin') {
+                    this._loadFromAppState();
+                }
+            });
         }
 
         get balance() { return this._balance; }
@@ -158,14 +239,40 @@
             return String(this._balance);
         }
 
-        // 🔥 Sincronizar com o backend (com debounce)
+        // 🔥 Sincronizar com o backend (CORRIGIDO)
         async sync(force = false) {
+            // 🔥 PRIMEIRO: Tentar do App State (mais rápido)
+            if (!force) {
+                const loaded = this._loadFromAppState();
+                if (loaded) {
+                    return this._balance;
+                }
+            }
+
             if (this._syncInProgress && !force) return this._balance;
             
             this._syncInProgress = true;
+            
             try {
-                const token = Utils.getToken();
-                if (!token) return this._balance;
+                // 🔥 CORRIGIDO: Verificar autenticação corretamente
+                let token = null;
+                
+                // Tentar via appAuth
+                if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
+                    if (window.appAuth.isAuthenticated()) {
+                        token = localStorage.getItem('access_token');
+                    }
+                } else {
+                    // Fallback: verificar token diretamente
+                    token = Utils.getToken();
+                }
+                
+                if (!token) {
+                    console.log('⏳ [CreditManager] Sem token, usando App State');
+                    this._loadFromAppState();
+                    this._updateUI();
+                    return this._balance;
+                }
 
                 const response = await fetch('/api/auth/me', {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -177,7 +284,7 @@
                     const newIsPremium = data.is_premium || false;
                     const newIsAdmin = data.is_admin || false;
                     
-                    // 🔥 Verificar se houve mudança real
+                    // Verificar se houve mudança real
                     const changed = (
                         newBalance !== this._balance ||
                         newIsPremium !== this._isPremium ||
@@ -193,9 +300,18 @@
                     }
                     
                     return this._balance;
+                } else if (response.status === 401) {
+                    console.warn('⚠️ Token expirado, usando App State');
+                    this._loadFromAppState();
+                    this._updateUI();
+                    return this._balance;
                 }
             } catch (e) {
                 console.warn('⚠️ Erro ao sincronizar créditos:', e);
+                // Fallback: usar App State
+                this._loadFromAppState();
+                this._updateUI();
+                return this._balance;
             } finally {
                 this._syncInProgress = false;
             }
@@ -207,10 +323,15 @@
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
-        // 🔥 Verificar se tem créditos suficientes
+        // 🔥 Verificar se tem créditos suficientes (CORRIGIDO)
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
+            // 🔥 PRIMEIRO: Atualizar do App State
+            this._loadFromAppState();
+            
             if (this._isAdmin) return true;
-            return this._balance >= required;
+            const hasEnough = this._balance >= required;
+            console.log(`💰 [CreditManager] Verificando créditos: ${this._balance} >= ${required} = ${hasEnough}`);
+            return hasEnough;
         }
 
         // 🔥 Verificar se pode receber crédito diário
@@ -227,6 +348,9 @@
                 return { success: true, balance: '∞' };
             }
 
+            // 🔥 ATUALIZAR ANTES DE VERIFICAR
+            await this.sync(true);
+            
             if (!this.hasCredits(amount)) {
                 return { 
                     success: false, 
@@ -268,6 +392,8 @@
                 }
             } catch (e) {
                 console.error('❌ Erro ao consumir créditos:', e);
+                // 🔥 TENTAR RECUPERAR SALDO
+                await this.sync(true);
                 return { success: false, error: e.message };
             }
         }
@@ -304,10 +430,9 @@
 
         // 🔥 ATUALIZAR UI (COM THROTTLE E PREVENÇÃO DE LOOP)
         _updateUI() {
-            // 🔥 Throttle: não atualizar mais de uma vez a cada X ms
+            // Throttle: não atualizar mais de uma vez a cada X ms
             const now = Date.now();
             if (now - this._lastUpdate < this._uiThrottle) {
-                // 🔥 Agendar para depois se necessário
                 if (!this._updateQueue.includes('update')) {
                     this._updateQueue.push('update');
                     setTimeout(() => this._processQueue(), this._uiThrottle);
@@ -321,13 +446,13 @@
             try {
                 const display = this.display;
                 
-                // 🔥 Verificar se o display mudou realmente
+                // Verificar se o display mudou realmente
                 if (this._cachedDisplay === display) {
                     this._updatingUI = false;
                     return;
                 }
                 
-                // 🔥 Atualizar elementos DOM
+                // Atualizar elementos DOM
                 const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
                 let updated = false;
                 
@@ -342,17 +467,22 @@
                     this._cachedDisplay = display;
                     this._lastUpdate = now;
                     
-                    // 🔥 Disparar evento com flag _silent para evitar loop
+                    // Disparar evento com flag _silent para evitar loop
                     const event = new CustomEvent('creditsUpdated', {
                         detail: {
                             credits: this._balance,
                             display: display,
                             isPremium: this._isPremium,
                             isAdmin: this._isAdmin,
-                            _silent: true  // 🔥 Flag crítica para evitar loop
+                            _silent: true
                         }
                     });
                     document.dispatchEvent(event);
+                    
+                    // Também atualizar o App State
+                    if (window.__APP_STATE_MANAGER) {
+                        window.__APP_STATE_MANAGER.updateCredits(this._balance, this._isPremium);
+                    }
                 }
                 
             } catch (e) {
@@ -408,7 +538,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v15.1] Inicializando com correção de loop...');
+            console.log('🚀 [Dashboard v16.0] Inicializando com correção de créditos...');
 
             // Sincronizar créditos
             await this._creditManager.sync();
@@ -420,7 +550,7 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v15.1] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.0] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Consumo: ${CONFIG.CREDITS.COST_PER_UPLOAD} crédito por upload`);
             console.log(`   🛡️ Throttle: ${CONFIG.CREDITS.UI_THROTTLE}ms`);
@@ -477,7 +607,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS
+        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS (CORRIGIDO)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -509,8 +639,13 @@
                     }
                 }
 
-                // 🔥 VERIFICAR CRÉDITOS
+                // 🔥 VERIFICAR CRÉDITOS (CORRIGIDO)
+                // 🔥 PRIMEIRO: Sincronizar para garantir saldo atualizado
+                await this._creditManager.sync(true);
+                
                 const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
+                console.log(`💰 [Dashboard] Verificação de créditos: ${hasCredits} (saldo: ${this._creditManager.balance})`);
+                
                 if (!hasCredits) {
                     this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
                     this._showUpgradePrompt();
@@ -566,6 +701,8 @@
                         this._showUploadStatus('❌', 'Créditos insuficientes', 'Adquira o plano Premium', 0);
                         this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
                         this._showUpgradePrompt();
+                        // 🔥 ATUALIZAR SALDO após erro
+                        await this._creditManager.sync(true);
                         return null;
                     }
 
@@ -575,7 +712,7 @@
                 const result = await response.json();
 
                 // 🔥 VERIFICAR CONSUMO DE CRÉDITOS
-                const balanceAfter = await this._creditManager.sync();
+                const balanceAfter = await this._creditManager.sync(true);
                 console.log(`💰 Saldo depois: ${balanceAfter}`);
 
                 const discrepancy = Utils.detectCreditDiscrepancy(
@@ -595,7 +732,7 @@
                     
                     if (refunded) {
                         console.log(`✅ ${discrepancy.difference} crédito(s) devolvido(s)`);
-                        await this._creditManager.sync();
+                        await this._creditManager.sync(true);
                     }
                 }
 
@@ -618,7 +755,7 @@
                 this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
                 
                 try {
-                    await this._creditManager.sync();
+                    await this._creditManager.sync(true);
                 } catch (e) {}
 
                 this._uploadInProgress = false;
@@ -978,18 +1115,18 @@
         _handleCreditsUpdated(e) {
             const data = e.detail || {};
             
-            // 🔥 IGNORAR eventos com flag _silent (já processados)
+            // Ignorar eventos com flag _silent (já processados)
             if (data._silent) {
                 return;
             }
             
-            // 🔥 Verificar se houve mudança real
+            // Verificar se houve mudança real
             if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
                 this._creditManager._balance = data.credits;
                 this._creditManager._isPremium = data.isPremium || false;
                 this._creditManager._isAdmin = data.isAdmin || false;
                 
-                // 🔥 Atualizar UI sem disparar novo evento
+                // Atualizar UI sem disparar novo evento
                 const display = this._creditManager.display;
                 const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
                 elements.forEach(el => {
@@ -1114,18 +1251,26 @@
         // ==========================================
 
         _setupEvents() {
-            // 🔥 CORRIGIDO: Eventos de créditos com prevenção de loop
+            // Eventos de créditos com prevenção de loop
             document.addEventListener('creditsUpdated', this._handleCreditsUpdated);
 
-            // 🔥 Eventos de análise
+            // Eventos de análise
             document.addEventListener('analysis:success', () => {
                 this._invalidateCache();
             });
 
-            // 🔥 Visibility change com debounce
+            // Visibility change com debounce
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
                     this._creditManager.syncDebounced();
+                }
+            });
+            
+            // 🔥 Evento para recarregar créditos quando o App State mudar
+            document.addEventListener('app:state_changed', (e) => {
+                const data = e.detail || {};
+                if (data.key === 'credits' || data.key === 'isPremium') {
+                    this._creditManager._loadFromAppState();
                 }
             });
         }
@@ -1170,7 +1315,6 @@
                 this._pollingInterval = null;
             }
             
-            // 🔥 Remover event listeners para evitar memory leaks
             document.removeEventListener('creditsUpdated', this._handleCreditsUpdated);
             
             this._initialized = false;
@@ -1227,13 +1371,16 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v15.1 carregado - CORREÇÃO DE LOOP + MELHORIAS');
+    console.log('🔥 dashboard.js v16.0 carregado - CORREÇÃO DE CRÉDITOS');
+    console.log('   ✅ Verificação de créditos com App State primeiro');
+    console.log('   ✅ Sync com fallback múltiplo');
+    console.log('   ✅ Carregamento instantâneo do saldo');
+    console.log('   ✅ Detecção de token via appAuth');
     console.log('   ✅ Consumo: 1 crédito por upload');
     console.log('   ✅ Detecção automática de consumo excessivo');
     console.log('   ✅ Rollback automático com devolução de créditos');
     console.log('   ✅ Sincronização com debounce e throttle');
     console.log('   ✅ PREVENÇÃO DE LOOP INFINITO');
-    console.log('   ✅ UI atualizada com throttling');
     console.log('=' .repeat(60));
 
 })();
