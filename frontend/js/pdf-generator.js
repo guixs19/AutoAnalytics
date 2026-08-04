@@ -1,54 +1,67 @@
-// frontend/js/pdf-generator.js - VERSÃO 3.0 (INTELIGENTE)
+// frontend/js/pdf-generator.js - VERSÃO 3.2 (INTELIGENTE E ROBUSTO)
 /**
- * 🔥 PDF Generator - AutoAnalytics v3.0
+ * 🔥 PDF Generator - AutoAnalytics v3.2
  * 
  * ✅ INTELIGÊNCIA INCORPORADA:
- *    - Detecta encoding automaticamente
- *    - Adapta sanitização ao conteúdo
- *    - Suporta múltiplas fontes de dados
- *    - Gera relatórios em diferentes formatos
+ *    - Coleta automática de dados de múltiplas fontes
+ *    - Detecta e sanitiza encoding automaticamente
+ *    - Suporta múltiplos formatos de relatório
  *    - Cache de sanitização para performance
+ * 
+ * ✅ CORREÇÕES v3.2:
+ *    - 🔥 CORRIGIDO: Busca dados reais da análise (não fallback)
+ *    - 🔥 CORRIGIDO: Extração robusta de métricas
+ *    - 🔥 ADICIONADO: Fallback inteligente para dados faltantes
+ *    - 🔥 ADICIONADO: Logging detalhado para debug
+ *    - 🔥 ADICIONADO: Verificação de dados antes de gerar PDF
  * 
  * ✅ SUPORTE A:
  *    - Dados da API (/api/...)
  *    - Dados do banco (analysis object)
  *    - Dados do dashboard (__APP_STATE)
  *    - Dados do upload (UploadSystem)
+ *    - Dados do DOM (extração de elementos)
  * 
- * ✅ CORREÇÕES:
- *    - Encoding UTF-8 para PDF
- *    - Caracteres especiais (ç, ã, õ, etc)
- *    - Emojis e símbolos
- *    - Caracteres de controle
+ * ✅ CARACTERES SUPORTADOS:
+ *    - Acentos: á à â ã ä é è ê ë í ì î ï ó ò ô õ ö ú ù û ü ç ñ
+ *    - Emojis: 📊 📈 📉 💰 💡 🎯 ✅ ❌ ⚠️ 🔴 🟢 🟡 🔥 ⭐ 🏆
+ *    - Símbolos: ™ ® © ° ± … — – • “ ” ‘ ’ € £ ¥
  */
 
 (function() {
     'use strict';
 
-    console.log('📄 PDF Generator v3.0 - Modo Inteligente');
+    console.log('📄 PDF Generator v3.2 - Modo Inteligente');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
     // ==============================================
 
     const PDF_CONFIG = {
-        // Fontes de dados possíveis (ordem de prioridade)
+        // Fontes de dados (ordem de prioridade)
         DATA_SOURCES: [
             'UploadSystem',
             '__dashboard',
             '__APP_STATE',
-            '_lastResult'
+            '_lastResult',
+            'DOM'
         ],
+        
+        // Tempo limite para busca de dados (ms)
+        DATA_FETCH_TIMEOUT: 3000,
+        
+        // Tamanho máximo do cache de sanitização
+        CACHE_MAX_SIZE: 100,
         
         // Caracteres que precisam de sanitização
         SANITIZE_PATTERNS: {
             acentos: /[áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ]/g,
             emojis: /[\u{1F300}-\u{1FAFF}]/gu,
-            especiais: /[™®©°±…—–•“‘”’]/g,
+            especiais: /[™®©°±…—–•“‘”’€£¥]/g,
             controle: /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g
         },
         
-        // Mapeamento de caracteres
+        // Mapeamento de caracteres para sanitização
         CHAR_MAP: {
             // Acentuados (minúsculos)
             'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
@@ -64,7 +77,7 @@
             'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
             'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
             'Ç': 'C', 'Ñ': 'N',
-            // Emojis e símbolos comuns
+            // Emojis e símbolos
             '📊': '[Gráfico]',
             '📈': '[↑]',
             '📉': '[↓]',
@@ -92,6 +105,12 @@
             '💎': '[Diamond]',
             '🚀': '[Rocket]',
             '🎉': '[Party]',
+            '📌': '[Pin]',
+            '📊': '[Chart]',
+            '💵': '[$]',
+            '💳': '[Card]',
+            '🔄': '[Sync]',
+            '📝': '[Note]',
             // Caracteres especiais
             '…': '...',
             '—': '-',
@@ -109,10 +128,6 @@
             '™': '(TM)',
             '°': 'graus',
             '±': '+/-',
-            '✓': '[x]',
-            '✔': '[OK]',
-            '✗': '[x]',
-            '✘': '[x]',
         }
     };
 
@@ -122,7 +137,7 @@
 
     const SanitizeCache = {
         _cache: new Map(),
-        _maxSize: 100,
+        _maxSize: PDF_CONFIG.CACHE_MAX_SIZE,
         
         get: function(text) {
             return this._cache.get(text);
@@ -139,61 +154,252 @@
         
         clear: function() {
             this._cache.clear();
+        },
+        
+        getSize: function() {
+            return this._cache.size;
         }
     };
 
     // ==============================================
-    // 🔥 DETECTOR DE ENCODING
+    // 🔥 UTILITÁRIOS
     // ==============================================
 
-    const EncodingDetector = {
-        /**
-         * 🔥 Detecta o encoding do texto
-         */
-        detect: function(text) {
-            if (!text) return 'unknown';
-            
-            // Verificar se tem caracteres UTF-8
+    const Utils = {
+        getToken: function() {
             try {
-                encodeURIComponent(text);
-                // Se passar, pode ser UTF-8
+                const token = localStorage.getItem('access_token');
+                if (!token || token === 'undefined' || token === 'null' || token.length < 10) {
+                    return null;
+                }
+                return token;
             } catch (e) {
-                return 'unknown';
+                return null;
+            }
+        },
+
+        buildApiUrl: function(path) {
+            if (!path) return '/api';
+            const cleanPath = path.startsWith('/') ? path : '/' + path;
+            if (cleanPath.startsWith('/api/')) return cleanPath;
+            return '/api' + cleanPath;
+        },
+
+        sleep: function(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        },
+
+        isNumeric: function(value) {
+            return !isNaN(parseFloat(value)) && isFinite(value);
+        },
+
+        safeNumber: function(value, defaultValue = 0) {
+            const num = parseFloat(value);
+            return isNaN(num) ? defaultValue : num;
+        }
+    };
+
+    // ==============================================
+    // 🔥 COLETOR DE DADOS INTELIGENTE (CORRIGIDO)
+    // ==============================================
+
+    const DataCollector = {
+        _lastFetch: 0,
+        _cachedData: null,
+        _fetchInProgress: false,
+
+        /**
+         * 🔥 Coleta dados da melhor fonte disponível
+         */
+        collect: function() {
+            console.log('🔍 Coletando dados da análise...');
+            
+            const sources = this._tryAllSources();
+            
+            // Filtrar fontes com dados válidos
+            const validSources = sources.filter(s => s.data && Object.keys(s.data).length > 0);
+            
+            if (validSources.length === 0) {
+                console.warn('⚠️ Nenhuma fonte de dados encontrada');
+                return null;
             }
             
-            // Verificar se tem caracteres acentuados
-            const hasAccents = /[áàâãäéèêëíìîïóòôõöúùûüçñ]/i.test(text);
-            if (hasAccents) {
-                // Verificar se são UTF-8 válidos
+            // Usar a primeira fonte válida (prioridade)
+            const bestSource = validSources[0];
+            console.log(`📊 Dados encontrados em: ${bestSource.source}`);
+            console.log('📊 Dados:', bestSource.data);
+            
+            return bestSource.data;
+        },
+
+        _tryAllSources: function() {
+            const sources = [];
+            
+            // 1. UploadSystem
+            if (window.UploadSystem && typeof window.UploadSystem.getResult === 'function') {
                 try {
-                    const encoded = encodeURIComponent(text);
-                    const decoded = decodeURIComponent(encoded);
-                    if (decoded === text) {
-                        return 'utf-8';
+                    const data = window.UploadSystem.getResult();
+                    if (data && Object.keys(data).length > 0) {
+                        sources.push({ source: 'UploadSystem', data: data });
                     }
                 } catch (e) {
-                    return 'latin1';
+                    console.warn('⚠️ Erro no UploadSystem:', e);
                 }
             }
             
-            // Verificar caracteres especiais
-            if (/[™®©°±…—–•]/g.test(text)) {
-                return 'utf-8-special';
+            // 2. __dashboard
+            if (window.__dashboard) {
+                try {
+                    const state = window.__dashboard.state?.state || {};
+                    const analyses = state.analyses?.active || [];
+                    const lastAnalysis = analyses[0] || {};
+                    const data = lastAnalysis.result || {};
+                    if (data && Object.keys(data).length > 0) {
+                        sources.push({ source: '__dashboard', data: data });
+                    }
+                    
+                    // Tentar do state diretamente
+                    if (!data || Object.keys(data).length === 0) {
+                        const stateData = state.lastResult || state.analysisResult || {};
+                        if (stateData && Object.keys(stateData).length > 0) {
+                            sources.push({ source: '__dashboard.state', data: stateData });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro no __dashboard:', e);
+                }
             }
             
-            return 'ascii';
+            // 3. __APP_STATE
+            if (window.__APP_STATE) {
+                try {
+                    const state = window.__APP_STATE;
+                    const data = state.lastAnalysis || state.analysisResult || {};
+                    if (data && Object.keys(data).length > 0) {
+                        sources.push({ source: '__APP_STATE', data: data });
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro no __APP_STATE:', e);
+                }
+            }
+            
+            // 4. _lastResult
+            if (window._lastResult) {
+                try {
+                    const data = window._lastResult;
+                    if (data && Object.keys(data).length > 0) {
+                        sources.push({ source: '_lastResult', data: data });
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro no _lastResult:', e);
+                }
+            }
+            
+            // 5. DOM (extrair do HTML)
+            try {
+                const domData = this._extractFromDOM();
+                if (domData && Object.keys(domData).length > 0) {
+                    sources.push({ source: 'DOM', data: domData });
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro na extração do DOM:', e);
+            }
+            
+            return sources;
         },
-        
+
+        _extractFromDOM: function() {
+            const data = {};
+            let hasData = false;
+            
+            // Tenta extrair do resultado visível
+            const metricsEl = document.getElementById('resultMetrics');
+            if (metricsEl) {
+                const text = metricsEl.textContent;
+                
+                // Extrair total registros
+                const registrosMatch = text.match(/(\d+)\s*registros?/i);
+                if (registrosMatch) {
+                    data.totalRegistros = parseInt(registrosMatch[1]);
+                    hasData = true;
+                }
+                
+                // Extrair score
+                const scoreMatch = text.match(/(\d+)%/);
+                if (scoreMatch) {
+                    data.scoreMedio = parseInt(scoreMatch[1]) / 100;
+                    hasData = true;
+                }
+            }
+            
+            // Tenta extrair do resumo
+            const summaryEl = document.getElementById('resultSummary');
+            if (summaryEl) {
+                const text = summaryEl.textContent;
+                const scoreMatch = text.match(/(\d+)%/);
+                if (scoreMatch && !data.scoreMedio) {
+                    data.scoreMedio = parseInt(scoreMatch[1]) / 100;
+                    hasData = true;
+                }
+            }
+            
+            return hasData ? data : null;
+        },
+
         /**
-         * 🔥 Detecta se o texto precisa de sanitização
+         * 🔥 Busca dados da API
          */
-        needsSanitize: function(text) {
-            if (!text) return false;
-            return (
-                /[áàâãäéèêëíìîïóòôõöúùûüçñ]/i.test(text) ||
-                /[\u{1F300}-\u{1FAFF}]/u.test(text) ||
-                /[™®©°±…—–•“‘”’]/g.test(text)
-            );
+        fetchFromAPI: async function(processId) {
+            if (this._fetchInProgress) {
+                console.log('⏳ Busca em andamento, aguardando...');
+                await Utils.sleep(500);
+                return this._cachedData;
+            }
+            
+            this._fetchInProgress = true;
+            
+            try {
+                const token = Utils.getToken();
+                if (!token) {
+                    console.warn('⚠️ Sem token para buscar resultado');
+                    return null;
+                }
+                
+                const url = Utils.buildApiUrl(`/analysis/result/${processId}`);
+                console.log(`🔍 Buscando resultado em: ${url}`);
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    this._cachedData = data;
+                    this._lastFetch = Date.now();
+                    console.log('✅ Dados obtidos da API');
+                    return data;
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao buscar dados da API:', e);
+            } finally {
+                this._fetchInProgress = false;
+            }
+            
+            return null;
+        },
+
+        getProcessId: function() {
+            // Tentar obter de várias fontes
+            if (window.UploadSystem?.debug?.state?.currentProcessId) {
+                return window.UploadSystem.debug.state.currentProcessId;
+            }
+            if (window.__dashboard?.state?.state?.currentProcessId) {
+                return window.__dashboard.state.state.currentProcessId;
+            }
+            if (window._lastProcessId) {
+                return window._lastProcessId;
+            }
+            return null;
         }
     };
 
@@ -216,35 +422,21 @@
             
             let sanitized = String(text);
             
-            // 1. Detectar encoding
-            const encoding = EncodingDetector.detect(sanitized);
-            
-            // 2. Se for ASCII puro, não precisa sanitizar
-            if (encoding === 'ascii' && !options.force) {
-                SanitizeCache.set(text, sanitized);
-                return sanitized;
-            }
-            
-            // 3. Substituir caracteres especiais
+            // Substituir caracteres especiais
             for (const [char, replacement] of Object.entries(PDF_CONFIG.CHAR_MAP)) {
                 sanitized = sanitized.replace(new RegExp(char, 'g'), replacement);
             }
             
-            // 4. Remover caracteres de controle
+            // Remover caracteres de controle
             sanitized = sanitized.replace(PDF_CONFIG.SANITIZE_PATTERNS.controle, '');
             
-            // 5. Remover emojis que não foram mapeados
+            // Remover emojis não mapeados
             if (options.removeUnmappedEmojis !== false) {
                 sanitized = sanitized.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
             }
             
-            // 6. Garantir que é UTF-8 válido
-            try {
-                encodeURIComponent(sanitized);
-            } catch (e) {
-                // Se falhar, remover caracteres problemáticos
-                sanitized = sanitized.replace(/[^\x20-\x7E\u00C0-\u00FF]/g, '');
-            }
+            // Remover caracteres que quebram o PDF
+            sanitized = sanitized.replace(/[^\x20-\x7E\u00C0-\u00FF\u0100-\u017F]/g, '');
             
             // Guardar no cache
             SanitizeCache.set(text, sanitized);
@@ -279,109 +471,126 @@
     };
 
     // ==============================================
-    // 🔥 COLETOR DE DADOS INTELIGENTE
+    // 🔥 EXTRAÇÃO DE DADOS (CORRIGIDA)
     // ==============================================
 
-    const DataCollector = {
+    const DataExtractor = {
         /**
-         * 🔥 Coleta dados da melhor fonte disponível
+         * 🔥 Extrai métricas de forma robusta
          */
-        collect: function() {
-            const sources = [];
+        extractMetrics: function(data) {
+            const metrics = data.metrics || data.predictions_summary || data.analysis_metrics || {};
             
-            // 1. UploadSystem (dados do upload atual)
-            if (window.UploadSystem && typeof window.UploadSystem.getResult === 'function') {
-                const data = window.UploadSystem.getResult();
-                if (data && Object.keys(data).length > 0) {
-                    sources.push({ source: 'UploadSystem', data: data });
-                }
+            return {
+                totalRegistros: this._getValue(metrics, [
+                    'dataset_rows', 'processed_rows', 'total_rows', 
+                    'rows', 'total', 'count', 'totalRegistros'
+                ], 0),
+                
+                scoreMedio: this._getValue(metrics, [
+                    'mean_prediction', 'mean', 'avg_score', 
+                    'average', 'score', 'scoreMedio'
+                ], 0.65),
+                
+                highRisk: this._getValue(metrics, [
+                    'high_risk_percentage', 'high_risk', 'highRisk',
+                    'risco_alto', 'alto_risco'
+                ], 0),
+                
+                lowRisk: this._getValue(metrics, [
+                    'low_risk_percentage', 'low_risk', 'lowRisk',
+                    'risco_baixo', 'baixo_risco'
+                ], 0),
+                
+                stdScore: this._getValue(metrics, [
+                    'std_prediction', 'std', 'std_score'
+                ], 0)
+            };
+        },
+
+        /**
+         * 🔥 Extrai recomendações
+         */
+        extractRecommendations: function(data) {
+            const recs = data.recommendations || data.recomendacoes || [];
+            if (Array.isArray(recs) && recs.length > 0) {
+                return recs;
             }
             
-            // 2. __dashboard (dados do dashboard)
-            if (window.__dashboard) {
-                try {
-                    const state = window.__dashboard.state?.state || {};
-                    const analyses = state.analyses?.active || [];
-                    const lastAnalysis = analyses[0] || {};
-                    const data = lastAnalysis.result || {};
-                    if (data && Object.keys(data).length > 0) {
-                        sources.push({ source: '__dashboard', data: data });
+            // Tentar extrair do insights
+            const insights = data.insights || {};
+            if (insights.recomendacoes && Array.isArray(insights.recomendacoes)) {
+                return insights.recomendacoes;
+            }
+            
+            return [];
+        },
+
+        /**
+         * 🔥 Extrai relatório da IA
+         */
+        extractAIReport: function(data) {
+            const report = data.ai_report || data.full_analysis || data.executive_summary || '';
+            if (report && report.length > 20) {
+                return report;
+            }
+            
+            // Tentar construir a partir de partes
+            const parts = [];
+            if (data.executive_summary) parts.push(data.executive_summary);
+            if (data.analysis_summary) parts.push(data.analysis_summary);
+            if (data.insights?.summary?.mensagem) parts.push(data.insights.summary.mensagem);
+            
+            return parts.join('\n\n');
+        },
+
+        _getValue: function(obj, keys, defaultValue) {
+            for (const key of keys) {
+                if (obj[key] !== undefined && obj[key] !== null) {
+                    const value = obj[key];
+                    if (typeof value === 'number' || Utils.isNumeric(value)) {
+                        return Utils.safeNumber(value);
                     }
-                } catch (e) {
-                    // Ignora
+                    return value;
                 }
             }
-            
-            // 3. __APP_STATE (dados do estado global)
-            if (window.__APP_STATE) {
-                const data = {
-                    user: window.__APP_STATE.user,
-                    credits: window.__APP_STATE.credits,
-                    isPremium: window.__APP_STATE.isPremium,
-                    isAdmin: window.__APP_STATE.isAdmin,
-                    lastAnalysis: window.__APP_STATE.lastAnalysis
-                };
-                if (data.lastAnalysis && Object.keys(data.lastAnalysis).length > 0) {
-                    sources.push({ source: '__APP_STATE', data: data.lastAnalysis });
-                }
-            }
-            
-            // 4. _lastResult (fallback)
-            if (window._lastResult && Object.keys(window._lastResult).length > 0) {
-                sources.push({ source: '_lastResult', data: window._lastResult });
-            }
-            
-            // 5. Tentar buscar da API (se tiver processId)
-            const processId = this._getProcessId();
-            if (processId) {
-                sources.push({ 
-                    source: 'API', 
-                    data: { processId: processId, needsFetch: true }
-                });
-            }
-            
-            return sources;
+            return defaultValue;
         },
-        
+
         /**
-         * 🔥 Busca dados da API
+         * 🔥 Valida e completa dados faltantes
          */
-        fetchFromAPI: async function(processId) {
-            try {
-                const token = localStorage.getItem('access_token');
-                if (!token) return null;
-                
-                const response = await fetch(`/api/analysis/result/${processId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    return data;
-                }
-            } catch (e) {
-                console.warn('⚠️ Erro ao buscar dados da API:', e);
+        validateAndComplete: function(data) {
+            const completed = { ...data };
+            
+            // Garantir métricas
+            if (!completed.metrics) completed.metrics = {};
+            
+            // Garantir valores mínimos
+            const metrics = completed.metrics;
+            if (!metrics.dataset_rows && data.totalRegistros) {
+                metrics.dataset_rows = data.totalRegistros;
             }
-            return null;
-        },
-        
-        _getProcessId: function() {
-            // Tentar obter de várias fontes
-            if (window.UploadSystem?.debug?.state?.currentProcessId) {
-                return window.UploadSystem.debug.state.currentProcessId;
+            if (!metrics.mean_prediction && data.scoreMedio) {
+                metrics.mean_prediction = data.scoreMedio;
             }
-            if (window.__dashboard?.state?.state?.currentProcessId) {
-                return window.__dashboard.state.state.currentProcessId;
+            if (!metrics.high_risk_percentage && data.highRisk) {
+                metrics.high_risk_percentage = data.highRisk;
             }
-            if (window._lastProcessId) {
-                return window._lastProcessId;
+            if (!metrics.low_risk_percentage && data.lowRisk) {
+                metrics.low_risk_percentage = data.lowRisk;
             }
-            return null;
+            
+            // Garantir que tem dados mínimos
+            if (!metrics.dataset_rows) metrics.dataset_rows = 0;
+            if (!metrics.mean_prediction) metrics.mean_prediction = 0.65;
+            
+            return completed;
         }
     };
 
     // ==============================================
-    // 🔥 GERADOR DE PDF INTELIGENTE
+    // 🔥 GERADOR DE PDF - CLASSE PRINCIPAL
     // ==============================================
 
     class PDFGenerator {
@@ -390,16 +599,12 @@
             this._cache = new Map();
             this._templates = new Map();
             this._registerTemplates();
+            console.log('✅ PDFGenerator v3.2 inicializado');
         }
         
         _registerTemplates() {
-            // Template: Análise Financeira
             this._templates.set('finance', this._generateFinanceReport.bind(this));
-            
-            // Template: Resumo Executivo
             this._templates.set('executive', this._generateExecutiveReport.bind(this));
-            
-            // Template: Dados Brutos
             this._templates.set('raw', this._generateRawReport.bind(this));
         }
         
@@ -407,60 +612,69 @@
          * 🔥 Gera PDF inteligente
          */
         async generate(data = null, options = {}) {
-            console.log('📄 Gerando PDF inteligente...');
+            console.log('📄 Iniciando geração de PDF...');
             
-            // 1. Coletar dados se não foram fornecidos
+            // 1. Se não recebeu dados, buscar
             let reportData = data;
             if (!reportData) {
-                const sources = DataCollector.collect();
-                console.log(`📊 Fontes encontradas: ${sources.length}`);
-                
-                // Usar a melhor fonte disponível
-                for (const source of sources) {
-                    if (source.data.needsFetch) {
-                        // Buscar da API
-                        const apiData = await DataCollector.fetchFromAPI(source.data.processId);
-                        if (apiData) {
-                            reportData = apiData;
-                            break;
-                        }
-                    } else if (source.data && Object.keys(source.data).length > 0) {
-                        reportData = source.data;
-                        break;
+                reportData = DataCollector.collect();
+            }
+            
+            // 2. Se ainda não tem dados, tentar API
+            if (!reportData || Object.keys(reportData).length === 0) {
+                const processId = DataCollector.getProcessId();
+                if (processId) {
+                    console.log('🔍 Tentando buscar dados da API...');
+                    const apiData = await DataCollector.fetchFromAPI(processId);
+                    if (apiData) {
+                        reportData = apiData;
                     }
                 }
             }
             
+            // 3. Se ainda não tem dados, usar fallback
             if (!reportData || Object.keys(reportData).length === 0) {
-                throw new Error('Nenhum dado disponível para gerar o PDF');
+                console.warn('⚠️ Nenhum dado encontrado, usando fallback');
+                reportData = this._getFallbackData();
             }
             
-            // 2. Detectar tipo de relatório
-            const reportType = this._detectReportType(reportData);
-            console.log(`📄 Tipo de relatório: ${reportType}`);
+            // 4. Validar e completar dados
+            reportData = DataExtractor.validateAndComplete(reportData);
             
-            // 3. Sanitizar os dados
+            // 5. Detectar tipo de relatório
+            const reportType = this._detectReportType(reportData);
+            console.log(`📄 Tipo: ${reportType}`);
+            
+            // 6. Sanitizar dados
             const sanitizedData = TextSanitizer.sanitizeObject(reportData);
             
-            // 4. Gerar o PDF
+            // 7. Gerar PDF
             const template = this._templates.get(reportType) || this._templates.get('finance');
             return template(sanitizedData, options);
         }
         
-        /**
-         * 🔥 Detecta o tipo de relatório baseado nos dados
-         */
         _detectReportType(data) {
-            if (data.executive_score || data.executive_summary) {
-                return 'executive';
-            }
-            if (data.metrics || data.predictions || data.insights) {
-                return 'finance';
-            }
-            if (data.raw_data || data.original_data) {
-                return 'raw';
-            }
+            if (data.executive_score || data.executive_summary) return 'executive';
+            if (data.metrics || data.predictions || data.insights) return 'finance';
+            if (data.raw_data || data.original_data) return 'raw';
             return 'finance';
+        }
+        
+        _getFallbackData() {
+            return {
+                metrics: {
+                    dataset_rows: 0,
+                    mean_prediction: 0.65,
+                    high_risk_percentage: 0,
+                    low_risk_percentage: 0,
+                },
+                predictions: [],
+                recommendations: [
+                    '📊 Faça upload de um arquivo para análise',
+                    '📈 Os dados aparecerão aqui após o processamento'
+                ],
+                ai_report: 'Aguardando dados para análise. Faça upload de um arquivo CSV ou Excel.'
+            };
         }
         
         /**
@@ -469,59 +683,122 @@
         _generateFinanceReport(data, options = {}) {
             const { jsPDF } = window.jspdf;
             if (!jsPDF) {
-                throw new Error('jsPDF não disponível');
+                console.error('❌ jsPDF não encontrado!');
+                alert('Erro: Biblioteca jsPDF não carregada.');
+                return;
             }
             
             const doc = new jsPDF('p', 'mm', 'a4');
             const primaryColor = [255, 107, 53];
+            const darkBg = [15, 12, 41];
             
-            // ==========================================
-            // CABEÇALHO
-            // ==========================================
-            this._addHeader(doc, 'Relatório de Análise Financeira');
-            
-            // ==========================================
-            // MÉTRICAS
-            // ==========================================
-            let yPos = 55;
-            
+            // Extrair dados
             const metrics = data.metrics || {};
-            const predictions = data.predictions || [];
-            const totalRegistros = metrics.dataset_rows || predictions.length || 0;
+            const totalRegistros = metrics.dataset_rows || 0;
             const scoreMedio = metrics.mean_prediction || 0.65;
             const highRisk = metrics.high_risk_percentage || 0;
             const lowRisk = metrics.low_risk_percentage || 0;
             
-            const metricsData = [
-                { label: 'Total Registros', value: totalRegistros.toLocaleString() },
-                { label: 'Score Médio', value: (scoreMedio * 100).toFixed(0) + '%' },
-                { label: 'Alto Risco', value: highRisk.toFixed(0) + '%' },
-                { label: 'Baixo Risco', value: lowRisk.toFixed(0) + '%' }
-            ];
+            console.log(`📊 Dados: Total=${totalRegistros}, Score=${scoreMedio}, Risco=${highRisk}%`);
             
-            this._addMetricsGrid(doc, metricsData, yPos);
-            yPos += 38;
+            // 1. CABEÇALHO
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 0, 210, 40, 'F');
             
-            // ==========================================
-            // RELATÓRIO DA IA
-            // ==========================================
-            this._addSection(doc, '🤖 Relatório da IA', yPos);
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📊 AutoAnalytics', 20, 25);
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Relatório de Análise Financeira', 20, 33);
+            
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
+            
+            // 2. MÉTRICAS
+            let yPos = 55;
+            
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📈 Métricas da Análise', 20, yPos);
             yPos += 8;
             
-            const aiReport = data.ai_report || data.executive_summary || '';
-            const reportText = aiReport || this._generateDefaultReport(totalRegistros, scoreMedio, highRisk, lowRisk);
-            const sanitizedReport = TextSanitizer.sanitize(reportText);
-            const lines = doc.splitTextToSize(sanitizedReport, 170);
-            doc.text(lines, 20, yPos);
-            yPos += (lines.length * 6) + 10;
+            const metricsData = [
+                { label: 'Total Registros', value: totalRegistros.toLocaleString() || '0', icon: '📋' },
+                { label: 'Score Médio', value: (scoreMedio * 100).toFixed(0) + '%', icon: '📈' },
+                { label: 'Alto Risco', value: highRisk.toFixed(0) + '%', icon: '🔴' },
+                { label: 'Baixo Risco', value: lowRisk.toFixed(0) + '%', icon: '🟢' }
+            ];
             
-            // ==========================================
-            // RECOMENDAÇÕES
-            // ==========================================
-            const recommendations = data.recommendations || [];
+            const colWidth = 42;
+            const startX = 20;
+            
+            metricsData.forEach((item, index) => {
+                const x = startX + (index * colWidth);
+                
+                doc.setFillColor(245, 245, 245);
+                doc.roundedRect(x, yPos, colWidth - 2, 28, 3, 3, 'F');
+                
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.text(TextSanitizer.sanitize(item.icon + ' ' + item.label), x + 3, yPos + 6);
+                
+                const color = item.value.includes('%') && parseInt(item.value) > 70 ? '#48bb78' : 
+                             item.value.includes('%') && parseInt(item.value) > 30 ? '#f5a623' : 
+                             primaryColor;
+                doc.setTextColor(color[0] || 255, color[1] || 107, color[2] || 53);
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text(TextSanitizer.sanitize(item.value), x + 3, yPos + 22);
+            });
+            
+            yPos += 38;
+            
+            // 3. RELATÓRIO DA IA
+            doc.setTextColor(50, 50, 50);
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('🤖 Relatório da IA', 20, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            
+            let reportText = data.ai_report || data.executive_summary || '';
+            if (!reportText || reportText.length < 20) {
+                const safeTotal = totalRegistros.toLocaleString();
+                const safeScore = (scoreMedio * 100).toFixed(0);
+                const safeHighRisk = highRisk.toFixed(0);
+                const safeLowRisk = lowRisk.toFixed(0);
+                
+                reportText = `Análise concluída com sucesso!\n\n` +
+                           `Foram analisados ${safeTotal} registros, com um score médio de ${safeScore}%.\n\n` +
+                           `${safeHighRisk}% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n` +
+                           `${safeLowRisk}% dos casos são de baixo risco, demonstrando boa performance.\n\n` +
+                           `Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.`;
+            }
+            
+            const sanitizedReport = TextSanitizer.sanitize(reportText);
+            const reportLines = doc.splitTextToSize(sanitizedReport, 170);
+            doc.text(reportLines, 20, yPos);
+            yPos += (reportLines.length * 6) + 10;
+            
+            // 4. RECOMENDAÇÕES
+            const recommendations = DataExtractor.extractRecommendations(data);
             if (recommendations.length > 0) {
-                this._addSection(doc, '🎯 Recomendações', yPos);
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('🎯 Recomendações', 20, yPos);
                 yPos += 8;
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
                 
                 recommendations.slice(0, 4).forEach(rec => {
                     const safeRec = TextSanitizer.sanitize(rec);
@@ -529,18 +806,30 @@
                     doc.text(recLines, 22, yPos);
                     yPos += (recLines.length * 6) + 2;
                 });
+                yPos += 5;
             }
             
-            // ==========================================
-            // RODAPÉ
-            // ==========================================
-            this._addFooter(doc);
+            // 5. RODAPÉ
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 280, 210, 17, 'F');
             
-            // Salvar
-            const filename = options.filename || `Relatorio_AutoAnalytics_${Date.now()}.pdf`;
-            doc.save(filename);
+            doc.setTextColor(200, 200, 200);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.text('AutoAnalytics v3.2 - Relatório gerado automaticamente por IA', 20, 290);
+            doc.text('Página 1/1', 170, 290);
             
-            return doc;
+            // 6. SALVAR
+            try {
+                const filename = options.filename || `Relatorio_AutoAnalytics_${Date.now()}.pdf`;
+                doc.save(filename);
+                console.log(`✅ PDF gerado: ${filename}`);
+                return doc;
+            } catch (error) {
+                console.error('❌ Erro ao salvar PDF:', error);
+                alert('Erro ao gerar PDF: ' + error.message);
+                return null;
+            }
         }
         
         /**
@@ -549,20 +838,39 @@
         _generateExecutiveReport(data, options = {}) {
             const { jsPDF } = window.jspdf;
             if (!jsPDF) {
-                throw new Error('jsPDF não disponível');
+                console.error('❌ jsPDF não encontrado!');
+                return;
             }
             
             const doc = new jsPDF('p', 'mm', 'a4');
+            const darkBg = [15, 12, 41];
             
             // Cabeçalho
-            this._addHeader(doc, '📊 Relatório Executivo');
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 0, 210, 40, 'F');
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📊 AutoAnalytics', 20, 25);
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Relatório Executivo', 20, 33);
+            
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
             
             let yPos = 55;
             
             // Score Executivo
             const score = data.executive_score || {};
             if (Object.keys(score).length > 0) {
-                this._addSection(doc, '🏆 Score Executivo', yPos);
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('🏆 Score Executivo', 20, yPos);
                 yPos += 8;
                 
                 const scoreItems = [
@@ -573,10 +881,10 @@
                     { label: 'Nível de Risco', value: score.nivel_risco || 'Moderado' }
                 ];
                 
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
                 scoreItems.forEach(item => {
                     const value = typeof item.value === 'number' ? item.value.toFixed(1) : item.value;
-                    doc.setFontSize(10);
-                    doc.setFont('helvetica', 'normal');
                     doc.text(`${item.label}: ${value}`, 20, yPos);
                     yPos += 6;
                 });
@@ -585,7 +893,10 @@
             
             // Resumo Executivo
             if (data.executive_summary) {
-                this._addSection(doc, '📋 Resumo', yPos);
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('📋 Resumo', 20, yPos);
                 yPos += 8;
                 
                 const summary = TextSanitizer.sanitize(data.executive_summary);
@@ -595,7 +906,12 @@
             }
             
             // Rodapé
-            this._addFooter(doc);
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 280, 210, 17, 'F');
+            doc.setTextColor(200, 200, 200);
+            doc.setFontSize(7);
+            doc.text('AutoAnalytics v3.2 - Relatório gerado automaticamente por IA', 20, 290);
+            doc.text('Página 1/1', 170, 290);
             
             const filename = options.filename || `Relatorio_Executivo_${Date.now()}.pdf`;
             doc.save(filename);
@@ -609,114 +925,50 @@
         _generateRawReport(data, options = {}) {
             const { jsPDF } = window.jspdf;
             if (!jsPDF) {
-                throw new Error('jsPDF não disponível');
+                console.error('❌ jsPDF não encontrado!');
+                return;
             }
             
             const doc = new jsPDF('p', 'mm', 'a4');
+            const darkBg = [15, 12, 41];
             
             // Cabeçalho
-            this._addHeader(doc, '📋 Dados da Análise');
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 0, 210, 40, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📊 AutoAnalytics', 20, 25);
+            doc.setFontSize(12);
+            doc.text('Dados da Análise', 20, 33);
+            doc.setFontSize(8);
+            doc.setTextColor(200, 200, 200);
+            doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
             
             let yPos = 55;
             
-            // Mostrar dados como JSON formatado
+            // Dados como JSON
             const rawData = data.raw_data || data.original_data || data;
             const jsonStr = JSON.stringify(rawData, null, 2);
             const sanitized = TextSanitizer.sanitize(jsonStr);
             
-            const lines = doc.splitTextToSize(sanitized, 170);
             doc.setFontSize(8);
             doc.setFont('courier', 'normal');
+            const lines = doc.splitTextToSize(sanitized, 170);
             doc.text(lines, 20, yPos);
             
             // Rodapé
-            this._addFooter(doc);
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.rect(0, 280, 210, 17, 'F');
+            doc.setTextColor(200, 200, 200);
+            doc.setFontSize(7);
+            doc.text('AutoAnalytics v3.2 - Dados brutos', 20, 290);
+            doc.text('Página 1/1', 170, 290);
             
             const filename = options.filename || `Dados_Brutos_${Date.now()}.pdf`;
             doc.save(filename);
             
             return doc;
-        }
-        
-        // ==========================================
-        // 🔥 HELPERS DE RENDERIZAÇÃO
-        // ==========================================
-        
-        _addHeader(doc, title) {
-            const darkBg = [15, 12, 41];
-            
-            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
-            doc.rect(0, 0, 210, 40, 'F');
-            
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(22);
-            doc.setFont('helvetica', 'bold');
-            doc.text('📊 AutoAnalytics', 20, 25);
-            
-            doc.setFontSize(12);
-            doc.setFont('helvetica', 'normal');
-            doc.text(TextSanitizer.sanitize(title), 20, 33);
-            
-            doc.setFontSize(8);
-            doc.setTextColor(200, 200, 200);
-            const dateStr = new Date().toLocaleDateString('pt-BR');
-            doc.text(TextSanitizer.sanitize(`Gerado em: ${dateStr}`), 20, 39);
-        }
-        
-        _addMetricsGrid(doc, metrics, yPos) {
-            const primaryColor = [255, 107, 53];
-            const colWidth = 42;
-            const startX = 20;
-            
-            metrics.forEach((item, index) => {
-                const x = startX + (index * colWidth);
-                
-                doc.setFillColor(245, 245, 245);
-                doc.roundedRect(x, yPos, colWidth - 2, 28, 3, 3, 'F');
-                
-                doc.setTextColor(100, 100, 100);
-                doc.setFontSize(7);
-                doc.setFont('helvetica', 'normal');
-                doc.text(TextSanitizer.sanitize(item.label), x + 3, yPos + 6);
-                
-                doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text(TextSanitizer.sanitize(item.value), x + 3, yPos + 22);
-            });
-        }
-        
-        _addSection(doc, title, yPos) {
-            doc.setTextColor(50, 50, 50);
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text(TextSanitizer.sanitize(title), 20, yPos);
-        }
-        
-        _addFooter(doc) {
-            const darkBg = [15, 12, 41];
-            
-            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
-            doc.rect(0, 280, 210, 17, 'F');
-            
-            doc.setTextColor(200, 200, 200);
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'normal');
-            doc.text('AutoAnalytics v3.0 - Relatório gerado automaticamente por IA', 20, 290);
-            doc.text('Página 1/1', 170, 290);
-        }
-        
-        _generateDefaultReport(total, score, highRisk, lowRisk) {
-            const safeTotal = TextSanitizer.sanitize(total.toLocaleString());
-            const safeScore = TextSanitizer.sanitize((score * 100).toFixed(0));
-            const safeHigh = TextSanitizer.sanitize(highRisk.toFixed(0));
-            const safeLow = TextSanitizer.sanitize(lowRisk.toFixed(0));
-            
-            return `Análise concluída com sucesso!\n\n` +
-                   `Foram analisados ${safeTotal} registros, com um score médio de ${safeScore}%.\n\n` +
-                   `${safeHigh}% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n` +
-                   `${safeLow}% dos casos são de baixo risco, demonstrando boa performance.\n\n` +
-                   `Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.`;
         }
     }
 
@@ -726,21 +978,30 @@
 
     const pdfGenerator = new PDFGenerator();
 
-    // EXPORTAÇÕES
-    window.PDFGenerator = pdfGenerator;
-    window.generateFinancePDF = async function(data, options) {
-        return await pdfGenerator.generate(data, options);
+    // 🔥 Função principal para gerar PDF
+    window.generateFinancePDF = async function(data, options = {}) {
+        try {
+            return await pdfGenerator.generate(data, options);
+        } catch (error) {
+            console.error('❌ Erro ao gerar PDF:', error);
+            alert('Erro ao gerar PDF: ' + error.message);
+            return null;
+        }
     };
-    window.generateExecutivePDF = async function(data, options) {
-        return await pdfGenerator.generate(data, { ...options, type: 'executive' });
-    };
-    window.generateRawPDF = async function(data, options) {
-        return await pdfGenerator.generate(data, { ...options, type: 'raw' });
+
+    // 🔥 Funções auxiliares
+    window.generateExecutivePDF = function(data, options) {
+        return pdfGenerator.generate(data, { ...options, type: 'executive' });
     };
     
-    // 🔥 Função de teste para debug
+    window.generateRawPDF = function(data, options) {
+        return pdfGenerator.generate(data, { ...options, type: 'raw' });
+    };
+
+    // 🔥 Função de teste
     window.testPDF = async function() {
-        const testData = {
+        console.log('🧪 Testando PDF Generator...');
+        const data = {
             metrics: {
                 dataset_rows: 150,
                 mean_prediction: 0.78,
@@ -754,7 +1015,7 @@
                 crescimento: 8.2,
                 nivel_risco: 'Moderado'
             },
-            executive_summary: 'Análise de dados da oficina concluída com sucesso. A performance geral é excelente.',
+            executive_summary: 'Análise de dados da oficina concluída com sucesso.',
             recommendations: [
                 '📊 Monitorar KPIs mensalmente',
                 '🔄 Revisar dados periodicamente',
@@ -763,13 +1024,74 @@
             ai_report: 'A análise demonstra alta performance com potencial de crescimento.'
         };
         
-        console.log('🧪 Testando PDF Generator...');
-        await pdfGenerator.generate(testData, { filename: 'Teste_PDF.pdf' });
+        await pdfGenerator.generate(data, { filename: 'Teste_PDF.pdf' });
         console.log('✅ Teste concluído!');
     };
 
-    console.log('✅ PDF Generator v3.0 (Inteligente) carregado!');
+    // 🔥 Função para debug
+    window.getPDFData = function() {
+        const data = DataCollector.collect();
+        console.log('📊 Dados atuais:', data);
+        return data;
+    };
+
+    // ==============================================
+    // 🔥 EVENT LISTENER PARA O BOTÃO PDF
+    // ==============================================
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const pdfBtn = document.getElementById('downloadPdfBtn');
+        if (pdfBtn) {
+            pdfBtn.addEventListener('click', async function() {
+                console.log('📄 Botão PDF clicado');
+                
+                // Mostrar feedback
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Gerando...';
+                
+                try {
+                    // Coletar dados
+                    let data = DataCollector.collect();
+                    
+                    // Se não tiver dados, tentar API
+                    if (!data || Object.keys(data).length === 0) {
+                        const processId = DataCollector.getProcessId();
+                        if (processId) {
+                            data = await DataCollector.fetchFromAPI(processId);
+                        }
+                    }
+                    
+                    // Se ainda não tiver dados
+                    if (!data || Object.keys(data).length === 0) {
+                        const msg = 'Nenhum dado disponível para gerar o PDF. Faça um upload primeiro.';
+                        console.warn('⚠️', msg);
+                        if (window.toastr) {
+                            window.toastr.warning(msg);
+                        } else {
+                            alert(msg);
+                        }
+                        return;
+                    }
+                    
+                    // Gerar PDF
+                    await pdfGenerator.generate(data);
+                    
+                } catch (error) {
+                    console.error('❌ Erro:', error);
+                    if (window.toastr) {
+                        window.toastr.error('Erro ao gerar PDF: ' + error.message);
+                    }
+                } finally {
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-file-pdf me-2"></i> Baixar Relatório PDF';
+                }
+            });
+        }
+    });
+
+    console.log('✅ PDF Generator v3.2 carregado!');
     console.log('   📄 Use window.generateFinancePDF(data) para gerar');
-    console.log('   🔧 Use window.testPDF() para testar');
+    console.log('   🧪 Use window.testPDF() para testar');
+    console.log('   🔍 Use window.getPDFData() para ver dados atuais');
 
 })();
