@@ -1,8 +1,14 @@
-# backend/ml/preprocessing.py - VERSÃO 6.0 (PIPELINE INTELIGENTE)
+# backend/ml/preprocessing.py - VERSÃO 6.1 (CORREÇÃO DE ORDEM)
 """
 🔥 MÓDULO DE PRÉ-PROCESSAMENTO E PIPELINE DE ML - AUTOANALYTICS
 ================================================================================
-VERSÃO 6.0 - PIPELINE INTELIGENTE COM FEATURE REGISTRY
+VERSÃO 6.1 - CORREÇÃO DA ORDEM DAS DATACLASSES
+
+✅ CORREÇÕES V6.1:
+   - 🔥 MOVIDAS: dataclasses para ANTES da classe MLPipeline
+   - 🔥 CORRIGIDO: EncodingResult definido antes do uso
+   - 🔥 CORRIGIDO: MLPipelineResult definido antes do uso
+   - 🔥 CORRIGIDO: CacheEntry definido antes do uso
 
 ✅ NOVIDADES V6.0:
    - 🔥 FEATURE REGISTRY: Define quais features o modelo espera
@@ -10,10 +16,6 @@ VERSÃO 6.0 - PIPELINE INTELIGENTE COM FEATURE REGISTRY
    - 🔥 FEATURE MONITOR: Detecta e registra mismatches
    - 🔥 REMOVIDO: _adapt_features_to_model (padding aleatório)
    - 🔥 REMOVIDO: _generate_synthetic_features (features arbitrárias)
-   - 🔥 ADICIONADO: _build_features_intelligently
-   - 🔥 ADICIONADO: _validate_features
-   - 🔥 ADICIONADO: _log_feature_mismatch
-   - 🔥 MELHORADO: Logging detalhado do processo
 ================================================================================
 """
 
@@ -60,11 +62,13 @@ from sklearn.pipeline import Pipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # ==============================================
-# ENUMS E CONSTANTES
+# 🔥 ENUMS E DATACLASSES (DEVEM ESTAR ANTES DA CLASSE MLPipeline!)
 # ==============================================
 
 class ModelType(str, Enum):
+    """Tipos de modelo suportados"""
     RANDOM_FOREST = "random_forest"
     GRADIENT_BOOSTING = "gradient_boosting"
     LOGISTIC_REGRESSION = "logistic_regression"
@@ -73,17 +77,22 @@ class ModelType(str, Enum):
     PLACEHOLDER = "placeholder"
     NONE = "none"
 
+
 class EncodingMethod(str, Enum):
+    """Métodos de detecção de encoding"""
     DETECTED = "detected"
     FALLBACK = "fallback"
     FORCED = "forced"
     EXCEL = "excel"
 
+
 class PredictionStatus(str, Enum):
+    """Status da predição"""
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
     FALLBACK = "fallback"
+
 
 class FeatureType(str, Enum):
     """Tipo de feature"""
@@ -93,14 +102,95 @@ class FeatureType(str, Enum):
     CONSTANT = "constant"      # Valor constante
 
 
-# ==============================================
-# FEATURE REGISTRY - DEFINE AS FEATURES DO MODELO
-# ==============================================
+@dataclass
+class EncodingResult:
+    """
+    🔥 Resultado da detecção de encoding
+    """
+    encoding: str
+    confidence: float
+    method: EncodingMethod
+    error: Optional[str] = None
+    
+    def is_valid(self) -> bool:
+        """Verifica se o resultado é válido"""
+        return self.confidence > 0.3 or self.method != EncodingMethod.FORCED
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "encoding": self.encoding,
+            "confidence": self.confidence,
+            "method": self.method.value if hasattr(self.method, 'value') else str(self.method),
+            "valid": self.is_valid(),
+            "error": self.error
+        }
+
+
+@dataclass
+class MLPipelineResult:
+    """
+    🔥 Resultado do pipeline de ML
+    """
+    success: bool
+    predictions: List[float]
+    probabilities: Optional[List[float]] = None
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    insights: Dict[str, Any] = field(default_factory=dict)
+    recommendations: List[str] = field(default_factory=list)
+    model_used: str = "unknown"
+    processed_rows: int = 0
+    processing_time_ms: float = 0
+    error: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    encoding_used: Optional[str] = None
+    status: PredictionStatus = PredictionStatus.FAILED
+    warnings: List[str] = field(default_factory=list)
+    chart_data: Dict[str, Any] = field(default_factory=dict)
+    
+    def is_valid(self) -> bool:
+        """Verifica se o resultado é válido"""
+        return self.success and len(self.predictions) > 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "success": self.success,
+            "predictions": self.predictions,
+            "probabilities": self.probabilities,
+            "metrics": self.metrics,
+            "insights": self.insights,
+            "recommendations": self.recommendations,
+            "model_used": self.model_used,
+            "processed_rows": self.processed_rows,
+            "processing_time_ms": self.processing_time_ms,
+            "error": self.error,
+            "metadata": self.metadata,
+            "encoding_used": self.encoding_used,
+            "status": self.status.value if hasattr(self.status, 'value') else str(self.status),
+            "warnings": self.warnings,
+            "chart_data": self.chart_data
+        }
+
+
+@dataclass
+class CacheEntry:
+    """
+    🔥 Entrada de cache
+    """
+    value: Any
+    timestamp: float
+    hits: int = 0
+    
+    def is_expired(self, ttl: int = 60) -> bool:
+        """Verifica se o cache expirou"""
+        return (time.time() - self.timestamp) > ttl
+
 
 @dataclass
 class FeatureDefinition:
     """
-    Definição de uma feature do modelo
+    🔥 Definição de uma feature do modelo
     """
     name: str
     type: FeatureType
@@ -127,6 +217,76 @@ class FeatureDefinition:
     # Fallback se não conseguir calcular
     fallback_value: float = 0.0
 
+
+@dataclass
+class FeatureBuildResult:
+    """
+    🔥 Resultado da construção de features
+    """
+    success: bool
+    features: pd.DataFrame
+    missing_features: List[str] = field(default_factory=list)
+    fallback_used: List[str] = field(default_factory=list)
+    calculated_features: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    
+    @property
+    def has_missing(self) -> bool:
+        return len(self.missing_features) > 0
+    
+    @property
+    def has_fallback(self) -> bool:
+        return len(self.fallback_used) > 0
+    
+    def to_dict(self) -> Dict:
+        return {
+            "success": self.success,
+            "feature_count": len(self.features.columns) if self.features is not None else 0,
+            "missing_features": self.missing_features,
+            "fallback_used": self.fallback_used,
+            "calculated_features": self.calculated_features,
+            "warnings": self.warnings,
+            "errors": self.errors
+        }
+
+
+@dataclass
+class FeatureMismatchEvent:
+    """
+    🔥 Evento de mismatch de features
+    """
+    timestamp: str
+    expected_features: List[str]
+    actual_features: List[str]
+    missing_count: int
+    extra_count: int
+    missing_names: List[str]
+    extra_names: List[str]
+    request_id: Optional[str] = None
+    user_id: Optional[int] = None
+    filename: Optional[str] = None
+    action_taken: str = "logged"
+    
+    def to_dict(self) -> Dict:
+        return {
+            "timestamp": self.timestamp,
+            "expected_features": self.expected_features,
+            "actual_features": self.actual_features,
+            "missing_count": self.missing_count,
+            "extra_count": self.extra_count,
+            "missing_names": self.missing_names,
+            "extra_names": self.extra_names,
+            "request_id": self.request_id,
+            "user_id": self.user_id,
+            "filename": self.filename,
+            "action_taken": self.action_taken
+        }
+
+
+# ==============================================
+# 🔥 FEATURE REGISTRY
+# ==============================================
 
 class FeatureRegistry:
     """
@@ -253,7 +413,6 @@ class FeatureRegistry:
     
     def _get_expected_order(self) -> List[str]:
         """Retorna ordem esperada das features"""
-        # Features obrigatórias primeiro, depois opcionais
         required = [name for name, feat in self._features.items() if feat.required]
         optional = [name for name, feat in self._features.items() if not feat.required]
         return required + optional
@@ -288,39 +447,8 @@ feature_registry = FeatureRegistry()
 
 
 # ==============================================
-# FEATURE BUILDER - CONSTRÓI FEATURES
+# 🔥 FEATURE BUILDER
 # ==============================================
-
-@dataclass
-class FeatureBuildResult:
-    """Resultado da construção de features"""
-    success: bool
-    features: pd.DataFrame
-    missing_features: List[str] = field(default_factory=list)
-    fallback_used: List[str] = field(default_factory=list)
-    calculated_features: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    
-    @property
-    def has_missing(self) -> bool:
-        return len(self.missing_features) > 0
-    
-    @property
-    def has_fallback(self) -> bool:
-        return len(self.fallback_used) > 0
-    
-    def to_dict(self) -> Dict:
-        return {
-            "success": self.success,
-            "feature_count": len(self.features.columns) if self.features is not None else 0,
-            "missing_features": self.missing_features,
-            "fallback_used": self.fallback_used,
-            "calculated_features": self.calculated_features,
-            "warnings": self.warnings,
-            "errors": self.errors
-        }
-
 
 class FeatureBuilder:
     """
@@ -377,11 +505,9 @@ class FeatureBuilder:
                     )
                     
                     if value is not None:
-                        # Verificar se é uma série ou valor único
                         if isinstance(value, (pd.Series, np.ndarray)):
                             feature_data[feature_name] = value
                         else:
-                            # Se for valor único, repetir para todas as linhas
                             feature_data[feature_name] = pd.Series([value] * len(df))
                         calculated.append(feature_name)
                     else:
@@ -401,10 +527,8 @@ class FeatureBuilder:
             # 3. Criar DataFrame com a ordem correta
             if feature_data:
                 result.features = pd.DataFrame(feature_data)
-                # Reordenar colunas conforme ordem esperada
                 expected_order = self.registry.get_expected_order()
                 actual_cols = result.features.columns.tolist()
-                # Manter apenas as que existem
                 ordered_cols = [col for col in expected_order if col in actual_cols]
                 if ordered_cols:
                     result.features = result.features[ordered_cols]
@@ -427,31 +551,25 @@ class FeatureBuilder:
         return result
     
     def _detect_columns(self, df: pd.DataFrame) -> Dict[str, str]:
-        """
-        🔥 Detecta quais colunas do DataFrame mapeiam para features
-        """
+        """Detecta quais colunas do DataFrame mapeiam para features"""
         column_map = {}
         df_cols_lower = {col.lower().strip(): col for col in df.columns}
         
         for feature_name, definition in self.registry._features.items():
             if definition.type == FeatureType.DIRECT and definition.source_column:
-                # 1. Verificar pelo nome da coluna fonte
                 source_lower = definition.source_column.lower().strip()
                 if source_lower in df_cols_lower:
                     column_map[df_cols_lower[source_lower]] = feature_name
                     continue
                 
-                # 2. Verificar por aliases
                 for alias in definition.aliases:
                     alias_lower = alias.lower().strip()
                     if alias_lower in df_cols_lower:
                         column_map[df_cols_lower[alias_lower]] = feature_name
                         break
                 
-                # 3. Verificar por correspondência parcial (case insensitive)
                 if feature_name not in column_map.values():
                     for col, col_name in df_cols_lower.items():
-                        # Verificar se a coluna contém palavras-chave
                         for keyword in definition.aliases + [definition.source_column]:
                             if keyword.lower() in col or col in keyword.lower():
                                 column_map[col_name] = feature_name
@@ -470,34 +588,27 @@ class FeatureBuilder:
         available_columns: Dict[str, str],
         feature_data: Dict[str, Any]
     ) -> Any:
-        """
-        🔥 Constrói uma feature individual
-        """
+        """Constrói uma feature individual"""
         
         if definition.type == FeatureType.CONSTANT:
             return definition.default_value
         
         elif definition.type == FeatureType.DIRECT:
-            # Buscar coluna no arquivo
             source_col = None
             
-            # 1. Tentar pelo mapeamento detectado
             for col, feat in available_columns.items():
                 if feat == definition.name:
                     source_col = col
                     break
             
-            # 2. Tentar pelo nome da coluna fonte
             if source_col is None and definition.source_column in df.columns:
                 source_col = definition.source_column
             
-            # 3. Tentar por aliases
             if source_col is None and definition.aliases:
                 for alias in definition.aliases:
                     if alias in df.columns:
                         source_col = alias
                         break
-                    # Tentar case-insensitive
                     for col in df.columns:
                         if col.lower() == alias.lower():
                             source_col = col
@@ -514,24 +625,17 @@ class FeatureBuilder:
         elif definition.type == FeatureType.DERIVED:
             if definition.derive_func:
                 try:
-                    # Criar DataFrame com dados disponíveis
                     data_dict = {}
-                    
-                    # Adicionar colunas originais
                     for col in df.columns:
                         data_dict[col] = df[col]
-                    
-                    # Adicionar features já construídas
                     for feat_name, value in feature_data.items():
                         data_dict[feat_name] = value
                     
                     temp_df = pd.DataFrame(data_dict)
                     result = definition.derive_func(temp_df)
                     
-                    # Garantir que o resultado tem o tamanho correto
                     if isinstance(result, (pd.Series, np.ndarray)):
                         if len(result) != len(df):
-                            # Se não tiver o tamanho correto, tentar broadcast
                             if len(result) == 1:
                                 return pd.Series([result.iloc[0]] * len(df))
                     return result
@@ -543,13 +647,11 @@ class FeatureBuilder:
                 return None
         
         elif definition.type == FeatureType.AGGREGATE:
-            # Similar ao DERIVED, mas com agregação
             if definition.aggregate_func == 'count':
                 return len(df)
             elif definition.aggregate_func == 'sum' and definition.aggregate_column:
                 if definition.aggregate_column in df.columns:
                     return df[definition.aggregate_column].sum()
-                # Tentar pelo mapeamento
                 for col, feat in available_columns.items():
                     if feat == definition.aggregate_column and col in df.columns:
                         return df[col].sum()
@@ -557,7 +659,6 @@ class FeatureBuilder:
             elif definition.aggregate_func == 'mean' and definition.aggregate_column:
                 if definition.aggregate_column in df.columns:
                     return df[definition.aggregate_column].mean()
-                # Tentar pelo mapeamento
                 for col, feat in available_columns.items():
                     if feat == definition.aggregate_column and col in df.columns:
                         return df[col].mean()
@@ -569,39 +670,8 @@ class FeatureBuilder:
 
 
 # ==============================================
-# FEATURE MONITOR - MONITORA MISMATCHES
+# 🔥 FEATURE MONITOR
 # ==============================================
-
-@dataclass
-class FeatureMismatchEvent:
-    """Evento de mismatch de features"""
-    timestamp: str
-    expected_features: List[str]
-    actual_features: List[str]
-    missing_count: int
-    extra_count: int
-    missing_names: List[str]
-    extra_names: List[str]
-    request_id: Optional[str] = None
-    user_id: Optional[int] = None
-    filename: Optional[str] = None
-    action_taken: str = "logged"
-    
-    def to_dict(self) -> Dict:
-        return {
-            "timestamp": self.timestamp,
-            "expected_features": self.expected_features,
-            "actual_features": self.actual_features,
-            "missing_count": self.missing_count,
-            "extra_count": self.extra_count,
-            "missing_names": self.missing_names,
-            "extra_names": self.extra_names,
-            "request_id": self.request_id,
-            "user_id": self.user_id,
-            "filename": self.filename,
-            "action_taken": self.action_taken
-        }
-
 
 class FeatureMonitor:
     """
@@ -634,9 +704,7 @@ class FeatureMonitor:
         filename: Optional[str] = None,
         auto_log: bool = True
     ) -> Dict[str, Any]:
-        """
-        🔥 Verifica se há mismatch entre features esperadas e recebidas
-        """
+        """Verifica se há mismatch entre features esperadas e recebidas"""
         expected_set = set(expected_features)
         actual_set = set(actual_features)
         
@@ -660,14 +728,12 @@ class FeatureMonitor:
             self._stats["mismatch_count"] += 1
             self._stats["last_mismatch"] = datetime.now().isoformat()
             
-            # Atualizar estatísticas de features faltantes
             for feat in missing:
                 self._stats["most_common_missing"][feat] = self._stats["most_common_missing"].get(feat, 0) + 1
             
             for feat in extra:
                 self._stats["most_common_extra"][feat] = self._stats["most_common_extra"].get(feat, 0) + 1
             
-            # Criar evento
             event = FeatureMismatchEvent(
                 timestamp=datetime.now().isoformat(),
                 expected_features=expected_features,
@@ -684,11 +750,9 @@ class FeatureMonitor:
             
             self._events.append(event)
             
-            # Salvar em arquivo
             if auto_log:
                 self._log_event(event)
             
-            # Gerar alerta se muitas features faltando (> 30% de mismatch)
             if result["match_percentage"] < 70:
                 self._stats["alert_count"] += 1
                 event.action_taken = "alert"
@@ -713,9 +777,7 @@ class FeatureMonitor:
             logger.error(f"❌ Erro ao salvar log: {e}")
     
     def _send_alert(self, event: FeatureMismatchEvent):
-        """
-        🔥 Envia alerta para administradores
-        """
+        """Envia alerta para administradores"""
         message = f"""
         ⚠️ ALERTA: Feature Mismatch Detectado!
         
@@ -733,8 +795,6 @@ class FeatureMonitor:
         """
         
         logger.warning(message)
-        
-        # TODO: Integrar com sistema de notificação (email, Slack, etc.)
     
     def get_stats(self) -> Dict[str, Any]:
         """Retorna estatísticas do monitor"""
@@ -743,20 +803,15 @@ class FeatureMonitor:
             "recent_events": [e.to_dict() for e in self._events[-10:]],
             "total_events": len(self._events)
         }
-    
-    def get_recent_mismatches(self, limit: int = 10) -> List[Dict]:
-        """Retorna os últimos mismatches"""
-        return [e.to_dict() for e in self._events[-limit:]]
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ML PIPELINE V6.0
+# 🔥 CLASSE PRINCIPAL - ML PIPELINE V6.1
 # ==============================================
 
 class MLPipeline:
     """
-    Pipeline unificado de Machine Learning - VERSÃO 6.0
-    🔥 PIPELINE INTELIGENTE COM FEATURE REGISTRY
+    🔥 Pipeline unificado de Machine Learning - VERSÃO 6.1
     """
     
     def __init__(self):
@@ -791,9 +846,9 @@ class MLPipeline:
         self._initialization_lock = asyncio.Lock()
         
         # ==========================================
-        # CACHE INTELIGENTE
+        # CACHE
         # ==========================================
-        self._cache: Dict[str, Any] = {}
+        self._cache: Dict[str, CacheEntry] = {}
         self._cache_ttl: int = 60
         self._cache_max_size: int = 100
         self._last_cache_cleanup: float = time.time()
@@ -802,17 +857,10 @@ class MLPipeline:
         # ESTATÍSTICAS DE ENCODING
         # ==========================================
         self.encoding_stats: Dict[str, int] = {
-            "utf-8": 0,
-            "utf-8-sig": 0,
-            "cp1252": 0,
-            "iso-8859-1": 0,
-            "latin1": 0,
-            "detected": 0,
-            "fallback": 0,
-            "forced": 0,
-            "excel": 0,
-            "failed": 0,
-            "total_attempts": 0
+            "utf-8": 0, "utf-8-sig": 0, "cp1252": 0,
+            "iso-8859-1": 0, "latin1": 0,
+            "detected": 0, "fallback": 0, "forced": 0,
+            "excel": 0, "failed": 0, "total_attempts": 0
         }
         self.last_encoding: Optional[str] = None
         self.last_encoding_confidence: float = 0.0
@@ -837,7 +885,7 @@ class MLPipeline:
         }
         
         # ==========================================
-        # MÓDULOS EXTERNOS (LAZY LOADING)
+        # MÓDULOS EXTERNOS
         # ==========================================
         self._predictor = None
         self._automl_office = None
@@ -857,7 +905,7 @@ class MLPipeline:
             "timeout_seconds": 30,
             "encoding_fallbacks": ['utf-8-sig', 'utf-8', 'cp1252', 'iso-8859-1', 'latin1'],
             "min_features_for_ml": 3,
-            "feature_match_threshold": 0.7  # 70% de match é aceitável
+            "feature_match_threshold": 0.7
         }
         
         # ==========================================
@@ -866,26 +914,23 @@ class MLPipeline:
         self._warnings: List[str] = []
         self._errors: List[str] = []
         
-        logger.info("✅ MLPipeline V6.0 COMPLETO inicializado")
+        logger.info("✅ MLPipeline V6.1 inicializado")
         logger.info(f"   📁 Modelos: {self.models_dir}")
         logger.info(f"   📊 Features: {self.feature_registry.get_expected_count()}")
         logger.info(f"   ⏰ Cache TTL: {self._cache_ttl}s")
-        logger.info(f"   🔥 FEATURE REGISTRY: {len(self.feature_registry.get_features())} features")
-        logger.info(f"   📊 FEATURE MONITOR: Ativo")
     
     # ==============================================
-    # MÓDULOS EXTERNOS (LAZY LOADING)
+    # MÓDULOS EXTERNOS
     # ==============================================
     
     def _ensure_modules_loaded(self):
-        """Carrega módulos externos apenas quando necessário"""
         if self._modules_loaded:
             return
         
         try:
             from backend.ml.predict import predictor
             self._predictor = predictor
-            logger.info("   📦 ModelPredictor (predict.py) integrado")
+            logger.info("   📦 ModelPredictor integrado")
         except ImportError as e:
             logger.debug(f"   ⚠️ ModelPredictor não disponível: {e}")
         
@@ -913,11 +958,11 @@ class MLPipeline:
         self._modules_loaded = True
     
     # ==============================================
-    # DETECÇÃO DE ENCODING (MANTIDO)
+    # DETECÇÃO DE ENCODING
     # ==============================================
     
     def _detect_encoding(self, content: bytes) -> EncodingResult:
-        """Detecta encoding de forma robusta com múltiplos fallbacks"""
+        """Detecta encoding de forma robusta"""
         self.encoding_stats["total_attempts"] += 1
         
         # BOM detection
@@ -938,7 +983,7 @@ class MLPipeline:
                     method=EncodingMethod.DETECTED
                 )
         
-        # Chardet detection
+        # Chardet
         try:
             if len(content) > 0:
                 result = chardet.detect(content[:50000])
@@ -961,7 +1006,7 @@ class MLPipeline:
         except Exception:
             pass
         
-        # Fallback encodings
+        # Fallback
         for enc in self.config["encoding_fallbacks"]:
             try:
                 content[:5000].decode(enc)
@@ -976,7 +1021,7 @@ class MLPipeline:
             except UnicodeDecodeError:
                 continue
         
-        # Forced fallback
+        # Forced
         logger.warning(f"   ⚠️ Nenhum encoding detectado, usando latin1")
         self.encoding_stats["forced"] += 1
         self.encoding_stats["latin1"] = self.encoding_stats.get("latin1", 0) + 1
@@ -999,7 +1044,7 @@ class MLPipeline:
         return mapping.get(name, name)
     
     # ==============================================
-    # CARREGAMENTO DE DADOS (MANTIDO)
+    # CARREGAMENTO DE DADOS
     # ==============================================
     
     def _load_csv_from_bytes(self, content: bytes, encoding: str, encoding_result: EncodingResult):
@@ -1100,13 +1145,10 @@ class MLPipeline:
             return {'df': None, 'encoding': None, 'warnings': warnings}
     
     # ==============================================
-    # 🔥 FEATURE BUILDING - NOVO MÉTODO PRINCIPAL
+    # FEATURE BUILDING
     # ==============================================
     
     async def _build_features_intelligently(self, df: pd.DataFrame, filename: str = None) -> Tuple[Optional[pd.DataFrame], List[str]]:
-        """
-        🔥 Constrói features usando o Feature Builder
-        """
         logger.info(f"🏗️ Construindo features para {len(df)} linhas...")
         
         result = self.feature_builder.build_features(df)
@@ -1115,8 +1157,7 @@ class MLPipeline:
             logger.error(f"❌ Falha ao construir features: {result.errors}")
             return None, result.errors
         
-        # Log do resultado
-        logger.info(f"   ✅ Features construídas com sucesso!")
+        logger.info(f"   ✅ Features construídas!")
         logger.info(f"      📊 Shape: {result.features.shape}")
         logger.info(f"      🔧 Calculadas: {len(result.calculated_features)}")
         logger.info(f"      ⚠️ Fallback: {len(result.fallback_used)}")
@@ -1129,32 +1170,23 @@ class MLPipeline:
         return result.features, result.warnings
     
     async def _validate_features(self, features: pd.DataFrame, filename: str = None) -> Dict[str, Any]:
-        """
-        🔥 Valida features contra o registry e monitora mismatches
-        """
         expected = self.feature_registry.get_expected_order()
         actual = features.columns.tolist()
         
-        # Verificar mismatch
         mismatch_result = self.feature_monitor.check_mismatch(
             expected_features=expected,
             actual_features=actual,
-            filename=filename,
-            user_id=None  # Será preenchido pelo caller
+            filename=filename
         )
         
-        # Atualizar estatísticas
         if mismatch_result["has_mismatch"]:
             self.stats["feature_mismatches"] += 1
         
-        # Calcular fallbacks usados
         fallback_used = []
         for feat_name in expected:
             definition = self.feature_registry.get_definition(feat_name)
             if definition and definition.can_fallback:
-                # Verificar se a feature é constante (fallback)
                 if feat_name in actual and features[feat_name].nunique() == 1:
-                    # Se todos os valores são iguais, provavelmente é fallback
                     fallback_used.append(feat_name)
         
         if fallback_used:
@@ -1168,11 +1200,10 @@ class MLPipeline:
         }
     
     # ==============================================
-    # PREDIÇÃO COM PREDICTOR (INTEGRAÇÃO)
+    # PREDIÇÃO
     # ==============================================
     
     async def _safe_predict_with_predictor(self, df: pd.DataFrame) -> Tuple[Optional[List[float]], List[str]]:
-        """Usa o ModelPredictor do predict.py para fazer predições"""
         warnings = []
         self._ensure_modules_loaded()
         
@@ -1194,7 +1225,6 @@ class MLPipeline:
         return None, warnings
     
     async def _predict_with_model(self, model_key: str, X: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Predição com um modelo específico"""
         try:
             model = self.models.get(model_key)
             scaler = self.scalers.get(model_key)
@@ -1247,7 +1277,7 @@ class MLPipeline:
         return np.random.uniform(0.3, 0.7, n)
     
     # ==============================================
-    # CHART_DATA (MANTIDO)
+    # CHART DATA
     # ==============================================
     
     def _extract_chart_data_from_df(self, df: pd.DataFrame, predictions: List[float]) -> Dict[str, Any]:
@@ -1350,7 +1380,7 @@ class MLPipeline:
         }
     
     # ==============================================
-    # INSIGHTS E RECOMENDAÇÕES (MANTIDO)
+    # INSIGHTS E RECOMENDAÇÕES
     # ==============================================
     
     def _safe_predictions_to_list(self, predictions: Any) -> List[float]:
@@ -1485,21 +1515,20 @@ class MLPipeline:
         return metrics
     
     # ==============================================
-    # 🔥 PREDICT - MÉTODO PRINCIPAL (V6.0)
+    # 🔥 PREDICT - MÉTODO PRINCIPAL
     # ==============================================
     
     async def predict(self, df_or_content: Union[pd.DataFrame, bytes, str], 
                       filename: Optional[str] = None,
                       user_id: Optional[int] = None) -> MLPipelineResult:
         """
-        🔥 MÉTODO PRINCIPAL - VERSÃO 6.0 COM FEATURE REGISTRY
+        🔥 MÉTODO PRINCIPAL - VERSÃO 6.1
         """
         start_time = time.time()
         encoding_used = None
         warnings = []
         status = PredictionStatus.FAILED
         chart_data = {}
-        feature_build_result = None
         validation_result = None
         
         try:
@@ -1521,7 +1550,7 @@ class MLPipeline:
             
             logger.info(f"📊 Dados carregados: {len(df)} linhas, {len(df.columns)} colunas")
             
-            # 2. 🔥 CONSTRUIR FEATURES INTELIGENTEMENTE
+            # 2. Construir features
             features, build_warnings = await self._build_features_intelligently(df, filename)
             
             if build_warnings:
@@ -1534,29 +1563,28 @@ class MLPipeline:
                     warnings=warnings
                 )
             
-            # 3. 🔥 VALIDAR FEATURES
+            # 3. Validar features
             validation_result = await self._validate_features(features, filename)
             warnings.append(f"Match de features: {validation_result['mismatch']['match_percentage']:.1f}%")
             
             if validation_result['mismatch']['has_mismatch']:
                 logger.warning(f"   ⚠️ Mismatch detectado: {validation_result['mismatch']['missing_count']} features faltantes")
             
-            # 4. Preparar X para predição
+            # 4. Preparar X
             X = features.values
             
-            # 5. Tentar usar ModelPredictor primeiro
+            # 5. Tentar ModelPredictor
             predictor_predictions, predictor_warnings = await self._safe_predict_with_predictor(df)
             if predictor_warnings:
                 warnings.extend(predictor_warnings)
             
             predictions = predictor_predictions
             
-            # 6. Se predictor falhou, usar pipeline interno
+            # 6. Fallback: pipeline interno
             if predictions is None or len(predictions) == 0:
                 if not self.is_initialized:
                     await self.initialize()
                 
-                # 🔥 USAR FEATURES CORRETAS (NÃO ADAPTADAS)
                 model_predictions, probas = await self._predict_with_model('default', X)
                 
                 if model_predictions is not None and len(model_predictions) > 0:
@@ -1565,7 +1593,7 @@ class MLPipeline:
                     predictions = self._fallback_predictions(len(X)).tolist()
                     warnings.append("Usando fallback para predições")
             
-            # 7. Gerar insights e recomendações
+            # 7. Insights e recomendações
             processed = {'stats': {'rows': len(df), 'columns': len(df.columns)}}
             insights, recommendations = self._generate_insights_safe(df, predictions, processed)
             
@@ -1594,7 +1622,6 @@ class MLPipeline:
                 metadata={
                     'feature_names': features.columns.tolist(),
                     'feature_count': len(features.columns),
-                    'feature_build': feature_build_result.to_dict() if feature_build_result else {},
                     'validation': validation_result,
                     'stats': {'rows': len(df), 'columns': len(df.columns)}
                 },
@@ -1626,7 +1653,7 @@ class MLPipeline:
             )
     
     # ==============================================
-    # INICIALIZAÇÃO DE MODELOS (MANTIDO)
+    # INICIALIZAÇÃO DE MODELOS
     # ==============================================
     
     async def initialize(self, force_reload: bool = False) -> bool:
@@ -1748,7 +1775,7 @@ class MLPipeline:
             self.models['default'] = None
     
     # ==============================================
-    # FUNÇÕES DE UTILIDADE
+    # UTILITÁRIOS
     # ==============================================
     
     def _create_error_result(self, error: str, **kwargs) -> MLPipelineResult:
@@ -1813,7 +1840,6 @@ class MLPipeline:
         }
     
     def get_feature_registry_info(self) -> Dict[str, Any]:
-        """Retorna informações sobre o Feature Registry"""
         return {
             "total_features": self.feature_registry.get_expected_count(),
             "required_features": self.feature_registry.get_required_features(),
@@ -1858,10 +1884,6 @@ pipeline = MLPipeline()
 # ==============================================
 
 async def process_file_content(content: bytes, filename: str, user_id: Optional[int] = None) -> Dict[str, Any]:
-    """
-    🔥 FUNÇÃO PRINCIPAL PARA upload_routes.py
-    Processa bytes do upload e retorna resultado estruturado com chart_data
-    """
     try:
         logger.info(f"📁 process_file_content: {filename} ({len(content)} bytes)")
         result = await pipeline.predict(content, filename, user_id=user_id)
@@ -1873,9 +1895,7 @@ async def process_file_content(content: bytes, filename: str, user_id: Optional[
             result_dict['metadata'] = result_dict.get('metadata', {})
             result_dict['metadata']['encoding_used'] = result.encoding_used
         
-        # Adicionar informações do Feature Registry
         if result.metadata:
-            result_dict['metadata']['feature_build'] = result.metadata.get('feature_build', {})
             result_dict['metadata']['validation'] = result.metadata.get('validation', {})
         
         logger.info(f"✅ process_file_content concluído: encoding={result.encoding_used}")
@@ -1904,7 +1924,7 @@ async def process_file_content(content: bytes, filename: str, user_id: Optional[
 
 async def test_pipeline():
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO PIPELINE ML V6.0 (FEATURE REGISTRY)")
+    print("🧪 TESTANDO PIPELINE ML V6.1")
     print("=" * 70)
     
     import pandas as pd
@@ -1952,7 +1972,7 @@ async def test_pipeline():
 # ==============================================
 
 print("\n" + "=" * 70)
-print("✅ preprocessing.py V6.0 COMPLETO carregado com sucesso!")
+print("✅ preprocessing.py V6.1 COMPLETO carregado com sucesso!")
 print("=" * 70)
 print("   🔥 FEATURE REGISTRY:")
 print("      • " + str(feature_registry.get_expected_count()) + " features registradas")
@@ -1966,9 +1986,6 @@ print("   🔥 FEATURE MONITOR:")
 print("      • Detecção de mismatches")
 print("      • Logging de eventos")
 print("      • Alertas para administradores")
-print("   🗑️ REMOVIDO:")
-print("      • _adapt_features_to_model (padding aleatório)")
-print("      • _generate_synthetic_features (features arbitrárias)")
 print("   📊 Métodos:")
 print("      • pipeline.predict(bytes, filename, user_id)")
 print("      • pipeline.get_feature_registry_info()")
