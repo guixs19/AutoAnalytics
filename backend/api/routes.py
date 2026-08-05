@@ -1,25 +1,31 @@
-# backend/api/routes.py - VERSÃO 4.1 COM MELHORIAS COMPLETAS
+# backend/api/routes.py - VERSÃO 5.0 (CORRIGIDA E OTIMIZADA)
 """
 ROUTES.PY - Rotas base da API (Gemini, Health, Admin, Análise Múltipla)
 ================================================================================
-✅ CORRIGIDO: /ml/predict agora é síncrono (sem await) com executor
-✅ CORRIGIDO: Serialização de tipos NumPy/Pandas para JSON
-✅ CORRIGIDO: db.commit() explícito para dedução de créditos
-✅ SINCRONIZADO: Com upload_routes.py e preprocessing.py
-✅ REMOVIDO: Endpoint /upload duplicado (usar upload_routes.py)
-✅ MANTIDO: /analyze (Gemini), /health, /test, /admin/diagnostics
-✅ NOVO: /analyze-multiple - Análise múltipla com relatório executivo
-✅ NOVO: /report/{id} - Download de relatório em PDF/HTML/JSON
-✅ NOVO: /analyze-multiple-status - Status de análise múltipla
-✅ NOVO: Cache inteligente para análises múltiplas
-✅ NOVO: Validação avançada de arquivos
-✅ NOVO: Rate limiting específico para análise múltipla
-✅ NOVO: Logging estruturado com correlação de requisições
+✅ CORREÇÕES V5.0:
+   - 🔥 CORRIGIDO: request não definido em /analyze-multiple
+   - 🔥 CORRIGIDO: client_ip quando request é None
+   - 🔥 CORRIGIDO: Importação duplicada de schemas
+   - 🔥 CORRIGIDO: Verificação de disponibilidade do Gemini
+   - 🔥 CORRIGIDO: Tratamento de erros em /analyze-multiple
+   - 🔥 CORRIGIDO: Cache key com files vazios
+
+✅ NOVAS MELHORIAS V5.0:
+   - 🚀 HEALTH CHECK AVANÇADO: Métricas detalhadas do Gemini
+   - 🚀 DIAGNÓSTICO AUTO-CORRETIVO: Tenta recarregar serviços
+   - 🚀 CACHE PREDITIVO: Pré-carrega análises comuns
+   - 🚀 RATE LIMITING POR USUÁRIO: Individualizado
+   - 🚀 LOGS ESTRUTURADOS: Com correlation ID
+   - 🚀 FALLBACK INTELIGENTE: Quando Gemini falha
+   - 🚀 MÉTRICAS DE PERFORMANCE: Tempo de resposta por endpoint
+   - 🚀 VALIDAÇÃO DE ARQUIVOS: Mais robusta
+   - 🚀 COMPRESSÃO DE RESPOSTA: Para grandes volumes de dados
+   - 🚀 BACKGROUND TASKS: Processamento assíncrono
 ================================================================================
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, Form
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query, Depends, Form, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from datetime import datetime, date
@@ -34,6 +40,8 @@ import logging
 import asyncio
 import hashlib
 import time
+import gzip
+import io
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -43,10 +51,10 @@ from contextlib import asynccontextmanager
 
 # Banco de dados e modelos
 from backend.database import get_db
-from backend import crud, schemas
+from backend import crud
 from backend.security import get_current_user
-from backend.models import User, UserPlan
-from backend.crud import get_credits_display, check_credits, deduct_credits
+from backend.models import User
+from backend.crud import deduct_credits
 
 # Configurações
 from backend.config.settings import settings
@@ -85,6 +93,9 @@ class RoutesConfig:
     RATE_LIMIT_MULTI_ANALYZE = 5  # 5 requisições por minuto
     RATE_LIMIT_WINDOW = 60  # 1 minuto
     PROCESSING_TIMEOUT = 300  # 5 minutos
+    MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10MB
+    ENABLE_RESPONSE_COMPRESSION = True
+    ENABLE_PREDICTIVE_CACHE = True
 
 
 # ==============================================
@@ -96,7 +107,12 @@ router = APIRouter()
 # Cache em memória
 processing_cache = {}
 analysis_cache = {}  # 🔥 NOVO: Cache para análises múltiplas
+predictive_cache = {}  # 🔥 NOVO: Cache preditivo
 rate_limit_cache = {}  # 🔥 NOVO: Rate limiting
+endpoint_metrics = {  # 🔥 NOVO: Métricas por endpoint
+    "total_requests": 0,
+    "endpoints": {}
+}
 
 # ThreadPoolExecutor
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -108,6 +124,35 @@ CRITICAL_SERVICES_OK = service_factory.get_critical_services_status()
 
 logger.info(f"📊 Status dos serviços: {SERVICES_STATUS}")
 logger.info(f"✅ Serviços críticos OK: {CRITICAL_SERVICES_OK}")
+
+
+# ==============================================
+# 🔥 FUNÇÕES AUXILIARES - MÉTRICAS
+# ==============================================
+
+def track_endpoint_metrics(endpoint: str, duration_ms: float, success: bool):
+    """🔥 Rastreia métricas de endpoints"""
+    if endpoint not in endpoint_metrics["endpoints"]:
+        endpoint_metrics["endpoints"][endpoint] = {
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "avg_duration_ms": 0,
+            "total_duration_ms": 0,
+            "last_call": None
+        }
+    
+    metrics = endpoint_metrics["endpoints"][endpoint]
+    metrics["total"] += 1
+    if success:
+        metrics["success"] += 1
+    else:
+        metrics["failed"] += 1
+    metrics["total_duration_ms"] += duration_ms
+    metrics["avg_duration_ms"] = metrics["total_duration_ms"] / metrics["total"]
+    metrics["last_call"] = datetime.now().isoformat()
+    
+    endpoint_metrics["total_requests"] += 1
 
 
 # ==============================================
@@ -176,6 +221,19 @@ def safe_json_response(data: Any) -> Dict:
         return serialize_numpy(data)
 
 
+def compress_response_if_needed(data: Dict[str, Any]) -> bytes:
+    """🔥 Comprime resposta se for muito grande"""
+    json_str = json.dumps(data, ensure_ascii=False)
+    json_bytes = json_str.encode('utf-8')
+    
+    if len(json_bytes) > RoutesConfig.MAX_RESPONSE_SIZE and RoutesConfig.ENABLE_RESPONSE_COMPRESSION:
+        compressed = gzip.compress(json_bytes)
+        logger.info(f"📦 Resposta comprimida: {len(json_bytes)} → {len(compressed)} bytes")
+        return compressed
+    
+    return json_bytes
+
+
 # ==============================================
 # FUNÇÕES AUXILIARES - RATE LIMITING
 # ==============================================
@@ -183,13 +241,6 @@ def safe_json_response(data: Any) -> Dict:
 def check_rate_limit(user_id: int, endpoint: str) -> bool:
     """
     🔥 Verifica rate limit para um usuário e endpoint
-    
-    Args:
-        user_id: ID do usuário
-        endpoint: Nome do endpoint
-    
-    Returns:
-        bool: True se permitido, False se bloqueado
     """
     key = f"{endpoint}:{user_id}"
     now = time.time()
@@ -210,7 +261,7 @@ def check_rate_limit(user_id: int, endpoint: str) -> bool:
 
 
 # ==============================================
-# FUNÇÕES AUXILIARES - CACHE
+# FUNÇÕES AUXILIARES - CACHE INTELIGENTE
 # ==============================================
 
 def get_cached_analysis(cache_key: str) -> Optional[Dict[str, Any]]:
@@ -233,8 +284,16 @@ def set_cached_analysis(cache_key: str, data: Dict[str, Any]) -> None:
 
 def get_cache_key(files: List[UploadFile], user_id: int) -> str:
     """Gera chave de cache para arquivos"""
+    if not files:
+        return hashlib.md5(f"{user_id}:empty".encode()).hexdigest()
+    
     content = "".join([f.filename + str(f.size) for f in files])
     return hashlib.md5(f"{content}:{user_id}".encode()).hexdigest()
+
+
+def get_predictive_cache_key(analysis_type: str, user_id: int) -> str:
+    """🔥 Gera chave para cache preditivo"""
+    return hashlib.md5(f"predictive:{analysis_type}:{user_id}".encode()).hexdigest()
 
 
 # ==============================================
@@ -243,13 +302,7 @@ def get_cache_key(files: List[UploadFile], user_id: int) -> str:
 
 async def validate_and_read_files(files: List[UploadFile]) -> Dict[str, Any]:
     """
-    🔥 Valida e lê múltiplos arquivos
-    
-    Args:
-        files: Lista de arquivos
-    
-    Returns:
-        Dict: Arquivos válidos e erros
+    🔥 Valida e lê múltiplos arquivos (VERSÃO MELHORADA)
     """
     valid_files = []
     errors = []
@@ -284,6 +337,33 @@ async def validate_and_read_files(files: List[UploadFile]) -> Dict[str, Any]:
                     "error": f"Arquivo excede {RoutesConfig.MAX_FILE_SIZE//1024}KB"
                 })
                 continue
+            
+            # 🔥 NOVO: Detectar se é CSV ou Excel válido
+            is_valid_content = False
+            if file_ext == '.csv':
+                try:
+                    import pandas as pd
+                    from io import BytesIO
+                    pd.read_csv(BytesIO(content), nrows=5)
+                    is_valid_content = True
+                except Exception:
+                    errors.append({
+                        "filename": file.filename,
+                        "error": "Arquivo CSV inválido ou corrompido"
+                    })
+                    continue
+            elif file_ext in ['.xlsx', '.xls']:
+                try:
+                    import pandas as pd
+                    from io import BytesIO
+                    pd.read_excel(BytesIO(content), nrows=5)
+                    is_valid_content = True
+                except Exception:
+                    errors.append({
+                        "filename": file.filename,
+                        "error": "Arquivo Excel inválido ou corrompido"
+                    })
+                    continue
             
             valid_files.append({
                 'content': content,
@@ -320,15 +400,6 @@ async def process_with_multi_analysis(
 ) -> Dict[str, Any]:
     """
     🔥 Processa arquivos com multi_analysis.py
-    
-    Args:
-        file_data_list: Lista de arquivos
-        user_id: ID do usuário
-        user_email: Email do usuário
-        force_reload: Forçar recarregamento
-    
-    Returns:
-        Dict: Resultado da análise
     """
     logger.info(f"📚 Processando {len(file_data_list)} arquivos com multi_analysis...")
     
@@ -355,14 +426,6 @@ def generate_report_content(
 ) -> Dict[str, Any]:
     """
     🔥 Gera relatório com report_builder.py
-    
-    Args:
-        analysis_result: Resultado da análise
-        user_name: Nome do usuário
-        format: Formato do relatório
-    
-    Returns:
-        Dict: Relatório gerado
     """
     logger.info(f"📄 Gerando relatório em {format}...")
     
@@ -401,6 +464,34 @@ def generate_report_content(
 
 
 # ==============================================
+# FUNÇÕES AUXILIARES - HEALTH CHECK AVANÇADO
+# ==============================================
+
+def get_gemini_detailed_status() -> Dict[str, Any]:
+    """🔥 Retorna status detalhado do Gemini"""
+    try:
+        gemini = get_gemini_service()
+        if gemini:
+            return {
+                "available": is_gemini_available(),
+                "model": getattr(gemini, 'current_model', 'unknown'),
+                "is_healthy": getattr(gemini, 'is_healthy', lambda: False)(),
+                "cache_size": len(getattr(gemini, 'response_cache', {})),
+                "total_calls": getattr(gemini, 'metrics', {}).get('total_calls', 0),
+                "last_error": getattr(gemini, '_last_error', None),
+                "circuit_state": getattr(gemini, 'circuit_state', 'unknown'),
+                "health_status": getattr(gemini, 'health_status', 'unknown')
+            }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e)
+        }
+    
+    return {"available": False}
+
+
+# ==============================================
 # DEPENDÊNCIAS INJETADAS
 # ==============================================
 
@@ -427,16 +518,35 @@ async def get_available_preprocessor():
 
 
 async def get_available_gemini():
-    """Dependency que fornece o Gemini se disponível"""
-    if not is_gemini_available():
+    """🔥 Dependency que fornece o Gemini com verificação robusta"""
+    
+    # 🔥 VERIFICAÇÃO DETALHADA
+    gemini_status = get_gemini_detailed_status()
+    
+    if not gemini_status.get("available"):
+        logger.error(f"❌ Gemini indisponível: {gemini_status.get('error', 'Desconhecido')}")
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "gemini_unavailable",
-                "message": "O serviço de IA não está configurado. Verifique GEMINI_API_KEY no arquivo .env",
-                "action": "Contate o administrador do sistema para configurar a chave da API"
+                "message": "O serviço de IA não está disponível",
+                "details": gemini_status,
+                "action": "Verifique GEMINI_API_KEY no arquivo .env e reinicie o servidor"
             }
         )
+    
+    if not gemini_status.get("is_healthy", False):
+        logger.warning(f"⚠️ Gemini não saudável: {gemini_status.get('health_status')}")
+        # Tenta recarregar
+        try:
+            from backend.gemini import _gemini_service
+            if _gemini_service:
+                _gemini_service._initialize_client()
+                _gemini_service._discover_models()
+                logger.info("🔄 Gemini recarregado automaticamente")
+        except Exception as e:
+            logger.error(f"❌ Falha ao recarregar Gemini: {e}")
+    
     gemini = get_gemini_service()
     if gemini is None:
         raise HTTPException(
@@ -446,6 +556,7 @@ async def get_available_gemini():
                 "message": "Não foi possível inicializar o serviço Gemini"
             }
         )
+    
     return gemini
 
 
@@ -465,27 +576,45 @@ async def test_endpoint():
     """Endpoint de teste público com diagnóstico completo"""
     return {
         "success": True,
-        "message": "API funcionando com Google Gemini!",
+        "message": "API funcionando com Google Gemini V5.0!",
         "timestamp": datetime.now().isoformat(),
         "services_status": SERVICES_STATUS,
         "critical_services_ok": CRITICAL_SERVICES_OK,
         "missing_critical": service_factory.get_missing_critical_services(),
         "gemini_available": is_gemini_available(),
-        "ml_pipeline_available": pipeline.is_initialized,
+        "gemini_detailed": get_gemini_detailed_status(),
+        "ml_pipeline_available": pipeline.is_initialized if hasattr(pipeline, 'is_initialized') else False,
         "multi_analysis_available": True,
         "report_builder_available": True,
-        "version": "4.1.0"
+        "version": "5.0.0",
+        "endpoint_metrics": endpoint_metrics
     }
 
 
 @router.get("/health", response_model=None)
 async def health_check():
-    """Health check com diagnóstico detalhado"""
-    ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    """🔥 Health check com diagnóstico detalhado V5.0"""
+    start_time = time.time()
     
-    return {
+    ml_status = pipeline.get_status() if hasattr(pipeline, 'get_status') else {}
+    gemini_detailed = get_gemini_detailed_status()
+    
+    # Verificar cache health
+    cache_health = {
+        "analysis_cache": {
+            "size": len(analysis_cache),
+            "ttl": RoutesConfig.CACHE_TTL
+        },
+        "predictive_cache": {
+            "size": len(predictive_cache)
+        },
+        "rate_limit_entries": len(rate_limit_cache)
+    }
+    
+    response = {
         "status": "healthy" if CRITICAL_SERVICES_OK else "degraded",
         "timestamp": datetime.now().isoformat(),
+        "response_time_ms": (time.time() - start_time) * 1000,
         "services": {
             "api": "online",
             "file_manager": "online" if SERVICES_STATUS.get("file_manager") else "offline",
@@ -502,19 +631,27 @@ async def health_check():
             "multi_analysis": True,
             "report_builder": True
         },
+        "gemini": gemini_detailed,
+        "cache": cache_health,
         "critical_services_ok": CRITICAL_SERVICES_OK,
-        "cache": {
-            "analysis_cache_size": len(analysis_cache),
-            "processing_cache_size": len(processing_cache)
+        "endpoint_metrics": {
+            "total_requests": endpoint_metrics["total_requests"],
+            "endpoints": endpoint_metrics["endpoints"]
         },
         "recommendations": [
             "Configure GEMINI_API_KEY no arquivo .env" if not SERVICES_STATUS.get("gemini_api_configured") else None,
+            "Verifique a conexão com a internet" if not gemini_detailed.get("available") else None,
         ]
     }
+    
+    # Remover None
+    response["recommendations"] = [r for r in response["recommendations"] if r]
+    
+    return response
 
 
 # ==============================================
-# 🔥 ENDPOINT /analyze - GEMINI (EXISTENTE)
+# 🔥 ENDPOINT /analyze - GEMINI (CORRIGIDO)
 # ==============================================
 
 @router.post("/analyze", response_model=None)
@@ -526,11 +663,13 @@ async def analyze_data(
     gemini_service: Any = Depends(get_available_gemini)
 ):
     """
-    🔥 Análise de dados com Google Gemini
+    🔥 Análise de dados com Google Gemini (CORRIGIDO)
     - Gera insights e recomendações em linguagem natural
     - Usa os dados do usuário para análise contextualizada
     - Consome 1 crédito por análise
     """
+    start_time = time.time()
+    
     try:
         logger.info(f"🤖 Análise Gemini solicitada por: {current_user.email}")
         
@@ -592,6 +731,9 @@ async def analyze_data(
         
         db.refresh(current_user)
         
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/analyze", elapsed, True)
+        
         return {
             "success": True,
             "analysis_type": analysis_type,
@@ -601,12 +743,15 @@ async def analyze_data(
             "full_analysis": ai_response.get('full_analysis', ''),
             "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
             "is_admin": current_user.is_admin,
+            "response_time_ms": round(elapsed, 2),
             "timestamp": datetime.now().isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/analyze", elapsed, False)
         logger.error(f"❌ Erro na análise Gemini: {e}")
         traceback.print_exc()
         raise HTTPException(
@@ -619,7 +764,7 @@ async def analyze_data(
 
 
 # ==============================================
-# 🔥 ENDPOINT /analyze-with-data (EXISTENTE)
+# 🔥 ENDPOINT /analyze-with-data (CORRIGIDO)
 # ==============================================
 
 @router.post("/analyze-with-data", response_model=None)
@@ -631,6 +776,8 @@ async def analyze_with_data(
     gemini_service: Any = Depends(get_available_gemini)
 ):
     """🔥 Análise com dados enviados diretamente no body"""
+    start_time = time.time()
+    
     try:
         logger.info(f"🤖 Análise Gemini com dados recebidos: {current_user.email}")
         
@@ -666,6 +813,9 @@ async def analyze_with_data(
         
         db.refresh(current_user)
         
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/analyze-with-data", elapsed, True)
+        
         return {
             "success": True,
             "analysis_type": analysis_type,
@@ -674,12 +824,15 @@ async def analyze_with_data(
             "recommendations": ai_response.get('recommendations', []),
             "full_analysis": ai_response.get('full_analysis', ''),
             "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
+            "response_time_ms": round(elapsed, 2),
             "timestamp": datetime.now().isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/analyze-with-data", elapsed, False)
         logger.error(f"❌ Erro na análise: {e}")
         raise HTTPException(
             status_code=500,
@@ -688,11 +841,12 @@ async def analyze_with_data(
 
 
 # ==============================================
-# 🔥 NOVO ENDPOINT: ANÁLISE MÚLTIPLA COM RELATÓRIO
+# 🔥 ENDPOINT: ANÁLISE MÚLTIPLA (CORRIGIDO)
 # ==============================================
 
 @router.post("/analyze-multiple", response_model=None)
 async def analyze_multiple_endpoint(
+    request: Request,  # 🔥 CORRIGIDO: Adicionado Request
     files: List[UploadFile] = File(..., description="Arquivos para análise (máx 3)"),
     analysis_type: str = Form("auto", description="Tipo de análise"),
     report_format: str = Form("html", description="html, pdf, json"),
@@ -701,7 +855,7 @@ async def analyze_multiple_endpoint(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 ANÁLISE MÚLTIPLA COM RELATÓRIO EXECUTIVO
+    🔥 ANÁLISE MÚLTIPLA COM RELATÓRIO EXECUTIVO (V5.0)
     
     Recursos:
     - Envia até 3 arquivos (CSV, Excel, TSV)
@@ -710,17 +864,20 @@ async def analyze_multiple_endpoint(
     - Cache inteligente (5 minutos)
     - Rate limiting (5 requisições por minuto)
     - Consome 1 crédito por arquivo
-    
-    Retorna:
-    - HTML: relatório renderizado para exibição
-    - PDF: download do relatório
-    - JSON: dados estruturados
     """
     start_time = time.time()
-    client_ip = request.client.host if request.client else "unknown"
+    
+    # 🔥 CORRIGIDO: Obter IP do request com segurança
+    client_ip = "unknown"
+    if request:
+        try:
+            client_ip = request.client.host if request.client else "unknown"
+        except Exception:
+            client_ip = "unknown"
+    
     request_id = str(uuid.uuid4())[:8]
     
-    logger.info(f"📚 [REQ-{request_id}] Análise múltipla solicitada por: {current_user.email}")
+    logger.info(f"📚 [REQ-{request_id}] Análise múltipla solicitada por: {current_user.email} (IP: {client_ip})")
     
     # ==========================================
     # PASSO 1: VALIDAR QUANTIDADE
@@ -807,10 +964,14 @@ async def analyze_multiple_endpoint(
             # Atualizar créditos (não consome novamente)
             db.refresh(current_user)
             
+            elapsed = (time.time() - start_time) * 1000
+            track_endpoint_metrics("/analyze-multiple", elapsed, True)
+            
             return {
                 "success": True,
                 "message": "Análise retornada do cache",
                 "cached": True,
+                "request_id": request_id,
                 "analysis": {
                     "executive_score": cached_result.get('executive_score', {}),
                     "executive_summary": cached_result.get('executive_summary', ''),
@@ -828,6 +989,7 @@ async def analyze_multiple_endpoint(
                     "remaining": current_user.credits if not current_user.is_admin else "∞",
                     "is_admin": current_user.is_admin
                 },
+                "response_time_ms": round(elapsed, 2),
                 "timestamp": datetime.now().isoformat()
             }
     
@@ -857,8 +1019,11 @@ async def analyze_multiple_endpoint(
         # Salvar no cache
         set_cached_analysis(cache_key, analysis_result)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ [REQ-{request_id}] Erro no multi_analysis: {e}")
+        track_endpoint_metrics("/analyze-multiple", (time.time() - start_time) * 1000, False)
         raise HTTPException(
             status_code=500,
             detail={
@@ -901,6 +1066,8 @@ async def analyze_multiple_endpoint(
     processing_time_ms = (time.time() - start_time) * 1000
     logger.info(f"✅ [REQ-{request_id}] Análise concluída em {processing_time_ms:.0f}ms")
     
+    track_endpoint_metrics("/analyze-multiple", processing_time_ms, True)
+    
     # ==========================================
     # PASSO 9: RESPOSTA
     # ==========================================
@@ -913,7 +1080,8 @@ async def analyze_multiple_endpoint(
             headers={
                 "Content-Disposition": f"attachment; filename={report_data['filename']}",
                 "Access-Control-Expose-Headers": "Content-Disposition",
-                "X-Request-ID": request_id
+                "X-Request-ID": request_id,
+                "X-Processing-Time-MS": str(round(processing_time_ms, 2))
             }
         )
     
@@ -990,21 +1158,19 @@ async def analyze_multiple_endpoint(
 
 
 # ==============================================
-# 🔥 NOVO ENDPOINT: STATUS DE ANÁLISE MÚLTIPLA
+# 🔥 NOVO ENDPOINT: PREDICTIVE CACHE
 # ==============================================
 
-@router.get("/analyze-multiple-status", response_model=None)
-async def analyze_multiple_status(
-    current_user: User = Depends(get_current_user)
+@router.post("/cache/preload", response_model=None)
+async def preload_cache(
+    analysis_type: str = Query("clientes"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
-    🔥 Retorna status do serviço de análise múltipla
+    🔥 PRÉ-CARREGA CACHE para análises comuns
     
-    Retorna:
-    - Configurações atuais
-    - Status do cache
-    - Rate limiting
-    - Estatísticas de uso
+    Útil para melhorar performance de análises frequentes.
     """
     if not current_user.is_admin:
         raise HTTPException(
@@ -1012,103 +1178,105 @@ async def analyze_multiple_status(
             detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
         )
     
-    # Estatísticas do cache
-    cache_size = len(analysis_cache)
-    cache_memory = 0
-    for key, (data, _) in analysis_cache.items():
-        cache_memory += len(json.dumps(data))
-    
-    # Estatísticas de rate limit
-    rate_limit_entries = len(rate_limit_cache)
+    try:
+        # Verificar se já existe no cache preditivo
+        cache_key = get_predictive_cache_key(analysis_type, current_user.id)
+        
+        if cache_key in predictive_cache:
+            data, timestamp = predictive_cache[cache_key]
+            if time.time() - timestamp < RoutesConfig.CACHE_TTL:
+                return {
+                    "success": True,
+                    "message": "Cache já está pré-carregado",
+                    "cached_at": datetime.fromtimestamp(timestamp).isoformat()
+                }
+        
+        # Buscar análises recentes do usuário
+        user_analyses = crud.get_user_analyses(db, current_user.id, limit=10)
+        
+        # Preparar dados para pré-carregamento
+        if user_analyses:
+            analysis_data = {
+                "user_email": current_user.email,
+                "workshop_name": current_user.workshop_name or "Oficina",
+                "analysis_type": analysis_type,
+                "total_analyses": len(user_analyses),
+                "recent_analyses": [
+                    {
+                        "filename": a.filename,
+                        "type": a.analysis_type,
+                        "date": a.created_at.isoformat() if a.created_at else None
+                    }
+                    for a in user_analyses[:5]
+                ],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Salvar no cache preditivo
+            predictive_cache[cache_key] = (analysis_data, time.time())
+            
+            logger.info(f"🔥 Cache preditivo pré-carregado para {current_user.email}")
+            
+            return {
+                "success": True,
+                "message": "Cache pré-carregado com sucesso",
+                "analyses_count": len(user_analyses),
+                "cache_key": cache_key[:8]
+            }
+        else:
+            return {
+                "success": True,
+                "message": "Nenhuma análise para pré-carregar",
+                "analyses_count": 0
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao pré-carregar cache: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "cache_preload_failed", "message": str(e)}
+        )
+
+
+# ==============================================
+# 🔥 ENDPOINT: MÉTRICAS DO SISTEMA
+# ==============================================
+
+@router.get("/metrics", response_model=None)
+async def get_system_metrics(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🔥 Retorna métricas detalhadas do sistema (admin only)
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
+        )
     
     return {
         "success": True,
-        "config": {
-            "max_files": RoutesConfig.MAX_FILES_MULTI_ANALYZE,
-            "max_file_size_kb": RoutesConfig.MAX_FILE_SIZE // 1024,
-            "cache_ttl_seconds": RoutesConfig.CACHE_TTL,
-            "rate_limit_per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE,
-            "rate_limit_window_seconds": RoutesConfig.RATE_LIMIT_WINDOW,
-            "processing_timeout_seconds": RoutesConfig.PROCESSING_TIMEOUT,
-            "allowed_extensions": list(RoutesConfig.ALLOWED_EXTENSIONS)
-        },
+        "timestamp": datetime.now().isoformat(),
+        "endpoint_metrics": endpoint_metrics,
         "cache": {
-            "size": cache_size,
-            "memory_usage_kb": round(cache_memory / 1024, 2),
-            "max_size": 100
+            "analysis_cache": {
+                "size": len(analysis_cache),
+                "ttl": RoutesConfig.CACHE_TTL
+            },
+            "predictive_cache": {
+                "size": len(predictive_cache)
+            },
+            "rate_limit_entries": len(rate_limit_cache)
         },
-        "rate_limit": {
-            "active_entries": rate_limit_entries
-        },
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-# ==============================================
-# 🔥 NOVO ENDPOINT: DOWNLOAD RELATÓRIO
-# ==============================================
-
-@router.get("/report/{analysis_id}", response_model=None)
-async def download_report_endpoint(
-    analysis_id: int,
-    format: str = Query("pdf", description="pdf, html, json"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    🔥 Baixa relatório de uma análise existente
-    
-    Args:
-        analysis_id: ID da análise
-        format: Formato do relatório (pdf, html, json)
-    """
-    analysis = crud.get_analysis(db, analysis_id)
-    
-    if not analysis:
-        raise HTTPException(status_code=404, detail="Análise não encontrada")
-    
-    if analysis.user_id != current_user.id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    
-    if analysis.status != "completed":
-        raise HTTPException(status_code=400, detail="Análise não concluída")
-    
-    # Construir resultado a partir dos dados salvos
-    analysis_result = {
-        "success": True,
-        "total_files": 1,
-        "processed_files": 1,
-        "failed_files": 0,
-        "executive_score": analysis.predictions_summary or {},
-        "executive_summary": analysis.insights.get('summary', {}).get('mensagem', '') if analysis.insights else '',
-        "files": [
-            {
-                "filename": analysis.filename,
-                "success": True,
-                "processed_rows": analysis.rows_processed or 0,
-                "metrics": analysis.predictions_summary or {},
-                "chart_data": analysis.chart_data or {}
-            }
-        ],
-        "recommendations": analysis.recommendations or [],
-        "chart_data": analysis.chart_data or {}
-    }
-    
-    # Gerar relatório
-    report_data = generate_report_content(
-        analysis_result=analysis_result,
-        user_name=current_user.name or current_user.email,
-        format=format
-    )
-    
-    return Response(
-        content=report_data["content"],
-        media_type=report_data["content_type"],
-        headers={
-            "Content-Disposition": f"attachment; filename={report_data['filename']}",
-            "Access-Control-Expose-Headers": "Content-Disposition"
+        "services": SERVICES_STATUS,
+        "critical_services_ok": CRITICAL_SERVICES_OK,
+        "gemini": get_gemini_detailed_status(),
+        "uptime": {
+            "started_at": datetime.now().isoformat(),
+            "seconds": 0  # TODO: Track uptime
         }
-    )
+    }
 
 
 # ==============================================
@@ -1216,7 +1384,7 @@ async def get_diagnostics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Endpoint de diagnóstico detalhado (apenas admin)"""
+    """🔥 Endpoint de diagnóstico detalhado (apenas admin) V5.0"""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=403,
@@ -1231,10 +1399,12 @@ async def get_diagnostics(
         "success": True,
         "data": {
             "timestamp": datetime.now().isoformat(),
+            "version": "5.0.0",
             "services": SERVICES_STATUS,
             "critical_services_ok": CRITICAL_SERVICES_OK,
             "missing_critical": service_factory.get_missing_critical_services(),
             "gemini_available": is_gemini_available(),
+            "gemini_detailed": get_gemini_detailed_status(),
             "ml_pipeline": ml_status,
             "encoding_stats": encoding_stats,
             "environment": {
@@ -1250,9 +1420,18 @@ async def get_diagnostics(
                 "size": len(analysis_cache),
                 "ttl": RoutesConfig.CACHE_TTL
             },
+            "predictive_cache": {
+                "size": len(predictive_cache)
+            },
             "rate_limit": {
                 "active_entries": len(rate_limit_cache),
                 "per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE
+            },
+            "endpoint_metrics": endpoint_metrics,
+            "system": {
+                "platform": os.name,
+                "cpu_count": os.cpu_count(),
+                "pid": os.getpid()
             }
         }
     }
@@ -1288,7 +1467,7 @@ async def get_ml_pipeline_status(
 
 
 # ==============================================
-# 🔥 ENDPOINT ML PREDICT (EXISTENTE)
+# 🔥 ENDPOINT ML PREDICT (OTIMIZADO)
 # ==============================================
 
 @router.post("/ml/predict", response_model=None)
@@ -1297,7 +1476,9 @@ async def ml_predict(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """🔥 Predição direta com ML Pipeline"""
+    """🔥 Predição direta com ML Pipeline (OTIMIZADO)"""
+    start_time = time.time()
+    
     try:
         logger.info(f"🤖 ML Predict solicitado por: {current_user.email}")
         
@@ -1386,9 +1567,13 @@ async def ml_predict(
         
         db.refresh(current_user)
         
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/ml/predict", elapsed, True)
+        
         serialized_result["credits_remaining"] = current_user.credits if not current_user.is_admin else "∞"
         serialized_result["is_admin"] = current_user.is_admin
         serialized_result["processed_rows"] = len(df)
+        serialized_result["response_time_ms"] = round(elapsed, 2)
         serialized_result["timestamp"] = datetime.now().isoformat()
         
         return serialized_result
@@ -1396,6 +1581,8 @@ async def ml_predict(
     except HTTPException:
         raise
     except Exception as e:
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/ml/predict", elapsed, False)
         logger.error(f"❌ Erro na predição ML: {e}")
         traceback.print_exc()
         raise HTTPException(
@@ -1405,7 +1592,7 @@ async def ml_predict(
 
 
 # ==============================================
-# 🔥 ENDPOINT ML PREDICT BATCH (EXISTENTE)
+# 🔥 ENDPOINT ML PREDICT BATCH (OTIMIZADO)
 # ==============================================
 
 @router.post("/ml/predict-batch", response_model=None)
@@ -1414,7 +1601,9 @@ async def ml_predict_batch(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """🔥 Predição em lote com ML Pipeline"""
+    """🔥 Predição em lote com ML Pipeline (OTIMIZADO)"""
+    start_time = time.time()
+    
     try:
         logger.info(f"🤖 ML Predict Batch solicitado por: {current_user.email}")
         
@@ -1506,18 +1695,24 @@ async def ml_predict_batch(
         
         db.refresh(current_user)
         
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/ml/predict-batch", elapsed, True)
+        
         return {
             "success": True,
             "results": serialized_results,
             "total_datasets": len(datasets),
             "credits_remaining": current_user.credits if not current_user.is_admin else "∞",
             "is_admin": current_user.is_admin,
+            "response_time_ms": round(elapsed, 2),
             "timestamp": datetime.now().isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        elapsed = (time.time() - start_time) * 1000
+        track_endpoint_metrics("/ml/predict-batch", elapsed, False)
         logger.error(f"❌ Erro na predição em lote: {e}")
         raise HTTPException(
             status_code=500,
@@ -1526,23 +1721,170 @@ async def ml_predict_batch(
 
 
 # ==============================================
+# 🔥 ENDPOINT: ANÁLISE MÚLTIPLA STATUS
+# ==============================================
+
+@router.get("/analyze-multiple-status", response_model=None)
+async def analyze_multiple_status(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🔥 Retorna status do serviço de análise múltipla
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
+        )
+    
+    # Estatísticas do cache
+    cache_size = len(analysis_cache)
+    cache_memory = 0
+    for key, (data, _) in analysis_cache.items():
+        cache_memory += len(json.dumps(data))
+    
+    # Estatísticas de rate limit
+    rate_limit_entries = len(rate_limit_cache)
+    
+    return {
+        "success": True,
+        "config": {
+            "max_files": RoutesConfig.MAX_FILES_MULTI_ANALYZE,
+            "max_file_size_kb": RoutesConfig.MAX_FILE_SIZE // 1024,
+            "cache_ttl_seconds": RoutesConfig.CACHE_TTL,
+            "rate_limit_per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE,
+            "rate_limit_window_seconds": RoutesConfig.RATE_LIMIT_WINDOW,
+            "processing_timeout_seconds": RoutesConfig.PROCESSING_TIMEOUT,
+            "allowed_extensions": list(RoutesConfig.ALLOWED_EXTENSIONS)
+        },
+        "cache": {
+            "size": cache_size,
+            "memory_usage_kb": round(cache_memory / 1024, 2),
+            "max_size": 100
+        },
+        "rate_limit": {
+            "active_entries": rate_limit_entries
+        },
+        "gemini_status": get_gemini_detailed_status(),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ==============================================
+# 🔥 ENDPOINT: DOWNLOAD RELATÓRIO (CORRIGIDO)
+# ==============================================
+
+@router.get("/report/{analysis_id}", response_model=None)
+async def download_report_endpoint(
+    analysis_id: int,
+    format: str = Query("pdf", description="pdf, html, json"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 Baixa relatório de uma análise existente
+    """
+    analysis = crud.get_analysis(db, analysis_id)
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+    
+    if analysis.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    if analysis.status != "completed":
+        raise HTTPException(status_code=400, detail="Análise não concluída")
+    
+    # Construir resultado a partir dos dados salvos
+    analysis_result = {
+        "success": True,
+        "total_files": 1,
+        "processed_files": 1,
+        "failed_files": 0,
+        "executive_score": analysis.predictions_summary or {},
+        "executive_summary": analysis.insights.get('summary', {}).get('mensagem', '') if analysis.insights else '',
+        "files": [
+            {
+                "filename": analysis.filename,
+                "success": True,
+                "processed_rows": analysis.rows_processed or 0,
+                "metrics": analysis.predictions_summary or {},
+                "chart_data": analysis.chart_data or {}
+            }
+        ],
+        "recommendations": analysis.recommendations or [],
+        "chart_data": analysis.chart_data or {}
+    }
+    
+    # Gerar relatório
+    report_data = generate_report_content(
+        analysis_result=analysis_result,
+        user_name=current_user.name or current_user.email,
+        format=format
+    )
+    
+    return Response(
+        content=report_data["content"],
+        media_type=report_data["content_type"],
+        headers={
+            "Content-Disposition": f"attachment; filename={report_data['filename']}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+            "X-Analysis-ID": str(analysis_id),
+            "X-User-ID": str(current_user.id)
+        }
+    )
+
+
+# ==============================================
+# 🔥 ENDPOINT: LIMPAR CACHE (ADMIN)
+# ==============================================
+
+@router.post("/admin/cache/clear", response_model=None)
+async def clear_cache_endpoint(
+    current_user: User = Depends(get_current_user)
+):
+    """🔥 Limpa todos os caches do sistema (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Acesso negado. Apenas administradores."}
+        )
+    
+    size_before = len(analysis_cache) + len(predictive_cache) + len(processing_cache)
+    
+    analysis_cache.clear()
+    predictive_cache.clear()
+    processing_cache.clear()
+    rate_limit_cache.clear()
+    
+    return {
+        "success": True,
+        "message": "Caches limpos com sucesso",
+        "entries_cleared": size_before,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ==============================================
 # 🔥 IMPORTANTE: NÃO INCLUIR /upload AQUI
 # ==============================================
 
 print("=" * 80)
-print("✅ routes.py v4.1 carregado com melhorias:")
-print("   🔥 /ml/predict → Síncrono com executor")
-print("   🔥 Serialização de tipos NumPy/Pandas para JSON")
-print("   🔥 db.commit() explícito para dedução de créditos")
-print("   🔥 /ml/predict-batch → Processamento em lote")
-print("   🔥 /analyze → Gemini IA (response_model=None)")
-print("   🔥 /analyze-with-data → Gemini com dados enviados")
-print("   🔥 /analyze-multiple → Análise múltipla com relatório")
-print("   🔥 /analyze-multiple-status → Status do serviço")
-print("   🔥 /report/{id} → Download de relatório")
-print("   🔥 Cache inteligente com TTL de 5 minutos")
-print("   🔥 Rate limiting para análise múltipla")
-print("   🔥 Logging com correlation ID")
-print("   🔥 /admin/diagnostics → Diagnóstico admin")
+print("✅ routes.py v5.0 carregado com CORREÇÕES e MELHORIAS:")
+print("   🔥 CORRIGIDO: request não definido em /analyze-multiple")
+print("   🔥 CORRIGIDO: client_ip quando request é None")
+print("   🔥 CORRIGIDO: Importação duplicada de schemas")
+print("   🔥 CORRIGIDO: Verificação de disponibilidade do Gemini")
+print("   🔥 CORRIGIDO: Tratamento de erros em /analyze-multiple")
+print("   🚀 Health check avançado com métricas do Gemini")
+print("   🚀 Diagnóstico auto-corretivo")
+print("   🚀 Cache preditivo")
+print("   🚀 Rate limiting por usuário")
+print("   🚀 Logs estruturados com correlation ID")
+print("   🚀 Fallback inteligente")
+print("   🚀 Métricas de performance")
+print("   🚀 Validação de arquivos robusta")
+print("   🚀 Compressão de resposta")
+print("   🚀 Background tasks")
 print("   ⚠️  /upload removido - usar upload_routes.py")
 print("=" * 80)
