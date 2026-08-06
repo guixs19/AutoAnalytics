@@ -276,10 +276,9 @@ class Analysis(Base):
     user = relationship("User", back_populates="analyses")
     
     # ==========================================
-    # 🔥🔥🔥 CAMPOS POW E SEGURANÇA
+    # 🔥 CAMPOS POW E SEGURANÇA
     # ==========================================
     
-    # PoW (Proof of Work)
     pow_challenge = Column(String(64), nullable=True, comment="Desafio PoW usado no upload")
     pow_nonce = Column(String(64), nullable=True, comment="Nonce PoW usado no upload")
     pow_difficulty = Column(Integer, default=4, comment="Dificuldade do PoW (número de zeros)")
@@ -309,11 +308,17 @@ class Analysis(Base):
     categorical_columns = Column(Integer, default=0, comment="Colunas categóricas")
     
     # ==========================================
-    # 🔥🔥🔥 NOVO: CHART_DATA PARA GRÁFICOS
+    # 🔥 CHART_DATA PARA GRÁFICOS
     # ==========================================
     
-    # Dados para o gráfico (weekly, monthly, performance)
     chart_data = Column(JSON, nullable=True, comment="Dados para renderização de gráficos")
+    
+    # ==========================================
+    # 🔥🔥🔥 NOVO: PROGRESSO PARA POLLING
+    # ==========================================
+    
+    progress = Column(Integer, default=0, comment="Progresso do processamento (0-100)")
+    progress_message = Column(String(255), default="Aguardando início...", comment="Mensagem de progresso")
     
     # ==========================================
     # RESULTADOS
@@ -326,19 +331,16 @@ class Analysis(Base):
     # ===== MÉTODOS =====
     
     def set_pow_data(self, challenge: str, nonce: str, difficulty: int = 4):
-        """Define dados do PoW"""
         self.pow_challenge = challenge
         self.pow_nonce = nonce
         self.pow_difficulty = difficulty
         self.pow_algorithm = "SHA-256"
     
     def verify_pow(self):
-        """Marca o PoW como verificado"""
         self.pow_verified = True
         self.pow_verified_at = _now_brasil()
     
     def set_processing_metrics(self, metrics: dict):
-        """Define métricas de processamento"""
         if 'processing_time_ms' in metrics:
             self.processing_time_ms = metrics['processing_time_ms']
         if 'pow_solve_time_ms' in metrics:
@@ -353,7 +355,6 @@ class Analysis(Base):
             self.confidence_score = metrics['confidence_score']
     
     def set_data_metrics(self, data: dict):
-        """Define métricas dos dados"""
         if 'total_rows' in data:
             self.total_rows = data['total_rows']
         if 'total_columns' in data:
@@ -364,19 +365,16 @@ class Analysis(Base):
             self.categorical_columns = data['categorical_columns']
     
     def set_results(self, results: dict):
-        """Define resultados da análise"""
         if 'predictions_summary' in results:
             self.predictions_summary = results['predictions_summary']
         if 'insights' in results:
             self.insights = results['insights']
         if 'recommendations' in results:
             self.recommendations = results['recommendations']
-        # 🔥 NOVO: chart_data
         if 'chart_data' in results:
             self.chart_data = results['chart_data']
     
     def to_dict(self):
-        """Converte para dicionário com todos os campos"""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -389,26 +387,23 @@ class Analysis(Base):
             "columns_processed": self.columns_processed,
             "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,
-            # PoW
             "pow_verified": self.pow_verified,
             "pow_difficulty": self.pow_difficulty,
             "pow_algorithm": self.pow_algorithm,
-            # Segurança
             "client_ip": self.client_ip,
             "rate_limit_applied": self.rate_limit_applied,
-            # Métricas
             "processing_time_ms": self.processing_time_ms,
             "encoding_used": self.encoding_used,
             "model_used": self.model_used,
             "confidence_score": self.confidence_score,
-            # Dados
             "total_rows": self.total_rows,
             "total_columns": self.total_columns,
             "numeric_columns": self.numeric_columns,
             "categorical_columns": self.categorical_columns,
-            # 🔥 NOVO: chart_data
             "chart_data": self.chart_data,
-            # Resultados
+            # 🔥 NOVO
+            "progress": self.progress,
+            "progress_message": self.progress_message,
             "predictions_summary": self.predictions_summary,
             "insights": self.insights,
             "recommendations": self.recommendations,

@@ -1,24 +1,19 @@
-# backend/api/upload_routes.py - VERSÃO 12.0 (CORREÇÃO DE CRÉDITOS + HEADERS)
+# backend/api/upload_routes.py - VERSÃO 12.1 (COM POLLING E PROGRESSO)
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 12.0
+🚀 ROTAS DE UPLOAD - VERSÃO 12.1
 ================================================================================
-✅ CORREÇÕES CRÍTICAS v12.0:
-   - 🔥 REFATORAÇÃO: consume_credits_advanced() agora aceita amount (int)
+✅ NOVIDADES v12.1:
+   - 🔥 RESPOSTA IMEDIATA: Retorna process_id sem esperar o ML
+   - 🔥 POLLING: Rota /analysis/progress/{id} para acompanhamento
+   - 🔥 BACKGROUND: Processamento ML em background com atualização de progresso
+   - 🔥 PROGRESSO: Salva progress (0-100) e progress_message no banco
+   - 🔥 FEEDBACK: Frontend pode mostrar barra de progresso em tempo real
+
+✅ MANTIDO v12.0:
+   - 🔥 REFATORAÇÃO: consume_credits_advanced() aceita amount (int)
    - 🔥 HEADERS: X-Credits-* para sincronização com frontend
    - 🔥 RESPOSTA: credits_per_file, files_uploaded, total_cost
    - 🔥 CACHE: Headers no-cache para evitar dados desatualizados
-   - 🔥 LOGS: Mais detalhados sobre consumo de créditos
-
-✅ REGRA DE NEGÓCIO (MANTIDA):
-   - 📁 1 arquivo = 1 crédito = 1 análise
-   - 📁 2 arquivos = 2 créditos = 2 análises
-   - 📁 3 arquivos = 3 créditos = 3 análises (máximo)
-
-✅ MELHORIAS:
-   - 📊 Respostas mais claras para o frontend
-   - 📈 Headers para sincronização automática
-   - 🛡️ Validação de saldo mais robusta
-   - 🔄 Suporte a rollback automático em caso de erro
 ================================================================================
 """
 
@@ -149,7 +144,7 @@ class UploadConfig:
     # Créditos
     MAX_CREDITS_PREMIUM = 3
     INITIAL_FREE_CREDITS = 3
-    CREDITS_PER_FILE = 1  # 🔥 NOVO: 1 crédito por arquivo
+    CREDITS_PER_FILE = 1
     
     # Status
     STATUS_LABELS = {
@@ -518,24 +513,14 @@ def check_credits_advanced(db: Session, user: models.User, required: int) -> Dic
     }
 
 
-# 🔥🔥🔥 FUNÇÃO REFATORADA - VERSÃO 12.0
 def consume_credits_advanced(
     db: Session, 
     user: models.User, 
-    amount: int = 1,  # 🔥 MUDANÇA: amount em vez de file_list
+    amount: int = 1,
     description: str = "Upload"
 ) -> Dict[str, Any]:
     """
     🔥 V12.0: Consome créditos usando crud.deduct_credits()
-    
-    Args:
-        db: Sessão do banco
-        user: Usuário
-        amount: Quantidade de créditos a consumir (1 por arquivo)
-        description: Descrição do consumo
-    
-    Returns:
-        Dict com status, consumido, restante, etc.
     """
     
     if user.is_admin:
@@ -575,7 +560,7 @@ def consume_credits_advanced(
                 "needed": amount
             }
         
-        # 🔥 CONSUME A QUANTIDADE ESPECIFICADA (NÃO EM LOOP)
+        # 🔥 CONSUME A QUANTIDADE ESPECIFICADA
         success = crud.deduct_credits(db, user_refresh, amount, description)
         
         if not success:
@@ -702,6 +687,141 @@ def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 # ==============================================
+# 🔥🔥🔥 FUNÇÃO DE PROCESSAMENTO EM BACKGROUND (CORRIGIDA)
+# ==============================================
+
+async def process_analysis_background(
+    process_id: int,
+    file_data_list: List[Dict[str, Any]],
+    user_id: int,
+    user_email: str,
+    analysis_type: str,
+    db: Session
+):
+    """
+    🔥 PROCESSAMENTO EM BACKGROUND
+    Executa o ML e atualiza o progresso no banco de dados
+    """
+    try:
+        logger.info(f"🔄 [BACKGROUND] Iniciando processamento {process_id}")
+        
+        # ==========================================
+        # 1. ATUALIZAR PROGRESSO: 20%
+        # ==========================================
+        
+        await update_analysis_progress(db, process_id, 20, "Iniciando análise dos dados...")
+        
+        # ==========================================
+        # 2. CARREGAR MÓDULOS ML
+        # ==========================================
+        
+        from backend.ml.multi_analysis import analyze_multiple_files
+        
+        # ==========================================
+        # 3. ATUALIZAR PROGRESSO: 30%
+        # ==========================================
+        
+        await update_analysis_progress(db, process_id, 30, "Processando arquivos com IA...")
+        
+        # ==========================================
+        # 🔥🔥🔥 4. EXECUTAR ANÁLISE ML (CORRIGIDO)
+        # ==========================================
+        
+        analysis_result = await analyze_multiple_files(
+            files=file_data_list,
+            user_id=user_id,
+            user_email=user_email,
+            force_reload=False,
+            db_session=db,           # 🔥 NOVO: Passa a sessão do banco
+            process_id=process_id     # 🔥 NOVO: Passa o ID da análise
+        )
+        
+        # ==========================================
+        # 5. ATUALIZAR PROGRESSO: 80%
+        # ==========================================
+        
+        await update_analysis_progress(db, process_id, 80, "Gerando relatório e insights...")
+        
+        # ==========================================
+        # 6. BUSCAR A ANÁLISE NO BANCO
+        # ==========================================
+        
+        analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
+        if not analysis:
+            logger.error(f"❌ [BACKGROUND] Análise {process_id} não encontrada")
+            return
+        
+        # ==========================================
+        # 7. SALVAR RESULTADOS
+        # ==========================================
+        
+        # Extrair dados do resultado
+        chart_data = analysis_result.get('chart_data', {})
+        executive_score = analysis_result.get('executive_score', {})
+        executive_summary = analysis_result.get('executive_summary', '')
+        recommendations = analysis_result.get('recommendations', [])
+        avg_score = analysis_result.get('avg_score', 0)
+        general_conclusion = analysis_result.get('general_conclusion', '')
+        processed_files = analysis_result.get('processed_files', 0)
+        
+        # Atualizar análise
+        analysis.status = "completed"
+        analysis.progress = 100
+        analysis.progress_message = "Análise concluída com sucesso!"
+        analysis.processed_at = datetime.now()
+        analysis.rows_processed = processed_files
+        analysis.chart_data = chart_data
+        analysis.insights = executive_summary
+        analysis.recommendations = recommendations
+        analysis.confidence_score = avg_score
+        analysis.ai_report = general_conclusion
+        analysis.processing_time_ms = int((datetime.now() - analysis.uploaded_at).total_seconds() * 1000)
+        
+        # Salvar executive_score se disponível
+        if executive_score:
+            analysis.executive_score = executive_score
+        
+        db.commit()
+        
+        # ==========================================
+        # 8. CONSUMIR CRÉDITOS
+        # ==========================================
+        
+        # Buscar usuário para consumir créditos
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user:
+            credit_result = consume_credits_advanced(
+                db=db,
+                user=user,
+                amount=len(file_data_list),
+                description=f"Análise de {len(file_data_list)} arquivo(s)"
+            )
+            
+            if credit_result["success"]:
+                logger.info(f"💰 [BACKGROUND] {len(file_data_list)} crédito(s) consumidos")
+            else:
+                logger.warning(f"⚠️ [BACKGROUND] Falha ao consumir créditos: {credit_result.get('message')}")
+        
+        # ==========================================
+        # 9. FINALIZAR
+        # ==========================================
+        
+        logger.info(f"✅ [BACKGROUND] Processamento {process_id} concluído com sucesso")
+        
+    except Exception as e:
+        logger.error(f"❌ [BACKGROUND] Erro no processamento {process_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Atualizar status de erro
+        analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
+        if analysis:
+            analysis.status = "error"
+            analysis.progress_message = f"Erro: {str(e)[:200]}"
+            db.commit()
+
+
+# ==============================================
 # 🔥 ROTA: ESTATÍSTICAS DO USUÁRIO
 # ==============================================
 
@@ -770,7 +890,75 @@ async def get_user_credits_status(
 
 
 # ==============================================
-# 🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (VERSÃO 12.0)
+# 🔥🔥🔥 ROTA NOVA: PROGRESSO DA ANÁLISE (POLLING)
+# ==============================================
+
+@router.get("/analysis/progress/{process_id}")
+async def get_analysis_progress(
+    process_id: int,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 CONSULTA PROGRESSO DA ANÁLISE
+    Frontend usa para mostrar barra de progresso em tempo real
+    """
+    analysis = db.query(models.Analysis).filter(
+        models.Analysis.id == process_id,
+        models.Analysis.user_id == current_user.id
+    ).first()
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+    
+    # 🔥 SE JÁ CONCLUÍDA, RETORNAR RESULTADOS COMPLETOS
+    if analysis.status == "completed":
+        return {
+            "process_id": process_id,
+            "status": "completed",
+            "progress": 100,
+            "message": "Concluído!",
+            "result": {
+                "chart_data": analysis.chart_data or {},
+                "executive_score": analysis.executive_score or {},
+                "executive_summary": analysis.insights or "",
+                "recommendations": analysis.recommendations or [],
+                "confidence_score": analysis.confidence_score or 0,
+                "rows_processed": analysis.rows_processed or 0,
+                "processing_time_ms": analysis.processing_time_ms or 0
+            }
+        }
+    
+    # 🔥 SE EM PROCESSAMENTO, RETORNAR PROGRESSO
+    if analysis.status == "processing":
+        return {
+            "process_id": process_id,
+            "status": "processing",
+            "progress": analysis.progress or 0,
+            "message": analysis.progress_message or "Processando...",
+            "result": None
+        }
+    
+    # 🔥 SE ERRO
+    if analysis.status == "error":
+        return {
+            "process_id": process_id,
+            "status": "error",
+            "message": analysis.progress_message or "Erro no processamento",
+            "result": None
+        }
+    
+    # 🔥 FALLBACK: Outros status
+    return {
+        "process_id": process_id,
+        "status": analysis.status,
+        "progress": analysis.progress or 0,
+        "message": analysis.progress_message or ""
+    }
+
+
+# ==============================================
+# 🔥🔥🔥 ROTA PRINCIPAL MODIFICADA: UPLOAD MÚLTIPLO (VERSÃO 12.1)
 # ==============================================
 
 @router.post("/upload-multi-analyze")
@@ -786,19 +974,12 @@ async def upload_multi_analyze(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD MÚLTIPLO COM RELATÓRIO EXECUTIVO (VERSÃO 12.0)
+    🔥 UPLOAD MÚLTIPLO COM POLLING (VERSÃO 12.1)
     
-    📌 REGRA DE NEGÓCIO:
-       - 1 arquivo = 1 crédito = 1 análise
-       - 2 arquivos = 2 créditos = 2 análises
-       - 3 arquivos = 3 créditos = 3 análises (máximo)
-    
-    📊 RESPOSTA:
-       - Inclui créditos antes/depois/consumidos
-       - credits_per_file: 1
-       - files_uploaded: N
-       - total_cost: N
-       - Headers X-Credits-* para sincronização
+    ✅ RETORNA process_id IMEDIATAMENTE
+    ✅ FRONTEND FAZ POLLING para acompanhar progresso
+    ✅ PROCESSAMENTO ML EM BACKGROUND
+    ✅ CRÉDITOS CONSUMIDOS APÓS CONCLUSÃO
     """
     start_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
@@ -842,7 +1023,6 @@ async def upload_multi_analyze(
     # PASSO 3: VALIDAR CRÉDITOS (1 POR ARQUIVO)
     # ==========================================
     
-    # 🔥 CORRETO: total_files = quantidade de créditos necessários
     credit_check = check_credits_advanced(db, current_user, total_files)
     if not credit_check["valid"]:
         raise HTTPException(
@@ -893,265 +1073,108 @@ async def upload_multi_analyze(
     ]
     
     # ==========================================
-    # PASSO 5: PROCESSAR COM MULTI_ANALYSIS
+    # 🔥🔥🔥 PASSO 5: CRIAR ANÁLISE COM STATUS "processing"
     # ==========================================
     
-    try:
-        analysis_result = await process_with_multi_analysis_advanced(
-            file_data_list=file_data_list,
-            user_id=current_user.id,
-            user_email=current_user.email
-        )
-    except Exception as e:
-        logger.error(f"❌ Erro no multi_analysis: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "analysis_failed",
-                "message": f"Erro na análise: {str(e)}"
-            }
-        )
-    
-    if not analysis_result.get('success'):
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "analysis_failed",
-                "message": analysis_result.get('error', 'Erro na análise')
-            }
-        )
-    
-    # ==========================================
-    # PASSO 6: SALVAR ANÁLISES
-    # ==========================================
-    
-    analyses_ids = save_analyses_advanced(
-        db=db,
+    analysis_record = models.Analysis(
         user_id=current_user.id,
-        results=analysis_result.get('files', []),
+        filename=" | ".join([f.filename for f in valid_files]),
+        file_size=sum([f.file_size for f in valid_files]),
         analysis_type=analysis_type,
-        pow_valid=pow_valid,
+        status="processing",
+        progress=10,
+        progress_message="Arquivos validados. Iniciando análise...",
+        uploaded_at=datetime.now(),
+        processed_at=None,
+        pow_verified=pow_valid,
         client_ip=client_ip,
-        user_agent=user_agent
+        user_agent=user_agent[:255] if user_agent else None
     )
-    
-    # ==========================================
-    # PASSO 7: CONSUMIR CRÉDITOS (1 POR ARQUIVO)
-    # ==========================================
-    
-    # 🔥 CORRETO: Consome 1 crédito por arquivo válido
-    credit_result = consume_credits_advanced(
-        db=db, 
-        user=current_user, 
-        amount=len(valid_files),  # 🔥 1 por arquivo
-        description=f"Análise de {len(valid_files)} arquivo(s)"
-    )
-    
-    if not credit_result["success"]:
-        for analysis_id in analyses_ids:
-            analysis = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
-            if analysis:
-                analysis.status = "pending_credit"
-        db.commit()
-        
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "credit_consumption_failed",
-                "message": credit_result["message"],
-                "analyses_saved": analyses_ids,
-                "credit_status": credit_result
-            }
-        )
-    
-    # ==========================================
-    # PASSO 8: GERAR RELATÓRIO
-    # ==========================================
-    
-    report_data = generate_report_advanced(
-        analysis_result=analysis_result,
-        user_name=current_user.name or current_user.email,
-        format=report_format.lower()
-    )
-    
-    # ==========================================
-    # PASSO 9: CALLBACK (background)
-    # ==========================================
-    
-    if callback_url:
-        background_tasks.add_task(
-            send_callback,
-            callback_url=callback_url,
-            result={
-                "success": True,
-                "analyses_ids": analyses_ids,
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-    
-    # ==========================================
-    # PASSO 10: ESTATÍSTICAS DO USUÁRIO
-    # ==========================================
-    
-    user_stats = get_user_stats_advanced(db, current_user.id)
-    credits_info = get_user_credits_info(db, current_user)
-    
-    # ==========================================
-    # PASSO 11: RESPOSTA (VERSÃO 12.0)
-    # ==========================================
-    
-    processing_time_ms = (time.time() - start_time) * 1000
-    
-    # Atualizar tempo de processamento nas análises
-    for analysis_id in analyses_ids:
-        analysis = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
-        if analysis:
-            analysis.processing_time_ms = int(processing_time_ms)
+    db.add(analysis_record)
     db.commit()
+    db.refresh(analysis_record)
     
-    file_results = []
-    for result in analysis_result.get('files', []):
-        file_results.append({
-            "filename": result.get('filename'),
-            "success": result.get('success', False),
-            "rows": result.get('processed_rows', 0),
-            "predictions_count": len(result.get('predictions', [])),
-            "error": result.get('error')
-        })
+    process_id = analysis_record.id  # 🔥 ID para polling
     
-    # 🔥 Limpar cache de estatísticas
-    _stats_cache.clear(current_user.id)
+    # ==========================================
+    # PASSO 6: INICIAR PROCESSAMENTO EM BACKGROUND
+    # ==========================================
     
-    # 🔥 Calcular o consumo esperado
+    background_tasks.add_task(
+        process_analysis_background,
+        process_id=process_id,
+        file_data_list=file_data_list,
+        user_id=current_user.id,
+        user_email=current_user.email,
+        analysis_type=analysis_type,
+        db=db
+    )
+    
+    # ==========================================
+    # PASSO 7: RESPOSTA IMEDIATA (SEM ESPERAR ML)
+    # ==========================================
+    
+    # 🔥 Calcular créditos (ainda não consumidos)
+    credits_before = current_user.credits
     files_uploaded = len(valid_files)
     credits_per_file = UploadConfig.CREDITS_PER_FILE
     total_cost = files_uploaded * credits_per_file
-    credits_before = int(credit_result.get("before", current_user.credits))
-    credits_consumed = int(credit_result.get("consumed", 0))
-    credits_remaining = int(credit_result.get("remaining", current_user.credits))
     
     response_data = {
         "success": True,
-        "message": f"Análise consolidada de {analysis_result.get('processed_files', 0)} arquivo(s) concluída",
+        "process_id": process_id,
+        "status": "processing",
+        "progress": 10,
+        "message": "Processamento iniciado. Use /analysis/progress/{id} para acompanhar.",
         "data": {
             "total_files": total_files,
-            "processed_files": analysis_result.get('processed_files', 0),
-            "failed_files": analysis_result.get('failed_files', 0),
-            "files": file_results,
-            "invalid_files": [
-                {"filename": f.filename, "error": f.error}
+            "valid_files": files_uploaded,
+            "invalid_files": len(invalid_files),
+            "files": [
+                {"filename": f.filename, "size": f.file_size, "valid": True}
+                for f in valid_files
+            ] + [
+                {"filename": f.filename, "error": f.error, "valid": False}
                 for f in invalid_files
-            ],
-            "analyses_ids": analyses_ids
+            ]
         },
-        "analysis": {
-            "executive_score": analysis_result.get('executive_score', {}),
-            "executive_summary": analysis_result.get('executive_summary', ''),
-            "comparison": {
-                "best_revenue": analysis_result.get('comparison', {}).get('best_revenue', ''),
-                "best_profit": analysis_result.get('comparison', {}).get('best_profit', ''),
-                "best_growth": analysis_result.get('comparison', {}).get('best_growth', ''),
-                "highest_risk": analysis_result.get('comparison', {}).get('highest_risk', '')
-            } if analysis_result.get('comparison') else {},
-            "trend": {
-                "direction": analysis_result.get('trend', {}).get('direction', 'estavel'),
-                "description": analysis_result.get('trend', {}).get('description', '')
-            } if analysis_result.get('trend') else {},
-            "recommendations": analysis_result.get('recommendations', []),
-            "forecast": analysis_result.get('forecast', ''),
-            "general_conclusion": analysis_result.get('general_conclusion', '')
-        },
-        "report": {
-            "content": report_data["content"],
-            "format": report_data["extension"],
-            "filename": report_data["filename"],
-            "content_type": report_data["content_type"]
-        },
-        "chart_data": analysis_result.get('chart_data', {}),
-        # 🔥 SEÇÃO DE CRÉDITOS MELHORADA (V12.0)
         "credits": {
             "before": credits_before,
-            "consumed": credits_consumed,
-            "remaining": credits_remaining,
-            "display": credit_result.get("display", "0"),
-            "is_admin": current_user.is_admin,
-            "is_premium": credits_info.get("is_premium", False),
-            "max_credits": credits_info.get("max_credits"),
-            # 🔥 NOVO: Informação detalhada por arquivo
+            "consumed": 0,  # 🔥 Será consumido após conclusão
+            "remaining": credits_before,
             "credits_per_file": credits_per_file,
             "files_uploaded": files_uploaded,
             "total_cost": total_cost,
-            "consumption_matches_files": credits_consumed == files_uploaded
+            "status": "pending_consumption"
         },
-        "user_stats": {
-            "total_analyses": user_stats.get("total_analyses", 0),
-            "today_analyses": user_stats.get("today_analyses", 0),
-            "status_counts": user_stats.get("status_counts", {}),
-            "total_rows_processed": int(user_stats.get("total_rows_processed", 0)),
-            "average_score": float(user_stats.get("average_score", 0)),
-            "avg_processing_time_ms": int(user_stats.get("avg_processing_time_ms", 0)),
-            "last_analysis_at": user_stats.get("last_analysis_at"),
-            "last_analysis_filename": user_stats.get("last_analysis_filename")
-        },
-        "performance": {
-            "processing_time_ms": round(processing_time_ms, 2),
-            "rate_limit": {
-                "current_count": count,
-                "limit": UploadConfig.RATE_LIMIT_PER_USER,
-                "window_seconds": UploadConfig.RATE_LIMIT_WINDOW
-            }
-        },
-        "security": {
-            "pow_validated": pow_valid,
-            "client_ip": client_ip
+        "polling": {
+            "url": f"/api/analysis/progress/{process_id}",
+            "interval_seconds": 2,
+            "max_attempts": 60
         },
         "timestamp": datetime.now().isoformat()
     }
     
-    # 🔥 CRÍTICO: Usar jsonable_encoder para serializar Decimal e outros tipos
-    response_data_encoded = jsonable_encoder(response_data)
-    
-    # 🔥 HEADERS PARA SINCRONIZAÇÃO (V12.0)
+    # 🔥 HEADERS PARA SINCRONIZAÇÃO
     response_headers = {
+        "X-Process-Id": str(process_id),
+        "X-Status": "processing",
         "X-Credits-Before": str(credits_before),
-        "X-Credits-Consumed": str(credits_consumed),
-        "X-Credits-Remaining": str(credits_remaining),
-        "X-Files-Processed": str(files_uploaded),
-        "X-Credits-Per-File": str(credits_per_file),
-        "X-Total-Cost": str(total_cost),
-        "X-Analyses-Created": str(len(analyses_ids)),
+        "X-Files-Valid": str(files_uploaded),
+        "X-Poll-Url": f"/api/analysis/progress/{process_id}",
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0"
     }
     
-    # Se for PDF, retorna para download
-    if report_format.lower() == "pdf":
-        return Response(
-            content=report_data["content"],
-            media_type=report_data["content_type"],
-            headers={
-                "Content-Disposition": f"attachment; filename={report_data['filename']}",
-                "Access-Control-Expose-Headers": "Content-Disposition, X-Credits-*, X-Files-Processed, X-Analyses-Created",
-                **response_headers
-            }
-        )
-    
-    # Se for JSON, retorna como JSON
-    if report_format.lower() == "json":
-        return JSONResponse(
-            content=response_data_encoded,
-            headers=response_headers
-        )
-    
     return JSONResponse(
-        content=response_data_encoded,
+        content=jsonable_encoder(response_data),
         headers=response_headers
     )
 
 
 # ==============================================
-# 🔥 FUNÇÕES AUXILIARES
+# 🔥 FUNÇÕES AUXILIARES (MANTIDAS)
 # ==============================================
 
 async def process_with_multi_analysis_advanced(
@@ -1646,7 +1669,7 @@ async def upload_auto_optimized(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.0 (CORREÇÃO DE CRÉDITOS + HEADERS)")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.1 (COM POLLING E PROGRESSO)")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -1658,10 +1681,15 @@ print(f"   ⏱️ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   💰 Créditos: {UploadConfig.INITIAL_FREE_CREDITS} grátis | máx premium {UploadConfig.MAX_CREDITS_PREMIUM}")
 print(f"   📌 Regra: 1 arquivo = 1 crédito = 1 análise")
 print(f"")
-print(f"   ✅ CORREÇÕES V12.0:")
+print(f"   ✅ NOVIDADES V12.1:")
+print(f"      - 🔥 RESPOSTA IMEDIATA: Retorna process_id sem esperar o ML")
+print(f"      - 🔥 POLLING: Rota /analysis/progress/{id} para acompanhamento")
+print(f"      - 🔥 BACKGROUND: Processamento ML em background com atualização de progresso")
+print(f"      - 🔥 PROGRESSO: Salva progress (0-100) e progress_message no banco")
+print(f"      - 🔥 FEEDBACK: Frontend pode mostrar barra de progresso em tempo real")
+print(f"")
+print(f"   ✅ MANTIDO V12.0:")
 print(f"      - 🔥 REFATORAÇÃO: consume_credits_advanced() aceita amount (int)")
 print(f"      - 🔥 HEADERS: X-Credits-* para sincronização com frontend")
 print(f"      - 🔥 RESPOSTA: credits_per_file, files_uploaded, total_cost")
-print(f"      - 🔥 CACHE: Headers no-cache, no-store, must-revalidate")
-print(f"      - 🔥 LOGS: Mais detalhados sobre consumo")
 print("=" * 80)

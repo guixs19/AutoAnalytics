@@ -1,26 +1,19 @@
-# backend/ml/multi_analysis.py - VERSÃO 5.0 (CORRIGIDA E OTIMIZADA)
+# backend/ml/multi_analysis.py - VERSÃO 5.2 (CORREÇÃO: PASSAR DB_SESSION PARA PROCESS_FILE)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V5.0
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V5.2
 ================================================================================
-✅ CORREÇÕES V5.0:
-   - 🔥 CORRIGIDO: Import do Gemini (get_gemini_service)
-   - 🔥 CORRIGIDO: Verificação de disponibilidade do Gemini
-   - 🔥 CORRIGIDO: Fallback quando Gemini não está disponível
-   - 🔥 CORRIGIDO: Cache com invalidação por TTL
-   - 🔥 CORRIGIDO: Tratamento de erros em processamento paralelo
-   - 🔥 CORRIGIDO: Encoding propagation para todos os resultados
+✅ CORREÇÕES V5.2:
+   - 🔥 CORRIGIDO: _process_single_file agora passa db_session e process_id
+   - 🔥 CORRIGIDO: process_file_content recebe os parâmetros corretamente
+   - 🔥 MELHORADO: Logs mais detalhados no processamento de arquivos
 
-✅ NOVAS MELHORIAS V5.0:
-   - 🚀 PROCESSAMENTO PARALELO REAL: Uso de asyncio.gather com semáforo
-   - 🚀 CACHE PREDITIVO: Pré-carregamento baseado em padrões
-   - 🚀 MÉTRICAS DETALHADAS: Tempo de processamento por arquivo
-   - 🚀 VALIDAÇÃO DE DADOS: Verificação de colunas obrigatórias
-   - 🚀 FALLBACK INTELIGENTE: Múltiplos níveis de fallback
-   - 🚀 LOGS ESTRUTURADOS: Com correlation ID
-   - 🚀 COMPRESSÃO DE DADOS: Para respostas grandes
-   - 🚀 HEALTH CHECK: Verificação de disponibilidade dos serviços
-   - 🚀 PROGRESS TRACKING: Callback para acompanhamento
-   - 🚀 OTIMIZAÇÃO DE MEMÓRIA: Processamento em chunks
+✅ MANTIDO V5.1:
+   - PROGRESSO NO BANCO: Salva progresso diretamente no banco via db_session
+   - PROCESSAMENTO OTIMIZADO: Aumentado MAX_CONCURRENT de 2 para 3
+   - CHART DATA ANTECIPADO: Gera chart_data durante o processamento
+   - CACHE DE CHART: Cache para chart_data consolidado
+   - MELHOR TRATAMENTO DE ERROS: Mais robusto com rollback
+   - LOGS DETALHADOS: Mais informações para debug
 ================================================================================
 """
 
@@ -48,28 +41,24 @@ logger = logging.getLogger(__name__)
 # ==============================================
 
 class Priority(str, Enum):
-    """Prioridade das recomendações"""
     ALTA = "alta"
     MEDIA = "media"
     BAIXA = "baixa"
 
 
 class RiskLevel(str, Enum):
-    """Nível de risco"""
     BAIXO = "Baixo"
     MODERADO = "Moderado"
     ALTO = "Alto"
 
 
 class TrendDirection(str, Enum):
-    """Direção da tendência"""
     CRESCENTE = "crescente"
     DECRESCENTE = "decrescente"
     ESTAVEL = "estavel"
 
 
 class AnalysisStatus(str, Enum):
-    """Status da análise"""
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -83,7 +72,6 @@ class AnalysisStatus(str, Enum):
 # ==============================================
 
 def timing_decorator(func):
-    """Decorator para medir tempo de execução"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
         start = time.time()
@@ -100,7 +88,6 @@ def timing_decorator(func):
 
 
 def retry_decorator(max_retries: int = 3, delay: float = 1.0):
-    """Decorator para retry automático"""
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -111,7 +98,7 @@ def retry_decorator(max_retries: int = 3, delay: float = 1.0):
                 except Exception as e:
                     last_error = e
                     if attempt < max_retries - 1:
-                        wait = delay * (2 ** attempt)  # Exponential backoff
+                        wait = delay * (2 ** attempt)
                         logger.warning(f"⚠️ Retry {attempt+1}/{max_retries} after {wait:.1f}s: {e}")
                         await asyncio.sleep(wait)
                     else:
@@ -122,12 +109,11 @@ def retry_decorator(max_retries: int = 3, delay: float = 1.0):
 
 
 # ==============================================
-# DATACLASSES ESTRUTURADAS (MANTIDAS)
+# DATACLASSES ESTRUTURADAS
 # ==============================================
 
 @dataclass
 class FileMetrics:
-    """Métricas de um único arquivo"""
     filename: str
     total_rows: int
     total_revenue: float
@@ -148,7 +134,6 @@ class FileMetrics:
 
 @dataclass
 class MLResults:
-    """Resultados do Machine Learning"""
     models_used: List[str]
     encodings_used: List[str]
     total_predictions: int
@@ -161,7 +146,6 @@ class MLResults:
 
 @dataclass
 class ComparisonResults:
-    """Resultados da comparação entre arquivos"""
     best_revenue: str
     best_profit: str
     best_growth: str
@@ -174,7 +158,6 @@ class ComparisonResults:
 
 @dataclass
 class TrendResults:
-    """Resultados da análise de tendência"""
     direction: TrendDirection
     strength: float
     confidence: float
@@ -184,7 +167,6 @@ class TrendResults:
 
 @dataclass
 class ConsolidatedAnalysis:
-    """Dados estruturados para o Gemini"""
     total_files: int
     processed_files: int
     failed_files: int
@@ -204,7 +186,6 @@ class ConsolidatedAnalysis:
     processing_time_ms: float = 0
     
     def to_dict(self) -> Dict[str, Any]:
-        """Converte para dicionário (para envio ao Gemini)"""
         return {
             "total_files": self.total_files,
             "processed_files": self.processed_files,
@@ -258,12 +239,11 @@ class ConsolidatedAnalysis:
 
 
 # ==============================================
-# RESULTADO FINAL (MANTIDO)
+# RESULTADO FINAL
 # ==============================================
 
 @dataclass
 class MultiFileAnalysisResult:
-    """Resultado completo da análise múltipla"""
     success: bool
     total_files: int
     processed_files: int
@@ -324,25 +304,26 @@ class MultiFileAnalysisResult:
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V5.0
+# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V5.2
 # ==============================================
 
 class MultiFileAnalyzerV5:
     """
-    🔥 Analisador de múltiplos arquivos com IA Avançada - V5.0
+    🔥 Analisador de múltiplos arquivos com IA Avançada - V5.2
     
     Características:
-    - Processamento paralelo com semáforo
+    - Processamento paralelo com semáforo (max 3)
     - Cache inteligente com TTL
+    - Progresso salvo no banco
+    - Chart data gerado durante processamento
     - Fallback automático
     - Métricas detalhadas
-    - Progress tracking
     """
     
     # Configurações
     MAX_FILES = 3
     CACHE_TTL = 300  # 5 minutos
-    MAX_CONCURRENT = 2  # Processamento paralelo máximo
+    MAX_CONCURRENT = 3
     TIMEOUT_SECONDS = 60  # Timeout por arquivo
     
     def __init__(self):
@@ -356,9 +337,13 @@ class MultiFileAnalyzerV5:
         # ==========================================
         # CACHE
         # ==========================================
-        self._cache: Dict[str, Tuple[Dict[str, Any], float, int]] = {}  # key -> (data, timestamp, hits)
+        self._cache: Dict[str, Tuple[Dict[str, Any], float, int]] = {}
         self._cache_hits = 0
         self._cache_misses = 0
+        
+        # Cache para chart_data
+        self._chart_cache: Dict[str, Dict[str, Any]] = {}
+        self._chart_cache_ttl = 300
         
         # ==========================================
         # ESTATÍSTICAS
@@ -386,27 +371,29 @@ class MultiFileAnalyzerV5:
         self.is_gemini_available = False
         
         # ==========================================
-        # CALLBACKS
+        # CALLBACKS E DB
         # ==========================================
         self._progress_callback: Optional[Callable] = None
+        self._db_session = None
+        self._process_id = None
         
         # ==========================================
         # INICIALIZAR
         # ==========================================
         self._load_dependencies()
         
-        logger.info("✅ MultiFileAnalyzerV5.0 inicializado")
+        logger.info("✅ MultiFileAnalyzerV5.2 inicializado")
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
         logger.info(f"   🔄 Processamento paralelo: {self.MAX_CONCURRENT}")
         logger.info(f"   🔥 Gemini disponível: {self.is_gemini_available}")
     
     # ==========================================
-    # 🔥 CARREGAMENTO DE DEPENDÊNCIAS (CORRIGIDO)
+    # 🔥 CARREGAMENTO DE DEPENDÊNCIAS
     # ==========================================
     
     def _load_dependencies(self):
-        """🔥 Carrega dependências com verificação de disponibilidade"""
+        """Carrega dependências com verificação de disponibilidade"""
         
         # ----- ML PIPELINE -----
         try:
@@ -419,7 +406,7 @@ class MultiFileAnalyzerV5:
             self.pipeline = None
             self.process_file = None
         
-        # 🔥 ----- GEMINI (CORRIGIDO) -----
+        # ----- GEMINI -----
         try:
             from backend.gemini import get_gemini_service, is_gemini_available
             
@@ -444,29 +431,48 @@ class MultiFileAnalyzerV5:
             self.is_gemini_available = False
     
     # ==========================================
-    # 🔥 PROGRESS CALLBACK
+    # 🔥 PROGRESS CALLBACK E DB
     # ==========================================
     
     def set_progress_callback(self, callback: Callable[[float, str], None]):
-        """
-        🔥 Define callback para acompanhamento de progresso
-        
-        Args:
-            callback: Função que recebe (progresso: float, status: str)
-        """
+        """Define callback para acompanhamento de progresso"""
         self._progress_callback = callback
         logger.info("📊 Progress callback registrado")
     
+    def set_db_session(self, db_session, process_id: int):
+        """🔥 Define a sessão do banco para atualizar progresso"""
+        self._db_session = db_session
+        self._process_id = process_id
+        logger.info(f"📊 DB Session configurada para process_id: {process_id}")
+    
     async def _update_progress(self, progress: float, status: str):
-        """Atualiza progresso e chama callback se registrado"""
+        """
+        🔥 ATUALIZA PROGRESSO NO BANCO E NO CALLBACK
+        """
+        # 1. Chamar callback (frontend via polling)
         if self._progress_callback:
             try:
                 await self._progress_callback(progress, status)
             except Exception as e:
                 logger.warning(f"⚠️ Erro no progress callback: {e}")
+        
+        # 🔥 2. SALVAR NO BANCO
+        if self._db_session and self._process_id:
+            try:
+                from backend import models
+                analysis = self._db_session.query(models.Analysis).filter(
+                    models.Analysis.id == self._process_id
+                ).first()
+                if analysis:
+                    analysis.progress = int(progress * 100)
+                    analysis.progress_message = status
+                    self._db_session.commit()
+                    logger.debug(f"📊 [DB] Progresso salvo: {int(progress * 100)}% - {status}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao salvar progresso no banco: {e}")
     
     # ==========================================
-    # 🔥 MÉTODO PRINCIPAL (CORRIGIDO)
+    # 🔥 MÉTODO PRINCIPAL
     # ==========================================
     
     @timing_decorator
@@ -476,7 +482,9 @@ class MultiFileAnalyzerV5:
         user_id: int = None,
         user_email: str = None,
         force_reload: bool = False,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        db_session = None,
+        process_id: int = None
     ) -> MultiFileAnalysisResult:
         """
         🔥 Analisa múltiplos arquivos com relatório executivo completo
@@ -487,11 +495,17 @@ class MultiFileAnalyzerV5:
             user_email: Email do usuário
             force_reload: Forçar recarregamento (ignorar cache)
             progress_callback: Callback para progresso
+            db_session: Sessão do banco para salvar progresso
+            process_id: ID da análise para salvar progresso
         
         Returns:
             MultiFileAnalysisResult com análise completa
         """
         start_time = time.time()
+        
+        # 🔥 Configurar sessão do banco
+        if db_session and process_id:
+            self.set_db_session(db_session, process_id)
         
         # Registrar callback
         if progress_callback:
@@ -509,7 +523,6 @@ class MultiFileAnalyzerV5:
         if len(files) > self.MAX_FILES:
             return self._error_result(f"Máximo de {self.MAX_FILES} arquivos por vez")
         
-        # Validar cada arquivo
         for i, file in enumerate(files):
             if not file.get('content'):
                 return self._error_result(f"Arquivo {i+1} sem conteúdo")
@@ -625,15 +638,21 @@ class MultiFileAnalyzerV5:
             
         except asyncio.CancelledError:
             logger.warning("⚠️ Análise cancelada")
+            await self._update_progress(0, "Análise cancelada")
             return self._error_result("Análise cancelada pelo usuário")
             
         except Exception as e:
             logger.error(f"❌ Erro na análise: {e}")
             self._stats["errors_total"] += 1
+            await self._update_progress(0, f"Erro: {str(e)[:50]}")
             return self._error_result(str(e))
+        finally:
+            # 🔥 LIMPAR REFERÊNCIA DA SESSÃO
+            self._db_session = None
+            self._process_id = None
     
     # ==========================================
-    # 🔥 PROCESSAMENTO PARALELO (MELHORADO)
+    # 🔥 PROCESSAMENTO PARALELO
     # ==========================================
     
     async def _process_files_parallel(
@@ -644,7 +663,6 @@ class MultiFileAnalyzerV5:
         """🔥 Processa arquivos em paralelo com semáforo"""
         
         async def process_single_with_semaphore(file_data: Dict[str, Any]) -> Dict[str, Any]:
-            """Processa um arquivo com semáforo para controle de concorrência"""
             async with self._semaphore:
                 return await self._process_single_file(file_data)
         
@@ -674,8 +692,15 @@ class MultiFileAnalyzerV5:
         
         return processed
     
+    # ==========================================
+    # 🔥🔥🔥 _process_single_file - CORRIGIDA (VERSÃO 5.2)
+    # ==========================================
+    
     async def _process_single_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
-        """🔥 Processa um único arquivo com timeout e retry"""
+        """
+        🔥 Processa um único arquivo com timeout e retry
+        🔥 AGORA PASSA db_session e process_id para o pipeline
+        """
         filename = file_data.get('filename', 'arquivo.csv')
         content = file_data.get('content')
         file_start = time.time()
@@ -687,9 +712,14 @@ class MultiFileAnalyzerV5:
             return self._error_file_result(filename, "Pipeline ML não disponível")
         
         try:
-            # Processar com timeout
+            # 🔥 CORRIGIDO: Passar db_session e process_id para process_file_content
             result = await asyncio.wait_for(
-                self.process_file(content, filename),
+                self.process_file(
+                    content=content,
+                    filename=filename,
+                    db_session=self._db_session,    # 🔥 NOVO
+                    process_id=self._process_id      # 🔥 NOVO
+                ),
                 timeout=self.TIMEOUT_SECONDS
             )
             
@@ -702,6 +732,9 @@ class MultiFileAnalyzerV5:
             elapsed = (time.time() - file_start) * 1000
             logger.info(f"   📝 '{filename}' processado em {elapsed:.0f}ms | Encoding: {encoding_used}")
             
+            # 🔥 Extrair chart_data do resultado (se disponível)
+            chart_data = result.get('chart_data', {})
+            
             return {
                 'success': result.get('success', False),
                 'filename': filename,
@@ -709,7 +742,7 @@ class MultiFileAnalyzerV5:
                 'metrics': result.get('metrics', {}),
                 'insights': result.get('insights', {}),
                 'recommendations': result.get('recommendations', []),
-                'chart_data': result.get('chart_data', {}),
+                'chart_data': chart_data,
                 'model_used': result.get('model_used', 'default'),
                 'encoding_used': encoding_used,
                 'processed_rows': result.get('processed_rows', 0),
@@ -726,7 +759,7 @@ class MultiFileAnalyzerV5:
             return self._error_file_result(filename, str(e))
     
     # ==========================================
-    # 🔥 CONSTRUIR DADOS ESTRUTURADOS (MELHORADO)
+    # 🔥 CONSTRUIR DADOS ESTRUTURADOS
     # ==========================================
     
     async def _build_consolidated_analysis(
@@ -757,6 +790,9 @@ class MultiFileAnalyzerV5:
         combined_insights = []
         combined_recommendations = []
         
+        # 🔥 Coletar chart_data para consolidação
+        all_chart_data = []
+        
         for result in success_results:
             metrics = result.get('metrics', {})
             chart_data = result.get('chart_data', {})
@@ -772,6 +808,10 @@ class MultiFileAnalyzerV5:
             encoding_used = result.get('encoding_used')
             if encoding_used:
                 encodings_used.add(encoding_used)
+            
+            # 🔥 Salvar chart_data para consolidação
+            if chart_data:
+                all_chart_data.append(chart_data)
             
             file_metrics = FileMetrics(
                 filename=result.get('filename', 'unknown'),
@@ -857,8 +897,8 @@ class MultiFileAnalyzerV5:
         if len(file_metrics_list) > 1:
             trend = self._analyze_trend(file_metrics_list)
         
-        # 5️⃣ Chart Data Consolidado
-        chart_data = self._generate_consolidated_chart_data(processed_results)
+        # 🔥 5️⃣ Chart Data Consolidado (com cache)
+        chart_data = self._get_consolidated_chart_data(all_chart_data, processed_results)
         
         # 6️⃣ Totais
         total_revenue = sum(f.total_revenue for f in file_metrics_list)
@@ -947,7 +987,122 @@ class MultiFileAnalyzerV5:
         )
     
     # ==========================================
-    # 🔥 GERAR ANÁLISE COM GEMINI (CORRIGIDO)
+    # 🔥 CHART DATA COM CACHE
+    # ==========================================
+    
+    def _get_consolidated_chart_data(
+        self,
+        chart_data_list: List[Dict[str, Any]],
+        results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        🔥 Gera chart_data consolidado com cache
+        """
+        # Gerar chave de cache
+        cache_key = hashlib.md5(
+            str(len(chart_data_list)).encode() + 
+            str(len(results)).encode()
+        ).hexdigest()[:16]
+        
+        # Verificar cache
+        if cache_key in self._chart_cache:
+            cached = self._chart_cache[cache_key]
+            if time.time() - cached.get('timestamp', 0) < self._chart_cache_ttl:
+                logger.info(f"📊 Chart data em cache: {cache_key}")
+                return cached['data']
+        
+        # Gerar chart_data
+        chart_data = self._generate_consolidated_chart_data(results)
+        
+        # Salvar em cache
+        self._chart_cache[cache_key] = {
+            'data': chart_data,
+            'timestamp': time.time()
+        }
+        
+        # Limitar tamanho do cache
+        if len(self._chart_cache) > 20:
+            oldest = min(self._chart_cache.items(), key=lambda x: x[1]['timestamp'])
+            del self._chart_cache[oldest[0]]
+        
+        return chart_data
+    
+    def _generate_consolidated_chart_data(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Gera chart_data consolidado (otimizado)"""
+        days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+        months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+        
+        all_chart_data = [r.get('chart_data', {}) for r in results if r.get('chart_data')]
+        
+        if all_chart_data:
+            weekly_revenue = [0] * 7
+            weekly_costs = [0] * 7
+            weekly_services = [0] * 7
+            count = len(all_chart_data)
+            
+            for chart in all_chart_data:
+                weekly = chart.get('weekly', {})
+                rev = weekly.get('revenue', [])
+                costs = weekly.get('costs', [])
+                perf = chart.get('performance', {})
+                serv = perf.get('services', [])
+                
+                for i in range(min(7, len(rev))):
+                    if rev[i]:
+                        weekly_revenue[i] += rev[i] / count
+                for i in range(min(7, len(costs))):
+                    if costs[i]:
+                        weekly_costs[i] += costs[i] / count
+                for i in range(min(7, len(serv))):
+                    if serv[i]:
+                        weekly_services[i] += serv[i] / count
+            
+            monthly_revenue = [0] * 12
+            for chart in all_chart_data:
+                monthly = chart.get('monthly', {})
+                rev = monthly.get('revenue', [])
+                for i in range(min(12, len(rev))):
+                    if rev[i]:
+                        monthly_revenue[i] += rev[i] / count
+            
+            return {
+                "weekly": {
+                    "labels": days,
+                    "revenue": [round(v, 2) for v in weekly_revenue],
+                    "costs": [round(v, 2) for v in weekly_costs]
+                },
+                "performance": {
+                    "labels": days,
+                    "services": [round(v) for v in weekly_services]
+                },
+                "monthly": {
+                    "labels": months,
+                    "revenue": [round(v, 2) for v in monthly_revenue]
+                },
+                "files_merged": len(all_chart_data)
+            }
+        
+        # Fallback
+        random.seed(42)
+        return {
+            "weekly": {
+                "labels": days,
+                "revenue": [round(random.randint(500, 2000) + random.random() * 100, 2) for _ in range(7)],
+                "costs": [round(random.randint(100, 800) + random.random() * 50, 2) for _ in range(7)]
+            },
+            "performance": {
+                "labels": days,
+                "services": [random.randint(2, 15) for _ in range(7)]
+            },
+            "monthly": {
+                "labels": months,
+                "revenue": [round(random.randint(5000, 15000) + random.random() * 1000, 2) for _ in range(12)]
+            },
+            "files_merged": 0
+        }
+    
+    # ==========================================
+    # 🔥 GERAR ANÁLISE COM GEMINI
     # ==========================================
     
     async def _generate_gemini_analysis(
@@ -955,9 +1110,8 @@ class MultiFileAnalyzerV5:
         consolidated: ConsolidatedAnalysis
     ) -> Dict[str, Any]:
         """
-        🔥 Gera análise com Gemini usando dados estruturados (CORRIGIDO)
+        🔥 Gera análise com Gemini usando dados estruturados
         """
-        # 🔥 VERIFICAÇÃO CORRETA
         if not self.gemini or not self.is_gemini_available:
             logger.warning("⚠️ Gemini não disponível, usando fallback")
             return self._generate_fallback_analysis(consolidated)
@@ -995,7 +1149,7 @@ class MultiFileAnalyzerV5:
             return self._generate_fallback_analysis(consolidated)
     
     # ==========================================
-    # 🔥 CONSTRUIR RESULTADO (MELHORADO)
+    # 🔥 CONSTRUIR RESULTADO
     # ==========================================
     
     def _build_result(
@@ -1043,7 +1197,7 @@ class MultiFileAnalyzerV5:
         )
     
     # ==========================================
-    # 🔥 PARSE DAS RESPOSTAS DO GEMINI (MELHORADO)
+    # 🔥 PARSE DAS RESPOSTAS DO GEMINI
     # ==========================================
     
     def _parse_executive_score(self, text: str) -> Dict[str, Any]:
@@ -1175,12 +1329,10 @@ class MultiFileAnalyzerV5:
         """Extrai recomendações priorizadas"""
         recommendations = []
         
-        # Buscar por seções
         sections = re.split(r'##\s+', text)
         for section in sections:
             section_lower = section.lower()
             
-            # Detectar prioridade
             if any(kw in section_lower for kw in ['alta', 'urgente', 'priorit']):
                 priority = 'alta'
             elif any(kw in section_lower for kw in ['media', 'média']):
@@ -1190,7 +1342,6 @@ class MultiFileAnalyzerV5:
             else:
                 continue
             
-            # Extrair itens
             lines = section.split('\n')
             for line in lines:
                 line = line.strip()
@@ -1205,7 +1356,6 @@ class MultiFileAnalyzerV5:
                             'effort': self._guess_effort(item)
                         })
         
-        # Se não encontrou, tentar padrões específicos
         if not recommendations:
             patterns = {
                 'alta': r'🔴 Alta Prioridade\s*[:=]?\s*(.+?)(?=\n🟡|\n🟢|\n\n|\Z)',
@@ -1263,7 +1413,7 @@ class MultiFileAnalyzerV5:
         return "A análise demonstra potencial de melhoria com foco em otimização de custos."
     
     # ==========================================
-    # 🔥 FUNÇÕES AUXILIARES (MANTIDAS)
+    # 🔥 FUNÇÕES AUXILIARES
     # ==========================================
     
     def _guess_category(self, text: str) -> str:
@@ -1299,76 +1449,6 @@ class MultiFileAnalyzerV5:
             return 'alto'
         return 'medio'
     
-    def _generate_consolidated_chart_data(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Gera chart_data consolidado"""
-        days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
-        months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
-        
-        all_chart_data = [r.get('chart_data', {}) for r in results if r.get('chart_data')]
-        
-        if all_chart_data:
-            weekly_revenue = [0] * 7
-            weekly_costs = [0] * 7
-            weekly_services = [0] * 7
-            count = len(all_chart_data)
-            
-            for chart in all_chart_data:
-                weekly = chart.get('weekly', {})
-                rev = weekly.get('revenue', [])
-                costs = weekly.get('costs', [])
-                perf = chart.get('performance', {})
-                serv = perf.get('services', [])
-                
-                for i in range(min(7, len(rev))):
-                    weekly_revenue[i] += rev[i] / count if rev[i] else 0
-                for i in range(min(7, len(costs))):
-                    weekly_costs[i] += costs[i] / count if costs[i] else 0
-                for i in range(min(7, len(serv))):
-                    weekly_services[i] += serv[i] / count if serv[i] else 0
-            
-            monthly_revenue = [0] * 12
-            for chart in all_chart_data:
-                monthly = chart.get('monthly', {})
-                rev = monthly.get('revenue', [])
-                for i in range(min(12, len(rev))):
-                    monthly_revenue[i] += rev[i] / count if rev[i] else 0
-            
-            return {
-                "weekly": {
-                    "labels": days,
-                    "revenue": [round(v, 2) for v in weekly_revenue],
-                    "costs": [round(v, 2) for v in weekly_costs]
-                },
-                "performance": {
-                    "labels": days,
-                    "services": [round(v) for v in weekly_services]
-                },
-                "monthly": {
-                    "labels": months,
-                    "revenue": [round(v, 2) for v in monthly_revenue]
-                },
-                "files_merged": len(all_chart_data)
-            }
-        
-        # Fallback
-        random.seed(42)
-        return {
-            "weekly": {
-                "labels": days,
-                "revenue": [round(random.randint(500, 2000) + random.random() * 100, 2) for _ in range(7)],
-                "costs": [round(random.randint(100, 800) + random.random() * 50, 2) for _ in range(7)]
-            },
-            "performance": {
-                "labels": days,
-                "services": [random.randint(2, 15) for _ in range(7)]
-            },
-            "monthly": {
-                "labels": months,
-                "revenue": [round(random.randint(5000, 15000) + random.random() * 1000, 2) for _ in range(12)]
-            },
-            "files_merged": 0
-        }
-    
     def _generate_fallback_analysis(self, consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
         """Gera análise de fallback (sem Gemini)"""
         return {
@@ -1403,7 +1483,7 @@ class MultiFileAnalyzerV5:
         }
     
     # ==========================================
-    # 🔥 CACHE (MELHORADO)
+    # 🔥 CACHE
     # ==========================================
     
     def _get_cache_key(self, files: List[Dict[str, Any]], user_id: int = None) -> str:
@@ -1412,7 +1492,6 @@ class MultiFileAnalyzerV5:
         for f in files:
             name = f.get('filename', '')
             size = f.get('file_size', 0)
-            # Usar hash do conteúdo para cache mais preciso
             content_hash = hashlib.md5(f.get('content', b'')).hexdigest()[:8]
             content_parts.append(f"{name}:{size}:{content_hash}")
         
@@ -1441,7 +1520,6 @@ class MultiFileAnalyzerV5:
         self._cache[key] = (data, time.time(), 0)
         logger.debug(f"💾 Cache saved: {key[:8]}")
         
-        # Limpar cache se muito grande
         if len(self._cache) > 100:
             self._clean_cache()
     
@@ -1450,7 +1528,6 @@ class MultiFileAnalyzerV5:
         if len(self._cache) <= 100:
             return
         
-        # Ordenar por (timestamp, hits) e remover os piores
         items = sorted(
             self._cache.items(),
             key=lambda x: (x[1][1], x[1][2])
@@ -1466,6 +1543,7 @@ class MultiFileAnalyzerV5:
         """Limpa todo o cache"""
         size = len(self._cache)
         self._cache.clear()
+        self._chart_cache.clear()
         logger.info(f"🧹 Cache cleared: {size} entries removed")
     
     # ==========================================
@@ -1509,6 +1587,7 @@ class MultiFileAnalyzerV5:
         return {
             **self._stats,
             "cache_size": len(self._cache),
+            "chart_cache_size": len(self._chart_cache),
             "cache_hits": self._cache_hits,
             "cache_misses": self._cache_misses,
             "cache_hit_rate": (
@@ -1552,7 +1631,7 @@ def get_multi_analyzer() -> MultiFileAnalyzerV5:
 
 
 # ==============================================
-# 🔥 FUNÇÃO DE COMPATIBILIDADE (MANTIDA)
+# 🔥 FUNÇÃO DE COMPATIBILIDADE (ATUALIZADA)
 # ==============================================
 
 async def analyze_multiple_files(
@@ -1560,7 +1639,9 @@ async def analyze_multiple_files(
     user_id: int = None,
     user_email: str = None,
     force_reload: bool = False,
-    progress_callback: Optional[Callable] = None
+    progress_callback: Optional[Callable] = None,
+    db_session = None,
+    process_id: int = None
 ) -> Dict[str, Any]:
     """
     🔥 Função principal para análise múltipla
@@ -1571,6 +1652,8 @@ async def analyze_multiple_files(
         user_email: Email do usuário
         force_reload: Forçar recarregamento
         progress_callback: Callback para progresso
+        db_session: Sessão do banco para salvar progresso
+        process_id: ID da análise para salvar progresso
     
     Returns:
         Dict com análise completa
@@ -1581,7 +1664,9 @@ async def analyze_multiple_files(
         user_id=user_id,
         user_email=user_email,
         force_reload=force_reload,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        db_session=db_session,
+        process_id=process_id
     )
     return result.to_dict()
 
@@ -1593,7 +1678,7 @@ async def analyze_multiple_files(
 async def test_multi_analysis():
     """Função de teste completa"""
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V5.0")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V5.2")
     print("=" * 70)
     
     import pandas as pd
@@ -1601,7 +1686,6 @@ async def test_multi_analysis():
     from io import BytesIO
     
     def create_test_file(i: int, seed: int = 42):
-        """Cria arquivo de teste"""
         np.random.seed(seed + i)
         df = pd.DataFrame({
             'cliente_id': range(1, 101),
@@ -1624,7 +1708,6 @@ async def test_multi_analysis():
     
     print(f"📁 {len(files)} arquivos criados")
     
-    # Progress callback
     def print_progress(progress: float, status: str):
         bar = "█" * int(progress * 40)
         spaces = " " * (40 - int(progress * 40))

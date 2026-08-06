@@ -1,24 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO 16.0 (CORREÇÃO DE CRÉDITOS + MELHORIAS)
+// frontend/js/dashboard.js - VERSÃO 9.1 (COM POLLING E PROGRESSO)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.0
+ * 🔥 Dashboard Module - AutoAnalytics v9.1
  * 
- * ✅ CORREÇÕES CRÍTICAS v16.0:
- * - 🔥 CORRIGIDO: Verificação de créditos usando App State primeiro
- * - 🔥 CORRIGIDO: Sync de créditos com fallback múltiplo
- * - 🔥 ADICIONADO: _loadFromAppState() para carregamento instantâneo
- * - 🔥 MELHORADO: Detecção de token via appAuth
- * - 🔥 OTIMIZADO: Sincronização com debounce e throttle
+ * ✅ NOVIDADES v16.1:
+ * - 🔥 POLLING: Acompanhamento de progresso em tempo real
+ * - 🔥 BARRA DE PROGRESSO: Mostra % e mensagem durante o processamento
+ * - 🔥 RENDERIZAÇÃO ANTECIPADA: Gráficos aparecem assim que concluídos
+ * - 🔥 TIMEOUT: Evita polling infinito (60 segundos)
+ * - 🔥 FALLBACK: Se o polling falhar, tenta usar a resposta original
  * 
- * ✅ CORREÇÕES v15.1:
- * - 🔥 CORRIGIDO: Loop infinito entre dashboard.js e app.js
- * - 🔥 ADICIONADO: Throttle para atualizações de UI
- * - 🔥 ADICIONADO: Flag _silent para eventos internos
- * 
- * ✅ MELHORIAS v16.0:
- * - 📊 Verificação de créditos ANTES do upload
- * - 💰 Sincronização automática com App State
- * - 🛡️ Fallback robusto para token
- * - ⚡ Performance otimizada
+ * ✅ MANTIDO v9.0:
+ * - Verificação de créditos com App State primeiro
+ * - Sync com fallback múltiplo
+ * - Detecção de token via appAuth
+ * - Prevenção de loop infinito
  */
 
 (function() {
@@ -33,18 +28,26 @@
         MAX_FILE_SIZE_KB: 200,
         API_BASE: '/api',
         POLLING_INTERVAL: 30000,
-        CACHE_TTL: 300000, // 5 minutos
+        CACHE_TTL: 300000,
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
         POW_MAX_ATTEMPTS: 3,
+        
+        // 🔥 NOVO: Configurações de polling
+        POLLING: {
+            INTERVAL: 2000,        // 2 segundos entre cada consulta
+            MAX_ATTEMPTS: 60,      // 60 tentativas (2min no total)
+            TIMEOUT_MS: 120000,    // 2 minutos de timeout
+            RETRY_DELAY: 1000,     // 1 segundo entre tentativas com erro
+        },
         
         CREDITS: {
             COST_PER_UPLOAD: 1,
             MAX_CREDITS_PREMIUM: 3,
             INITIAL_FREE_CREDITS: 3,
-            SYNC_INTERVAL: 15000, // 15 segundos
-            UI_THROTTLE: 300, // 300ms entre atualizações
-            SYNC_DEBOUNCE: 500, // 500ms de debounce
+            SYNC_INTERVAL: 15000,
+            UI_THROTTLE: 300,
+            SYNC_DEBOUNCE: 500,
         },
         
         COLORS: {
@@ -80,7 +83,6 @@
         },
 
         isAuthenticated: () => {
-            // 🔥 CORRIGIDO: Usar appAuth primeiro
             if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
                 return window.appAuth.isAuthenticated();
             }
@@ -129,7 +131,7 @@
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER - GERENCIADOR DE CRÉDITOS (CORRIGIDO V16.0)
+    // 🔥 CREDIT MANAGER (MANTIDO)
     // ==============================================
 
     class CreditManager {
@@ -141,7 +143,6 @@
             this._pendingRefund = 0;
             this._syncInProgress = false;
             
-            // Controle de throttling
             this._updatingUI = false;
             this._lastUpdate = 0;
             this._uiThrottle = CONFIG.CREDITS.UI_THROTTLE;
@@ -149,14 +150,10 @@
             this._isProcessingQueue = false;
             this._cachedDisplay = null;
             
-            // 🔥 CARREGAR DO APP STATE PRIMEIRO
             this._loadFromAppState();
-            
-            // 🔥 Escutar eventos de créditos
             this._setupEventListeners();
         }
 
-        // 🔥 Carregar do App State (mais rápido)
         _loadFromAppState() {
             try {
                 if (window.__APP_STATE) {
@@ -171,7 +168,6 @@
                     }
                 }
                 
-                // Fallback: tentar do localStorage
                 try {
                     const userData = localStorage.getItem('user_data');
                     if (userData) {
@@ -187,7 +183,6 @@
                     }
                 } catch (e) {}
                 
-                // Fallback: tentar do App
                 if (window.App && typeof window.App.getCredits === 'function') {
                     const appCredits = window.App.getCredits();
                     if (appCredits !== undefined) {
@@ -207,11 +202,10 @@
             }
         }
 
-        // 🔥 Configurar listeners de eventos
         _setupEventListeners() {
             document.addEventListener('creditsUpdated', (e) => {
                 const data = e.detail || {};
-                if (data._silent) return; // Evitar loop
+                if (data._silent) return;
                 
                 if (data.credits !== undefined) {
                     this._balance = data.credits;
@@ -239,9 +233,7 @@
             return String(this._balance);
         }
 
-        // 🔥 Sincronizar com o backend (CORRIGIDO)
         async sync(force = false) {
-            // 🔥 PRIMEIRO: Tentar do App State (mais rápido)
             if (!force) {
                 const loaded = this._loadFromAppState();
                 if (loaded) {
@@ -254,16 +246,13 @@
             this._syncInProgress = true;
             
             try {
-                // 🔥 CORRIGIDO: Verificar autenticação corretamente
                 let token = null;
                 
-                // Tentar via appAuth
                 if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
                     if (window.appAuth.isAuthenticated()) {
                         token = localStorage.getItem('access_token');
                     }
                 } else {
-                    // Fallback: verificar token diretamente
                     token = Utils.getToken();
                 }
                 
@@ -284,7 +273,6 @@
                     const newIsPremium = data.is_premium || false;
                     const newIsAdmin = data.is_admin || false;
                     
-                    // Verificar se houve mudança real
                     const changed = (
                         newBalance !== this._balance ||
                         newIsPremium !== this._isPremium ||
@@ -308,7 +296,6 @@
                 }
             } catch (e) {
                 console.warn('⚠️ Erro ao sincronizar créditos:', e);
-                // Fallback: usar App State
                 this._loadFromAppState();
                 this._updateUI();
                 return this._balance;
@@ -318,37 +305,30 @@
             return this._balance;
         }
 
-        // 🔥 Sincronização com debounce
         syncDebounced = Utils.debounce(() => {
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
-        // 🔥 Verificar se tem créditos suficientes (CORRIGIDO)
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
-            // 🔥 PRIMEIRO: Atualizar do App State
             this._loadFromAppState();
-            
             if (this._isAdmin) return true;
             const hasEnough = this._balance >= required;
             console.log(`💰 [CreditManager] Verificando créditos: ${this._balance} >= ${required} = ${hasEnough}`);
             return hasEnough;
         }
 
-        // 🔥 Verificar se pode receber crédito diário
         canReceiveDaily() {
             if (this._isAdmin) return false;
             if (!this._isPremium) return false;
             return this._balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
         }
 
-        // 🔥 Consumir créditos (com verificação)
         async consume(amount = CONFIG.CREDITS.COST_PER_UPLOAD, description = 'Upload') {
             if (this._isAdmin) {
                 console.log('👑 Admin - créditos ilimitados');
                 return { success: true, balance: '∞' };
             }
 
-            // 🔥 ATUALIZAR ANTES DE VERIFICAR
             await this.sync(true);
             
             if (!this.hasCredits(amount)) {
@@ -392,13 +372,11 @@
                 }
             } catch (e) {
                 console.error('❌ Erro ao consumir créditos:', e);
-                // 🔥 TENTAR RECUPERAR SALDO
                 await this.sync(true);
                 return { success: false, error: e.message };
             }
         }
 
-        // 🔥 Devolver créditos (rollback)
         async refund(amount, description = 'Correção de créditos') {
             if (this._isAdmin || amount <= 0) return true;
 
@@ -428,9 +406,7 @@
             return false;
         }
 
-        // 🔥 ATUALIZAR UI (COM THROTTLE E PREVENÇÃO DE LOOP)
         _updateUI() {
-            // Throttle: não atualizar mais de uma vez a cada X ms
             const now = Date.now();
             if (now - this._lastUpdate < this._uiThrottle) {
                 if (!this._updateQueue.includes('update')) {
@@ -446,13 +422,11 @@
             try {
                 const display = this.display;
                 
-                // Verificar se o display mudou realmente
                 if (this._cachedDisplay === display) {
                     this._updatingUI = false;
                     return;
                 }
                 
-                // Atualizar elementos DOM
                 const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
                 let updated = false;
                 
@@ -467,7 +441,6 @@
                     this._cachedDisplay = display;
                     this._lastUpdate = now;
                     
-                    // Disparar evento com flag _silent para evitar loop
                     const event = new CustomEvent('creditsUpdated', {
                         detail: {
                             credits: this._balance,
@@ -479,7 +452,6 @@
                     });
                     document.dispatchEvent(event);
                     
-                    // Também atualizar o App State
                     if (window.__APP_STATE_MANAGER) {
                         window.__APP_STATE_MANAGER.updateCredits(this._balance, this._isPremium);
                     }
@@ -509,7 +481,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (CORRIGIDA)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.1)
     // ==============================================
 
     class Dashboard {
@@ -521,11 +493,22 @@
             this._fileCache = new Map();
             this._analysisCache = new Map();
             
+            // 🔥 NOVO: Estado do polling
+            this._pollingState = {
+                active: false,
+                processId: null,
+                attempts: 0,
+                startTime: null,
+                timeoutId: null,
+            };
+            
             // 🔥 Bind dos métodos
             this.uploadMultipleFiles = this.uploadMultipleFiles.bind(this);
             this._processUploadResult = this._processUploadResult.bind(this);
             this._syncCredits = this._syncCredits.bind(this);
             this._handleCreditsUpdated = this._handleCreditsUpdated.bind(this);
+            this._pollProgress = this._pollProgress.bind(this);
+            this._stopPolling = this._stopPolling.bind(this);
         }
 
         // ==========================================
@@ -538,22 +521,19 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.0] Inicializando com correção de créditos...');
+            console.log('🚀 [Dashboard v16.1] Inicializando com polling...');
 
-            // Sincronizar créditos
             await this._creditManager.sync();
             
-            // Configurar eventos
             this._setupEvents();
             this._setupUploadHandlers();
             this._setupPolling();
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.0] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.1] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
-            console.log(`   🔥 Consumo: ${CONFIG.CREDITS.COST_PER_UPLOAD} crédito por upload`);
-            console.log(`   🛡️ Throttle: ${CONFIG.CREDITS.UI_THROTTLE}ms`);
+            console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
             
             return this;
         }
@@ -607,7 +587,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO DE ARQUIVOS (CORRIGIDO)
+        // 🔥🔥🔥 UPLOAD MÚLTIPLO (COM POLLING)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -639,8 +619,7 @@
                     }
                 }
 
-                // 🔥 VERIFICAR CRÉDITOS (CORRIGIDO)
-                // 🔥 PRIMEIRO: Sincronizar para garantir saldo atualizado
+                // 🔥 VERIFICAR CRÉDITOS
                 await this._creditManager.sync(true);
                 
                 const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
@@ -652,6 +631,7 @@
                     return null;
                 }
 
+                // 🔥 MOSTRAR LOADING IMEDIATAMENTE
                 this._showUploadStatus('⏳', 'Preparando upload...', 'Verificando créditos', 5);
                 this._uploadInProgress = true;
 
@@ -701,7 +681,6 @@
                         this._showUploadStatus('❌', 'Créditos insuficientes', 'Adquira o plano Premium', 0);
                         this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
                         this._showUpgradePrompt();
-                        // 🔥 ATUALIZAR SALDO após erro
                         await this._creditManager.sync(true);
                         return null;
                     }
@@ -711,36 +690,44 @@
 
                 const result = await response.json();
 
-                // 🔥 VERIFICAR CONSUMO DE CRÉDITOS
-                const balanceAfter = await this._creditManager.sync(true);
-                console.log(`💰 Saldo depois: ${balanceAfter}`);
-
-                const discrepancy = Utils.detectCreditDiscrepancy(
-                    balanceBefore,
-                    balanceAfter,
-                    CONFIG.CREDITS.COST_PER_UPLOAD
-                );
-
-                if (discrepancy.isDiscrepancy && discrepancy.shouldRefund) {
-                    console.warn(`⚠️ Consumo excessivo detectado: ${discrepancy.actualCost} créditos consumidos (esperado: ${discrepancy.expectedCost})`);
-                    console.log(`🔄 Devolvendo ${discrepancy.difference} crédito(s)...`);
+                // 🔥🔥🔥 VERIFICAR SE TEM PROCESS_ID (POLLING)
+                if (result.success && result.process_id) {
+                    console.log(`📡 [Dashboard] Process ID: ${result.process_id}`);
                     
-                    const refunded = await this._creditManager.refund(
-                        discrepancy.difference,
-                        `Correção: consumo excessivo de ${discrepancy.actualCost} créditos`
-                    );
+                    // 🔥 INICIAR POLLING DE PROGRESSO
+                    const pollingResult = await this._pollProgress(result.process_id);
                     
-                    if (refunded) {
-                        console.log(`✅ ${discrepancy.difference} crédito(s) devolvido(s)`);
+                    if (pollingResult.success && pollingResult.result) {
+                        // 🔥 PROCESSAR RESULTADO COMPLETO
+                        await this._processUploadResult({
+                            success: true,
+                            analysis: pollingResult.result,
+                            chart_data: pollingResult.result.chart_data,
+                            data: {
+                                files: pollingResult.result.files || []
+                            }
+                        }, files);
+                        
+                        this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
+                        this._showToast('✅ Upload concluído com sucesso!', 'success');
+                        this._showResult();
+                        
+                        // 🔥 VERIFICAR CRÉDITOS ATUALIZADOS
                         await this._creditManager.sync(true);
+                    } else {
+                        // 🔥 FALLBACK: Tentar usar a resposta original
+                        console.warn('⚠️ Polling falhou, usando resposta original');
+                        await this._processUploadResult(result, files);
+                        this._showToast('✅ Upload processado!', 'success');
+                        this._showResult();
                     }
+                } else {
+                    // 🔥 SEM PROCESS_ID: Processar resposta normal
+                    await this._processUploadResult(result, files);
+                    this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
+                    this._showToast('✅ Upload concluído com sucesso!', 'success');
+                    this._showResult();
                 }
-
-                await this._processUploadResult(result, files);
-
-                this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
-                this._showToast('✅ Upload concluído com sucesso!', 'success');
-                this._showResult();
 
                 await this._invalidateCache();
                 this._fileCache.clear();
@@ -759,8 +746,276 @@
                 } catch (e) {}
 
                 this._uploadInProgress = false;
+                this._stopPolling();
                 return null;
             }
+        }
+
+        // ==========================================
+        // 🔥🔥🔥 POLLING DE PROGRESSO (NOVO)
+        // ==========================================
+
+        async _pollProgress(processId) {
+            console.log(`📡 [Polling] Iniciando para process_id: ${processId}`);
+            
+            // 🔥 Resetar estado do polling
+            this._stopPolling();
+            this._pollingState = {
+                active: true,
+                processId: processId,
+                attempts: 0,
+                startTime: Date.now(),
+                timeoutId: null,
+            };
+            
+            let attempts = 0;
+            const maxAttempts = CONFIG.POLLING.MAX_ATTEMPTS;
+            const interval = CONFIG.POLLING.INTERVAL;
+            
+            // 🔥 Atualizar status inicial
+            this._showUploadStatus('🔄', 'Processando...', 'Iniciando análise', 10);
+            
+            return new Promise((resolve) => {
+                const poll = async () => {
+                    // Verificar se o polling ainda está ativo
+                    if (!this._pollingState.active) {
+                        console.log('⏹️ [Polling] Interrompido pelo usuário');
+                        resolve({ success: false, error: 'Interrompido' });
+                        return;
+                    }
+                    
+                    attempts++;
+                    this._pollingState.attempts = attempts;
+                    
+                    // 🔥 Verificar timeout
+                    const elapsed = Date.now() - this._pollingState.startTime;
+                    if (elapsed > CONFIG.POLLING.TIMEOUT_MS) {
+                        console.warn('⏰ [Polling] Timeout excedido');
+                        this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando mais que o esperado', 95);
+                        this._showToast('⏳ A análise está demorando. Verifique o histórico.', 'warning');
+                        this._stopPolling();
+                        resolve({ success: false, error: 'Timeout' });
+                        return;
+                    }
+                    
+                    try {
+                        const token = Utils.getToken();
+                        if (!token) {
+                            console.warn('⚠️ [Polling] Token expirado');
+                            this._stopPolling();
+                            resolve({ success: false, error: 'Token expirado' });
+                            return;
+                        }
+                        
+                        const response = await fetch(`/api/analysis/progress/${processId}`, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            if (response.status === 404) {
+                                console.warn('⚠️ [Polling] Process ID não encontrado');
+                                this._stopPolling();
+                                resolve({ success: false, error: 'Processo não encontrado' });
+                                return;
+                            }
+                            throw new Error(`Status: ${response.status}`);
+                        }
+                        
+                        const data = await response.json();
+                        console.log(`📡 [Polling] Tentativa ${attempts}: status=${data.status}, progress=${data.progress}%`);
+                        
+                        // ==========================================
+                        // 🔥 PROCESSAR RESPOSTA DO POLLING
+                        // ==========================================
+                        
+                        if (data.status === 'completed') {
+                            // 🔥✅ CONCLUÍDO!
+                            console.log('✅ [Polling] Análise concluída!');
+                            this._stopPolling();
+                            
+                            // Atualizar status final
+                            this._showUploadStatus('✅', 'Análise concluída!', '100%', 100);
+                            
+                            resolve({
+                                success: true,
+                                result: data.result || {}
+                            });
+                            return;
+                            
+                        } else if (data.status === 'processing') {
+                            // 🔥🔄 EM PROCESSAMENTO
+                            const progress = data.progress || 0;
+                            const message = data.message || 'Processando...';
+                            
+                            // Atualizar barra de progresso
+                            this._showUploadStatus(
+                                '🔄',
+                                `Processando... ${progress}%`,
+                                message,
+                                progress
+                            );
+                            
+                            // 🔥 Se tiver resultado parcial, já pode renderizar
+                            if (data.result && data.result.chart_data) {
+                                console.log('📊 [Polling] Renderizando dados parciais');
+                                this._renderChartPartial(data.result.chart_data);
+                            }
+                            
+                            // Continuar polling
+                            setTimeout(poll, interval);
+                            return;
+                            
+                        } else if (data.status === 'error') {
+                            // 🔥❌ ERRO
+                            console.error('❌ [Polling] Erro no processamento:', data.message);
+                            this._stopPolling();
+                            this._showUploadStatus('❌', 'Erro', data.message || 'Falha no processamento', 0);
+                            this._showToast(`❌ ${data.message || 'Erro no processamento'}`, 'error');
+                            
+                            resolve({
+                                success: false,
+                                error: data.message || 'Erro no processamento'
+                            });
+                            return;
+                            
+                        } else {
+                            // 🔥 Status desconhecido
+                            console.warn(`⚠️ [Polling] Status desconhecido: ${data.status}`);
+                            
+                            // Se já passou muitas tentativas, tentar uma última vez
+                            if (attempts >= maxAttempts) {
+                                this._stopPolling();
+                                this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando mais que o esperado', 95);
+                                this._showToast('⏳ A análise está demorando. Verifique o histórico.', 'warning');
+                                
+                                resolve({
+                                    success: false,
+                                    error: 'Timeout - análise demorou muito'
+                                });
+                                return;
+                            }
+                            
+                            // Continuar polling
+                            setTimeout(poll, interval);
+                            return;
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ [Polling] Erro:', error);
+                        
+                        // 🔥 Tentar novamente em caso de erro
+                        if (attempts < maxAttempts) {
+                            console.log(`🔄 [Polling] Tentando novamente em ${CONFIG.POLLING.RETRY_DELAY}ms...`);
+                            await Utils.sleep(CONFIG.POLLING.RETRY_DELAY);
+                            poll();
+                        } else {
+                            this._stopPolling();
+                            this._showUploadStatus('⚠️', 'Erro de comunicação', 'Tentando reconectar...', 50);
+                            this._showToast('⚠️ Erro ao acompanhar progresso. Verifique o histórico.', 'warning');
+                            
+                            resolve({
+                                success: false,
+                                error: error.message || 'Erro de comunicação'
+                            });
+                        }
+                    }
+                };
+                
+                // 🔥 Iniciar polling
+                poll();
+            });
+        }
+
+        // ==========================================
+        // 🔥 PARAR POLLING
+        // ==========================================
+
+        _stopPolling() {
+            if (this._pollingState.timeoutId) {
+                clearTimeout(this._pollingState.timeoutId);
+                this._pollingState.timeoutId = null;
+            }
+            this._pollingState.active = false;
+            console.log('⏹️ [Polling] Parado');
+        }
+
+        // ==========================================
+        // 🔥 RENDERIZAR GRÁFICO PARCIAL
+        // ==========================================
+
+        _renderChartPartial(chartData) {
+            if (!chartData || !chartData.weekly) return;
+            
+            const canvas = document.getElementById('revenueChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const weekly = chartData.weekly || {};
+            const labels = weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
+            const costs = weekly.costs || [0, 0, 0, 0, 0, 0, 0];
+            
+            // 🔥 Atualizar ou criar gráfico
+            if (window._revenueChart) {
+                window._revenueChart.data.labels = labels;
+                window._revenueChart.data.datasets[0].data = revenue;
+                window._revenueChart.data.datasets[1].data = costs;
+                window._revenueChart.update('none');
+            } else {
+                window._revenueChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Receita',
+                                data: revenue,
+                                backgroundColor: 'rgba(255,107,53,0.8)',
+                                borderColor: 'rgba(255,107,53,1)',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Custos',
+                                data: costs,
+                                backgroundColor: 'rgba(74,158,255,0.8)',
+                                borderColor: 'rgba(74,158,255,1)',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: {
+                                    color: 'rgba(255,255,255,0.7)',
+                                    font: { size: 12 }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: 'rgba(255,255,255,0.5)' }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: 'rgba(255,255,255,0.5)' }
+                            }
+                        },
+                        animation: {
+                            duration: 300
+                        }
+                    }
+                });
+            }
+            
+            console.log('📊 Gráfico parcial renderizado');
         }
 
         // ==========================================
@@ -778,6 +1033,11 @@
             const recommendations = analysis.recommendations || [];
             const executiveScore = analysis.executive_score || {};
             const executiveSummary = analysis.executive_summary || '';
+
+            // 🔥 Renderizar gráfico principal
+            if (chartData && chartData.weekly) {
+                this._renderChartPartial(chartData);
+            }
 
             await this._updateAIReport({
                 executive_score: executiveScore,
@@ -1109,24 +1369,21 @@
         }
 
         // ==========================================
-        // 🔥 HANDLER DE CRÉDITOS ATUALIZADOS (CORRIGIDO)
+        // 🔥 HANDLER DE CRÉDITOS ATUALIZADOS
         // ==========================================
 
         _handleCreditsUpdated(e) {
             const data = e.detail || {};
             
-            // Ignorar eventos com flag _silent (já processados)
             if (data._silent) {
                 return;
             }
             
-            // Verificar se houve mudança real
             if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
                 this._creditManager._balance = data.credits;
                 this._creditManager._isPremium = data.isPremium || false;
                 this._creditManager._isAdmin = data.isAdmin || false;
                 
-                // Atualizar UI sem disparar novo evento
                 const display = this._creditManager.display;
                 const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
                 elements.forEach(el => {
@@ -1247,31 +1504,32 @@
         }
 
         // ==========================================
-        // 🔥 SETUP EVENTS E POLLING (CORRIGIDO)
+        // 🔥 SETUP EVENTS E POLLING
         // ==========================================
 
         _setupEvents() {
-            // Eventos de créditos com prevenção de loop
             document.addEventListener('creditsUpdated', this._handleCreditsUpdated);
 
-            // Eventos de análise
             document.addEventListener('analysis:success', () => {
                 this._invalidateCache();
             });
 
-            // Visibility change com debounce
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
                     this._creditManager.syncDebounced();
                 }
             });
             
-            // 🔥 Evento para recarregar créditos quando o App State mudar
             document.addEventListener('app:state_changed', (e) => {
                 const data = e.detail || {};
                 if (data.key === 'credits' || data.key === 'isPremium') {
                     this._creditManager._loadFromAppState();
                 }
+            });
+            
+            // 🔥 NOVO: Limpar polling ao sair da página
+            window.addEventListener('beforeunload', () => {
+                this._stopPolling();
             });
         }
 
@@ -1310,6 +1568,7 @@
         }
 
         destroy() {
+            this._stopPolling();
             if (this._pollingInterval) {
                 clearInterval(this._pollingInterval);
                 this._pollingInterval = null;
@@ -1371,16 +1630,14 @@
     });
 
     console.log('=' .repeat(60));
-    console.log('🔥 dashboard.js v16.0 carregado - CORREÇÃO DE CRÉDITOS');
+    console.log('🔥 dashboard.js v9.11 carregado - COM POLLING E PROGRESSO');
+    console.log('   ✅ POLLING: Acompanhamento de progresso em tempo real');
+    console.log('   ✅ BARRA DE PROGRESSO: Mostra % e mensagem durante o processamento');
+    console.log('   ✅ RENDERIZAÇÃO ANTECIPADA: Gráficos aparecem assim que concluídos');
+    console.log('   ✅ TIMEOUT: Evita polling infinito (60 segundos)');
+    console.log('   ✅ FALLBACK: Se o polling falhar, tenta usar a resposta original');
     console.log('   ✅ Verificação de créditos com App State primeiro');
-    console.log('   ✅ Sync com fallback múltiplo');
-    console.log('   ✅ Carregamento instantâneo do saldo');
-    console.log('   ✅ Detecção de token via appAuth');
     console.log('   ✅ Consumo: 1 crédito por upload');
-    console.log('   ✅ Detecção automática de consumo excessivo');
-    console.log('   ✅ Rollback automático com devolução de créditos');
-    console.log('   ✅ Sincronização com debounce e throttle');
-    console.log('   ✅ PREVENÇÃO DE LOOP INFINITO');
     console.log('=' .repeat(60));
 
 })();
