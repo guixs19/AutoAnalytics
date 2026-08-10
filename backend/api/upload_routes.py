@@ -92,16 +92,7 @@ except ImportError as e:
             "error": None
         }
 
-try:
-    from backend.ml.report_builder import report_builder, ReportFormat, build_executive_report
-    _report_available = True
-    logger.info("✅ report_builder carregado")
-except ImportError as e:
-    logger.warning(f"⚠️ report_builder não disponível: {e}")
-    class ReportFormat(str, Enum):
-        HTML = "html"
-        PDF = "pdf"
-        JSON = "json"
+
     
     class MockReport:
         def to_dict(self): return {"content": "Relatório gerado (modo fallback)"}
@@ -946,7 +937,7 @@ async def get_user_credits_status(
 
 
 # ==============================================
-# 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING)
+# 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING) - CORRIGIDA
 # ==============================================
 
 @router.get("/analysis/progress/{process_id}")
@@ -969,20 +960,25 @@ async def get_analysis_progress(
     
     # 🔥 SE JÁ CONCLUÍDA, RETORNAR RESULTADOS COMPLETOS
     if analysis.status == "completed":
+        result_data = {
+            "chart_data": analysis.chart_data or {},
+            "executive_summary": analysis.insights or "",
+            "recommendations": analysis.recommendations or [],
+            "confidence_score": analysis.confidence_score or 0,
+            "rows_processed": analysis.rows_processed or 0,
+            "processing_time_ms": analysis.processing_time_ms or 0
+        }
+        
+        # 🔥 SÓ ADICIONAR executive_score SE EXISTIR
+        if hasattr(analysis, 'executive_score') and analysis.executive_score:
+            result_data["executive_score"] = analysis.executive_score
+        
         return {
             "process_id": process_id,
             "status": "completed",
             "progress": 100,
             "message": "Concluído!",
-            "result": {
-                "chart_data": analysis.chart_data or {},
-                "executive_score": analysis.executive_score or {},
-                "executive_summary": analysis.insights or "",
-                "recommendations": analysis.recommendations or [],
-                "confidence_score": analysis.confidence_score or 0,
-                "rows_processed": analysis.rows_processed or 0,
-                "processing_time_ms": analysis.processing_time_ms or 0
-            }
+            "result": result_data
         }
     
     # 🔥 SE EM PROCESSAMENTO, RETORNAR PROGRESSO
