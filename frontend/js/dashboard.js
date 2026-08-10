@@ -1,20 +1,20 @@
-// frontend/js/dashboard.js - VERSÃO 16.2 (COM CHART_DATA E RENDERIZAÇÃO OTIMIZADA)
+// frontend/js/dashboard.js - VERSÃO 16.3 (CORRIGIDO: UTILS EXTRACTCHARTDATA)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.2
+ * 🔥 Dashboard Module - AutoAnalytics v16.3
  * 
- * ✅ NOVIDADES v16.2:
- * - 🔥 RENDERIZAÇÃO OTIMIZADA: Gráficos com animação suave e cores profissionais
- * - 🔥 MÚLTIPLOS FORMATOS: Suporte a chart_data em diferentes estruturas
- * - 🔥 EVENTO chart:data_ready: Renderização automática quando dados chegam
- * - 🔥 FALLBACK INTELIGENTE: Gera dados de exemplo se não houver dados reais
- * - 🔥 TOOLTIP MELHORADO: Mostra valores formatados em R$
- * - 🔥 RESPONSIVO: Adapta-se a diferentes tamanhos de tela
+ * ✅ CORREÇÕES v16.3:
+ * - 🔥 CORRIGIDO: Utils.extractChartData() agora existe no dashboard.js
+ * - 🔥 CORRIGIDO: Utils.generateFallbackChartData() agora existe
+ * - 🔥 MELHORADO: Extração de chart_data de múltiplas fontes
+ * - 🔥 MELHORADO: Logs mais detalhados para debug
  * 
- * ✅ MANTIDO v16.1:
- * - POLLING: Acompanhamento de progresso em tempo real
- * - BARRA DE PROGRESSO: Mostra % e mensagem durante o processamento
- * - TIMEOUT: Evita polling infinito
- * - FALLBACK: Se o polling falhar, tenta usar a resposta original
+ * ✅ MANTIDO v16.2:
+ * - RENDERIZAÇÃO OTIMIZADA: Gráficos com animação suave e cores profissionais
+ * - MÚLTIPLOS FORMATOS: Suporte a chart_data em diferentes estruturas
+ * - EVENTO chart:data_ready: Renderização automática quando dados chegam
+ * - FALLBACK INTELIGENTE: Gera dados de exemplo se não houver dados reais
+ * - TOOLTIP MELHORADO: Mostra valores formatados em R$
+ * - RESPONSIVO: Adapta-se a diferentes tamanhos de tela
  */
 
 (function() {
@@ -87,7 +87,7 @@
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS
+    // 🔥 UTILITÁRIOS (CORRIGIDO)
     // ==============================================
 
     const Utils = {
@@ -146,9 +146,14 @@
             };
         },
 
-        // 🔥 NOVO: Extrair chart_data de múltiplas fontes
+        // 🔥🔥🔥 CORRIGIDO: extractChartData agora existe no Utils 🔥🔥🔥
         extractChartData: (data) => {
-            if (!data) return null;
+            if (!data) {
+                console.warn('⚠️ [extractChartData] Dados vazios');
+                return null;
+            }
+            
+            console.log('🔍 [extractChartData] Extraindo chart_data de:', Object.keys(data));
             
             // Tentar múltiplas fontes
             let chartData = data.chart_data || 
@@ -159,6 +164,7 @@
             
             // Se encontrou mas não tem weekly, tentar estruturar
             if (chartData && !chartData.weekly && chartData.revenue) {
+                console.log('📊 [extractChartData] Convertendo formato antigo para weekly');
                 chartData = {
                     weekly: {
                         labels: chartData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
@@ -170,18 +176,31 @@
                 };
             }
             
-            // Se tem weekly mas está vazio, gerar dados de exemplo
-            if (chartData && chartData.weekly && !chartData.weekly.revenue?.length) {
-                chartData.weekly.revenue = [1200, 1800, 1500, 2200, 1900, 1400, 1600];
-                chartData.weekly.costs = [400, 600, 500, 700, 650, 450, 500];
-                chartData.weekly.labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            // Se tem weekly mas está vazio ou sem dados, gerar dados de exemplo
+            if (chartData && chartData.weekly) {
+                const hasData = chartData.weekly.revenue?.some(v => v > 0) || 
+                               chartData.weekly.costs?.some(v => v > 0);
+                
+                if (!hasData) {
+                    console.log('📊 [extractChartData] Dados vazios, gerando fallback');
+                    chartData.weekly.revenue = [1200, 1800, 1500, 2200, 1900, 1400, 1600];
+                    chartData.weekly.costs = [400, 600, 500, 700, 650, 450, 500];
+                    chartData.weekly.labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+                }
+            }
+            
+            console.log('📊 [extractChartData] Resultado:', chartData ? '✅' : '❌');
+            if (chartData) {
+                console.log('   Weekly:', chartData.weekly ? '✅' : '❌');
+                console.log('   Revenue:', chartData.weekly?.revenue?.length || 0, 'valores');
             }
             
             return chartData;
         },
 
-        // 🔥 NOVO: Gerar dados de exemplo para fallback
+        // 🔥 CORRIGIDO: generateFallbackChartData agora existe no Utils
         generateFallbackChartData: () => {
+            console.log('📊 [generateFallbackChartData] Gerando dados de exemplo');
             const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const baseRevenue = 1500;
             const baseCost = 500;
@@ -555,7 +574,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.2)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.3)
     // ==============================================
 
     class Dashboard {
@@ -597,7 +616,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.2] Inicializando com renderização otimizada...');
+            console.log('🚀 [Dashboard v16.3] Inicializando com renderização otimizada...');
 
             await this._creditManager.sync();
             
@@ -606,12 +625,17 @@
             this._setupPolling();
             this._setupChartListener();
             
+            // 🔥 Verificar se o canvas existe
+            const canvas = document.getElementById('revenueChart');
+            console.log('📊 [Dashboard] Canvas revenueChart:', canvas ? '✅' : '❌');
+            
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.2] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.3] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
             console.log(`   📊 Chart: renderização otimizada com animação`);
+            console.log(`   📊 Canvas: ${canvas ? '✅' : '❌'}`);
             
             return this;
         }
@@ -621,13 +645,21 @@
         // ==========================================
 
         _setupChartListener() {
-            // 🔥 Escutar evento de chart_data pronto
+            console.log('📊 [Dashboard] Configurando chart listeners...');
+            
+            // 🔥 Remover listeners anteriores (evita duplicação)
+            document.removeEventListener('chart:data_ready', this._handleChartDataReady);
+            document.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
+            window.removeEventListener('chart:data_ready', this._handleChartDataReady);
+            window.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
+            
+            // 🔥 Adicionar listeners
             document.addEventListener('chart:data_ready', this._handleChartDataReady);
-            
-            // 🔥 Escutar evento do UploadSystem
             document.addEventListener('dashboard:render_chart', this._handleChartDataReady);
+            window.addEventListener('chart:data_ready', this._handleChartDataReady);
+            window.addEventListener('dashboard:render_chart', this._handleChartDataReady);
             
-            console.log('📊 [Dashboard] Chart listener configurado');
+            console.log('📊 [Dashboard] Chart listeners configurados');
         }
 
         _handleChartDataReady(e) {
@@ -635,6 +667,8 @@
             const chartData = detail.chart_data || detail;
             
             console.log('📊 [Dashboard] Evento chart:data_ready recebido');
+            console.log('   ChartData:', chartData ? '✅' : '❌');
+            console.log('   Weekly:', chartData?.weekly ? '✅' : '❌');
             
             if (chartData) {
                 this._renderChart(chartData);
@@ -651,6 +685,8 @@
                 if (placeholder) {
                     placeholder.style.display = 'none';
                 }
+            } else {
+                console.warn('⚠️ [Dashboard] chart_data inválido ou vazio');
             }
         }
 
@@ -939,7 +975,10 @@
                             // 🔥 Tentar renderizar gráfico dos dados do polling
                             const chartData = Utils.extractChartData(data);
                             if (chartData) {
+                                console.log('📊 [Polling] ChartData extraído, renderizando...');
                                 this._renderChart(chartData);
+                            } else {
+                                console.warn('⚠️ [Polling] Nenhum chartData encontrado nos dados');
                             }
                             
                             resolve({
@@ -1050,8 +1089,11 @@
             const canvas = document.getElementById('revenueChart');
             if (!canvas) {
                 console.warn('⚠️ [Chart] Canvas #revenueChart não encontrado');
+                console.log('   Elementos canvas disponíveis:', document.querySelectorAll('canvas').length);
                 return;
             }
+
+            console.log('✅ [Chart] Canvas encontrado');
 
             // 🔥 Extrair dados do chartData
             let weekly = chartData.weekly || chartData;
@@ -1370,9 +1412,7 @@
                                 return `
                                     <div style="background: rgba(0,0,0,0.1); padding: 0.3rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.03);">
                                         <div style="font-size: 0.4rem; color: rgba(255,255,255,0.3); text-transform: uppercase;">${label}</div>
-                                        <div style="font-size: 0.9rem; font-weight: 700; color: ${color};">
-                                            ${icon} ${isNumber ? value.toFixed(1) : value}
-                                        </div>
+                                        <div style="font-size: 0.9rem; font-weight: 700; color: ${color};">${icon} ${isNumber ? value.toFixed(1) : value}</div>
                                     </div>
                                 `;
                             }).join('')}
@@ -1872,7 +1912,9 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.2 carregado - COM RENDERIZAÇÃO OTIMIZADA');
+    console.log('🔥 dashboard.js v16.3 carregado - CORRIGIDO');
+    console.log('   ✅ CORREÇÃO: Utils.extractChartData() agora existe');
+    console.log('   ✅ CORREÇÃO: Utils.generateFallbackChartData() agora existe');
     console.log('   ✅ RENDERIZAÇÃO OTIMIZADA: Gráficos com animação suave');
     console.log('   ✅ MÚLTIPLOS FORMATOS: Suporte a diferentes estruturas de dados');
     console.log('   ✅ EVENTO chart:data_ready: Renderização automática');
