@@ -1,17 +1,17 @@
-// frontend/js/dashboard.js - VERSÃO 16.4 (TRÊS GRÁFICOS: BARRAS + LINHAS)
+// frontend/js/dashboard.js - VERSÃO 16.5 (COM GPSA - PERFORMANCE DA OFICINA)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.4
+ * 🔥 Dashboard Module - AutoAnalytics v16.5
  * 
- * ✅ NOVIDADES v16.4:
- * - 🔥 TRÊS GRÁFICOS: Barras (Receita vs Custos) + Linha (Serviços) + Linha (Mensal)
- * - 🔥 RENDERIZAÇÃO COMPLETA: Todos os gráficos são gerados automaticamente
- * - 🔥 ANIMAÇÃO SINCRONIZADA: Todos os gráficos animam juntos
- * - 🔥 CORES COORDENADAS: Paleta consistente entre os gráficos
- * - 🔥 RESPONSIVO: Adapta-se a diferentes tamanhos de tela
- * - 🔥 FALLBACK INTELIGENTE: Dados de exemplo se não houver dados reais
+ * ✅ NOVIDADES v16.5:
+ * - 🔥 GPSA - Performance da Oficina: Dashboard completo com 3 abas
+ * - 🔥 MÉTRICAS DE SAÚDE: Score de performance (0-100%) com indicador visual
+ * - 🔥 ABA FINANCEIRO: Receita, Custos, Lucro, Margem, Ticket Médio
+ * - 🔥 ABA SERVIÇOS: Total, Média, Pico, Dia de Pico, Distribuição
+ * - 🔥 ABA TENDÊNCIA: Evolução mensal com análise de crescimento
+ * - 🔥 DESIGN PROFISSIONAL: Cards com gradientes e ícones
  * 
- * ✅ MANTIDO v16.3:
- * - Utils.extractChartData() e generateFallbackChartData()
+ * ✅ MANTIDO v16.4:
+ * - 3 gráficos: Barras (Receita vs Custos) + Linha (Serviços) + Linha (Mensal)
  * - Polling com progresso
  * - Eventos chart:data_ready
  */
@@ -573,7 +573,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.4)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.5)
     // ==============================================
 
     class Dashboard {
@@ -610,6 +610,7 @@
             this._stopPolling = this._stopPolling.bind(this);
             this._renderAllCharts = this._renderAllCharts.bind(this);
             this._handleChartDataReady = this._handleChartDataReady.bind(this);
+            this._renderGPSA = this._renderGPSA.bind(this);
         }
 
         // ==========================================
@@ -622,7 +623,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.4] Inicializando com 3 gráficos...');
+            console.log('🚀 [Dashboard v16.5] Inicializando com GPSA...');
 
             await this._creditManager.sync();
             
@@ -645,10 +646,10 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.4] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.5] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
-            console.log(`   📊 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)`);
+            console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
             
             return this;
         }
@@ -683,6 +684,7 @@
             
             if (chartData) {
                 this._renderAllCharts(chartData);
+                this._renderGPSA(chartData);
                 
                 const resultContainer = document.getElementById('resultContainer');
                 if (resultContainer) {
@@ -985,6 +987,7 @@
                             if (chartData) {
                                 console.log('📊 [Polling] ChartData extraído, renderizando...');
                                 this._renderAllCharts(chartData);
+                                this._renderGPSA(chartData);
                             } else {
                                 console.warn('⚠️ [Polling] Nenhum chartData encontrado nos dados');
                             }
@@ -1010,6 +1013,7 @@
                             if (partialChartData && partialChartData.weekly) {
                                 console.log('📊 [Polling] Renderizando dados parciais');
                                 this._renderAllCharts(partialChartData);
+                                this._renderGPSA(partialChartData);
                             }
                             
                             setTimeout(poll, interval);
@@ -1084,7 +1088,7 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 RENDERIZAR TODOS OS GRÁFICOS (V16.4)
+        // 🔥 RENDERIZAR TODOS OS GRÁFICOS
         // ==========================================
 
         _renderAllCharts(chartData) {
@@ -1095,13 +1099,8 @@
 
             console.log('📊 [Charts] Renderizando 3 gráficos...');
 
-            // 🔥 1. GRÁFICO DE BARRAS - Receita vs Custos
             this._renderRevenueChart(chartData);
-            
-            // 🔥 2. GRÁFICO DE LINHA - Serviços Semanais
             this._renderPerformanceChart(chartData);
-            
-            // 🔥 3. GRÁFICO DE LINHA - Evolução Mensal
             this._renderMonthlyChart(chartData);
 
             console.log('✅ [Charts] Todos os gráficos renderizados!');
@@ -1125,8 +1124,6 @@
                 return;
             }
 
-            console.log('📊 [Chart] Renderizando gráfico de barras...');
-
             const weekly = chartData.weekly || chartData;
             const labels = weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
@@ -1135,7 +1132,6 @@
             const hasData = revenue.some(v => v > 0) || costs.some(v => v > 0);
             
             if (!hasData) {
-                console.warn('⚠️ [Chart] Dados vazios, usando fallback');
                 const fallback = Utils.generateFallbackChartData();
                 return this._renderRevenueChart(fallback);
             }
@@ -1143,9 +1139,7 @@
             const ctx = canvas.getContext('2d');
 
             if (this._chartInstances.revenue) {
-                try {
-                    this._chartInstances.revenue.destroy();
-                } catch (e) {}
+                try { this._chartInstances.revenue.destroy(); } catch (e) {}
                 this._chartInstances.revenue = null;
             }
 
@@ -1187,18 +1181,11 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: {
-                        duration: CONFIG.CHART.ANIMATION_DURATION,
-                        easing: CONFIG.CHART.ANIMATION_EASING,
-                    },
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
+                    interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: {
                             position: 'top',
-                            align: 'center',
                             labels: {
                                 color: CONFIG.COLORS.text,
                                 font: { size: CONFIG.CHART.FONT_SIZE, weight: '500' },
@@ -1238,10 +1225,7 @@
                         },
                         x: {
                             grid: { display: false },
-                            ticks: {
-                                color: CONFIG.COLORS.textMuted,
-                                font: { size: CONFIG.CHART.FONT_SIZE },
-                            }
+                            ticks: { color: CONFIG.COLORS.textMuted, font: { size: CONFIG.CHART.FONT_SIZE } }
                         }
                     }
                 }
@@ -1261,15 +1245,12 @@
                 return;
             }
 
-            console.log('📊 [Chart] Renderizando gráfico de serviços...');
-
             const performance = chartData.performance || {};
             const weekly = chartData.weekly || {};
             const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const services = performance.services || weekly.services || [];
 
             if (!services.length || services.every(v => v === 0)) {
-                console.warn('⚠️ [Chart] Dados de serviços vazios, usando fallback');
                 const fallback = Utils.generateFallbackChartData();
                 return this._renderPerformanceChart(fallback);
             }
@@ -1277,9 +1258,7 @@
             const ctx = canvas.getContext('2d');
 
             if (this._chartInstances.performance) {
-                try {
-                    this._chartInstances.performance.destroy();
-                } catch (e) {}
+                try { this._chartInstances.performance.destroy(); } catch (e) {}
                 this._chartInstances.performance = null;
             }
 
@@ -1304,10 +1283,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: {
-                        duration: CONFIG.CHART.ANIMATION_DURATION,
-                        easing: CONFIG.CHART.ANIMATION_EASING,
-                    },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
                     plugins: {
                         legend: {
                             position: 'top',
@@ -1326,29 +1302,18 @@
                             borderWidth: 1,
                             cornerRadius: 10,
                             padding: 12,
-                            callbacks: {
-                                label: function(context) {
-                                    return context.parsed.y + ' serviços';
-                                }
-                            }
+                            callbacks: { label: function(context) { return context.parsed.y + ' serviços'; } }
                         }
                     },
                     scales: {
                         y: {
                             beginAtZero: true,
                             grid: { color: CONFIG.COLORS.grid, drawBorder: false },
-                            ticks: {
-                                color: CONFIG.COLORS.textMuted,
-                                font: { size: CONFIG.CHART.FONT_SIZE - 1 },
-                                stepSize: 1,
-                            }
+                            ticks: { color: CONFIG.COLORS.textMuted, font: { size: CONFIG.CHART.FONT_SIZE - 1 }, stepSize: 1 }
                         },
                         x: {
                             grid: { display: false },
-                            ticks: {
-                                color: CONFIG.COLORS.textMuted,
-                                font: { size: CONFIG.CHART.FONT_SIZE },
-                            }
+                            ticks: { color: CONFIG.COLORS.textMuted, font: { size: CONFIG.CHART.FONT_SIZE } }
                         }
                     }
                 }
@@ -1368,14 +1333,11 @@
                 return;
             }
 
-            console.log('📊 [Chart] Renderizando gráfico mensal...');
-
             const monthly = chartData.monthly || {};
             const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const revenue = monthly.revenue || [];
 
             if (!revenue.length || revenue.every(v => v === 0)) {
-                console.warn('⚠️ [Chart] Dados mensais vazios, usando fallback');
                 const fallback = Utils.generateFallbackChartData();
                 return this._renderMonthlyChart(fallback);
             }
@@ -1383,9 +1345,7 @@
             const ctx = canvas.getContext('2d');
 
             if (this._chartInstances.monthly) {
-                try {
-                    this._chartInstances.monthly.destroy();
-                } catch (e) {}
+                try { this._chartInstances.monthly.destroy(); } catch (e) {}
                 this._chartInstances.monthly = null;
             }
 
@@ -1410,10 +1370,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: {
-                        duration: CONFIG.CHART.ANIMATION_DURATION,
-                        easing: CONFIG.CHART.ANIMATION_EASING,
-                    },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
                     plugins: {
                         legend: {
                             position: 'top',
@@ -1432,11 +1389,7 @@
                             borderWidth: 1,
                             cornerRadius: 10,
                             padding: 12,
-                            callbacks: {
-                                label: function(context) {
-                                    return Utils.formatCurrency(context.parsed.y);
-                                }
-                            }
+                            callbacks: { label: function(context) { return Utils.formatCurrency(context.parsed.y); } }
                         }
                     },
                     scales: {
@@ -1452,17 +1405,465 @@
                         },
                         x: {
                             grid: { display: false },
-                            ticks: {
-                                color: CONFIG.COLORS.textMuted,
-                                font: { size: CONFIG.CHART.FONT_SIZE },
-                                maxTicksLimit: 12,
-                            }
+                            ticks: { color: CONFIG.COLORS.textMuted, font: { size: CONFIG.CHART.FONT_SIZE }, maxTicksLimit: 12 }
                         }
                     }
                 }
             });
 
             console.log('✅ [Chart] Gráfico mensal renderizado');
+        }
+
+        // ==========================================
+        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA (NOVO)
+        // ==========================================
+
+        _renderGPSA(chartData) {
+            console.log('📊 [GPSA] Renderizando Performance da Oficina...');
+            
+            const tabsContainer = document.getElementById('gpsaTabs');
+            const tabContent = document.getElementById('gpsaTabContent');
+            const placeholder = document.getElementById('gpsaPlaceholder');
+            const healthIndicator = document.getElementById('gpsaHealthIndicator');
+            
+            if (!tabsContainer || !tabContent) {
+                console.warn('⚠️ [GPSA] Elementos não encontrados');
+                return;
+            }
+            
+            // Esconder placeholder
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            
+            // Extrair dados
+            const weekly = chartData.weekly || {};
+            const performance = chartData.performance || {};
+            const monthly = chartData.monthly || {};
+            
+            const labels = weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const revenue = weekly.revenue || [];
+            const costs = weekly.costs || [];
+            const services = performance.services || [];
+            const monthlyRevenue = monthly.revenue || [];
+            const monthlyLabels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            
+            // Calcular métricas para o GPSA
+            const totalRevenue = revenue.reduce((a, b) => a + b, 0);
+            const totalCosts = costs.reduce((a, b) => a + b, 0);
+            const totalServices = services.reduce((a, b) => a + b, 0);
+            const profit = totalRevenue - totalCosts;
+            const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
+            const avgServices = services.length > 0 ? Math.round(totalServices / services.length) : 0;
+            const maxService = services.length > 0 ? Math.max(...services) : 0;
+            const peakDay = services.length > 0 ? labels[services.indexOf(maxService)] : '-';
+            const ticketMedio = totalServices > 0 ? totalRevenue / totalServices : 0;
+            
+            // Score de saúde (0-100)
+            const score = Math.min(100, Math.max(0, Math.round(
+                (margin > 30 ? 40 : margin > 15 ? 25 : 10) +
+                (avgServices > 10 ? 30 : avgServices > 5 ? 20 : 10) +
+                (totalServices > 50 ? 20 : totalServices > 20 ? 10 : 5) +
+                (totalRevenue > 5000 ? 10 : 5)
+            )));
+            
+            // Atualizar indicador de saúde
+            if (healthIndicator) {
+                const status = this._getGPSAStatus(score);
+                healthIndicator.innerHTML = `
+                    <i class="fas fa-circle me-1" style="color: ${status.color}; font-size: 0.4rem;"></i>
+                    ${status.icon} ${status.label} (${score}%)
+                `;
+                healthIndicator.style.background = status.bgColor;
+                healthIndicator.style.color = status.textColor;
+                healthIndicator.style.borderColor = status.borderColor;
+            }
+            
+            // Construir abas
+            const tabs = [
+                {
+                    id: 'gpsa-financeiro',
+                    icon: 'fa-chart-bar',
+                    label: '💰 Financeiro',
+                    active: true,
+                    content: this._renderGPSAFinanceiro(totalRevenue, totalCosts, profit, margin, ticketMedio, totalServices)
+                },
+                {
+                    id: 'gpsa-servicos',
+                    icon: 'fa-wrench',
+                    label: '🔧 Serviços',
+                    active: false,
+                    content: this._renderGPSAServicos(labels, services, totalServices, avgServices, maxService, peakDay)
+                },
+                {
+                    id: 'gpsa-tendencia',
+                    icon: 'fa-chart-line',
+                    label: '📈 Tendência',
+                    active: false,
+                    content: this._renderGPSATendencia(monthlyLabels, monthlyRevenue)
+                }
+            ];
+            
+            // Renderizar abas
+            tabsContainer.innerHTML = tabs.map((tab, index) => `
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link ${tab.active ? 'active' : ''}" 
+                            id="${tab.id}-tab" 
+                            data-bs-toggle="tab" 
+                            data-bs-target="#${tab.id}" 
+                            type="button" 
+                            role="tab" 
+                            style="color: rgba(255,255,255,0.6); border: none; background: transparent; padding: 0.4rem 1rem; font-size: 0.7rem; font-weight: 600; transition: all 0.3s;"
+                            onmouseover="this.style.color='#ff6b35'"
+                            onmouseout="this.style.color='rgba(255,255,255,0.6)'">
+                        <i class="fas ${tab.icon}" style="margin-right: 0.3rem;"></i>
+                        ${tab.label}
+                    </button>
+                </li>
+            `).join('');
+            
+            // Renderizar conteúdo das abas
+            tabContent.innerHTML = tabs.map((tab, index) => `
+                <div class="tab-pane fade ${tab.active ? 'show active' : ''}" 
+                     id="${tab.id}" 
+                     role="tabpanel" 
+                     aria-labelledby="${tab.id}-tab"
+                     style="padding: 0.5rem 0;">
+                    ${tab.content}
+                </div>
+            `).join('');
+            
+            // Adicionar estilo para abas
+            const styleEl = document.getElementById('gpsa-tab-style');
+            if (!styleEl) {
+                const style = document.createElement('style');
+                style.id = 'gpsa-tab-style';
+                style.textContent = `
+                    #gpsaTabs .nav-link.active {
+                        color: #ff6b35 !important;
+                        background: rgba(255,107,53,0.08) !important;
+                        border-radius: 8px !important;
+                    }
+                    #gpsaTabs .nav-link {
+                        border-radius: 8px !important;
+                    }
+                    #gpsaTabs .nav-link:hover {
+                        color: #ff6b35 !important;
+                        background: rgba(255,107,53,0.04) !important;
+                    }
+                    .gpsa-stat-card {
+                        background: rgba(0,0,0,0.15);
+                        border-radius: 10px;
+                        padding: 0.6rem;
+                        text-align: center;
+                        border: 1px solid rgba(255,255,255,0.04);
+                        transition: all 0.3s;
+                    }
+                    .gpsa-stat-card:hover {
+                        background: rgba(255,107,53,0.06);
+                        border-color: rgba(255,107,53,0.1);
+                        transform: translateY(-2px);
+                    }
+                    .gpsa-stat-value {
+                        font-size: 1.2rem;
+                        font-weight: 800;
+                        color: #ff6b35;
+                        line-height: 1.2;
+                    }
+                    .gpsa-stat-label {
+                        font-size: 0.55rem;
+                        color: rgba(255,255,255,0.4);
+                        text-transform: uppercase;
+                        letter-spacing: 0.3px;
+                        margin-top: 2px;
+                    }
+                    .gpsa-stat-value.success { color: #48bb78; }
+                    .gpsa-stat-value.danger { color: #f56565; }
+                    .gpsa-stat-value.warning { color: #f5a623; }
+                    .gpsa-insight {
+                        padding: 0.4rem 0.6rem;
+                        background: rgba(0,0,0,0.1);
+                        border-radius: 6px;
+                        border-left: 3px solid #ff6b35;
+                        font-size: 0.75rem;
+                        color: rgba(255,255,255,0.7);
+                        margin-bottom: 0.3rem;
+                    }
+                    .gpsa-insight:last-child { margin-bottom: 0; }
+                    .gpsa-insight .icon { margin-right: 0.4rem; }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            console.log('✅ [GPSA] Renderizado com sucesso!');
+        }
+
+        // ==========================================
+        // 🔥 GPSA - ABA FINANCEIRO
+        // ==========================================
+
+        _renderGPSAFinanceiro(totalRevenue, totalCosts, profit, margin, ticketMedio, totalServices) {
+            const profitColor = profit >= 0 ? 'success' : 'danger';
+            const marginColor = margin > 30 ? 'success' : margin > 15 ? 'warning' : 'danger';
+            
+            return `
+                <div class="row g-2">
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${Utils.formatCompactCurrency(totalRevenue)}</div>
+                            <div class="gpsa-stat-label">📊 Receita Total</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${Utils.formatCompactCurrency(totalCosts)}</div>
+                            <div class="gpsa-stat-label">📉 Custos Totais</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value ${profitColor}">${Utils.formatCompactCurrency(profit)}</div>
+                            <div class="gpsa-stat-label">💰 Lucro</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value ${marginColor}">${margin.toFixed(1)}%</div>
+                            <div class="gpsa-stat-label">📈 Margem</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${Utils.formatCompactCurrency(ticketMedio)}</div>
+                            <div class="gpsa-stat-label">🎫 Ticket Médio</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${totalServices}</div>
+                            <div class="gpsa-stat-label">🔧 Total Serviços</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="gpsa-insight">
+                            <span class="icon">💡</span>
+                            ${margin > 30 ? 'Ótima margem! Sua oficina está muito saudável financeiramente.' :
+                              margin > 15 ? 'Margem saudável. Continue monitorando custos.' :
+                              'Margem abaixo do ideal. Reveja custos e precificação.'}
+                        </div>
+                        <div class="gpsa-insight">
+                            <span class="icon">📌</span>
+                            ${totalServices > 50 ? 'Alto volume de serviços. Mantenha a qualidade!' :
+                              totalServices > 20 ? 'Bom volume de serviços. Busque crescer mais.' :
+                              'Volume de serviços baixo. Invista em marketing e retenção.'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // 🔥 GPSA - ABA SERVIÇOS
+        // ==========================================
+
+        _renderGPSAServicos(labels, services, totalServices, avgServices, maxService, peakDay) {
+            const daysWithServices = services.filter(s => s > 0).length;
+            const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const dayLabels = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+            
+            // Distribuição por dia
+            const distribution = labels.map((label, i) => ({
+                day: dayLabels[i] || label,
+                short: label,
+                value: services[i] || 0,
+                percentage: totalServices > 0 ? ((services[i] || 0) / totalServices * 100) : 0
+            }));
+            
+            const sorted = [...distribution].sort((a, b) => b.value - a.value);
+            const topDay = sorted[0] || { day: '-', value: 0, percentage: 0 };
+            
+            return `
+                <div class="row g-2">
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${totalServices}</div>
+                            <div class="gpsa-stat-label">🔧 Total Serviços</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${avgServices}</div>
+                            <div class="gpsa-stat-label">📊 Média/Semana</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${maxService}</div>
+                            <div class="gpsa-stat-label">🔥 Pico Diário</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value" style="color: #f5a623;">${peakDay}</div>
+                            <div class="gpsa-stat-label">📅 Dia de Pico</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-12">
+                        <div class="gpsa-insight">
+                            <span class="icon">📊</span>
+                            ${daysWithServices >= 7 ? 'Atendimento em todos os dias da semana!' :
+                              daysWithServices >= 5 ? 'Boa distribuição de serviços durante a semana.' :
+                              'Concentração de serviços em poucos dias. Considere distribuir melhor.'}
+                        </div>
+                        <div class="gpsa-insight">
+                            <span class="icon">🎯</span>
+                            ${topDay.value > avgServices * 1.5 ? 
+                              `${topDay.day} tem ${topDay.percentage.toFixed(0)}% dos serviços. Aproveite esse dia para ações especiais.` :
+                              'Distribuição equilibrada de serviços ao longo da semana.'}
+                        </div>
+                        <div style="margin-top: 0.3rem;">
+                            ${distribution.map(d => `
+                                <div style="display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.1rem; font-size: 0.6rem;">
+                                    <span style="width: 40px; color: rgba(255,255,255,0.3);">${d.short}</span>
+                                    <div style="flex: 1; height: 4px; background: rgba(255,255,255,0.04); border-radius: 4px; overflow: hidden;">
+                                        <div style="height: 100%; width: ${d.percentage}%; background: linear-gradient(90deg, ${d.value > avgServices ? '#ff6b35' : '#4a9eff'}, ${d.value > avgServices ? '#f7931e' : '#6db3ff'}); border-radius: 4px;"></div>
+                                    </div>
+                                    <span style="width: 30px; text-align: right; color: rgba(255,255,255,0.5); font-weight: 600;">${d.value}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // 🔥 GPSA - ABA TENDÊNCIA
+        // ==========================================
+
+        _renderGPSATendencia(monthlyLabels, monthlyRevenue) {
+            const totalYear = monthlyRevenue.reduce((a, b) => a + b, 0);
+            const avgMonth = monthlyRevenue.length > 0 ? totalYear / monthlyRevenue.length : 0;
+            const maxMonth = monthlyRevenue.length > 0 ? Math.max(...monthlyRevenue) : 0;
+            const minMonth = monthlyRevenue.length > 0 ? Math.min(...monthlyRevenue) : 0;
+            const maxIdx = monthlyRevenue.indexOf(maxMonth);
+            const minIdx = monthlyRevenue.indexOf(minMonth);
+            
+            // Tendência de crescimento (primeiro vs último semestre)
+            const half = Math.floor(monthlyRevenue.length / 2);
+            const firstHalf = monthlyRevenue.slice(0, half).reduce((a, b) => a + b, 0);
+            const secondHalf = monthlyRevenue.slice(half).reduce((a, b) => a + b, 0);
+            const growth = firstHalf > 0 ? ((secondHalf - firstHalf) / firstHalf * 100) : 0;
+            
+            const growthColor = growth > 10 ? 'success' : growth > -5 ? 'warning' : 'danger';
+            const growthIcon = growth > 10 ? '📈' : growth > -5 ? '➡️' : '📉';
+            
+            return `
+                <div class="row g-2">
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${Utils.formatCompactCurrency(totalYear)}</div>
+                            <div class="gpsa-stat-label">📊 Total Anual</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value">${Utils.formatCompactCurrency(avgMonth)}</div>
+                            <div class="gpsa-stat-label">📅 Média Mensal</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value" style="color: #48bb78;">${Utils.formatCompactCurrency(maxMonth)}</div>
+                            <div class="gpsa-stat-label">📈 Melhor Mês (${monthlyLabels[maxIdx] || '-'})</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="gpsa-stat-card">
+                            <div class="gpsa-stat-value" style="color: #f56565;">${Utils.formatCompactCurrency(minMonth)}</div>
+                            <div class="gpsa-stat-label">📉 Pior Mês (${monthlyLabels[minIdx] || '-'})</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-12">
+                        <div class="gpsa-insight">
+                            <span class="icon">${growthIcon}</span>
+                            <strong>Crescimento:</strong> ${growth > 0 ? '+' : ''}${growth.toFixed(1)}% 
+                            ${growth > 10 ? '🚀 Excelente crescimento!' :
+                              growth > 0 ? '📈 Crescimento positivo' :
+                              growth > -5 ? '📊 Estabilidade' :
+                              '⚠️ Queda detectada. Revise estratégias.'}
+                        </div>
+                        <div class="gpsa-insight">
+                            <span class="icon">📌</span>
+                            <strong>Variação:</strong> ${Utils.formatCompactCurrency(maxMonth - minMonth)} entre melhor e pior mês 
+                            (${((maxMonth - minMonth) / (minMonth || 1) * 100).toFixed(0)}% de diferença)
+                        </div>
+                        <div style="display: flex; gap: 0.1rem; margin-top: 0.3rem; align-items: flex-end; height: 40px;">
+                            ${monthlyRevenue.map((val, i) => {
+                                const height = Math.max(3, (val / (maxMonth || 1)) * 35);
+                                const isMax = val === maxMonth;
+                                const isMin = val === minMonth;
+                                return `
+                                    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.05rem;">
+                                        <div style="height: ${height}px; width: 100%; background: ${isMax ? '#ff6b35' : isMin ? '#f56565' : 'rgba(74,158,255,0.5)'}; border-radius: 2px 2px 0 0; transition: all 0.3s;"></div>
+                                        <span style="font-size: 0.4rem; color: rgba(255,255,255,0.2);">${monthlyLabels[i] || ''}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // 🔥 GPSA - STATUS DE SAÚDE
+        // ==========================================
+
+        _getGPSAStatus(score) {
+            if (score >= 80) {
+                return {
+                    label: 'Excelente',
+                    icon: '🟢',
+                    color: '#48bb78',
+                    bgColor: 'rgba(72,187,120,0.12)',
+                    textColor: '#48bb78',
+                    borderColor: 'rgba(72,187,120,0.2)'
+                };
+            } else if (score >= 60) {
+                return {
+                    label: 'Bom',
+                    icon: '🔵',
+                    color: '#4a9eff',
+                    bgColor: 'rgba(74,158,255,0.12)',
+                    textColor: '#4a9eff',
+                    borderColor: 'rgba(74,158,255,0.2)'
+                };
+            } else if (score >= 40) {
+                return {
+                    label: 'Regular',
+                    icon: '🟡',
+                    color: '#f5a623',
+                    bgColor: 'rgba(245,166,35,0.12)',
+                    textColor: '#f5a623',
+                    borderColor: 'rgba(245,166,35,0.2)'
+                };
+            } else {
+                return {
+                    label: 'Atenção',
+                    icon: '🔴',
+                    color: '#f56565',
+                    bgColor: 'rgba(245,101,101,0.12)',
+                    textColor: '#f56565',
+                    borderColor: 'rgba(245,101,101,0.2)'
+                };
+            }
         }
 
         // ==========================================
@@ -1476,9 +1877,7 @@
             }
 
             const analysis = result.analysis || {};
-            
             const chartData = Utils.extractChartData(result);
-            
             const recommendations = analysis.recommendations || result.recommendations || [];
             const executiveScore = analysis.executive_score || result.executive_score || {};
             const executiveSummary = analysis.executive_summary || result.executive_summary || '';
@@ -1487,6 +1886,7 @@
 
             if (chartData) {
                 this._renderAllCharts(chartData);
+                this._renderGPSA(chartData);
             }
 
             await this._updateAIReport({
@@ -2035,6 +2435,10 @@
             return this._renderAllCharts(chartData);
         }
 
+        renderGPSA(chartData) {
+            return this._renderGPSA(chartData);
+        }
+
         destroy() {
             this._stopPolling();
             if (this._pollingInterval) {
@@ -2106,10 +2510,11 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.4 carregado - 3 GRÁFICOS');
+    console.log('🔥 dashboard.js v16.5 carregado - COM GPSA');
     console.log('   ✅ GRÁFICO 1: Barras (Receita vs Custos)');
     console.log('   ✅ GRÁFICO 2: Linha (Serviços Semanais)');
     console.log('   ✅ GRÁFICO 3: Linha (Evolução Mensal)');
+    console.log('   ✅ GPSA: Performance da Oficina (3 abas)');
     console.log('   ✅ RENDERIZAÇÃO COMPLETA: Todos os gráficos juntos');
     console.log('   ✅ ANIMAÇÃO SINCRONIZADA: Transições suaves');
     console.log('   ✅ CORES COORDENADAS: Paleta consistente');
