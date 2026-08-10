@@ -1,20 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO 16.3 (CORRIGIDO: UTILS EXTRACTCHARTDATA)
+// frontend/js/dashboard.js - VERSÃO 16.4 (TRÊS GRÁFICOS: BARRAS + LINHAS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.3
+ * 🔥 Dashboard Module - AutoAnalytics v16.4
  * 
- * ✅ CORREÇÕES v16.3:
- * - 🔥 CORRIGIDO: Utils.extractChartData() agora existe no dashboard.js
- * - 🔥 CORRIGIDO: Utils.generateFallbackChartData() agora existe
- * - 🔥 MELHORADO: Extração de chart_data de múltiplas fontes
- * - 🔥 MELHORADO: Logs mais detalhados para debug
+ * ✅ NOVIDADES v16.4:
+ * - 🔥 TRÊS GRÁFICOS: Barras (Receita vs Custos) + Linha (Serviços) + Linha (Mensal)
+ * - 🔥 RENDERIZAÇÃO COMPLETA: Todos os gráficos são gerados automaticamente
+ * - 🔥 ANIMAÇÃO SINCRONIZADA: Todos os gráficos animam juntos
+ * - 🔥 CORES COORDENADAS: Paleta consistente entre os gráficos
+ * - 🔥 RESPONSIVO: Adapta-se a diferentes tamanhos de tela
+ * - 🔥 FALLBACK INTELIGENTE: Dados de exemplo se não houver dados reais
  * 
- * ✅ MANTIDO v16.2:
- * - RENDERIZAÇÃO OTIMIZADA: Gráficos com animação suave e cores profissionais
- * - MÚLTIPLOS FORMATOS: Suporte a chart_data em diferentes estruturas
- * - EVENTO chart:data_ready: Renderização automática quando dados chegam
- * - FALLBACK INTELIGENTE: Gera dados de exemplo se não houver dados reais
- * - TOOLTIP MELHORADO: Mostra valores formatados em R$
- * - RESPONSIVO: Adapta-se a diferentes tamanhos de tela
+ * ✅ MANTIDO v16.3:
+ * - Utils.extractChartData() e generateFallbackChartData()
+ * - Polling com progresso
+ * - Eventos chart:data_ready
  */
 
 (function() {
@@ -62,6 +61,8 @@
             dangerLight: 'rgba(245,101,101,0.3)',
             secondary: '#4a9eff',
             secondaryLight: 'rgba(74,158,255,0.3)',
+            tertiary: '#9b59b6',
+            tertiaryLight: 'rgba(155,89,182,0.3)',
             background: 'rgba(255,255,255,0.05)',
             text: 'rgba(255,255,255,0.8)',
             textMuted: 'rgba(255,255,255,0.4)',
@@ -72,11 +73,13 @@
         CHART: {
             ANIMATION_DURATION: 800,
             ANIMATION_EASING: 'easeOutQuart',
-            BAR_THICKNESS: 32,
+            BAR_THICKNESS: 28,
             BAR_PERCENTAGE: 0.7,
             CATEGORY_PERCENTAGE: 0.8,
-            FONT_SIZE: 11,
-            LEGEND_PADDING: 15,
+            FONT_SIZE: 10,
+            LEGEND_PADDING: 12,
+            LINE_TENSION: 0.4,
+            POINT_RADIUS: 4,
         },
         
         TIMEOUTS: {
@@ -87,7 +90,7 @@
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (CORRIGIDO)
+    // 🔥 UTILITÁRIOS
     // ==============================================
 
     const Utils = {
@@ -146,7 +149,6 @@
             };
         },
 
-        // 🔥🔥🔥 CORRIGIDO: extractChartData agora existe no Utils 🔥🔥🔥
         extractChartData: (data) => {
             if (!data) {
                 console.warn('⚠️ [extractChartData] Dados vazios');
@@ -155,14 +157,12 @@
             
             console.log('🔍 [extractChartData] Extraindo chart_data de:', Object.keys(data));
             
-            // Tentar múltiplas fontes
             let chartData = data.chart_data || 
                            data.result?.chart_data || 
                            data.analysis?.chart_data || 
                            data.data?.chart_data || 
                            null;
             
-            // Se encontrou mas não tem weekly, tentar estruturar
             if (chartData && !chartData.weekly && chartData.revenue) {
                 console.log('📊 [extractChartData] Convertendo formato antigo para weekly');
                 chartData = {
@@ -176,16 +176,13 @@
                 };
             }
             
-            // Se tem weekly mas está vazio ou sem dados, gerar dados de exemplo
             if (chartData && chartData.weekly) {
                 const hasData = chartData.weekly.revenue?.some(v => v > 0) || 
                                chartData.weekly.costs?.some(v => v > 0);
                 
                 if (!hasData) {
                     console.log('📊 [extractChartData] Dados vazios, gerando fallback');
-                    chartData.weekly.revenue = [1200, 1800, 1500, 2200, 1900, 1400, 1600];
-                    chartData.weekly.costs = [400, 600, 500, 700, 650, 450, 500];
-                    chartData.weekly.labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+                    chartData = Utils.generateFallbackChartData();
                 }
             }
             
@@ -198,10 +195,10 @@
             return chartData;
         },
 
-        // 🔥 CORRIGIDO: generateFallbackChartData agora existe no Utils
         generateFallbackChartData: () => {
             console.log('📊 [generateFallbackChartData] Gerando dados de exemplo');
             const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const baseRevenue = 1500;
             const baseCost = 500;
             
@@ -216,8 +213,10 @@
                     services: days.map(() => Math.floor(Math.random() * 8) + 3)
                 },
                 monthly: {
-                    labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
-                    revenue: Array.from({ length: 12 }, (_, i) => Math.round((10000 + i * 500 + Math.random() * 2000) * 100) / 100)
+                    labels: months,
+                    revenue: Array.from({ length: 12 }, (_, i) => 
+                        Math.round((10000 + i * 500 + Math.random() * 2000) * 100) / 100
+                    )
                 }
             };
         }
@@ -574,7 +573,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.3)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.4)
     // ==============================================
 
     class Dashboard {
@@ -585,7 +584,14 @@
             this._creditManager = new CreditManager();
             this._fileCache = new Map();
             this._analysisCache = new Map();
-            this._chartInstance = null;
+            
+            // 🔥 Instâncias dos gráficos
+            this._chartInstances = {
+                revenue: null,
+                performance: null,
+                monthly: null
+            };
+            
             this._pendingChartData = null;
             
             this._pollingState = {
@@ -602,7 +608,7 @@
             this._handleCreditsUpdated = this._handleCreditsUpdated.bind(this);
             this._pollProgress = this._pollProgress.bind(this);
             this._stopPolling = this._stopPolling.bind(this);
-            this._renderChart = this._renderChart.bind(this);
+            this._renderAllCharts = this._renderAllCharts.bind(this);
             this._handleChartDataReady = this._handleChartDataReady.bind(this);
         }
 
@@ -616,7 +622,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.3] Inicializando com renderização otimizada...');
+            console.log('🚀 [Dashboard v16.4] Inicializando com 3 gráficos...');
 
             await this._creditManager.sync();
             
@@ -625,17 +631,24 @@
             this._setupPolling();
             this._setupChartListener();
             
-            // 🔥 Verificar se o canvas existe
-            const canvas = document.getElementById('revenueChart');
-            console.log('📊 [Dashboard] Canvas revenueChart:', canvas ? '✅' : '❌');
+            // 🔥 Verificar se os canvases existem
+            const canvases = {
+                revenue: document.getElementById('revenueChart'),
+                performance: document.getElementById('performanceChart'),
+                monthly: document.getElementById('monthlyChart')
+            };
+            
+            console.log('📊 [Dashboard] Canvases:');
+            console.log(`   revenueChart: ${canvases.revenue ? '✅' : '❌'}`);
+            console.log(`   performanceChart: ${canvases.performance ? '✅' : '❌'}`);
+            console.log(`   monthlyChart: ${canvases.monthly ? '✅' : '❌'}`);
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.3] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.4] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
-            console.log(`   📊 Chart: renderização otimizada com animação`);
-            console.log(`   📊 Canvas: ${canvas ? '✅' : '❌'}`);
+            console.log(`   📊 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)`);
             
             return this;
         }
@@ -647,13 +660,11 @@
         _setupChartListener() {
             console.log('📊 [Dashboard] Configurando chart listeners...');
             
-            // 🔥 Remover listeners anteriores (evita duplicação)
             document.removeEventListener('chart:data_ready', this._handleChartDataReady);
             document.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
             window.removeEventListener('chart:data_ready', this._handleChartDataReady);
             window.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
             
-            // 🔥 Adicionar listeners
             document.addEventListener('chart:data_ready', this._handleChartDataReady);
             document.addEventListener('dashboard:render_chart', this._handleChartDataReady);
             window.addEventListener('chart:data_ready', this._handleChartDataReady);
@@ -671,16 +682,14 @@
             console.log('   Weekly:', chartData?.weekly ? '✅' : '❌');
             
             if (chartData) {
-                this._renderChart(chartData);
+                this._renderAllCharts(chartData);
                 
-                // 🔥 Mostrar container de resultado
                 const resultContainer = document.getElementById('resultContainer');
                 if (resultContainer) {
                     resultContainer.classList.add('show');
                     resultContainer.style.display = 'block';
                 }
                 
-                // 🔥 Esconder placeholder
                 const placeholder = document.getElementById('resultPlaceholder');
                 if (placeholder) {
                     placeholder.style.display = 'none';
@@ -972,11 +981,10 @@
                             this._stopPolling();
                             this._showUploadStatus('✅', 'Análise concluída!', '100%', 100);
                             
-                            // 🔥 Tentar renderizar gráfico dos dados do polling
                             const chartData = Utils.extractChartData(data);
                             if (chartData) {
                                 console.log('📊 [Polling] ChartData extraído, renderizando...');
-                                this._renderChart(chartData);
+                                this._renderAllCharts(chartData);
                             } else {
                                 console.warn('⚠️ [Polling] Nenhum chartData encontrado nos dados');
                             }
@@ -998,11 +1006,10 @@
                                 progress
                             );
                             
-                            // 🔥 Se tiver resultado parcial, já pode renderizar
                             const partialChartData = Utils.extractChartData(data);
                             if (partialChartData && partialChartData.weekly) {
                                 console.log('📊 [Polling] Renderizando dados parciais');
-                                this._renderChart(partialChartData);
+                                this._renderAllCharts(partialChartData);
                             }
                             
                             setTimeout(poll, interval);
@@ -1077,68 +1084,72 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 RENDERIZAR GRÁFICO (OTIMIZADO)
+        // 🔥🔥🔥 RENDERIZAR TODOS OS GRÁFICOS (V16.4)
         // ==========================================
 
-        _renderChart(chartData) {
+        _renderAllCharts(chartData) {
             if (!chartData) {
-                console.warn('⚠️ [Chart] Nenhum dado para renderizar');
+                console.warn('⚠️ [Charts] Nenhum dado para renderizar');
                 return;
             }
 
+            console.log('📊 [Charts] Renderizando 3 gráficos...');
+
+            // 🔥 1. GRÁFICO DE BARRAS - Receita vs Custos
+            this._renderRevenueChart(chartData);
+            
+            // 🔥 2. GRÁFICO DE LINHA - Serviços Semanais
+            this._renderPerformanceChart(chartData);
+            
+            // 🔥 3. GRÁFICO DE LINHA - Evolução Mensal
+            this._renderMonthlyChart(chartData);
+
+            console.log('✅ [Charts] Todos os gráficos renderizados!');
+            
+            window.dispatchEvent(new CustomEvent('dashboard:all_charts_rendered', {
+                detail: {
+                    charts: ['revenue', 'performance', 'monthly'],
+                    timestamp: Date.now()
+                }
+            }));
+        }
+
+        // ==========================================
+        // 🔥 GRÁFICO 1: RECEITA VS CUSTOS (BARRAS)
+        // ==========================================
+
+        _renderRevenueChart(chartData) {
             const canvas = document.getElementById('revenueChart');
             if (!canvas) {
                 console.warn('⚠️ [Chart] Canvas #revenueChart não encontrado');
-                console.log('   Elementos canvas disponíveis:', document.querySelectorAll('canvas').length);
                 return;
             }
 
-            console.log('✅ [Chart] Canvas encontrado');
+            console.log('📊 [Chart] Renderizando gráfico de barras...');
 
-            // 🔥 Extrair dados do chartData
-            let weekly = chartData.weekly || chartData;
-            
-            // 🔥 Se não tiver weekly, mas tiver revenue diretamente
-            if (!weekly.labels && chartData.labels) {
-                weekly = {
-                    labels: chartData.labels,
-                    revenue: chartData.revenue || chartData.data || [],
-                    costs: chartData.costs || []
-                };
-            }
-
+            const weekly = chartData.weekly || chartData;
             const labels = weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
             const costs = weekly.costs || [0, 0, 0, 0, 0, 0, 0];
 
-            // 🔥 Verificar se os dados são válidos
             const hasData = revenue.some(v => v > 0) || costs.some(v => v > 0);
             
             if (!hasData) {
                 console.warn('⚠️ [Chart] Dados vazios, usando fallback');
                 const fallback = Utils.generateFallbackChartData();
-                return this._renderChart(fallback);
+                return this._renderRevenueChart(fallback);
             }
-
-            console.log('📊 [Chart] Renderizando gráfico:');
-            console.log(`   Labels: ${labels.length}`);
-            console.log(`   Revenue: ${revenue.length} valores`);
-            console.log(`   Costs: ${costs.length} valores`);
 
             const ctx = canvas.getContext('2d');
 
-            // 🔥 Destruir gráfico existente
-            if (this._chartInstance) {
+            if (this._chartInstances.revenue) {
                 try {
-                    this._chartInstance.destroy();
-                } catch (e) {
-                    console.warn('⚠️ [Chart] Erro ao destruir gráfico:', e);
-                }
-                this._chartInstance = null;
+                    this._chartInstances.revenue.destroy();
+                } catch (e) {}
+                this._chartInstances.revenue = null;
             }
 
-            // 🔥 Configuração do Chart.js com animação suave
-            this._chartInstance = new Chart(ctx, {
+            this._chartInstances.revenue = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: labels,
@@ -1179,9 +1190,6 @@
                     animation: {
                         duration: CONFIG.CHART.ANIMATION_DURATION,
                         easing: CONFIG.CHART.ANIMATION_EASING,
-                        onComplete: function() {
-                            console.log('📊 [Chart] Animação concluída');
-                        }
                     },
                     interaction: {
                         mode: 'index',
@@ -1193,10 +1201,7 @@
                             align: 'center',
                             labels: {
                                 color: CONFIG.COLORS.text,
-                                font: {
-                                    size: CONFIG.CHART.FONT_SIZE,
-                                    weight: '500',
-                                },
+                                font: { size: CONFIG.CHART.FONT_SIZE, weight: '500' },
                                 padding: CONFIG.CHART.LEGEND_PADDING,
                                 usePointStyle: true,
                                 pointStyle: 'circle',
@@ -1205,25 +1210,17 @@
                         tooltip: {
                             backgroundColor: 'rgba(0,0,0,0.85)',
                             titleColor: '#fff',
-                            titleFont: {
-                                size: 13,
-                                weight: '600',
-                            },
+                            titleFont: { size: 13, weight: '600' },
                             bodyColor: CONFIG.COLORS.text,
-                            bodyFont: {
-                                size: 12,
-                            },
+                            bodyFont: { size: 12 },
                             borderColor: 'rgba(255,255,255,0.1)',
                             borderWidth: 1,
                             cornerRadius: 10,
                             padding: 12,
-                            boxPadding: 4,
                             usePointStyle: true,
                             callbacks: {
                                 label: function(context) {
-                                    const label = context.dataset.label || '';
-                                    const value = context.parsed.y;
-                                    return label + ': ' + Utils.formatCurrency(value);
+                                    return context.dataset.label + ': ' + Utils.formatCurrency(context.parsed.y);
                                 }
                             }
                         }
@@ -1231,49 +1228,241 @@
                     scales: {
                         y: {
                             beginAtZero: true,
-                            grid: {
-                                color: CONFIG.COLORS.grid,
-                                drawBorder: false,
-                                drawTicks: true,
-                            },
+                            grid: { color: CONFIG.COLORS.grid, drawBorder: false },
                             ticks: {
                                 color: CONFIG.COLORS.textMuted,
-                                font: {
-                                    size: CONFIG.CHART.FONT_SIZE - 1,
-                                },
-                                callback: function(value) {
-                                    return Utils.formatCompactCurrency(value);
-                                },
+                                font: { size: CONFIG.CHART.FONT_SIZE - 1 },
+                                callback: function(value) { return Utils.formatCompactCurrency(value); },
                                 maxTicksLimit: 8,
                             }
                         },
                         x: {
-                            grid: {
-                                display: false,
-                            },
+                            grid: { display: false },
                             ticks: {
                                 color: CONFIG.COLORS.textMuted,
-                                font: {
-                                    size: CONFIG.CHART.FONT_SIZE,
-                                    weight: '400',
-                                },
+                                font: { size: CONFIG.CHART.FONT_SIZE },
                             }
                         }
                     }
                 }
             });
 
-            console.log('✅ [Chart] Gráfico renderizado com sucesso');
-            
-            // 🔥 Disparar evento de gráfico renderizado
-            window.dispatchEvent(new CustomEvent('dashboard:chart_rendered', {
-                detail: {
-                    chart_type: 'bar',
-                    has_data: hasData,
-                    labels_count: labels.length,
-                    data_points: revenue.length + costs.length
+            console.log('✅ [Chart] Gráfico de barras renderizado');
+        }
+
+        // ==========================================
+        // 🔥 GRÁFICO 2: SERVIÇOS SEMANAIS (LINHA)
+        // ==========================================
+
+        _renderPerformanceChart(chartData) {
+            const canvas = document.getElementById('performanceChart');
+            if (!canvas) {
+                console.warn('⚠️ [Chart] Canvas #performanceChart não encontrado');
+                return;
+            }
+
+            console.log('📊 [Chart] Renderizando gráfico de serviços...');
+
+            const performance = chartData.performance || {};
+            const weekly = chartData.weekly || {};
+            const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const services = performance.services || weekly.services || [];
+
+            if (!services.length || services.every(v => v === 0)) {
+                console.warn('⚠️ [Chart] Dados de serviços vazios, usando fallback');
+                const fallback = Utils.generateFallbackChartData();
+                return this._renderPerformanceChart(fallback);
+            }
+
+            const ctx = canvas.getContext('2d');
+
+            if (this._chartInstances.performance) {
+                try {
+                    this._chartInstances.performance.destroy();
+                } catch (e) {}
+                this._chartInstances.performance = null;
+            }
+
+            this._chartInstances.performance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '🔧 Serviços',
+                        data: services,
+                        borderColor: CONFIG.COLORS.secondary,
+                        backgroundColor: CONFIG.COLORS.secondaryLight,
+                        fill: true,
+                        tension: CONFIG.CHART.LINE_TENSION,
+                        pointBackgroundColor: CONFIG.COLORS.secondary,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: CONFIG.CHART.POINT_RADIUS,
+                        pointHoverRadius: CONFIG.CHART.POINT_RADIUS + 3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: CONFIG.CHART.ANIMATION_DURATION,
+                        easing: CONFIG.CHART.ANIMATION_EASING,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: CONFIG.COLORS.text,
+                                font: { size: CONFIG.CHART.FONT_SIZE, weight: '500' },
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.85)',
+                            titleColor: '#fff',
+                            bodyColor: CONFIG.COLORS.text,
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 10,
+                            padding: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.parsed.y + ' serviços';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: CONFIG.COLORS.grid, drawBorder: false },
+                            ticks: {
+                                color: CONFIG.COLORS.textMuted,
+                                font: { size: CONFIG.CHART.FONT_SIZE - 1 },
+                                stepSize: 1,
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: CONFIG.COLORS.textMuted,
+                                font: { size: CONFIG.CHART.FONT_SIZE },
+                            }
+                        }
+                    }
                 }
-            }));
+            });
+
+            console.log('✅ [Chart] Gráfico de serviços renderizado');
+        }
+
+        // ==========================================
+        // 🔥 GRÁFICO 3: EVOLUÇÃO MENSAL (LINHA)
+        // ==========================================
+
+        _renderMonthlyChart(chartData) {
+            const canvas = document.getElementById('monthlyChart');
+            if (!canvas) {
+                console.warn('⚠️ [Chart] Canvas #monthlyChart não encontrado');
+                return;
+            }
+
+            console.log('📊 [Chart] Renderizando gráfico mensal...');
+
+            const monthly = chartData.monthly || {};
+            const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            const revenue = monthly.revenue || [];
+
+            if (!revenue.length || revenue.every(v => v === 0)) {
+                console.warn('⚠️ [Chart] Dados mensais vazios, usando fallback');
+                const fallback = Utils.generateFallbackChartData();
+                return this._renderMonthlyChart(fallback);
+            }
+
+            const ctx = canvas.getContext('2d');
+
+            if (this._chartInstances.monthly) {
+                try {
+                    this._chartInstances.monthly.destroy();
+                } catch (e) {}
+                this._chartInstances.monthly = null;
+            }
+
+            this._chartInstances.monthly = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '💰 Receita Mensal',
+                        data: revenue,
+                        borderColor: CONFIG.COLORS.tertiary,
+                        backgroundColor: CONFIG.COLORS.tertiaryLight,
+                        fill: true,
+                        tension: CONFIG.CHART.LINE_TENSION,
+                        pointBackgroundColor: CONFIG.COLORS.tertiary,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: CONFIG.CHART.POINT_RADIUS,
+                        pointHoverRadius: CONFIG.CHART.POINT_RADIUS + 3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: CONFIG.CHART.ANIMATION_DURATION,
+                        easing: CONFIG.CHART.ANIMATION_EASING,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: CONFIG.COLORS.text,
+                                font: { size: CONFIG.CHART.FONT_SIZE, weight: '500' },
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.85)',
+                            titleColor: '#fff',
+                            bodyColor: CONFIG.COLORS.text,
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 10,
+                            padding: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    return Utils.formatCurrency(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: CONFIG.COLORS.grid, drawBorder: false },
+                            ticks: {
+                                color: CONFIG.COLORS.textMuted,
+                                font: { size: CONFIG.CHART.FONT_SIZE - 1 },
+                                callback: function(value) { return Utils.formatCompactCurrency(value); },
+                                maxTicksLimit: 8,
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: CONFIG.COLORS.textMuted,
+                                font: { size: CONFIG.CHART.FONT_SIZE },
+                                maxTicksLimit: 12,
+                            }
+                        }
+                    }
+                }
+            });
+
+            console.log('✅ [Chart] Gráfico mensal renderizado');
         }
 
         // ==========================================
@@ -1288,7 +1477,6 @@
 
             const analysis = result.analysis || {};
             
-            // 🔥 Extrair chart_data usando o utilitário
             const chartData = Utils.extractChartData(result);
             
             const recommendations = analysis.recommendations || result.recommendations || [];
@@ -1297,9 +1485,8 @@
 
             console.log('📊 [ProcessResult] chartData:', chartData ? '✅' : '❌');
 
-            // 🔥 Renderizar gráfico se tiver dados
             if (chartData) {
-                this._renderChart(chartData);
+                this._renderAllCharts(chartData);
             }
 
             await this._updateAIReport({
@@ -1790,11 +1977,7 @@
             
             window.addEventListener('beforeunload', () => {
                 this._stopPolling();
-                if (this._chartInstance) {
-                    try {
-                        this._chartInstance.destroy();
-                    } catch (e) {}
-                }
+                this._destroyAllCharts();
             });
         }
 
@@ -1806,6 +1989,22 @@
             this._pollingInterval = setInterval(() => {
                 this._creditManager.syncDebounced();
             }, CONFIG.CREDITS.SYNC_INTERVAL);
+        }
+
+        // ==========================================
+        // 🔥 DESTRUIR TODOS OS GRÁFICOS
+        // ==========================================
+
+        _destroyAllCharts() {
+            Object.keys(this._chartInstances).forEach(key => {
+                if (this._chartInstances[key]) {
+                    try {
+                        this._chartInstances[key].destroy();
+                    } catch (e) {}
+                    this._chartInstances[key] = null;
+                }
+            });
+            console.log('🧹 [Charts] Todos os gráficos destruídos');
         }
 
         // ==========================================
@@ -1832,8 +2031,8 @@
             return await this._creditManager.sync(true);
         }
 
-        renderChart(chartData) {
-            return this._renderChart(chartData);
+        renderAllCharts(chartData) {
+            return this._renderAllCharts(chartData);
         }
 
         destroy() {
@@ -1843,12 +2042,7 @@
                 this._pollingInterval = null;
             }
             
-            if (this._chartInstance) {
-                try {
-                    this._chartInstance.destroy();
-                } catch (e) {}
-                this._chartInstance = null;
-            }
+            this._destroyAllCharts();
             
             document.removeEventListener('creditsUpdated', this._handleCreditsUpdated);
             document.removeEventListener('chart:data_ready', this._handleChartDataReady);
@@ -1912,19 +2106,17 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.3 carregado - CORRIGIDO');
-    console.log('   ✅ CORREÇÃO: Utils.extractChartData() agora existe');
-    console.log('   ✅ CORREÇÃO: Utils.generateFallbackChartData() agora existe');
-    console.log('   ✅ RENDERIZAÇÃO OTIMIZADA: Gráficos com animação suave');
-    console.log('   ✅ MÚLTIPLOS FORMATOS: Suporte a diferentes estruturas de dados');
-    console.log('   ✅ EVENTO chart:data_ready: Renderização automática');
-    console.log('   ✅ TOOLTIP MELHORADO: Valores formatados em R$');
-    console.log('   ✅ FALLBACK INTELIGENTE: Dados de exemplo se necessário');
-    console.log('   ✅ RESPONSIVO: Adapta-se a diferentes tamanhos de tela');
+    console.log('🔥 dashboard.js v16.4 carregado - 3 GRÁFICOS');
+    console.log('   ✅ GRÁFICO 1: Barras (Receita vs Custos)');
+    console.log('   ✅ GRÁFICO 2: Linha (Serviços Semanais)');
+    console.log('   ✅ GRÁFICO 3: Linha (Evolução Mensal)');
+    console.log('   ✅ RENDERIZAÇÃO COMPLETA: Todos os gráficos juntos');
+    console.log('   ✅ ANIMAÇÃO SINCRONIZADA: Transições suaves');
+    console.log('   ✅ CORES COORDENADAS: Paleta consistente');
+    console.log('   ✅ FALLBACK INTELIGENTE: Dados de exemplo');
     console.log('   ✅ POLLING: Acompanhamento de progresso em tempo real');
-    console.log('   ✅ BARRA DE PROGRESSO: Mostra % e mensagem durante o processamento');
+    console.log('   ✅ BARRA DE PROGRESSO: Mostra % e mensagem');
     console.log('   ✅ Verificação de créditos com App State primeiro');
-    console.log('   ✅ Consumo: 1 crédito por upload');
     console.log('='.repeat(60));
 
 })();
