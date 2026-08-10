@@ -1139,7 +1139,7 @@
                 
             </div>
 
-            <!-- 🔥 RESULTADO - COM RELATÓRIO DA IA (SEM GRÁFICO FINANCEIRO) -->
+            <!-- 🔥 RESULTADO - COM RELATÓRIO DA IA -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
@@ -1200,6 +1200,24 @@
                 </div>
             </div>
 
+            <!-- 🔥 GRÁFICO PRINCIPAL - RECEITA VS CUSTOS -->
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="glass-card">
+                        <h5 class="card-title">
+                            <i class="fas fa-chart-bar" style="color:#ff6b35;"></i> 
+                            Receita vs Custos (Semanal)
+                            <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
+                                <i class="fas fa-chart-line me-1"></i> Análise financeira
+                            </span>
+                        </h5>
+                        <div style="height: 220px; position: relative;">
+                            <canvas id="revenueChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 🔥 GRÁFICOS SECUNDÁRIOS -->
             <div class="row mt-3">
                 <div class="col-md-6">
@@ -1212,7 +1230,7 @@
                             </span>
                         </h5>
                         <div style="height: 160px; position: relative;">
-                            <canvas id="weeklyPerformanceChart"></canvas>
+                            <canvas id="performanceChart"></canvas>
                         </div>
                     </div>
                 </div>
@@ -1226,15 +1244,13 @@
                             </span>
                         </h5>
                         <div style="height: 160px; position: relative;">
-                            <canvas id="monthlyFinanceChart"></canvas>
+                            <canvas id="monthlyChart"></canvas>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- ============================================== -->
-            <!-- 🔥 GRÁFICO GPSA - PERFORMANCE DA OFICINA -->
-            <!-- ============================================== -->
+            <!-- 🔥 GPSA - PERFORMANCE DA OFICINA -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card">
@@ -1435,16 +1451,12 @@
 
     <!-- 2️⃣ SCRIPTS PRÓPRIOS (COM VERSÕES ATUALIZADAS) -->
     <script src="/static/js/pow-client.js?ver=5.2" defer></script>
-    <script src="/static/js/app.js?ver=7.4.0" defer></script>
+    <script src="/static/js/app.js?ver=7.5.0" defer></script>
     <script src="/static/js/auth.js?ver=4.2.0" defer></script>
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
-    
-    <!-- 🔥 DASHBOARD v12.0 - CORRIGE BUGS 404 E 428 -->
-    <script src="/static/js/dashboard.js?ver=12.0" defer></script>
-
-    <!-- 3️⃣ UPLOAD E RELATÓRIO -->
-    <script src="/static/js/upload-report-system.js?ver=2.1" defer></script>
-    <script src="/static/js/pdf-generator.js?ver=1.1" defer></script>
+    <script src="/static/js/dashboard.js?ver=16.2" defer></script>
+    <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
+    <script src="/static/js/pdf-generator.js?ver=4.2" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
@@ -1664,28 +1676,42 @@
             const pdfBtn = document.getElementById('downloadPdfBtn');
             if (pdfBtn) {
                 pdfBtn.addEventListener('click', function() {
-                    const dashboard = window.__dashboard;
-                    if (!dashboard) {
+                    // 🔥 Buscar dados do UploadSystem ou _lastResult
+                    let analysisData = null;
+                    
+                    if (window.UploadSystem && typeof window.UploadSystem.getResult === 'function') {
+                        analysisData = window.UploadSystem.getResult();
+                    }
+                    
+                    if (!analysisData && window._lastResult) {
+                        analysisData = window._lastResult;
+                    }
+                    
+                    if (!analysisData) {
                         toastr.warning('Aguardando dados da análise...');
                         return;
                     }
                     
-                    const state = dashboard.state?.state || {};
-                    const analyses = state.analyses?.active || [];
-                    const lastAnalysis = analyses[0] || {};
+                    // 🔥 Extrair dados no formato esperado pelo PDF
+                    const metrics = analysisData.metrics || {};
+                    const chartData = analysisData.chart_data || {};
+                    const recommendations = analysisData.recommendations || [];
+                    const aiReport = analysisData.ai_report || analysisData.executive_summary || '';
                     
-                    const resultData = lastAnalysis.result || {};
-                    const analysisData = {
-                        metrics: resultData.metrics || state.metrics || {},
-                        predictions: resultData.predictions || [],
-                        insights: resultData.insights || state.insights || {},
-                        recommendations: resultData.recommendations || state.recommendations || [],
-                        chart_data: resultData.chart_data || state.chart_data || {},
-                        filename: lastAnalysis.filename || 'Análise',
-                        ai_report: resultData.ai_report || state.ai_report || ''
+                    const pdfData = {
+                        metrics: {
+                            dataset_rows: metrics.total_predictions || analysisData.rows_processed || 0,
+                            mean_prediction: metrics.mean || analysisData.confidence_score || 0.65,
+                            high_risk_percentage: metrics.high_risk_percentage || 0,
+                            low_risk_percentage: metrics.low_risk_percentage || 0
+                        },
+                        predictions: [],
+                        recommendations: recommendations,
+                        chart_data: chartData,
+                        ai_report: aiReport
                     };
                     
-                    window.generateFinancePDF(analysisData);
+                    window.generateFinancePDF(pdfData);
                 });
             }
         });
