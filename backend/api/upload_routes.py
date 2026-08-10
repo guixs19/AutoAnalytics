@@ -1,7 +1,13 @@
-# backend/api/upload_routes.py - VERSÃO 12.1 (COM POLLING E PROGRESSO)
+# backend/api/upload_routes.py - VERSÃO 12.2 (CORRIGIDA)
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 12.1
+🚀 ROTAS DE UPLOAD - VERSÃO 12.2
 ================================================================================
+✅ CORREÇÕES v12.2:
+   - 🔥 ADICIONADO: Função update_analysis_progress() que estava faltando
+   - 🔥 CORRIGIDO: Erro "name 'update_analysis_progress' is not defined"
+   - 🔥 MELHORADO: Logging de progresso mais detalhado
+   - 🔥 OTIMIZADO: Atualização de status durante processamento
+
 ✅ NOVIDADES v12.1:
    - 🔥 RESPOSTA IMEDIATA: Retorna process_id sem esperar o ML
    - 🔥 POLLING: Rota /analysis/progress/{id} para acompanhamento
@@ -71,7 +77,7 @@ try:
     logger.info("✅ multi_analysis carregado")
 except ImportError as e:
     logger.warning(f"⚠️ multi_analysis não disponível: {e}")
-    async def analyze_multiple_files(files, user_id=None, user_email=None, force_reload=False):
+    async def analyze_multiple_files(files, user_id=None, user_email=None, force_reload=False, db_session=None, process_id=None):
         logger.warning("⚠️ Usando fallback de multi_analysis")
         return {
             "success": True,
@@ -125,7 +131,7 @@ class UploadConfig:
     ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.tsv', '.parquet'}
     
     # Timeouts
-    PROCESSING_TIMEOUT_SECONDS = 500  # 5 minutos
+    PROCESSING_TIMEOUT_SECONDS = 500  # 8.3 minutos
     UPLOAD_TIMEOUT_SECONDS = 60
     CHUNK_SIZE = 8192
     
@@ -687,6 +693,44 @@ def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 # ==============================================
+# 🔥🔥🔥 FUNÇÃO: ATUALIZAR PROGRESSO (NOVA - CORRIGIDA)
+# ==============================================
+
+async def update_analysis_progress(db: Session, process_id: int, progress: int, message: str) -> bool:
+    """
+    🔥 Atualiza o progresso de uma análise no banco de dados
+    Usada pelo processamento em background para informar o frontend via polling
+    
+    Args:
+        db: Sessão do banco de dados
+        process_id: ID da análise
+        progress: Progresso (0-100)
+        message: Mensagem de status
+    
+    Returns:
+        bool: True se atualizou com sucesso, False caso contrário
+    """
+    try:
+        analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
+        if analysis:
+            analysis.progress = progress
+            analysis.progress_message = message
+            # Mantém status como "processing" enquanto não for 100%
+            if progress < 100:
+                analysis.status = "processing"
+            db.commit()
+            logger.info(f"📊 [Progresso] Análise {process_id}: {progress}% - {message}")
+            return True
+        else:
+            logger.warning(f"⚠️ Análise {process_id} não encontrada para atualizar progresso")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar progresso da análise {process_id}: {e}")
+        db.rollback()
+        return False
+
+
+# ==============================================
 # 🔥🔥🔥 FUNÇÃO DE PROCESSAMENTO EM BACKGROUND (CORRIGIDA)
 # ==============================================
 
@@ -704,6 +748,8 @@ async def process_analysis_background(
     """
     try:
         logger.info(f"🔄 [BACKGROUND] Iniciando processamento {process_id}")
+        logger.info(f"   📁 Arquivos: {len(file_data_list)}")
+        logger.info(f"   👤 Usuário: {user_email} (ID: {user_id})")
         
         # ==========================================
         # 1. ATUALIZAR PROGRESSO: 20%
@@ -724,17 +770,21 @@ async def process_analysis_background(
         await update_analysis_progress(db, process_id, 30, "Processando arquivos com IA...")
         
         # ==========================================
-        # 🔥🔥🔥 4. EXECUTAR ANÁLISE ML (CORRIGIDO)
+        # 4. EXECUTAR ANÁLISE ML
         # ==========================================
+        
+        logger.info(f"🤖 [BACKGROUND] Chamando analyze_multiple_files para {process_id}")
         
         analysis_result = await analyze_multiple_files(
             files=file_data_list,
             user_id=user_id,
             user_email=user_email,
             force_reload=False,
-            db_session=db,           # 🔥 NOVO: Passa a sessão do banco
-            process_id=process_id     # 🔥 NOVO: Passa o ID da análise
+            db_session=db,
+            process_id=process_id
         )
+        
+        logger.info(f"✅ [BACKGROUND] analyze_multiple_files concluído para {process_id}")
         
         # ==========================================
         # 5. ATUALIZAR PROGRESSO: 80%
@@ -783,6 +833,8 @@ async def process_analysis_background(
         
         db.commit()
         
+        logger.info(f"✅ [BACKGROUND] Análise {process_id} salva com sucesso")
+        
         # ==========================================
         # 8. CONSUMIR CRÉDITOS
         # ==========================================
@@ -798,7 +850,7 @@ async def process_analysis_background(
             )
             
             if credit_result["success"]:
-                logger.info(f"💰 [BACKGROUND] {len(file_data_list)} crédito(s) consumidos")
+                logger.info(f"💰 [BACKGROUND] {len(file_data_list)} crédito(s) consumidos para {user_email}")
             else:
                 logger.warning(f"⚠️ [BACKGROUND] Falha ao consumir créditos: {credit_result.get('message')}")
         
@@ -806,7 +858,7 @@ async def process_analysis_background(
         # 9. FINALIZAR
         # ==========================================
         
-        logger.info(f"✅ [BACKGROUND] Processamento {process_id} concluído com sucesso")
+        logger.info(f"✅ [BACKGROUND] Processamento {process_id} concluído com sucesso!")
         
     except Exception as e:
         logger.error(f"❌ [BACKGROUND] Erro no processamento {process_id}: {e}")
@@ -814,11 +866,15 @@ async def process_analysis_background(
         traceback.print_exc()
         
         # Atualizar status de erro
-        analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
-        if analysis:
-            analysis.status = "error"
-            analysis.progress_message = f"Erro: {str(e)[:200]}"
-            db.commit()
+        try:
+            analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
+            if analysis:
+                analysis.status = "error"
+                analysis.progress_message = f"Erro: {str(e)[:200]}"
+                db.commit()
+                logger.info(f"📊 [BACKGROUND] Status da análise {process_id} atualizado para 'error'")
+        except Exception as db_error:
+            logger.error(f"❌ [BACKGROUND] Erro ao atualizar status de erro: {db_error}")
 
 
 # ==============================================
@@ -890,7 +946,7 @@ async def get_user_credits_status(
 
 
 # ==============================================
-# 🔥🔥🔥 ROTA NOVA: PROGRESSO DA ANÁLISE (POLLING)
+# 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING)
 # ==============================================
 
 @router.get("/analysis/progress/{process_id}")
@@ -958,7 +1014,7 @@ async def get_analysis_progress(
 
 
 # ==============================================
-# 🔥🔥🔥 ROTA PRINCIPAL MODIFICADA: UPLOAD MÚLTIPLO (VERSÃO 12.1)
+# 🔥🔥🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (VERSÃO 12.2)
 # ==============================================
 
 @router.post("/upload-multi-analyze")
@@ -974,7 +1030,7 @@ async def upload_multi_analyze(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD MÚLTIPLO COM POLLING (VERSÃO 12.1)
+    🔥 UPLOAD MÚLTIPLO COM POLLING (VERSÃO 12.2)
     
     ✅ RETORNA process_id IMEDIATAMENTE
     ✅ FRONTEND FAZ POLLING para acompanhar progresso
@@ -1073,7 +1129,7 @@ async def upload_multi_analyze(
     ]
     
     # ==========================================
-    # 🔥🔥🔥 PASSO 5: CRIAR ANÁLISE COM STATUS "processing"
+    # PASSO 5: CRIAR ANÁLISE COM STATUS "processing"
     # ==========================================
     
     analysis_record = models.Analysis(
@@ -1096,6 +1152,8 @@ async def upload_multi_analyze(
     
     process_id = analysis_record.id  # 🔥 ID para polling
     
+    logger.info(f"📝 [MULTI-UPLOAD] Análise criada: ID {process_id} para {current_user.email}")
+    
     # ==========================================
     # PASSO 6: INICIAR PROCESSAMENTO EM BACKGROUND
     # ==========================================
@@ -1109,6 +1167,8 @@ async def upload_multi_analyze(
         analysis_type=analysis_type,
         db=db
     )
+    
+    logger.info(f"🚀 [MULTI-UPLOAD] Background task iniciada para análise {process_id}")
     
     # ==========================================
     # PASSO 7: RESPOSTA IMEDIATA (SEM ESPERAR ML)
@@ -1150,7 +1210,7 @@ async def upload_multi_analyze(
         "polling": {
             "url": f"/api/analysis/progress/{process_id}",
             "interval_seconds": 2,
-            "max_attempts": 60
+            "max_attempts": 300  # 🔥 10 minutos (300 * 2s)
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -1669,7 +1729,7 @@ async def upload_auto_optimized(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.1 (COM POLLING E PROGRESSO)")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.2 (CORRIGIDA)")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -1680,6 +1740,12 @@ print(f"   🚦 Rate Limit: {UploadConfig.RATE_LIMIT_PER_USER} req/hora")
 print(f"   ⏱️ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"   💰 Créditos: {UploadConfig.INITIAL_FREE_CREDITS} grátis | máx premium {UploadConfig.MAX_CREDITS_PREMIUM}")
 print(f"   📌 Regra: 1 arquivo = 1 crédito = 1 análise")
+print(f"")
+print(f"   ✅ CORREÇÕES V12.2:")
+print(f"      - 🔥 ADICIONADO: update_analysis_progress() (estava faltando)")
+print(f"      - 🔥 CORRIGIDO: Erro 'name is not defined'")
+print(f"      - 🔥 MELHORADO: Logs mais detalhados durante processamento")
+print(f"      - 🔥 OTIMIZADO: Tratamento de erros no background")
 print(f"")
 print(f"   ✅ NOVIDADES V12.1:")
 print(f"      - 🔥 RESPOSTA IMEDIATA: Retorna process_id sem esperar o ML")
