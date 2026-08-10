@@ -1,27 +1,27 @@
-// frontend/js/upload-report-system.js - v2.4 (INTELIGENTE E ROBUSTO)
+// frontend/js/upload-report-system.js - v2.5 (CORRIGIDO: ENDPOINT E TIMEOUT)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
 
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v2.4...');
+    console.log('📊 Inicializando UploadReportSystem v2.5...');
 
     // ==============================================
-    // 🔥 CONFIGURAÇÕES
+    // 🔥 CONFIGURAÇÕES (CORRIGIDAS)
     // ==============================================
 
     const CONFIG = {
         MAX_FILES: 3,
         MAX_FILE_SIZE_KB: 200,
         CREDITS_PER_FILE: 1,
-        POLLING_INTERVAL: 2000,
-        MAX_POLLING_ATTEMPTS: 90,
+        POLLING_INTERVAL: 2000,                      // 2 segundos entre polling
+        MAX_POLLING_ATTEMPTS: 300,                   // 🔥 300 * 2s = 10 minutos
         API_BASE: '/api',
         UPLOAD_ENDPOINT: '/upload-multi-analyze',
         UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',
         UPLOAD_RETRY_ATTEMPTS: 3,
         UPLOAD_RETRY_DELAY: 2000,
-        GLOBAL_TIMEOUT: 180000,
+        GLOBAL_TIMEOUT: 600000,                      // 🔥 10 minutos (600s)
         RESULT_ENDPOINTS: [
             '/analysis/result/',
             '/result/',
@@ -30,9 +30,10 @@
         ],
         POW_MAX_AGE: 600000,
         POW_RETRY_ATTEMPTS: 2,
-        // 🔥 NOVO
         MAX_RETRY_BACKOFF: 10000,
         HEALTH_CHECK_INTERVAL: 30000,
+        // 🔥 NOVO: Tempo máximo de processamento do backend (8.3min)
+        BACKEND_PROCESSING_TIMEOUT: 500,             // segundos
     };
 
     // ==============================================
@@ -50,10 +51,10 @@
         uploadRetryCount: 0,
         startTime: null,
         powLastRefresh: 0,
-        powRecoveryAttempts: 0,      // 🔥 NOVO
-        lastError: null,             // 🔥 NOVO
-        errorCount: 0,               // 🔥 NOVO
-        isRecovering: false,         // 🔥 NOVO
+        powRecoveryAttempts: 0,
+        lastError: null,
+        errorCount: 0,
+        isRecovering: false,
     };
 
     // ==============================================
@@ -144,7 +145,6 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // 🔥 NOVO: Exponential backoff
     function getBackoffDelay(attempt, baseDelay = CONFIG.UPLOAD_RETRY_DELAY) {
         const delay = baseDelay * Math.pow(1.5, attempt - 1);
         return Math.min(delay, CONFIG.MAX_RETRY_BACKOFF);
@@ -200,7 +200,6 @@
         return 'Usuário';
     }
 
-    // 🔥 NOVO: Verificar se é erro de PoW
     function isPowError(error) {
         if (!error) return false;
         const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
@@ -208,7 +207,6 @@
         return patterns.some(p => errorStr.toLowerCase().includes(p));
     }
 
-    // 🔥 NOVO: Verificar se é erro de créditos
     function isCreditsError(error) {
         if (!error) return false;
         const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
@@ -486,13 +484,12 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (INTELIGENTE)
+    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO
     // ==============================================
 
     async function getPowSolution(forceRefresh = false) {
         const app = getApp();
         
-        // 🔥 Verificar se precisa renovar
         const now = Date.now();
         if (forceRefresh || (now - state.powLastRefresh) > CONFIG.POW_MAX_AGE) {
             console.log('🔄 Renovando PoW (idade:', Math.round((now - state.powLastRefresh)/1000), 's)');
@@ -503,7 +500,6 @@
         console.log('   📦 app disponível?', !!app);
         console.log('   📦 powClient disponível?', !!window.powClient);
         
-        // 🔥 Verificar saúde do PoW
         if (window.powClient && typeof window.powClient.isPowHealthy === 'function') {
             try {
                 const healthy = await window.powClient.isPowHealthy();
@@ -521,7 +517,6 @@
             }
         }
         
-        // 🔥 TENTATIVA 1: Via app.Pow
         if (app && app.Pow) {
             try {
                 if (typeof app.Pow.prepareForUpload === 'function') {
@@ -554,7 +549,6 @@
             }
         }
         
-        // 🔥 TENTATIVA 2: Via powClient direto
         if (window.powClient) {
             try {
                 console.log('   🔐 Tentando via powClient direto...');
@@ -580,7 +574,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD E ANÁLISE (CORRIGIDO)
+    // 🔥 UPLOAD E ANÁLISE
     // ==============================================
 
     async function startAnalysis() {
@@ -594,7 +588,6 @@
             return;
         }
 
-        // 🔥 Resetar estado de erro
         state.errorCount = 0;
         state.lastError = null;
         state.isRecovering = false;
@@ -632,7 +625,6 @@
             formData.append('analysis_type', 'auto');
             formData.append('report_format', 'html');
 
-            // 🔥 TENTAR OBTER POW (COM RENOVAÇÃO)
             let solution = null;
             try {
                 solution = await getPowSolution(true);
@@ -698,7 +690,6 @@
             const userName = getUserName();
             showNotification(`${userName}, ${errorMsg}`, 'error');
             
-            // 🔥 Se for erro de PoW, oferecer recuperação
             if (isPowError(errorMsg)) {
                 setTimeout(() => {
                     if (confirm('⚠️ Erro de segurança (PoW) detectado. Deseja tentar recuperar automaticamente?')) {
@@ -717,7 +708,6 @@
         }
     }
 
-    // 🔥 NOVO: Função para renovar PoW e tentar novamente
     async function refreshPowAndRetry() {
         if (state.isRecovering) return;
         state.isRecovering = true;
@@ -726,17 +716,13 @@
             showNotification('🔄 Tentando recuperar conexão...', 'info');
             showAnalysisStatus('🔄', 'Recuperando segurança...', 20);
             
-            // Limpar PoW
             if (window.powClient) {
                 window.powClient.clearCache();
                 window.powClient.reset();
             }
             state.powLastRefresh = 0;
             
-            // Aguardar um pouco
             await sleep(1000);
-            
-            // Tentar novamente
             await startAnalysis();
             
         } catch (e) {
@@ -748,7 +734,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD COM RETRY (CORRIGIDO E MELHORADO)
+    // 🔥 UPLOAD COM RETRY
     // ==============================================
 
     async function uploadWithRetry(formData, solution, files) {
@@ -760,7 +746,6 @@
             CONFIG.UPLOAD_ENDPOINT_FALLBACK
         ];
         
-        // 🔥 TENTAR CADA ENDPOINT
         for (let endpoint of endpoints) {
             let endpointFailed = false;
             
@@ -776,7 +761,6 @@
                         'Accept': 'application/json',
                     };
 
-                    // 🔥 SÓ ADICIONAR POW SE TIVER SOLUÇÃO VÁLIDA
                     if (solution && solution.prefix && solution.nonce) {
                         headers['X-PoW-Challenge'] = solution.prefix;
                         headers['X-PoW-Nonce'] = solution.nonce;
@@ -804,7 +788,6 @@
 
                     console.log(`📡 Resposta: ${response.status} ${response.statusText}`);
 
-                    // 🔥 TENTAR LER O CORPO DA RESPOSTA
                     let responseData = null;
                     let responseText = null;
                     
@@ -822,7 +805,6 @@
                         console.warn('⚠️ Não foi possível ler a resposta');
                     }
 
-                    // 🔥 TRATAMENTO ESPECÍFICO DE ERROS
                     if (response.status === 400) {
                         let errorMessage = 'Erro na requisição. Verifique os dados enviados.';
                         
@@ -838,11 +820,9 @@
                             }
                         }
                         
-                        // 🔥 GARANTIR QUE É STRING
                         const errorStr = typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage);
                         console.error(`❌ Erro 400: ${errorStr}`);
                         
-                        // 🔥 SE FOR ERRO DE PoW, TENTAR RENOVAR
                         if (isPowError(errorStr)) {
                             console.log('🔄 Erro de PoW detectado, renovando...');
                             if (window.powClient) {
@@ -861,12 +841,10 @@
                             }
                         }
                         
-                        // 🔥 SE FOR ERRO DE CRÉDITOS
                         if (isCreditsError(errorStr)) {
                             throw new Error(`Créditos insuficientes: ${errorStr}`);
                         }
                         
-                        // 🔥 SE O ENDPOINT FALHOU, TENTAR O PRÓXIMO
                         if (errorStr.includes('not found') || errorStr.includes('404')) {
                             console.log(`🔄 Endpoint ${endpoint} não encontrado, tentando próximo...`);
                             endpointFailed = true;
@@ -925,7 +903,6 @@
                         return data;
                     }
 
-                    // 🔥 QUALQUER OUTRO ERRO
                     let errorMsg = `Erro ${response.status}`;
                     if (responseData) {
                         errorMsg = responseData.detail || responseData.message || responseData.error || errorMsg;
@@ -936,14 +913,12 @@
                     lastError = error;
                     console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
                     
-                    // 🔥 SE FOR ERRO DE CRÉDITOS OU VALIDAÇÃO, NÃO TENTA NOVAMENTE
                     if (isCreditsError(error.message) ||
                         error.message.includes('inválido') ||
                         error.message.includes('Sessão expirada')) {
                         throw error;
                     }
                     
-                    // 🔥 SE O ENDPOINT FALHOU, TENTAR PRÓXIMO
                     if (endpointFailed) {
                         break;
                     }
@@ -956,7 +931,6 @@
                 }
             }
             
-            // 🔥 SE O ENDPOINT FALHOU, CONTINUAR PARA O PRÓXIMO
             if (endpointFailed) {
                 console.log(`🔄 Pulando para próximo endpoint...`);
                 continue;
@@ -967,25 +941,29 @@
     }
 
     // ==============================================
-    // 🔥 POLLING (CORRIGIDO)
+    // 🔥🔥🔥 POLLING (CORRIGIDO: ENDPOINT + TIMEOUT)
     // ==============================================
 
     async function pollAnalysisStatus(processId) {
         let attempts = 0;
-        const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;
-        const interval = CONFIG.POLLING_INTERVAL;
+        const maxAttempts = CONFIG.MAX_POLLING_ATTEMPTS;  // 🔥 300 tentativas
+        const interval = CONFIG.POLLING_INTERVAL;          // 2 segundos
         const startTime = Date.now();
         let consecutiveErrors = 0;
         
         state.isPolling = true;
         state.pollAttempts = 0;
 
+        // 🔥 Calcular timeout total em segundos para exibição
+        const totalTimeoutSeconds = Math.round(CONFIG.GLOBAL_TIMEOUT / 1000);
+
         while (attempts < maxAttempts) {
             attempts++;
             state.pollAttempts = attempts;
             
+            // 🔥 Verificar timeout global (10 minutos)
             if (Date.now() - startTime > CONFIG.GLOBAL_TIMEOUT) {
-                throw new Error('Timeout: a análise excedeu o tempo limite de 3 minutos.');
+                throw new Error(`Timeout: a análise excedeu o tempo limite de ${totalTimeoutSeconds} segundos.`);
             }
             
             try {
@@ -995,8 +973,11 @@
                 }
                 
                 let statusData = null;
-                const statusEndpoint = `/status/${processId}`;
+                // 🔥🔥🔥 CORREÇÃO: Endpoint correto do backend
+                const statusEndpoint = `/analysis/progress/${processId}`;
                 const url = buildApiUrl(statusEndpoint);
+                
+                console.log(`📊 [Polling ${attempts}/${maxAttempts}] ${url}`);
                 
                 const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -1004,14 +985,14 @@
 
                 if (!response.ok) {
                     if (response.status === 404) {
-                        // 🔥 Resetar contador de erros consecutivos
+                        // 🔥 Análise ainda não encontrada (pode estar inicializando)
                         consecutiveErrors = 0;
                         
                         const progress = 50 + (attempts / maxAttempts) * 40;
                         const elapsed = Math.round((Date.now() - startTime) / 1000);
                         updateAnalysisProgress(
                             progress,
-                            `⏳ Processando... (${elapsed}s / ${Math.round(CONFIG.GLOBAL_TIMEOUT/1000)}s)`
+                            `⏳ Aguardando início da análise... (${elapsed}s / ${totalTimeoutSeconds}s)`
                         );
                         await sleep(interval);
                         continue;
@@ -1038,9 +1019,13 @@
                 const progress = statusData.progress || 0;
                 const message = statusData.message || statusData.stage || 'Processando...';
                 
+                console.log(`📊 [Polling] Status: ${status}, Progresso: ${progress}%, Mensagem: ${message}`);
+                
+                // 🔥 ANÁLISE CONCLUÍDA
                 if (status === 'completed' || status === 'complete' || status === 'success') {
                     updateAnalysisProgress(90, '📊 Buscando relatório completo...');
                     
+                    // 🔥 Tentar buscar o resultado completo
                     const resultData = await fetchAnalysisResult(processId);
                     
                     if (resultData) {
@@ -1049,25 +1034,38 @@
                         showResult(resultData);
                         state.isPolling = false;
                         return resultData;
-                    } else if (statusData.result || statusData.analysis_info) {
+                    } else if (statusData.result || statusData.analysis_info || statusData.chart_data) {
+                        // 🔥 Se o próprio polling já tem os dados
                         showResult(statusData);
                         state.isPolling = false;
                         return statusData;
                     } else {
+                        // 🔥 Concluído mas sem dados ainda, esperar mais um pouco
                         await sleep(interval);
                         continue;
                     }
                     
+                // 🔥 ERRO NA ANÁLISE
                 } else if (status === 'error' || status === 'failed') {
                     throw new Error(statusData.error || statusData.message || 'Erro na análise');
                     
+                // 🔥 AINDA PROCESSANDO
                 } else {
-                    const pollProgress = 50 + (attempts / maxAttempts) * 40;
+                    const pollProgress = Math.min(50 + (attempts / maxAttempts) * 40, 95);
                     const elapsed = Math.round((Date.now() - startTime) / 1000);
+                    
+                    // 🔥 Mensagem com tempo decorrido e total
+                    const progressMsg = progress > 0 ? `${Math.round(progress)}%` : '...';
                     updateAnalysisProgress(
                         pollProgress,
-                        `⏳ ${message} (${Math.round(progress)}%) - ${elapsed}s`
+                        `⏳ ${message} (${progressMsg}) - ${elapsed}s / ${totalTimeoutSeconds}s`
                     );
+                    
+                    // 🔥 Atualizar subtítulo com informações adicionais
+                    if (elements.statusSub) {
+                        const remaining = Math.max(0, totalTimeoutSeconds - elapsed);
+                        elements.statusSub.textContent = `Processamento em andamento... ~${remaining}s restantes`;
+                    }
                 }
 
                 await sleep(interval);
@@ -1085,7 +1083,7 @@
         }
 
         state.isPolling = false;
-        throw new Error('Timeout: a análise não foi concluída dentro do prazo.');
+        throw new Error(`Timeout: a análise não foi concluída dentro de ${totalTimeoutSeconds} segundos.`);
     }
 
     // ==============================================
@@ -1279,9 +1277,7 @@
             }
             return await getPowSolution(true);
         },
-        // 🔥 NOVO: Forçar recuperação
         recover: refreshPowAndRetry,
-        // 🔥 NOVO: Obter diagnóstico
         getDiagnostics: function() {
             return {
                 state: {
@@ -1315,7 +1311,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v2.4...');
+        console.log('🚀 Inicializando UploadReportSystem v2.5...');
         
         cacheElements();
         
@@ -1335,22 +1331,21 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v2.4 inicializado!');
+        console.log('✅ UploadReportSystem v2.5 inicializado!');
         console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
         console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
         console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
         console.log(`   🔄 Polling interval: ${CONFIG.POLLING_INTERVAL}ms`);
-        console.log(`   ⏰ Global timeout: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
+        console.log(`   🔥 MAX_POLLING_ATTEMPTS: ${CONFIG.MAX_POLLING_ATTEMPTS} (${CONFIG.MAX_POLLING_ATTEMPTS * CONFIG.POLLING_INTERVAL / 1000}s)`);
+        console.log(`   ⏰ GLOBAL_TIMEOUT: ${CONFIG.GLOBAL_TIMEOUT/1000}s (10 minutos)`);
         console.log(`   🔄 Upload retries: ${CONFIG.UPLOAD_RETRY_ATTEMPTS}`);
         console.log(`   🔍 Result endpoints: ${CONFIG.RESULT_ENDPOINTS.join(', ')}`);
-        console.log(`   🔥 MELHORIAS v2.4:`);
-        console.log(`      ✅ Detecção inteligente de erro de PoW`);
-        console.log(`      ✅ Auto-recuperação com retry`);
-        console.log(`      ✅ Exponential backoff para retries`);
-        console.log(`      ✅ Diagnóstico completo disponível`);
-        console.log(`      ✅ Tratamento robusto de erros`);
-        console.log(`      ✅ Fallback múltiplo de endpoints`);
-        console.log(`      ✅ Verificação de saúde do PoW`);
+        console.log(`   🔥 CORREÇÕES v2.5:`);
+        console.log(`      ✅ Endpoint de polling: /analysis/progress/{id} (corrigido)`);
+        console.log(`      ✅ Timeout aumentado: 3min → 10min (para 8.3min do backend)`);
+        console.log(`      ✅ MAX_POLLING_ATTEMPTS: 90 → 300`);
+        console.log(`      ✅ Melhor exibição de tempo restante`);
+        console.log(`      ✅ Logs mais detalhados durante polling`);
         console.log(`   🔧 Use window.UploadSystem.getDiagnostics() para debug`);
         console.log(`   🔧 Use window.UploadSystem.recover() para forçar recuperação`);
     }
@@ -1361,9 +1356,10 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v2.4 carregado');
-    console.log(`   🔥 Rota corrigida: /upload-multi-analyze`);
-    console.log(`   🔄 Fallback: /upload-auto`);
+    console.log('📊 upload-report-system.js v2.5 carregado (CORRIGIDO)');
+    console.log(`   🔥 Rota polling: /analysis/progress/{id} (✅ corrigida)`);
+    console.log(`   🔥 Timeout: 10min (✅ corrigido)`);
+    console.log(`   🔄 Fallback upload: /upload-auto`);
     console.log('   📊 Polling inteligente com fallback');
     console.log('   📈 Busca resultado em múltiplos endpoints');
     console.log('   🔧 Tratamento de erro 400 com auto-recuperação');

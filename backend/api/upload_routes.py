@@ -125,7 +125,7 @@ class UploadConfig:
     ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.tsv', '.parquet'}
     
     # Timeouts
-    PROCESSING_TIMEOUT_SECONDS = 300  # 5 minutos
+    PROCESSING_TIMEOUT_SECONDS = 500  # 5 minutos
     UPLOAD_TIMEOUT_SECONDS = 60
     CHUNK_SIZE = 8192
     
