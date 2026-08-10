@@ -939,6 +939,9 @@ async def get_user_credits_status(
 # ==============================================
 # 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING) - CORRIGIDA
 # ==============================================
+# ==============================================
+# 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING) - CORRIGIDA V12.3
+# ==============================================
 
 @router.get("/analysis/progress/{process_id}")
 async def get_analysis_progress(
@@ -949,6 +952,8 @@ async def get_analysis_progress(
     """
     🔥 CONSULTA PROGRESSO DA ANÁLISE
     Frontend usa para mostrar barra de progresso em tempo real
+    
+    V12.3: Retorna dados COMPLETOS para renderização de gráficos
     """
     analysis = db.query(models.Analysis).filter(
         models.Analysis.id == process_id,
@@ -960,18 +965,51 @@ async def get_analysis_progress(
     
     # 🔥 SE JÁ CONCLUÍDA, RETORNAR RESULTADOS COMPLETOS
     if analysis.status == "completed":
+        # 🔥 Construir resultado com TODOS os dados
         result_data = {
-            "chart_data": analysis.chart_data or {},
-            "executive_summary": analysis.insights or "",
-            "recommendations": analysis.recommendations or [],
-            "confidence_score": analysis.confidence_score or 0,
+            # 🔥 DADOS PRINCIPAIS
+            "id": analysis.id,
+            "filename": analysis.filename,
+            "file_size": analysis.file_size,
+            "status": analysis.status,
             "rows_processed": analysis.rows_processed or 0,
-            "processing_time_ms": analysis.processing_time_ms or 0
+            "model_used": analysis.model_used or "AutoML",
+            "analysis_type": analysis.analysis_type or "auto",
+            "uploaded_at": analysis.uploaded_at.isoformat() if analysis.uploaded_at else None,
+            "processed_at": analysis.processed_at.isoformat() if analysis.processed_at else None,
+            "encoding_used": analysis.encoding_used,
+            "pow_verified": analysis.pow_verified,
+            "processing_time_ms": analysis.processing_time_ms or 0,
+            "confidence_score": float(analysis.confidence_score) if analysis.confidence_score else 0,
+            
+            # 🔥 CHART_DATA - ESSENCIAL PARA OS GRÁFICOS
+            "chart_data": analysis.chart_data or {},
+            
+            # 🔥 INSIGHTS E RECOMENDAÇÕES
+            "insights": analysis.insights or {},
+            "recommendations": analysis.recommendations or [],
+            "ai_report": analysis.ai_report or "",
+            "executive_summary": analysis.insights or "",
+            
+            # 🔥 MÉTRICAS DETALHADAS
+            "metrics": {
+                "mean": float(analysis.confidence_score) if analysis.confidence_score else 0,
+                "high_risk_percentage": 0,
+                "low_risk_percentage": 0,
+                "total_predictions": analysis.rows_processed or 0,
+                "processing_time_ms": analysis.processing_time_ms or 0
+            },
+            
+            # 🔥 EXECUTIVE_SCORE (se existir)
+            "executive_score": {}
         }
         
         # 🔥 SÓ ADICIONAR executive_score SE EXISTIR
         if hasattr(analysis, 'executive_score') and analysis.executive_score:
             result_data["executive_score"] = analysis.executive_score
+        
+        # 🔥 LOG PARA DEBUG
+        logger.info(f"📊 [POLLING] Retornando análise {process_id} com chart_data: {bool(analysis.chart_data)}")
         
         return {
             "process_id": process_id,
@@ -1007,7 +1045,6 @@ async def get_analysis_progress(
         "progress": analysis.progress or 0,
         "message": analysis.progress_message or ""
     }
-
 
 # ==============================================
 # 🔥🔥🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (VERSÃO 12.2)
