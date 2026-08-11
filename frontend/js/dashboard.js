@@ -1,17 +1,17 @@
-// frontend/js/dashboard.js - VERSÃO 16.5 (COM GPSA - PERFORMANCE DA OFICINA)
+// frontend/js/dashboard.js - VERSÃO 16.6 (CRÉDITOS CORRIGIDOS - COMPLETO)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.5
+ * 🔥 Dashboard Module - AutoAnalytics v16.6
  * 
- * ✅ NOVIDADES v16.5:
- * - 🔥 GPSA - Performance da Oficina: Dashboard completo com 3 abas
- * - 🔥 MÉTRICAS DE SAÚDE: Score de performance (0-100%) com indicador visual
- * - 🔥 ABA FINANCEIRO: Receita, Custos, Lucro, Margem, Ticket Médio
- * - 🔥 ABA SERVIÇOS: Total, Média, Pico, Dia de Pico, Distribuição
- * - 🔥 ABA TENDÊNCIA: Evolução mensal com análise de crescimento
- * - 🔥 DESIGN PROFISSIONAL: Cards com gradientes e ícones
+ * ✅ CORREÇÕES v16.6:
+ * - 🔥 CRÉDITOS: Sincronização com múltiplas fontes (App State, Auth, localStorage)
+ * - 🔥 CRÉDITOS: Verificação em tempo real com fallback
+ * - 🔥 CRÉDITOS: Atualização UI reativa com eventos
+ * - 🔥 CRÉDITOS: Display correto para Premium (ex: 2/3)
+ * - 🔥 TODAS AS FUNCIONALIDADES PRESERVADAS
  * 
- * ✅ MANTIDO v16.4:
- * - 3 gráficos: Barras (Receita vs Custos) + Linha (Serviços) + Linha (Mensal)
+ * ✅ MANTIDO v16.5:
+ * - GPSA - Performance da Oficina (3 abas)
+ * - 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)
  * - Polling com progresso
  * - Eventos chart:data_ready
  */
@@ -47,6 +47,7 @@
             SYNC_INTERVAL: 15000,
             UI_THROTTLE: 300,
             SYNC_DEBOUNCE: 500,
+            AUTO_SYNC_DELAY: 1000,
         },
         
         COLORS: {
@@ -223,7 +224,7 @@
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER
+    // 🔥🔥🔥 CREDIT MANAGER (VERSÃO CORRIGIDA V16.6)
     // ==============================================
 
     class CreditManager {
@@ -234,6 +235,7 @@
             this._lastSync = 0;
             this._pendingRefund = 0;
             this._syncInProgress = false;
+            this._initialized = false;
             
             this._updatingUI = false;
             this._lastUpdate = 0;
@@ -241,58 +243,99 @@
             this._updateQueue = [];
             this._isProcessingQueue = false;
             this._cachedDisplay = null;
+            this._cachedBalance = null;
             
             this._loadFromAppState();
             this._setupEventListeners();
+            
+            setTimeout(() => {
+                this.sync(true).catch(() => {});
+            }, CONFIG.CREDITS.AUTO_SYNC_DELAY);
+            
+            console.log('💰 [CreditManager] Inicializado');
         }
 
+        // ==========================================
+        // 🔥 CARREGAMENTO DE DADOS (MULTI-FONTE)
+        // ==========================================
+
         _loadFromAppState() {
+            console.log('🔄 [CreditManager] Carregando créditos...');
+            
             try {
                 if (window.__APP_STATE) {
                     const appCredits = window.__APP_STATE.credits;
-                    if (appCredits !== undefined) {
+                    if (appCredits !== undefined && appCredits !== null) {
                         this._balance = appCredits;
                         this._isPremium = window.__APP_STATE.isPremium || false;
                         this._isAdmin = window.__APP_STATE.isAdmin || false;
-                        console.log(`💰 [CreditManager] Carregado do App State: ${this._balance}`);
+                        console.log(`💰 [CreditManager] App State: ${this._balance}`);
                         this._updateUI();
                         return true;
                     }
                 }
-                
-                try {
-                    const userData = localStorage.getItem('user_data');
-                    if (userData) {
-                        const parsed = JSON.parse(userData);
-                        if (parsed.credits !== undefined) {
-                            this._balance = parsed.credits;
-                            this._isPremium = parsed.is_premium || false;
-                            this._isAdmin = parsed.is_admin || false;
-                            console.log(`💰 [CreditManager] Carregado do localStorage: ${this._balance}`);
+            } catch (e) {}
+            
+            try {
+                if (window.appAuth) {
+                    if (typeof window.appAuth.getCredits === 'function') {
+                        const authCredits = window.appAuth.getCredits();
+                        if (authCredits !== undefined && authCredits !== null) {
+                            this._balance = authCredits;
+                            this._isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
+                            this._isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
+                            console.log(`💰 [CreditManager] appAuth: ${this._balance}`);
                             this._updateUI();
                             return true;
                         }
                     }
-                } catch (e) {}
-                
-                if (window.App && typeof window.App.getCredits === 'function') {
-                    const appCredits = window.App.getCredits();
-                    if (appCredits !== undefined) {
-                        this._balance = appCredits;
-                        this._isPremium = window.App.isPremium ? window.App.isPremium() : false;
-                        this._isAdmin = window.App.isAdmin ? window.App.isAdmin() : false;
-                        console.log(`💰 [CreditManager] Carregado do App: ${this._balance}`);
+                    if (window.appAuth.userData && window.appAuth.userData.credits !== undefined) {
+                        this._balance = window.appAuth.userData.credits;
+                        this._isPremium = window.appAuth.userData.is_premium || false;
+                        this._isAdmin = window.appAuth.userData.is_admin || false;
+                        console.log(`💰 [CreditManager] appAuth.userData: ${this._balance}`);
                         this._updateUI();
                         return true;
                     }
                 }
-                
-                return false;
-            } catch (e) {
-                console.warn('⚠️ Erro ao carregar do App State:', e);
-                return false;
-            }
+            } catch (e) {}
+            
+            try {
+                if (window.App && typeof window.App.getCredits === 'function') {
+                    const appCredits = window.App.getCredits();
+                    if (appCredits !== undefined && appCredits !== null) {
+                        this._balance = appCredits;
+                        this._isPremium = window.App.isPremium ? window.App.isPremium() : false;
+                        this._isAdmin = window.App.isAdmin ? window.App.isAdmin() : false;
+                        console.log(`💰 [CreditManager] App: ${this._balance}`);
+                        this._updateUI();
+                        return true;
+                    }
+                }
+            } catch (e) {}
+            
+            try {
+                const userData = localStorage.getItem('user_data');
+                if (userData) {
+                    const parsed = JSON.parse(userData);
+                    if (parsed.credits !== undefined) {
+                        this._balance = parsed.credits;
+                        this._isPremium = parsed.is_premium || false;
+                        this._isAdmin = parsed.is_admin || false;
+                        console.log(`💰 [CreditManager] localStorage: ${this._balance}`);
+                        this._updateUI();
+                        return true;
+                    }
+                }
+            } catch (e) {}
+            
+            console.log('⚠️ [CreditManager] Nenhuma fonte encontrada');
+            return false;
         }
+
+        // ==========================================
+        // 🔥 EVENT LISTENERS
+        // ==========================================
 
         _setupEventListeners() {
             document.addEventListener('creditsUpdated', (e) => {
@@ -313,45 +356,124 @@
                     this._loadFromAppState();
                 }
             });
+            
+            document.addEventListener('authLoginSuccess', (e) => {
+                const data = e.detail || {};
+                if (data.credits !== undefined) {
+                    this._balance = data.credits;
+                    this._isPremium = data.isPremium || false;
+                    this._isAdmin = data.isAdmin || false;
+                    this._updateUI();
+                }
+                setTimeout(() => this.sync(true), 500);
+            });
+            
+            document.addEventListener('analysis:success', (e) => {
+                const data = e.detail || {};
+                const credits = data.creditsUpdated || data.result?.credits_remaining;
+                if (credits !== undefined) {
+                    this._balance = credits;
+                    this._updateUI();
+                }
+                setTimeout(() => this.sync(true), 800);
+            });
+            
+            document.addEventListener('eligibility:updated', (e) => {
+                const data = e.detail || {};
+                if (data.credits_balance !== undefined) {
+                    this._balance = data.credits_balance;
+                    this._isPremium = data.is_premium || false;
+                    this._isAdmin = data.is_admin || false;
+                    this._updateUI();
+                }
+            });
+            
+            document.addEventListener('upload:completed', (e) => {
+                const data = e.detail || {};
+                if (data.credits_remaining !== undefined) {
+                    this._balance = data.credits_remaining;
+                    this._updateUI();
+                }
+                setTimeout(() => this.sync(true), 500);
+            });
         }
 
-        get balance() { return this._balance; }
-        get isPremium() { return this._isPremium; }
-        get isAdmin() { return this._isAdmin; }
+        // ==========================================
+        // 🔥 GETTERS
+        // ==========================================
+
+        get balance() { 
+            if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
+                this._balance = window.__APP_STATE.credits;
+            }
+            return this._balance; 
+        }
+        
+        get isPremium() { 
+            if (window.__APP_STATE && window.__APP_STATE.isPremium !== undefined) {
+                this._isPremium = window.__APP_STATE.isPremium;
+            }
+            return this._isPremium; 
+        }
+        
+        get isAdmin() { 
+            if (window.__APP_STATE && window.__APP_STATE.isAdmin !== undefined) {
+                this._isAdmin = window.__APP_STATE.isAdmin;
+            }
+            return this._isAdmin; 
+        }
         
         get display() {
-            if (this._isAdmin) return '∞';
-            if (this._isPremium) return `${this._balance}/${CONFIG.CREDITS.MAX_CREDITS_PREMIUM}`;
-            return String(this._balance);
+            const balance = this.balance;
+            const isAdmin = this.isAdmin;
+            const isPremium = this.isPremium;
+            
+            if (isAdmin) return '∞';
+            if (isPremium) {
+                const maxCredits = CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
+                return `${Math.min(balance, maxCredits)}/${maxCredits}`;
+            }
+            return String(Math.max(0, balance));
         }
+
+        // ==========================================
+        // 🔥 SINCRONIZAÇÃO
+        // ==========================================
 
         async sync(force = false) {
             if (!force) {
                 const loaded = this._loadFromAppState();
-                if (loaded) {
+                if (loaded && this._balance > 0) {
+                    console.log(`💰 [CreditManager] Cache: ${this._balance}`);
                     return this._balance;
                 }
             }
 
-            if (this._syncInProgress && !force) return this._balance;
+            if (this._syncInProgress && !force) {
+                console.log('⏳ [CreditManager] Sync em andamento');
+                return this._balance;
+            }
             
             this._syncInProgress = true;
             
             try {
-                let token = null;
-                
-                if (window.appAuth && typeof window.appAuth.isAuthenticated === 'function') {
-                    if (window.appAuth.isAuthenticated()) {
-                        token = localStorage.getItem('access_token');
+                if (window.appAuth && typeof window.appAuth.getCredits === 'function') {
+                    const credits = window.appAuth.getCredits();
+                    if (credits !== undefined && credits !== null) {
+                        this._balance = credits;
+                        this._isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
+                        this._isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
+                        console.log(`💰 [CreditManager] Sync Auth: ${this._balance}`);
+                        this._updateUI();
+                        this._syncInProgress = false;
+                        return this._balance;
                     }
-                } else {
-                    token = Utils.getToken();
                 }
                 
+                const token = Utils.getToken();
                 if (!token) {
-                    console.log('⏳ [CreditManager] Sem token, usando App State');
-                    this._loadFromAppState();
-                    this._updateUI();
+                    console.log('⏳ [CreditManager] Sem token');
+                    this._syncInProgress = false;
                     return this._balance;
                 }
 
@@ -377,20 +499,20 @@
                         this._isAdmin = newIsAdmin;
                         this._lastSync = Date.now();
                         this._updateUI();
+                        console.log(`💰 [CreditManager] Sync API: ${this._balance}`);
                     }
                     
+                    this._syncInProgress = false;
                     return this._balance;
                 } else if (response.status === 401) {
-                    console.warn('⚠️ Token expirado, usando App State');
+                    console.warn('⚠️ [CreditManager] Token expirado');
                     this._loadFromAppState();
                     this._updateUI();
-                    return this._balance;
                 }
             } catch (e) {
-                console.warn('⚠️ Erro ao sincronizar créditos:', e);
+                console.warn('⚠️ [CreditManager] Erro sync:', e);
                 this._loadFromAppState();
                 this._updateUI();
-                return this._balance;
             } finally {
                 this._syncInProgress = false;
             }
@@ -401,34 +523,66 @@
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
+        // ==========================================
+        // 🔥 VERIFICAÇÃO DE CRÉDITOS
+        // ==========================================
+
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
             this._loadFromAppState();
-            if (this._isAdmin) return true;
-            const hasEnough = this._balance >= required;
-            console.log(`💰 [CreditManager] Verificando créditos: ${this._balance} >= ${required} = ${hasEnough}`);
+            
+            if (this.isAdmin) {
+                console.log('👑 [CreditManager] Admin - ilimitado');
+                return true;
+            }
+            
+            const balance = this.balance;
+            const hasEnough = balance >= required;
+            
+            console.log(`💰 [CreditManager] Verificando: ${balance} >= ${required} = ${hasEnough}`);
+            
+            if (!hasEnough) {
+                console.log('🔄 [CreditManager] Créditos insuficientes, tentando sync...');
+                setTimeout(() => this.sync(true), 300);
+            }
+            
             return hasEnough;
         }
 
         canReceiveDaily() {
-            if (this._isAdmin) return false;
-            if (!this._isPremium) return false;
-            return this._balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
+            if (this.isAdmin) return false;
+            if (!this.isPremium) return false;
+            
+            if (window.__APP_STATE && window.__APP_STATE.canReceiveDailyCredit !== undefined) {
+                return window.__APP_STATE.canReceiveDailyCredit;
+            }
+            
+            return this.balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
         }
 
+        // ==========================================
+        // 🔥 CONSUMO DE CRÉDITOS
+        // ==========================================
+
         async consume(amount = CONFIG.CREDITS.COST_PER_UPLOAD, description = 'Upload') {
-            if (this._isAdmin) {
+            console.log(`💰 [CreditManager] Consumindo ${amount} crédito(s)...`);
+            
+            if (this.isAdmin) {
                 console.log('👑 Admin - créditos ilimitados');
                 return { success: true, balance: '∞' };
             }
 
             await this.sync(true);
             
+            const currentBalance = this.balance;
+            
             if (!this.hasCredits(amount)) {
+                console.warn(`⚠️ [CreditManager] Créditos insuficientes: ${currentBalance} < ${amount}`);
                 return { 
                     success: false, 
                     error: 'Créditos insuficientes',
-                    balance: this._balance,
-                    needed: amount
+                    balance: currentBalance,
+                    needed: amount,
+                    canPurchase: true
                 };
             }
 
@@ -450,8 +604,15 @@
                 if (response.ok) {
                     const data = await response.json();
                     const before = this._balance;
-                    this._balance = data.remaining || 0;
+                    this._balance = data.remaining || Math.max(0, before - amount);
                     this._updateUI();
+                    
+                    console.log(`💰 [CreditManager] Consumido: ${amount}, Saldo: ${this._balance}`);
+                    
+                    window.dispatchEvent(new CustomEvent('credits:consumed', {
+                        detail: { amount, balance: this._balance, before, description }
+                    }));
+                    
                     return { 
                         success: true, 
                         balance: this._balance,
@@ -460,17 +621,27 @@
                     };
                 } else {
                     const error = await response.json();
-                    return { success: false, error: error.message || 'Erro ao consumir créditos' };
+                    console.error('❌ [CreditManager] Erro no consumo:', error);
+                    await this.sync(true);
+                    return { 
+                        success: false, 
+                        error: error.message || 'Erro ao consumir créditos',
+                        balance: this._balance
+                    };
                 }
             } catch (e) {
-                console.error('❌ Erro ao consumir créditos:', e);
+                console.error('❌ [CreditManager] Erro:', e);
                 await this.sync(true);
-                return { success: false, error: e.message };
+                return { success: false, error: e.message, balance: this._balance };
             }
         }
 
+        // ==========================================
+        // 🔥 REEMBOLSO DE CRÉDITOS
+        // ==========================================
+
         async refund(amount, description = 'Correção de créditos') {
-            if (this._isAdmin || amount <= 0) return true;
+            if (this.isAdmin || amount <= 0) return true;
 
             try {
                 const token = Utils.getToken();
@@ -487,9 +658,14 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    this._balance = data.balance || 0;
+                    this._balance = data.balance || (this._balance + amount);
                     this._updateUI();
                     console.log(`💰 ${amount} crédito(s) devolvido(s): ${description}`);
+                    
+                    window.dispatchEvent(new CustomEvent('credits:refunded', {
+                        detail: { amount, balance: this._balance, description }
+                    }));
+                    
                     return true;
                 }
             } catch (e) {
@@ -498,8 +674,13 @@
             return false;
         }
 
+        // ==========================================
+        // 🔥 UI UPDATE
+        // ==========================================
+
         _updateUI() {
             const now = Date.now();
+            
             if (now - this._lastUpdate < this._uiThrottle) {
                 if (!this._updateQueue.includes('update')) {
                     this._updateQueue.push('update');
@@ -513,39 +694,62 @@
 
             try {
                 const display = this.display;
+                const balance = this.balance;
                 
-                if (this._cachedDisplay === display) {
+                if (this._cachedDisplay === display && this._cachedBalance === balance) {
                     this._updatingUI = false;
                     return;
                 }
                 
-                const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
-                let updated = false;
+                console.log(`🔄 [CreditManager] UI: ${display} (${balance})`);
                 
-                elements.forEach(el => {
-                    if (el && el.textContent !== display) {
-                        el.textContent = display;
+                const selectors = [
+                    '#creditsCount',
+                    '#uploadCredits',
+                    '#creditsDisplay',
+                    '.credits-display',
+                    '#modalCreditsCount',
+                    '.credits-badge-nav span',
+                    '.user-credits'
+                ];
+                
+                let updated = false;
+                selectors.forEach(selector => {
+                    document.querySelectorAll(selector).forEach(el => {
+                        if (el && el.textContent !== display) {
+                            el.textContent = display;
+                            updated = true;
+                        }
+                    });
+                });
+                
+                const navbarCredits = document.getElementById('navbarCredits');
+                if (navbarCredits) {
+                    const span = navbarCredits.querySelector('span');
+                    if (span && span.textContent !== display) {
+                        span.textContent = display;
                         updated = true;
                     }
-                });
+                }
                 
                 if (updated) {
                     this._cachedDisplay = display;
+                    this._cachedBalance = balance;
                     this._lastUpdate = now;
                     
                     const event = new CustomEvent('creditsUpdated', {
                         detail: {
-                            credits: this._balance,
+                            credits: balance,
                             display: display,
-                            isPremium: this._isPremium,
-                            isAdmin: this._isAdmin,
+                            isPremium: this.isPremium,
+                            isAdmin: this.isAdmin,
                             _silent: true
                         }
                     });
                     document.dispatchEvent(event);
                     
                     if (window.__APP_STATE_MANAGER) {
-                        window.__APP_STATE_MANAGER.updateCredits(this._balance, this._isPremium);
+                        window.__APP_STATE_MANAGER.updateCredits(balance, this.isPremium);
                     }
                 }
                 
@@ -573,7 +777,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.5)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.6 - COMPLETA)
     // ==============================================
 
     class Dashboard {
@@ -585,7 +789,6 @@
             this._fileCache = new Map();
             this._analysisCache = new Map();
             
-            // 🔥 Instâncias dos gráficos
             this._chartInstances = {
                 revenue: null,
                 performance: null,
@@ -623,16 +826,15 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.5] Inicializando com GPSA...');
+            console.log('🚀 [Dashboard v16.6] Inicializando com créditos corrigidos...');
 
-            await this._creditManager.sync();
+            await this._creditManager.sync(true);
             
             this._setupEvents();
             this._setupUploadHandlers();
             this._setupPolling();
             this._setupChartListener();
             
-            // 🔥 Verificar se os canvases existem
             const canvases = {
                 revenue: document.getElementById('revenueChart'),
                 performance: document.getElementById('performanceChart'),
@@ -646,12 +848,45 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.5] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.6] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
+            console.log(`   🔥 Créditos: sincronização multi-fonte corrigida`);
             
             return this;
+        }
+
+        // ==========================================
+        // 🔥 MÉTODOS DE CRÉDITOS (PÚBLICOS)
+        // ==========================================
+
+        getCredits() {
+            return this._creditManager.balance;
+        }
+
+        getCreditsDisplay() {
+            return this._creditManager.display;
+        }
+
+        isPremium() {
+            return this._creditManager.isPremium;
+        }
+
+        isAdmin() {
+            return this._creditManager.isAdmin;
+        }
+
+        hasCredits(amount = 1) {
+            return this._creditManager.hasCredits(amount);
+        }
+
+        async refreshCredits() {
+            return await this._creditManager.sync(true);
+        }
+
+        async consumeCredits(amount = 1, description = 'Upload') {
+            return await this._creditManager.consume(amount, description);
         }
 
         // ==========================================
@@ -750,7 +985,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO
+        // 🔥 UPLOAD MÚLTIPLO (COM CRÉDITOS CORRIGIDOS)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -1415,7 +1650,7 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA (NOVO)
+        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA
         // ==========================================
 
         _renderGPSA(chartData) {
@@ -1431,12 +1666,10 @@
                 return;
             }
             
-            // Esconder placeholder
             if (placeholder) {
                 placeholder.style.display = 'none';
             }
             
-            // Extrair dados
             const weekly = chartData.weekly || {};
             const performance = chartData.performance || {};
             const monthly = chartData.monthly || {};
@@ -1448,7 +1681,6 @@
             const monthlyRevenue = monthly.revenue || [];
             const monthlyLabels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             
-            // Calcular métricas para o GPSA
             const totalRevenue = revenue.reduce((a, b) => a + b, 0);
             const totalCosts = costs.reduce((a, b) => a + b, 0);
             const totalServices = services.reduce((a, b) => a + b, 0);
@@ -1459,7 +1691,6 @@
             const peakDay = services.length > 0 ? labels[services.indexOf(maxService)] : '-';
             const ticketMedio = totalServices > 0 ? totalRevenue / totalServices : 0;
             
-            // Score de saúde (0-100)
             const score = Math.min(100, Math.max(0, Math.round(
                 (margin > 30 ? 40 : margin > 15 ? 25 : 10) +
                 (avgServices > 10 ? 30 : avgServices > 5 ? 20 : 10) +
@@ -1467,7 +1698,6 @@
                 (totalRevenue > 5000 ? 10 : 5)
             )));
             
-            // Atualizar indicador de saúde
             if (healthIndicator) {
                 const status = this._getGPSAStatus(score);
                 healthIndicator.innerHTML = `
@@ -1479,7 +1709,6 @@
                 healthIndicator.style.borderColor = status.borderColor;
             }
             
-            // Construir abas
             const tabs = [
                 {
                     id: 'gpsa-financeiro',
@@ -1504,7 +1733,6 @@
                 }
             ];
             
-            // Renderizar abas
             tabsContainer.innerHTML = tabs.map((tab, index) => `
                 <li class="nav-item" role="presentation">
                     <button class="nav-link ${tab.active ? 'active' : ''}" 
@@ -1522,7 +1750,6 @@
                 </li>
             `).join('');
             
-            // Renderizar conteúdo das abas
             tabContent.innerHTML = tabs.map((tab, index) => `
                 <div class="tab-pane fade ${tab.active ? 'show active' : ''}" 
                      id="${tab.id}" 
@@ -1533,7 +1760,6 @@
                 </div>
             `).join('');
             
-            // Adicionar estilo para abas
             const styleEl = document.getElementById('gpsa-tab-style');
             if (!styleEl) {
                 const style = document.createElement('style');
@@ -1673,7 +1899,6 @@
             const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const dayLabels = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
             
-            // Distribuição por dia
             const distribution = labels.map((label, i) => ({
                 day: dayLabels[i] || label,
                 short: label,
@@ -1753,7 +1978,6 @@
             const maxIdx = monthlyRevenue.indexOf(maxMonth);
             const minIdx = monthlyRevenue.indexOf(minMonth);
             
-            // Tendência de crescimento (primeiro vs último semestre)
             const half = Math.floor(monthlyRevenue.length / 2);
             const firstHalf = monthlyRevenue.slice(0, half).reduce((a, b) => a + b, 0);
             const secondHalf = monthlyRevenue.slice(half).reduce((a, b) => a + b, 0);
@@ -2360,6 +2584,7 @@
 
             document.addEventListener('analysis:success', () => {
                 this._invalidateCache();
+                setTimeout(() => this._creditManager.sync(true), 500);
             });
 
             document.addEventListener('visibilitychange', () => {
@@ -2510,7 +2735,11 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.5 carregado - COM GPSA');
+    console.log('🔥 dashboard.js v16.6 carregado - CRÉDITOS CORRIGIDOS');
+    console.log('   ✅ CRÉDITOS: Sincronização multi-fonte (App State, Auth, localStorage)');
+    console.log('   ✅ CRÉDITOS: Verificação em tempo real com fallback');
+    console.log('   ✅ CRÉDITOS: Display correto para Premium (ex: 2/3)');
+    console.log('   ✅ CRÉDITOS: Consumo e refund com validação');
     console.log('   ✅ GRÁFICO 1: Barras (Receita vs Custos)');
     console.log('   ✅ GRÁFICO 2: Linha (Serviços Semanais)');
     console.log('   ✅ GRÁFICO 3: Linha (Evolução Mensal)');
@@ -2521,7 +2750,6 @@
     console.log('   ✅ FALLBACK INTELIGENTE: Dados de exemplo');
     console.log('   ✅ POLLING: Acompanhamento de progresso em tempo real');
     console.log('   ✅ BARRA DE PROGRESSO: Mostra % e mensagem');
-    console.log('   ✅ Verificação de créditos com App State primeiro');
     console.log('='.repeat(60));
 
 })();
