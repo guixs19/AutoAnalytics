@@ -1,8 +1,13 @@
-# backend/models.py - VERSÃO 2.2 COM CHART_DATA
+# backend/models.py - VERSÃO 2.3 COM CONTROLE DE CRÉDITOS PREMIUM
 
 """
 🔥 Models - AutoAnalytics
-Versão: 2.2 - Com suporte a chart_data para gráficos
+Versão: 2.3 - Com suporte a controle de créditos premium
+
+🔥 MELHORIAS v2.3:
+   - ✅ ADICIONADO: last_bonus_at - Controle de último bônus recebido
+   - ✅ ADICIONADO: bonus_count - Total de bônus recebidos
+   - ✅ ADICIONADO: Métodos para gerenciamento de bônus
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
@@ -71,6 +76,10 @@ class User(Base):
     total_purchased = Column(Integer, default=0)
     last_payment_date = Column(DateTime, onupdate=_now_brasil)
     
+    # 🔥 NOVOS CAMPOS PARA CONTROLE DE BÔNUS PREMIUM
+    last_bonus_at = Column(DateTime, nullable=True, comment="Última vez que recebeu bônus premium por zerar créditos")
+    bonus_count = Column(Integer, default=0, comment="Número total de bônus premium recebidos")
+    
     # Plano premium
     plan = Column(Enum(UserPlan), default=UserPlan.BASICO)
     premium_activated_at = Column(DateTime, nullable=True)
@@ -117,6 +126,26 @@ class User(Base):
         self.credits += amount
         self.total_purchased += amount
         self.last_payment_date = _now_brasil()
+    
+    # 🔥 NOVOS MÉTODOS PARA BÔNUS
+    def has_received_bonus_today(self) -> bool:
+        """Verifica se o usuário já recebeu bônus hoje"""
+        if not self.last_bonus_at:
+            return False
+        return self.last_bonus_at.date() == _today_brasil()
+    
+    def mark_bonus_received(self):
+        """Marca que o usuário recebeu bônus hoje"""
+        self.last_bonus_at = _now_brasil()
+        self.bonus_count = (self.bonus_count or 0) + 1
+    
+    def can_receive_bonus_today(self) -> bool:
+        """Verifica se o usuário pode receber bônus hoje (apenas premium)"""
+        if not self.is_premium():
+            return False
+        if self.has_received_bonus_today():
+            return False
+        return True
     
     def is_premium(self) -> bool:
         if self.plan != UserPlan.PREMIUM_MENSAL:
@@ -401,7 +430,6 @@ class Analysis(Base):
             "numeric_columns": self.numeric_columns,
             "categorical_columns": self.categorical_columns,
             "chart_data": self.chart_data,
-            # 🔥 NOVO
             "progress": self.progress,
             "progress_message": self.progress_message,
             "predictions_summary": self.predictions_summary,
@@ -468,10 +496,17 @@ class BlacklistedToken(Base):
 
 
 print("=" * 70)
-print("🔥 models.py v2.2 carregado - COM CHART_DATA!")
-print("   ✅ Analysis com campos PoW")
-print("   ✅ Analysis com file_size")
-print("   ✅ Analysis com métricas de performance")
-print("   ✅ Analysis com chart_data para gráficos")  # 🔥 NOVO
+print("🔥 models.py v2.3 carregado - COM CONTROLE DE CRÉDITOS PREMIUM!")
+print("   ✅ ANÁLISES:")
+print("      - Analysis com campos PoW")
+print("      - Analysis com file_size")
+print("      - Analysis com métricas de performance")
+print("      - Analysis com chart_data para gráficos")
+print("   ✅ USUÁRIOS:")
+print("      - last_bonus_at: controle de bônus premium")
+print("      - bonus_count: total de bônus recebidos")
+print("      - has_received_bonus_today()")
+print("      - mark_bonus_received()")
+print("      - can_receive_bonus_today()")
 print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
 print("=" * 70)

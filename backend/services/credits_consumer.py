@@ -1,8 +1,22 @@
-# backend/services/credits_consumer.py
+# backend/services/credits_consumer.py - VERSÃO 2.3
 """
 Serviço para consumo de créditos em análises
 COM SUPORTE PARA PLANO PREMIUM E LIMITE DE 3 CRÉDITOS
+
+🔥 REGRAS V2.3:
+   - FREE: Consome créditos, NÃO ganha bônus ao zerar
+   - PREMIUM: Consome créditos, ganha bônus automático se zerar E não recebeu hoje
+   - PREMIUM: Só ganha se saldo < 3 e NÃO recebeu hoje
+   - 👑 Admin: créditos ilimitados, não consome
+
+🔥 MELHORIAS v2.3:
+   - ✅ Usa get_credit_eligibility() do crud
+   - ✅ Usa manage_credits_after_consumption() para consumo unificado
+   - ✅ FREE explicitamente bloqueado de ganhar bônus
+   - ✅ Logs mais informativos
+   - ✅ Funções simplificadas e consistentes
 """
+
 import logging
 from sqlalchemy.orm import Session
 from backend.models import User, UserPlan
@@ -61,29 +75,43 @@ def can_perform_analysis(db: Session, user: User, required_credits: int = 1) -> 
     """
     Verifica se usuário pode realizar uma análise
     
+    🔥 V2.3: Usa get_credit_eligibility() para verificação consistente
+    
     ✅ Admin sempre pode
     ⭐ Premium verifica saldo (respeitando limite de 3)
     💰 Comum verifica saldo normal
+    
+    Retorna:
+        bool: True se pode realizar a análise
     """
-    # Admin tem acesso ilimitado
+    # 👑 Admin tem acesso ilimitado
     if user.is_admin:
         logger.info(f"👑 Admin {user.email} pode realizar análise (ilimitado)")
         return True
     
-    # Verificar se tem créditos suficientes
+    # 🔥 Verificar se tem créditos suficientes
     has_credits = user.credits >= required_credits
     
     if not has_credits:
-        is_premium = _is_premium_user(user)
+        # 🔥 USAR FUNÇÃO DE ELEGIBILIDADE DO CRUD
+        from backend.crud import get_credit_eligibility
+        eligibility = get_credit_eligibility(db, user)
+        
+        is_premium = eligibility.get("is_premium", False)
         
         if is_premium:
-            # Verificar status do crédito premium
-            status = daily_credits_service.check_premium_daily_credit(db, user.id)
-            if status.get('can_receive_today'):
+            # ⭐ Premium: verifica se pode receber crédito hoje
+            if eligibility.get("can_receive_today", False):
                 logger.info(f"⭐ Premium {user.email} pode ganhar crédito hoje - sugerir ação")
                 return False
-            elif status.get('max_credits_reached'):
-                logger.warning(f"⚠️ Premium {user.email} atingiu limite de 3 créditos")
+            elif eligibility.get("at_max_limit", False):
+                logger.warning(f"⚠️ Premium {user.email} atingiu limite de {eligibility.get('max_credits', 3)} créditos")
+            else:
+                reason = eligibility.get("reason", "Créditos insuficientes")
+                logger.info(f"📌 Premium {user.email}: {reason}")
+        else:
+            # ❌ FREE: não ganha créditos
+            logger.info(f"📌 Usuário free {user.email} não tem créditos suficientes. Tem: {user.credits}, Precisa: {required_credits}")
         
         logger.warning(f"❌ Usuário {user.email} não tem créditos suficientes. Tem: {user.credits}, Necessário: {required_credits}")
     
@@ -94,39 +122,43 @@ def consume_analysis_credit(user: User, db: Session, required_credits: int = 1) 
     """
     Consome crédito de uma análise
     
-    ✅ Admin não consome nada
-    ⭐ Premium consome normalmente
-    💰 Usuário comum consome normalmente
+    🔥 V2.3: Usa manage_credits_after_consumption() para gerenciamento unificado
     
-    🔥 safe_commit já trata rollback automático em caso de erro
+    ✅ Admin não consome nada
+    ⭐ Premium consome normalmente e ganha bônus se zerar
+    💰 Usuário comum consome normalmente, NÃO ganha bônus
+    
+    Retorna:
+        bool: True se sucesso, False se erro
     """
-    # Admin não consome créditos
+    # 👑 Admin não consome créditos
     if user.is_admin:
         logger.info(f"👑 Admin {user.email} realizou análise sem consumir créditos")
         return True
     
-    # Verificar se tem créditos
-    if user.credits < required_credits:
-        logger.warning(f"❌ Usuário {user.email} tentou consumir {required_credits} créditos mas só tem {user.credits}")
-        return False
+    # 🔥 USAR O NOVO GERENCIADOR UNIFICADO
+    from backend.crud import manage_credits_after_consumption
     
-    old_credits = user.credits
-    user.credits -= required_credits
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=required_credits,
+        description=f"Análise de {required_credits} arquivo(s)"
+    )
     
-    try:
-        # safe_commit já faz rollback interno em caso de erro
-        safe_commit(db, f"Erro ao consumir créditos de análise para o usuário {user.email}")
-    except Exception as e:
-        logger.error(f"❌ Falha crítica no banco ao consumir crédito para {user.email}: {e}")
-        return False
-
-    # Executado APENAS se o commit correu bem
-    logger.info(f"💰 Usuário {user.email} consumiu {required_credits} crédito(s). Antes: {old_credits}, Agora: {user.credits}")
+    if result.get("success"):
+        logger.info(f"💰 {user.email} consumiu {required_credits} crédito(s). Saldo: {result.get('remaining')}")
+        
+        if result.get("bonus_granted"):
+            logger.info(f"⭐ Bônus concedido para {user.email}: +{result.get('bonus_amount')} crédito(s)")
+        
+        if result.get("needs_attention"):
+            logger.info(f"📌 Atenção necessária para {user.email}: {result.get('message')}")
+        
+        return True
     
-    if _is_premium_user(user) and user.credits < 3:
-        logger.info(f"⭐ Premium {user.email} agora tem {user.credits}/3 créditos - pode receber mais")
-    
-    return True
+    logger.error(f"❌ Falha ao consumir créditos para {user.email}: {result.get('error')}")
+    return False
 
 
 def get_credits_display(user: User) -> str:
@@ -149,7 +181,12 @@ def get_credits_display(user: User) -> str:
 
 
 def get_credits_balance(user: User) -> int:
-    """Retorna saldo numérico de créditos (admin retorna 999999)"""
+    """
+    Retorna saldo numérico de créditos
+    
+    Admin: 999999 (infinito)
+    Outros: saldo real
+    """
     if user.is_admin:
         return 999999
     return user.credits or 0
@@ -158,52 +195,76 @@ def get_credits_balance(user: User) -> int:
 def can_receive_daily_credit(db: Session, user: User) -> dict:
     """
     Verifica se usuário premium pode receber crédito diário
+    
+    🔥 V2.3: Usa get_credit_eligibility() para consistência
+    
     Retorna dicionário com status e mensagem
     """
     if user.is_admin:
         return {
             "can_receive": False,
             "message": "Admin tem créditos ilimitados",
-            "is_premium": False
+            "is_premium": False,
+            "is_admin": True
         }
     
-    is_premium = _is_premium_user(user)
+    # 🔥 USAR FUNÇÃO DE ELEGIBILIDADE
+    from backend.crud import get_credit_eligibility
+    eligibility = get_credit_eligibility(db, user)
+    
+    is_premium = eligibility.get("is_premium", False)
     
     if not is_premium:
         return {
             "can_receive": False,
             "message": "Assine o plano premium para ganhar créditos diários",
-            "is_premium": False
+            "is_premium": False,
+            "is_admin": False,
+            "credits_balance": user.credits or 0,
+            "max_credits": 3
         }
     
-    # Verificar status do crédito premium
-    status = daily_credits_service.check_premium_daily_credit(db, user.id)
-    
+    # ⭐ PREMIUM
     return {
-        "can_receive": status.get('can_receive_today', False),
-        "message": status.get('message', ''),
+        "can_receive": eligibility.get("can_receive_today", False),
+        "message": eligibility.get("reason", ""),
         "is_premium": True,
-        "received_today": status.get('received_today', False),
-        "max_credits_reached": status.get('max_credits_reached', False),
-        "credits_balance": status.get('credits_balance', user.credits),
-        "max_credits": status.get('max_credits', 3),
-        "days_left": status.get('days_left', 0),
-        "timezone": status.get('timezone', 'America/Sao_Paulo (UTC-3)')
+        "is_admin": False,
+        "received_today": eligibility.get("received_today", False),
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "credits_balance": eligibility.get("credits_balance", user.credits),
+        "max_credits": eligibility.get("max_credits", 3),
+        "days_left": eligibility.get("days_left", 0),
+        "next_credit_date": eligibility.get("next_credit_date"),
+        "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
 
 def award_daily_credit(db: Session, user: User) -> dict:
     """
     Concede crédito diário para usuário premium
+    
+    🔥 V2.3: Usa receive_daily_credit() do crud
+    
     Retorna resultado da operação
     """
-    result = daily_credits_service.check_and_add_daily_credit(db, user.id)
+    from backend.crud import receive_daily_credit
+    
+    result = receive_daily_credit(db, user.id)
+    
+    if result.get("success"):
+        logger.info(f"⭐ Crédito diário concedido para {user.email}")
+    else:
+        logger.warning(f"⚠️ Falha ao conceder crédito diário para {user.email}: {result.get('error')}")
+    
     return result
 
 
 def add_credits_safe(db: Session, user: User, amount: int, description: str = "") -> bool:
     """
     Adiciona créditos ao usuário com commit seguro
+    
+    🔥 V2.3: Usa add_credits() do crud com validação
     
     Args:
         db: Sessão do banco
@@ -222,21 +283,81 @@ def add_credits_safe(db: Session, user: User, amount: int, description: str = ""
         logger.info(f"👑 Admin {user.email} - créditos ilimitados (operação ignorada)")
         return True
     
-    # Verificar limite para premium
-    is_premium = _is_premium_user(user)
-    max_credits = 3 if is_premium else float('inf')
+    # 🔥 USAR add_credits DO CRUD (já tem validação)
+    from backend.crud import add_credits
     
-    if user.credits + amount > max_credits:
-        logger.warning(f"⚠️ {user.email} excederia limite de {max_credits} créditos")
-        return False
+    success = add_credits(db, user.id, amount, description)
     
-    old_credits = user.credits
-    user.credits += amount
+    if success:
+        logger.info(f"💰 {user.email} recebeu +{amount} créditos ({description})")
+    else:
+        logger.warning(f"⚠️ Falha ao adicionar créditos para {user.email}")
     
-    try:
-        safe_commit(db, f"Erro ao adicionar {amount} créditos para {user.email}")
-        logger.info(f"💰 {user.email} recebeu +{amount} créditos ({description}). Antes: {old_credits}, Agora: {user.credits}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Falha crítica ao adicionar créditos para {user.email}: {e}")
-        return False
+    return success
+
+
+def get_credit_eligibility_status(db: Session, user: User) -> dict:
+    """
+    🔥 NOVA FUNÇÃO: Retorna status completo de elegibilidade do usuário
+    
+    Útil para chamadas AJAX do frontend
+    """
+    from backend.crud import get_credit_eligibility
+    
+    return get_credit_eligibility(db, user)
+
+
+def can_receive_bonus(db: Session, user: User) -> dict:
+    """
+    🔥 NOVA FUNÇÃO: Verifica se o usuário pode receber bônus premium
+    
+    APENAS para usuários PREMIUM que zeraram os créditos
+    """
+    if user.is_admin:
+        return {
+            "can_receive": False,
+            "message": "Admin tem créditos ilimitados",
+            "is_premium": True
+        }
+    
+    from backend.crud import get_credit_eligibility
+    eligibility = get_credit_eligibility(db, user)
+    
+    is_premium = eligibility.get("is_premium", False)
+    
+    if not is_premium:
+        return {
+            "can_receive": False,
+            "message": "Bônus exclusivo para usuários Premium. Assine o plano!",
+            "is_premium": False,
+            "credits_balance": user.credits or 0
+        }
+    
+    # ⭐ PREMIUM: verifica se pode receber bônus
+    can_receive = (
+        is_premium and
+        eligibility.get("credits_balance", 0) == 0 and
+        eligibility.get("can_receive_today", False)
+    )
+    
+    return {
+        "can_receive": can_receive,
+        "message": eligibility.get("reason", "Você pode receber bônus premium!") if can_receive else "Você não pode receber bônus no momento",
+        "is_premium": True,
+        "credits_balance": eligibility.get("credits_balance", 0),
+        "max_credits": eligibility.get("max_credits", 3),
+        "received_today": eligibility.get("received_today", False),
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "next_credit_date": eligibility.get("next_credit_date")
+    }
+
+
+print("=" * 70)
+print("✅ credits_consumer.py v2.3 carregado!")
+print("   🔥 REGRAS DE CRÉDITOS CORRETAS:")
+print("   📌 FREE: Consome créditos, NÃO ganha bônus")
+print("   📌 PREMIUM: Consome créditos, ganha bônus se zerar")
+print("   📌 PREMIUM: Só ganha se saldo < 3 e NÃO recebeu hoje")
+print("   📌 Usa manage_credits_after_consumption() do crud")
+print("   📌 NOVAS FUNÇÕES: get_credit_eligibility_status(), can_receive_bonus()")
+print("=" * 70)

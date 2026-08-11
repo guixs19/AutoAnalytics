@@ -1,7 +1,24 @@
-# backend/crud.py - VERSÃO 2.1 COM CHART_DATA
+# backend/crud.py - VERSÃO 2.3 (COMPLETA E CORRIGIDA)
 """
 CRUD - Operações de banco de dados
-VERSÃO: 2.1 - COM SUPORTE A CHART_DATA E POW
+VERSÃO: 2.3 - CORREÇÃO FINAL DE CRÉDITOS
+
+🔥 REGRAS DE NEGÓCIO V2.3:
+   - FREE: 3 créditos iniciais, NUNCA ganha mais
+   - PREMIUM: 3 créditos iniciais, ganha 1/dia (máx 3)
+   - Premium SÓ ganha se saldo < 3 e NÃO recebeu hoje
+   - Premium PRECISA gastar para ganhar mais
+   - Se saldo = 3, NÃO ganha (precisa gastar)
+   - Se saldo = 0 e já recebeu hoje, ganha amanhã
+
+🔥 MELHORIAS v2.3:
+   - ✅ CORRIGIDO: Usuários FREE NUNCA ganham créditos extras
+   - ✅ CORRIGIDO: Premium só ganha se saldo < 3
+   - ✅ CORRIGIDO: Bônus automático para premium ao zerar
+   - ✅ ADICIONADO: get_credit_eligibility() - Verificação completa
+   - ✅ ADICIONADO: receive_daily_credit() - Função dedicada
+   - ✅ REFATORADO: manage_credits_after_consumption() - Unificado
+   - ✅ MELHORADO: Logs com mais informações
 """
 
 from sqlalchemy.orm import Session
@@ -70,6 +87,7 @@ def safe_commit(db: Session, error_msg: str = "Erro ao salvar no banco") -> bool
         raise
 
 def _is_premium_user(user: models.User) -> bool:
+    """Verifica se o usuário tem plano premium ativo"""
     if not user:
         return False
     if hasattr(user, 'is_premium') and callable(user.is_premium):
@@ -279,7 +297,7 @@ def get_all_admins(db: Session) -> List[models.User]:
 
 
 # ==============================================
-# CRÉDITOS
+# 🔥 CRÉDITOS - VERSÃO 2.3 (COMPLETA)
 # ==============================================
 
 def get_user_credits(db: Session, user_id: int) -> int:
@@ -303,7 +321,145 @@ def check_credits(user: models.User, required: int = 1) -> bool:
         return True
     return (user.credits or 0) >= required
 
+
+# ==============================================
+# 🔥 GET_CREDIT_ELIGIBILITY - VERSÃO 2.3
+# ==============================================
+
+def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    🔥 RETORNA A ELEGIBILIDADE DO USUÁRIO PARA RECEBER CRÉDITOS
+    
+    REGRAS V2.3:
+    - FREE: NUNCA recebe créditos (só os 3 iniciais)
+    - PREMIUM: Recebe 1/dia se saldo < 3 e NÃO recebeu hoje
+    - PREMIUM: Só ganha se gastou (saldo < 3)
+    
+    Retorna:
+        - can_receive_today: bool - Pode receber hoje?
+        - is_premium: bool - É premium?
+        - credits_balance: int - Saldo atual
+        - max_credits: int - Limite máximo (3)
+        - received_today: bool - Já recebeu hoje?
+        - days_left: int - Dias restantes de premium
+        - at_max_limit: bool - Está no limite (3/3)?
+        - reason: str - Motivo se não puder receber
+        - next_credit_date: str - Próxima data de crédito
+    """
+    if not user:
+        return {"error": "Usuário não encontrado"}
+    
+    # 👑 ADMIN
+    if user.is_admin:
+        return {
+            "can_receive_today": False,
+            "is_premium": True,
+            "is_admin": True,
+            "credits_balance": "∞",
+            "max_credits": float('inf'),
+            "received_today": False,
+            "days_left": 999,
+            "at_max_limit": False,
+            "reason": "Admin tem créditos ilimitados",
+            "next_credit_date": None
+        }
+    
+    is_premium = _is_premium_user(user)
+    current_credits = user.credits or 0
+    today = _today_brasil()
+    
+    # ==========================================
+    # ❌ USUÁRIO FREE - NUNCA RECEBE CRÉDITOS
+    # ==========================================
+    if not is_premium:
+        return {
+            "can_receive_today": False,
+            "is_premium": False,
+            "is_admin": False,
+            "credits_balance": current_credits,
+            "max_credits": MAX_CREDITS_PREMIUM,
+            "received_today": False,
+            "days_left": 0,
+            "at_max_limit": current_credits >= MAX_CREDITS_PREMIUM,
+            "reason": "Usuário free não recebe créditos diários. Assine o Premium!",
+            "next_credit_date": None
+        }
+    
+    # ==========================================
+    # ⭐ USUÁRIO PREMIUM
+    # ==========================================
+    
+    # Verifica se já recebeu hoje
+    received_today = db.query(models.DailyCreditLog).filter(
+        models.DailyCreditLog.user_id == user.id,
+        func.date(models.DailyCreditLog.date) == today,
+        models.DailyCreditLog.source == "premium_daily"
+    ).first() is not None
+    
+    # Verifica dias restantes
+    days_left = user.get_premium_days_left() if hasattr(user, 'get_premium_days_left') else 0
+    
+    # Verifica se atingiu o limite (saldo = 3)
+    at_max_limit = current_credits >= MAX_CREDITS_PREMIUM
+    
+    # 🔥 REGRA CRÍTICA: Só pode receber se saldo < 3 e NÃO recebeu hoje
+    can_receive_today = (
+        is_premium and
+        not received_today and
+        days_left > 0 and
+        current_credits < MAX_CREDITS_PREMIUM  # 🔥 PRECISA TER GASTO
+    )
+    
+    # Próxima data de crédito
+    next_credit_date = None
+    if days_left > 0:
+        if not received_today and current_credits < MAX_CREDITS_PREMIUM:
+            next_credit_date = today.isoformat()
+        else:
+            next_credit_date = _get_next_day_brasil(1).isoformat()
+    
+    # Mensagem de motivo
+    if not can_receive_today:
+        if at_max_limit:
+            reason = f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos. Gaste um para receber mais amanhã!"
+        elif received_today:
+            reason = "✅ Você já recebeu seu crédito hoje! Volte amanhã."
+        elif days_left <= 0:
+            reason = "⏰ Seu plano premium expirou. Renove para continuar recebendo créditos!"
+        else:
+            reason = "⏳ Aguarde o próximo ciclo de créditos."
+    else:
+        reason = "✅ Você pode receber 1 crédito premium hoje!"
+    
+    return {
+        "can_receive_today": can_receive_today,
+        "is_premium": True,
+        "is_admin": False,
+        "credits_balance": current_credits,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "received_today": received_today,
+        "days_left": days_left,
+        "at_max_limit": at_max_limit,
+        "reason": reason,
+        "next_credit_date": next_credit_date,
+        "credits_until_limit": max(0, MAX_CREDITS_PREMIUM - current_credits),
+        "timezone": "America/Sao_Paulo (UTC-3)",
+        "today_date": today.isoformat()
+    }
+
+
+# ==============================================
+# 🔥 ADD_CREDITS - VERSÃO 2.3
+# ==============================================
+
 def add_credits(db: Session, user_id: int, amount: int, description: str = "") -> bool:
+    """
+    🔥 ADICIONA CRÉDITOS COM VALIDAÇÃO DE LIMITE
+    
+    - Admin: ilimitado
+    - Premium: máximo de MAX_CREDITS_PREMIUM (3)
+    - Free: NÃO pode receber créditos (exceto os 3 iniciais)
+    """
     user = get_user_by_id(db, user_id)
     if not user or amount <= 0:
         logger.warning(f"⚠️ Tentativa inválida de adicionar {amount} créditos")
@@ -314,10 +470,23 @@ def add_credits(db: Session, user_id: int, amount: int, description: str = "") -
         return True
     
     is_premium = _is_premium_user(user)
+    
+    # ❌ Usuário free NÃO pode receber créditos (exceto os 3 iniciais)
+    if not is_premium:
+        # Verifica se é o crédito inicial
+        if "Créditos iniciais" not in description and "boas-vindas" not in description.lower():
+            logger.warning(f"⚠️ Usuário free {user.email} tentou receber {amount} créditos - BLOQUEADO")
+            return False
+        # Permite apenas os 3 iniciais
+        if user.credits >= INITIAL_FREE_CREDITS:
+            logger.warning(f"⚠️ Usuário free {user.email} já tem {user.credits} créditos")
+            return False
+    
+    # ⭐ Premium: verifica limite máximo
     max_credits = MAX_CREDITS_PREMIUM if is_premium else float('inf')
     
     if user.credits + amount > max_credits:
-        logger.warning(f"⚠️ {user.email} excederia limite de {max_credits} créditos")
+        logger.warning(f"⚠️ {user.email} excederia limite de {max_credits} créditos. Atual: {user.credits}")
         return False
     
     old_credits = user.credits
@@ -327,7 +496,21 @@ def add_credits(db: Session, user_id: int, amount: int, description: str = "") -
     logger.info(f"💰 {user.email} recebeu +{amount} créditos ({description}). Antes: {old_credits}, Agora: {user.credits}")
     return True
 
+
+# ==============================================
+# 🔥 DEDUCT_CREDITS - VERSÃO 2.3
+# ==============================================
+
 def deduct_credits(db: Session, user: models.User, amount: int = 1, description: str = "") -> bool:
+    """
+    🔥 CONSOLE CRÉDITOS COM BÔNUS AUTOMÁTICO PARA PREMIUM
+    
+    REGRA:
+    - Se usuário FREE: só consome, NÃO ganha bônus
+    - Se usuário PREMIUM: consome e, se zerou, verifica se pode ganhar crédito diário
+    - Se PREMIUM zerou e JÁ recebeu hoje: SÓ ganha amanhã
+    - Se PREMIUM zerou e NÃO recebeu hoje: ganha 1 automaticamente
+    """
     if not user or amount <= 0:
         logger.warning(f"⚠️ Tentativa inválida de deduzir {amount} créditos")
         return False
@@ -344,44 +527,251 @@ def deduct_credits(db: Session, user: models.User, amount: int = 1, description:
     user.credits -= amount
     safe_commit(db, f"Erro ao deduzir {amount} créditos de {user.email}")
     
-    is_premium = _is_premium_user(user)
-    if is_premium and user.credits < MAX_CREDITS_PREMIUM:
-        logger.info(f"⭐ Premium {user.email} agora tem {user.credits}/{MAX_CREDITS_PREMIUM} créditos")
-    
     logger.info(f"💰 {user.email} consumiu {amount} crédito(s). Antes: {old_credits}, Agora: {user.credits}")
+    
+    # 🔥 VERIFICA BÔNUS PARA PREMIUM
+    if user.credits == 0:
+        is_premium = _is_premium_user(user)
+        
+        if is_premium:
+            # ⭐ Premium: verifica se pode receber crédito diário
+            eligibility = get_credit_eligibility(db, user)
+            
+            if eligibility.get("can_receive_today", False):
+                # Concede 1 crédito automaticamente
+                user.credits += 1
+                
+                # Registrar no log
+                log = models.DailyCreditLog(
+                    user_id=user.id,
+                    credits_added=1,
+                    date=_today_brasil(),
+                    total_after=user.credits,
+                    source="premium_daily_after_consumption"
+                )
+                db.add(log)
+                safe_commit(db, "Erro ao conceder bônus premium")
+                
+                logger.info(f"⭐ Bônus premium concedido para {user.email} após zerar créditos. Saldo: {user.credits}")
+            else:
+                reason = eligibility.get("reason", "Aguardando próximo ciclo")
+                logger.info(f"📌 Premium {user.email} zerou créditos. {reason}")
+        else:
+            # ❌ Usuário free: NÃO ganha bônus
+            logger.info(f"📌 Usuário free {user.email} zerou créditos. Sem bônus automático.")
+    
     return True
-
-def check_credits_db(db: Session, user_id: int, required: int = 1) -> bool:
-    user = get_user_by_id(db, user_id)
-    if not user:
-        return False
-    if user.is_admin:
-        return True
-    return (user.credits or 0) >= required
-
-def transfer_credits(db: Session, from_user_id: int, to_user_id: int, amount: int) -> bool:
-    if amount <= 0:
-        return False
-    from_user = get_user_by_id(db, from_user_id)
-    to_user = get_user_by_id(db, to_user_id)
-    if not from_user or not to_user:
-        return False
-    if from_user.is_admin:
-        return add_credits(db, to_user_id, amount, f"Transferência do admin {from_user.email}")
-    if not from_user.has_credits(amount):
-        return False
-    from_user.credits -= amount
-    success = add_credits(db, to_user_id, amount, f"Transferência de {from_user.email}")
-    if success:
-        logger.info(f"💰 {amount} créditos transferidos de {from_user.email} para {to_user.email}")
-    else:
-        from_user.credits += amount
-        safe_commit(db, "Erro ao reverter transferência")
-    return success
 
 
 # ==============================================
-# CRÉDITOS DIÁRIOS
+# 🔥 RECEIVE_DAILY_CREDIT - VERSÃO 2.3 (NOVA)
+# ==============================================
+
+def receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
+    """
+    🔥 RECEBE O CRÉDITO DIÁRIO (APENAS PREMIUM)
+    
+    REGRA:
+    - Só premium
+    - Não pode ter recebido hoje
+    - Saldo deve ser < MAX_CREDITS_PREMIUM (3)
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return {"success": False, "error": "Usuário não encontrado"}
+    
+    # Verifica elegibilidade
+    eligibility = get_credit_eligibility(db, user)
+    
+    if not eligibility.get("can_receive_today", False):
+        return {
+            "success": False,
+            "error": eligibility.get("reason", "Não é possível receber crédito hoje"),
+            "can_receive": False,
+            "credits_balance": eligibility.get("credits_balance", 0)
+        }
+    
+    # Concede 1 crédito
+    old_credits = user.credits
+    user.credits += 1
+    
+    log = models.DailyCreditLog(
+        user_id=user.id,
+        credits_added=1,
+        date=_today_brasil(),
+        total_after=user.credits,
+        source="premium_daily"
+    )
+    db.add(log)
+    safe_commit(db, "Erro ao conceder crédito diário")
+    db.refresh(user)
+    
+    logger.info(f"⭐ Crédito diário concedido para {user.email}. Antes: {old_credits}, Agora: {user.credits}")
+    
+    return {
+        "success": True,
+        "credits_added": 1,
+        "current_credits": user.credits,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "message": "🌅 Você recebeu seu crédito premium diário!",
+        "remaining_until_limit": max(0, MAX_CREDITS_PREMIUM - user.credits)
+    }
+
+
+# ==============================================
+# 🔥 CAN_RECEIVE_DAILY_CREDIT - VERSÃO 2.3
+# ==============================================
+
+def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
+    """
+    🔥 VERSÃO 2.3 - Usa get_credit_eligibility()
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return {"success": False, "error": "Usuário não encontrado"}
+    
+    eligibility = get_credit_eligibility(db, user)
+    
+    return {
+        "success": True,
+        "can_receive": eligibility.get("can_receive_today", False),
+        "reason": eligibility.get("reason", ""),
+        "is_premium": eligibility.get("is_premium", False),
+        "is_admin": eligibility.get("is_admin", False),
+        "credits_balance": eligibility.get("credits_balance", 0),
+        "max_credits": eligibility.get("max_credits", MAX_CREDITS_PREMIUM),
+        "received_today": eligibility.get("received_today", False),
+        "days_left": eligibility.get("days_left", 0),
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "next_credit_date": eligibility.get("next_credit_date"),
+        "timezone": "America/Sao_Paulo (UTC-3)",
+        "today_date": _today_brasil().isoformat()
+    }
+
+
+# ==============================================
+# 🔥 MANAGE_CREDITS_AFTER_CONSUMPTION - V2.3
+# ==============================================
+
+def manage_credits_after_consumption(
+    db: Session, 
+    user: models.User, 
+    amount: int = 1,
+    description: str = ""
+) -> Dict[str, Any]:
+    """
+    🔥 GERENCIAMENTO UNIFICADO DE CRÉDITOS V2.3
+    
+    1. Consome os créditos
+    2. Se PREMIUM e zerou, verifica se pode ganhar crédito diário
+    3. Se FREE e zerou, apenas notifica
+    """
+    if not user or amount <= 0:
+        return {
+            "success": False,
+            "error": "Dados inválidos",
+            "consumed": 0,
+            "remaining": user.credits if user else 0
+        }
+    
+    # 👑 ADMIN
+    if user.is_admin:
+        return {
+            "success": True,
+            "consumed": 0,
+            "remaining": "∞",
+            "bonus_granted": False,
+            "bonus_amount": 0,
+            "message": "Admin tem créditos ilimitados",
+            "needs_attention": False
+        }
+    
+    # 🔥 1. VERIFICAR CRÉDITOS
+    if user.credits < amount:
+        return {
+            "success": False,
+            "error": f"Créditos insuficientes. Tem: {user.credits}, Precisa: {amount}",
+            "consumed": 0,
+            "remaining": user.credits,
+            "bonus_granted": False,
+            "bonus_amount": 0,
+            "needs_attention": True
+        }
+    
+    # 🔥 2. CONSUMIR CRÉDITOS
+    old_credits = user.credits
+    user.credits -= amount
+    
+    try:
+        safe_commit(db, f"Erro ao consumir {amount} créditos de {user.email}")
+        logger.info(f"💰 {user.email} consumiu {amount} crédito(s). Antes: {old_credits}, Agora: {user.credits}")
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "consumed": 0,
+            "remaining": old_credits,
+            "bonus_granted": False,
+            "bonus_amount": 0
+        }
+    
+    # 🔥 3. VERIFICAR BÔNUS
+    is_premium = _is_premium_user(user)
+    bonus_granted = False
+    bonus_amount = 0
+    needs_attention = False
+    message = f"✅ {amount} crédito(s) consumido(s). Saldo: {user.credits}"
+    
+    if user.credits == 0:
+        if is_premium:
+            # ⭐ PREMIUM: verifica se pode receber crédito diário
+            eligibility = get_credit_eligibility(db, user)
+            
+            if eligibility.get("can_receive_today", False):
+                # Concede 1 crédito automaticamente
+                user.credits += 1
+                bonus_amount = 1
+                bonus_granted = True
+                
+                log = models.DailyCreditLog(
+                    user_id=user.id,
+                    credits_added=1,
+                    date=_today_brasil(),
+                    total_after=user.credits,
+                    source="premium_daily_after_consumption"
+                )
+                db.add(log)
+                safe_commit(db, "Erro ao conceder bônus premium")
+                
+                message = f"⭐ Créditos zerados! Você ganhou 1 crédito premium. Saldo: {user.credits}"
+                logger.info(f"⭐ Bônus premium concedido para {user.email}")
+            else:
+                reason = eligibility.get("reason", "Aguardando próximo ciclo")
+                message = f"📌 Seus créditos acabaram. {reason}. Saldo: {user.credits}"
+                needs_attention = True
+                logger.info(f"📌 Premium {user.email} zerou créditos. {reason}")
+        else:
+            # ❌ FREE: NÃO ganha bônus
+            message = f"💡 Seus créditos acabaram! Assine o Premium para continuar recebendo créditos diários. Saldo: {user.credits}"
+            needs_attention = True
+            logger.info(f"📌 Usuário free {user.email} zerou créditos. Precisa de atenção.")
+    
+    return {
+        "success": True,
+        "consumed": amount,
+        "remaining": user.credits,
+        "bonus_granted": bonus_granted,
+        "bonus_amount": bonus_amount,
+        "message": message,
+        "needs_attention": needs_attention,
+        "is_premium": is_premium,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "credits_display": get_credits_display(user)
+    }
+
+
+# ==============================================
+# CRÉDITOS DIÁRIOS (LEGADO)
 # ==============================================
 
 def get_daily_credit_logs(db: Session, user_id: int, days: int = 30, limit: int = None) -> List[models.DailyCreditLog]:
@@ -421,54 +811,6 @@ def get_premium_credit_streak(db: Session, user_id: int) -> int:
         else:
             break
     return streak
-
-def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
-    user = get_user_by_id(db, user_id)
-    if not user:
-        return {"success": False, "error": "Usuário não encontrado"}
-    if user.is_admin:
-        return {"success": True, "can_receive": False, "message": "Admin tem créditos ilimitados", "is_premium": False, "is_admin": True}
-    
-    is_premium = _is_premium_user(user)
-    if not is_premium:
-        return {"success": True, "can_receive": False, "message": "Assine o plano premium para ganhar créditos diários", "is_premium": False}
-    
-    today = _today_brasil()
-    current_credits = user.credits or 0
-    
-    if current_credits >= MAX_CREDITS_PREMIUM:
-        return {
-            "success": True,
-            "can_receive": False,
-            "reason": "max_credits_reached",
-            "message": f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos.",
-            "is_premium": True,
-            "received_today": False,
-            "credits_balance": current_credits,
-            "max_credits": MAX_CREDITS_PREMIUM
-        }
-    
-    received_today = db.query(models.DailyCreditLog).filter(
-        models.DailyCreditLog.user_id == user_id,
-        func.date(models.DailyCreditLog.date) == today,
-        models.DailyCreditLog.source == "premium_daily"
-    ).first() is not None
-    
-    days_left = user.get_premium_days_left() if hasattr(user, 'get_premium_days_left') else 0
-    
-    return {
-        "success": True,
-        "can_receive": not received_today and days_left > 0 and current_credits < MAX_CREDITS_PREMIUM,
-        "received_today": received_today,
-        "is_premium": True,
-        "days_left": days_left,
-        "credits_balance": current_credits,
-        "max_credits": MAX_CREDITS_PREMIUM,
-        "credits_until_limit": max(0, MAX_CREDITS_PREMIUM - current_credits),
-        "next_credit_date": today.isoformat() if not received_today and days_left > 0 else _get_next_day_brasil(1).isoformat(),
-        "timezone": "America/Sao_Paulo (UTC-3)",
-        "today_date": today.isoformat()
-    }
 
 
 # ==============================================
@@ -668,7 +1010,7 @@ def get_approved_payments_by_user(db: Session, user_id: int) -> List[models.Paym
 
 
 # ==============================================
-# 🔥🔥🔥 ANÁLISES - VERSÃO UNIFICADA COM POW E CHART_DATA
+# 🔥 ANÁLISES
 # ==============================================
 
 def create_analysis(
@@ -677,41 +1019,22 @@ def create_analysis(
     filename: str,
     analysis_type: str = "auto",
     status: str = "pending",
-    # 🔥 NOVOS PARÂMETROS OPCIONAIS
     pow_data: Dict[str, Any] = None,
     client_ip: str = None,
     user_agent: str = None,
 ) -> models.Analysis:
-    """
-    🔥 Cria uma análise com suporte a PoW
-    
-    Args:
-        db: Sessão do banco
-        user_id: ID do usuário
-        filename: Nome do arquivo
-        analysis_type: Tipo de análise
-        status: Status inicial
-        pow_data: Dados do PoW (opcional)
-        client_ip: IP do cliente (opcional)
-        user_agent: User Agent (opcional)
-    
-    Returns:
-        Analysis: Análise criada
-    """
     analysis = models.Analysis(
         user_id=user_id,
         filename=sanitize_string(filename)[:255],
         analysis_type=analysis_type,
         status=status,
         uploaded_at=_now_brasil(),
-        # 🔥 PoW data (opcional)
         pow_challenge=pow_data.get('challenge') if pow_data else None,
         pow_nonce=pow_data.get('nonce') if pow_data else None,
         pow_difficulty=pow_data.get('difficulty', 4) if pow_data else 4,
         pow_verified=pow_data.get('verified', False) if pow_data else False,
         pow_verified_at=_now_brasil() if pow_data and pow_data.get('verified') else None,
         pow_algorithm=pow_data.get('algorithm', 'SHA-256') if pow_data else 'SHA-256',
-        # 🔥 Security
         client_ip=client_ip,
         user_agent=user_agent[:255] if user_agent else None,
         rate_limit_applied=False,
@@ -724,11 +1047,8 @@ def create_analysis(
     logger.info(f"📊 Análise criada: {filename} (ID: {analysis.id}) - PoW: {analysis.pow_verified}")
     return analysis
 
-
 def get_analysis(db: Session, analysis_id: int) -> Optional[models.Analysis]:
-    """Busca análise por ID (já inclui todos os campos, incluindo chart_data)"""
     return db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
-
 
 def get_user_analyses(
     db: Session, 
@@ -737,15 +1057,12 @@ def get_user_analyses(
     limit: int = 100,
     status: Optional[str] = None
 ) -> List[models.Analysis]:
-    """Retorna análises do usuário com filtros (inclui chart_data)"""
     query = db.query(models.Analysis).filter(models.Analysis.user_id == user_id)
     if status:
         query = query.filter(models.Analysis.status == status)
     return query.order_by(desc(models.Analysis.uploaded_at)).offset(skip).limit(limit).all()
 
-
 def update_analysis(db: Session, analysis_id: int, updates: dict) -> Optional[models.Analysis]:
-    """Atualiza análise (aceita qualquer campo, incluindo chart_data)"""
     db_analysis = get_analysis(db, analysis_id)
     if not db_analysis:
         return None
@@ -758,13 +1075,11 @@ def update_analysis(db: Session, analysis_id: int, updates: dict) -> Optional[mo
     db.refresh(db_analysis)
     return db_analysis
 
-
 def update_analysis_pow_verification(
     db: Session,
     analysis_id: int,
     verified: bool = True,
 ) -> Optional[models.Analysis]:
-    """Atualiza a verificação PoW de uma análise"""
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
@@ -775,28 +1090,21 @@ def update_analysis_pow_verification(
     logger.info(f"🔐 PoW da análise {analysis_id}: {verified}")
     return analysis
 
-
 def update_analysis_metrics(
     db: Session,
     analysis_id: int,
     metrics: Dict[str, Any],
 ) -> Optional[models.Analysis]:
-    """
-    🔥 Atualiza métricas de uma análise
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
     
-    # Métricas de performance
     if 'processing_time_ms' in metrics:
         analysis.processing_time_ms = metrics['processing_time_ms']
     if 'pow_solve_time_ms' in metrics:
         analysis.pow_solve_time_ms = metrics['pow_solve_time_ms']
     if 'upload_time_ms' in metrics:
         analysis.upload_time_ms = metrics['upload_time_ms']
-    
-    # Métricas de ML
     if 'encoding_used' in metrics:
         analysis.encoding_used = metrics['encoding_used'][:20]
     if 'model_used' in metrics:
@@ -809,15 +1117,11 @@ def update_analysis_metrics(
     logger.info(f"📊 Métricas atualizadas para análise {analysis_id}")
     return analysis
 
-
 def update_analysis_data_metrics(
     db: Session,
     analysis_id: int,
     data: Dict[str, Any],
 ) -> Optional[models.Analysis]:
-    """
-    🔥 Atualiza métricas de dados de uma análise
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
@@ -836,35 +1140,26 @@ def update_analysis_data_metrics(
     logger.info(f"📊 Métricas de dados atualizadas para análise {analysis_id}")
     return analysis
 
-
 def update_analysis_results(
     db: Session,
     analysis_id: int,
     results: Dict[str, Any],
 ) -> Optional[models.Analysis]:
-    """
-    🔥 Atualiza resultados de uma análise (inclui chart_data)
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
     
-    # 🔥 Resultados principais
     if 'predictions_summary' in results:
         analysis.predictions_summary = results['predictions_summary']
     if 'insights' in results:
         analysis.insights = results['insights']
     if 'recommendations' in results:
         analysis.recommendations = results['recommendations']
-    
-    # 🔥 NOVO: chart_data
     if 'chart_data' in results:
         analysis.chart_data = results['chart_data']
         logger.info(f"📊 chart_data salvo para análise {analysis_id}")
-    
     if 'status' in results:
         analysis.status = results['status']
-    
     if results.get('status') == 'completed':
         analysis.processed_at = _now_brasil()
         analysis.rows_processed = analysis.total_rows
@@ -874,24 +1169,18 @@ def update_analysis_results(
     logger.info(f"📊 Resultados atualizados para análise {analysis_id}")
     return analysis
 
-
 def get_user_analyses_with_pow(
     db: Session,
     user_id: int,
     skip: int = 0,
     limit: int = 100,
 ) -> List[models.Analysis]:
-    """Busca análises do usuário (já inclui todos os campos)"""
     return get_user_analyses(db, user_id, skip, limit)
-
 
 def get_analyses_with_pow_stats(
     db: Session,
     user_id: int,
 ) -> Dict[str, Any]:
-    """
-    🔥 Retorna estatísticas de PoW para um usuário
-    """
     analyses = db.query(models.Analysis).filter(
         models.Analysis.user_id == user_id
     ).all()
@@ -911,7 +1200,6 @@ def get_analyses_with_pow_stats(
         "models_used": list(set([a.model_used for a in analyses if a.model_used])),
     }
 
-
 def delete_analysis(db: Session, analysis_id: int) -> bool:
     db_analysis = get_analysis(db, analysis_id)
     if db_analysis:
@@ -920,13 +1208,12 @@ def delete_analysis(db: Session, analysis_id: int) -> bool:
         return True
     return False
 
-
 def get_recent_analyses(db: Session, limit: int = 10) -> List[models.Analysis]:
     return db.query(models.Analysis).order_by(desc(models.Analysis.uploaded_at)).limit(limit).all()
 
 
 # ==============================================
-# 🔥 CHART_DATA - OPERAÇÕES ESPECÍFICAS
+# 🔥 CHART_DATA
 # ==============================================
 
 def update_analysis_chart_data(
@@ -934,17 +1221,6 @@ def update_analysis_chart_data(
     analysis_id: int,
     chart_data: Dict[str, Any],
 ) -> Optional[models.Analysis]:
-    """
-    🔥 Atualiza apenas o chart_data de uma análise
-    
-    Args:
-        db: Sessão do banco
-        analysis_id: ID da análise
-        chart_data: Dados para o gráfico (weekly, monthly, performance)
-    
-    Returns:
-        Analysis: Análise atualizada ou None se não encontrada
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         logger.warning(f"⚠️ Análise {analysis_id} não encontrada para atualizar chart_data")
@@ -955,45 +1231,21 @@ def update_analysis_chart_data(
     db.refresh(analysis)
     
     logger.info(f"📊 ChartData atualizado para análise {analysis_id}")
-    logger.debug(f"   Weekly: {len(chart_data.get('weekly', {}).get('revenue', []))} dias")
-    logger.debug(f"   Monthly: {len(chart_data.get('monthly', {}).get('revenue', []))} meses")
     return analysis
-
 
 def get_analysis_chart_data(
     db: Session,
     analysis_id: int,
 ) -> Optional[Dict[str, Any]]:
-    """
-    🔥 Retorna apenas o chart_data de uma análise
-    
-    Args:
-        db: Sessão do banco
-        analysis_id: ID da análise
-    
-    Returns:
-        Dict: chart_data ou None se não encontrado
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return None
     return analysis.chart_data
 
-
 def has_chart_data(
     db: Session,
     analysis_id: int,
 ) -> bool:
-    """
-    🔥 Verifica se uma análise tem chart_data
-    
-    Args:
-        db: Sessão do banco
-        analysis_id: ID da análise
-    
-    Returns:
-        bool: True se tem chart_data
-    """
     analysis = get_analysis(db, analysis_id)
     if not analysis:
         return False
@@ -1030,7 +1282,6 @@ def get_all_users(
 
 def get_users_by_role(db: Session, role: models.UserRole) -> List[models.User]:
     return db.query(models.User).filter(models.User.role == role).all()
-
 
 def get_user_stats(db: Session) -> Dict[str, Any]:
     total = db.query(models.User).count()
@@ -1094,7 +1345,6 @@ def get_user_stats(db: Session) -> Dict[str, Any]:
         },
         "timezone": "America/Sao_Paulo (UTC-3)"
     }
-
 
 def get_dashboard_stats(db: Session, user_id: int) -> Dict[str, Any]:
     user = get_user_by_id(db, user_id)
@@ -1162,7 +1412,6 @@ def clear_user_session(db: Session, user_id: int, logout_all_devices: bool = Tru
     logger.info(f"🔓 Sessão encerrada para usuário {user.email} ({device_msg})")
     return True
 
-
 def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
     user = get_user_by_id(db, user_id)
     if not user:
@@ -1185,7 +1434,6 @@ def get_user_session_info(db: Session, user_id: int) -> Dict[str, Any]:
         "timezone": "America/Sao_Paulo (UTC-3)"
     }
 
-
 def force_logout_user(db: Session, email: str, reason: str = "Admin action") -> bool:
     user = get_user_by_email(db, email)
     if not user:
@@ -1199,7 +1447,6 @@ def force_logout_user(db: Session, email: str, reason: str = "Admin action") -> 
     safe_commit(db, f"Erro ao forçar logout do usuário {email}")
     logger.warning(f"⚠️ FORCE LOGOUT: Usuário {email} foi desconectado por {reason}")
     return True
-
 
 def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
     users = db.query(models.User).filter(
@@ -1218,7 +1465,6 @@ def cleanup_orphaned_sessions(db: Session, older_than_days: int = 30) -> int:
         safe_commit(db, "Erro ao limpar sessões órfãs")
         logger.info(f"🧹 {count} sessões órfãs limpas")
     return count
-
 
 def complete_logout(db: Session, user_id: int, refresh_token: str = None) -> bool:
     user = get_user_by_id(db, user_id)
@@ -1256,7 +1502,6 @@ def count_user_analyses(db: Session, user_id: int) -> int:
         logger.warning(f"⚠️ Erro ao contar análises do usuário {user_id}: {e}")
         return 0
 
-
 def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
     if not user:
         return {"segment": "regular", "analyses_count": 0, "days_since_creation": 0, "is_premium": False, "credits": 0, "has_ever_used": False}
@@ -1281,7 +1526,6 @@ def calculate_user_segment(db: Session, user: models.User) -> Dict[str, Any]:
     has_ever_used = analyses_count > 0 or user.credits < 3
     logger.info(f"📊 [Segment] Usuário {user.email} é REGULAR")
     return {"segment": "regular", "analyses_count": analyses_count, "days_since_creation": days_since_creation, "is_premium": False, "credits": user.credits or 0, "has_ever_used": has_ever_used}
-
 
 def get_message_config(segment: str, credits: int, is_admin: bool = False) -> Dict[str, Any]:
     if is_admin:
@@ -1312,7 +1556,6 @@ def get_message_config(segment: str, credits: int, is_admin: bool = False) -> Di
         return {"message_id": f"regular_{credits}", "title": "💰 Créditos Disponíveis", "icon": "fa-coins", "color": "info", "message": f"Você tem {credits} {credit_text} disponíveis. Use-os antes que expirem! ⏰", "show_action": True, "action_text": "Usar Créditos", "action_url": "/dashboard", "priority": 1, "dismissible": True}
     else:
         return {"message_id": "regular_zero", "title": "🚀 Quer mais análises?", "icon": "fa-crown", "color": "primary", "message": "Seus créditos acabaram! 😅 Assine o plano Premium e tenha análises ilimitadas. 🏆", "show_action": True, "action_text": "👑 Ver Planos Premium", "action_url": "/planos", "priority": 2, "dismissible": True}
-
 
 def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
     if not user:
@@ -1349,15 +1592,15 @@ def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
 # ==============================================
 
 print("=" * 70)
-print("✅ crud.py v2.1 carregado - COM CHART_DATA!")
-print("   🔥 create_analysis() unificada com suporte a PoW")
-print("   🔥 update_analysis_metrics() → Métricas de performance")
-print("   🔥 update_analysis_data_metrics() → Métricas de dados")
-print("   🔥 update_analysis_results() → Resultados + chart_data")
-print("   🔥 update_analysis_chart_data() → Atualização específica")
-print("   🔥 get_analysis_chart_data() → Busca específica")
-print("   🔥 has_chart_data() → Verificação")
-print("   🔥 get_analyses_with_pow_stats() → Estatísticas de PoW")
-print("   🔥 get_user_analyses() → Já inclui todos os campos")
-print("   🔥 UTC-3 (Brasília) mantido para criação de registros")
+print("✅ crud.py v2.3 carregado - CORREÇÃO FINAL!")
+print("   🔥 REGRAS DE CRÉDITOS CORRETAS:")
+print("   📌 FREE: 3 créditos iniciais, NUNCA ganha mais")
+print("   📌 PREMIUM: 3 créditos iniciais, ganha 1/dia (máx 3)")
+print("   📌 Premium SÓ ganha se saldo < 3 e NÃO recebeu hoje")
+print("   📌 Se saldo = 3, NÃO ganha (precisa gastar)")
+print("   📌 Se saldo = 0 e já recebeu hoje, ganha amanhã")
+print("   🔥 NOVAS FUNÇÕES:")
+print("   📌 get_credit_eligibility() - Verificação completa")
+print("   📌 receive_daily_credit() - Função dedicada")
+print("   📌 manage_credits_after_consumption() - Unificado")
 print("=" * 70)

@@ -1,9 +1,17 @@
-# backend/api/payment_routes.py - VERSÃO COMPLETA CORRIGIDA
+# backend/api/payment_routes.py - VERSÃO 2.3 (OTIMIZADA E INTELIGENTE)
 """
 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-- 100 primeiros compradores pagam R$ 97,00 (vitalício)
-- Demais compradores pagam R$ 149,90
-- Usuários que compraram na promoção mantêm o preço vitalício para sempre
+VERSÃO: 2.3 - COM SUPORTE A ELEGIBILIDADE E BÔNUS PREMIUM
+
+🔥 MELHORIAS v2.3:
+   - ✅ ADICIONADO: Rota /credits/eligibility - Verificação de elegibilidade
+   - ✅ ADICIONADO: Rota /credits/receive-daily - Receber crédito diário
+   - ✅ ADICIONADO: Rota /bonus/check - Verificar bônus premium
+   - ✅ ADICIONADO: Rota /bonus/claim - Resgatar bônus premium
+   - ✅ ADICIONADO: Rota /credits/manage - Gerenciamento unificado
+   - ✅ OTIMIZADO: Uso do crud v2.3 para consistência
+   - ✅ MELHORADO: Logs mais informativos
+   - ✅ CORRIGIDO: Verificação de elegibilidade para FREE
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -31,13 +39,23 @@ from backend.services.credits_consumer import (
     consume_analysis_credit, 
     get_credits_display,
     _is_premium_user,
-    _get_plan_value
+    _get_plan_value,
+    get_credit_eligibility_status,
+    can_receive_bonus
 )
 from backend.services.payment_service import MercadoPagoService, get_mp_service
 from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, alert_payment_failed, get_webhook
 
 # 🔥 CONSTANTES SINCRONIZADAS COM CRUD.PY
-from backend.crud import MAX_CREDITS_PREMIUM, INITIAL_FREE_CREDITS, _now_brasil, _today_brasil
+from backend.crud import (
+    MAX_CREDITS_PREMIUM, 
+    INITIAL_FREE_CREDITS, 
+    _now_brasil, 
+    _today_brasil,
+    get_credit_eligibility,
+    receive_daily_credit,
+    manage_credits_after_consumption
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +130,48 @@ class PromotionStatusResponse(BaseModel):
     user_locked_price: Optional[float] = None
     is_vitalicio: bool = True
     message: str
+
+
+class CreditEligibilityResponse(BaseModel):
+    success: bool
+    can_receive_today: bool
+    is_premium: bool
+    is_admin: bool
+    credits_balance: int
+    max_credits: int
+    received_today: bool
+    days_left: int
+    at_max_limit: bool
+    reason: str
+    next_credit_date: Optional[str] = None
+    credits_until_limit: int
+    timezone: str = "America/Sao_Paulo (UTC-3)"
+    today_date: str
+
+
+class BonusCheckResponse(BaseModel):
+    success: bool
+    can_receive: bool
+    is_premium: bool
+    credits_balance: int
+    max_credits: int
+    received_today: bool
+    at_max_limit: bool
+    message: str
+    next_credit_date: Optional[str] = None
+
+
+class CreditManageResponse(BaseModel):
+    success: bool
+    consumed: int
+    remaining: int
+    bonus_granted: bool
+    bonus_amount: int
+    message: str
+    needs_attention: bool
+    is_premium: bool
+    max_credits: int
+    credits_display: str
 
 
 # ==============================================
@@ -388,7 +448,230 @@ async def create_simulated_pix_payment(
 
 
 # ==============================================
-# 🔥 ROTAS - CORRIGIDAS COM PREÇO FUNDADOR VITALÍCIO
+# 🔥 ROTAS DE ELEGIBILIDADE E CRÉDITOS (NOVAS V2.3)
+# ==============================================
+
+@router.get("/credits/eligibility", response_model=CreditEligibilityResponse)
+async def get_credit_eligibility_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 RETORNA A ELEGIBILIDADE DO USUÁRIO PARA RECEBER CRÉDITOS
+    
+    Esta rota é a fonte única de verdade para o frontend saber:
+    - Se pode receber crédito diário (premium)
+    - Se está no limite máximo
+    - Se já recebeu hoje
+    - Motivo se não puder receber
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    eligibility = get_credit_eligibility(db, user)
+    
+    return CreditEligibilityResponse(
+        success=True,
+        can_receive_today=eligibility.get("can_receive_today", False),
+        is_premium=eligibility.get("is_premium", False),
+        is_admin=eligibility.get("is_admin", False),
+        credits_balance=eligibility.get("credits_balance", 0) if not eligibility.get("is_admin", False) else 999999,
+        max_credits=eligibility.get("max_credits", MAX_CREDITS_PREMIUM),
+        received_today=eligibility.get("received_today", False),
+        days_left=eligibility.get("days_left", 0),
+        at_max_limit=eligibility.get("at_max_limit", False),
+        reason=eligibility.get("reason", ""),
+        next_credit_date=eligibility.get("next_credit_date"),
+        credits_until_limit=eligibility.get("credits_until_limit", 0),
+        timezone="America/Sao_Paulo (UTC-3)",
+        today_date=_today_brasil().isoformat()
+    )
+
+
+@router.post("/credits/receive-daily")
+async def receive_daily_credit_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 RECEBE O CRÉDITO DIÁRIO (APENAS PREMIUM)
+    
+    Condições:
+    - Usuário deve ser premium
+    - Não pode ter recebido hoje
+    - Saldo deve ser < MAX_CREDITS_PREMIUM (3)
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    result = receive_daily_credit(db, user.id)
+    
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Erro ao receber crédito"))
+    
+    return sanitize_response({
+        "success": True,
+        "credits_added": result.get("credits_added", 0),
+        "current_credits": result.get("current_credits", user.credits),
+        "max_credits": result.get("max_credits", MAX_CREDITS_PREMIUM),
+        "message": result.get("message", "🌅 Crédito recebido com sucesso!"),
+        "remaining_until_limit": result.get("remaining_until_limit", 0)
+    })
+
+
+@router.get("/bonus/check", response_model=BonusCheckResponse)
+async def check_bonus_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 VERIFICA SE O USUÁRIO PODE RECEBER BÔNUS PREMIUM
+    
+    APENAS para usuários PREMIUM que zeraram os créditos
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    result = can_receive_bonus(db, user)
+    
+    return BonusCheckResponse(
+        success=True,
+        can_receive=result.get("can_receive", False),
+        is_premium=result.get("is_premium", False),
+        credits_balance=result.get("credits_balance", user.credits or 0),
+        max_credits=result.get("max_credits", MAX_CREDITS_PREMIUM),
+        received_today=result.get("received_today", False),
+        at_max_limit=result.get("at_max_limit", False),
+        message=result.get("message", ""),
+        next_credit_date=result.get("next_credit_date")
+    )
+
+
+@router.post("/bonus/claim")
+async def claim_bonus(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 RESGATA O BÔNUS PREMIUM (1 CRÉDITO POR ZERAR)
+    
+    APENAS para usuários PREMIUM que zeraram os créditos
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verifica se é premium
+    is_premium = _is_premium_user(user)
+    if not is_premium:
+        raise HTTPException(
+            status_code=403,
+            detail="Bônus exclusivo para usuários Premium. Assine o plano!"
+        )
+    
+    # Verifica elegibilidade
+    eligibility = get_credit_eligibility(db, user)
+    if not eligibility.get("can_receive_today", False):
+        raise HTTPException(
+            status_code=400,
+            detail=eligibility.get("reason", "Você não pode receber bônus no momento")
+        )
+    
+    # 🔥 Concede o bônus usando o gerenciador unificado
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=0,
+        description="Bônus premium por zerar créditos"
+    )
+    
+    # Se não conseguiu conceder, tenta o método direto
+    if not result.get("success"):
+        # Concede 1 crédito diretamente
+        user.credits = (user.credits or 0) + 1
+        
+        log = DailyCreditLog(
+            user_id=user.id,
+            credits_added=1,
+            date=_today_brasil(),
+            total_after=user.credits,
+            source="premium_bonus_claimed"
+        )
+        db.add(log)
+        crud.safe_commit(db, "Erro ao conceder bônus premium")
+        db.refresh(user)
+        
+        logger.info(f"⭐ Bônus premium concedido para {user.email} via claim")
+        
+        return sanitize_response({
+            "success": True,
+            "credits_added": 1,
+            "current_credits": user.credits,
+            "message": "⭐ Bônus premium concedido! Você recebeu 1 crédito.",
+            "is_premium": True,
+            "max_credits": MAX_CREDITS_PREMIUM,
+            "credits_display": crud.get_credits_display(user)
+        })
+    
+    return sanitize_response({
+        "success": True,
+        "credits_added": result.get("bonus_amount", 1),
+        "current_credits": result.get("remaining", user.credits),
+        "message": result.get("message", "⭐ Bônus premium concedido!"),
+        "is_premium": True,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "credits_display": crud.get_credits_display(user)
+    })
+
+
+@router.post("/credits/manage", response_model=CreditManageResponse)
+async def manage_credits(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    amount: int = 1,
+    description: str = "Consumo de crédito"
+):
+    """
+    🔥 GERENCIAMENTO UNIFICADO DE CRÉDITOS
+    
+    Consome créditos e gerencia automaticamente:
+    - Se PREMIUM e zerou -> concede bônus automático
+    - Se FREE e zerou -> apenas notifica
+    """
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=amount,
+        description=description
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Erro ao gerenciar créditos"))
+    
+    return CreditManageResponse(
+        success=True,
+        consumed=result.get("consumed", 0),
+        remaining=result.get("remaining", 0),
+        bonus_granted=result.get("bonus_granted", False),
+        bonus_amount=result.get("bonus_amount", 0),
+        message=result.get("message", ""),
+        needs_attention=result.get("needs_attention", False),
+        is_premium=result.get("is_premium", False),
+        max_credits=result.get("max_credits", MAX_CREDITS_PREMIUM),
+        credits_display=result.get("credits_display", "0")
+    )
+
+
+# ==============================================
+# 🔥 ROTAS DE PAGAMENTO (MANTIDAS E OTIMIZADAS)
 # ==============================================
 
 @router.get("/promotion-status", response_model=PromotionStatusResponse)
@@ -440,6 +723,7 @@ async def get_user_balance(
         db.refresh(user)
     
     premium_status = crud.check_premium_status(db, user.id)
+    eligibility = get_credit_eligibility(db, user)
     
     return sanitize_response({
         "success": True,
@@ -447,6 +731,7 @@ async def get_user_balance(
         "credits_display": crud.get_credits_display(user),
         "is_admin": user.is_admin,
         "max_credits_balance": MAX_CREDITS_PREMIUM,
+        "can_receive_today": eligibility.get("can_receive_today", False),
         "plan": {
             "type": _get_plan_value(user),
             "is_premium": premium_status.get("is_premium", False),
@@ -547,10 +832,7 @@ async def create_pix_payment(
                 
                 alert_payment_pending(user.email, price)
                 
-                # 🔥 SE FOI PROMOCIONAL, REGISTRA QUE O USUÁRIO TEM PREÇO VITALÍCIO
                 if was_promotional and not user.promotional_price_locked:
-                    # 🔥 IMPORTANTE: O preço só é travado após confirmação do pagamento (webhook)
-                    # Mas já registramos no metadata que foi promocional
                     logger.info(f"🎟️ Usuário {user.email} comprou na promoção - aguardando confirmação para travar preço vitalício")
                 
                 return sanitize_response({
@@ -707,6 +989,7 @@ async def check_analysis_credits(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """🔥 Verifica se o usuário tem créditos para análise (usando elegibilidade)"""
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "has_credits": False})
@@ -714,13 +997,19 @@ async def check_analysis_credits(
     if user.is_admin:
         return sanitize_response({"success": True, "has_credits": True, "credits_display": "∞"})
     
+    eligibility = get_credit_eligibility(db, user)
     current_credits = user.credits or 0
+    
     return sanitize_response({
         "success": True,
         "has_credits": current_credits > 0,
         "credits": current_credits,
         "max_credits_balance": MAX_CREDITS_PREMIUM,
-        "credits_display": crud.get_credits_display(user)
+        "credits_display": crud.get_credits_display(user),
+        "can_receive_today": eligibility.get("can_receive_today", False),
+        "is_premium": eligibility.get("is_premium", False),
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "reason": eligibility.get("reason", "")
     })
 
 
@@ -729,6 +1018,7 @@ async def consume_credit(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """🔥 Consome crédito usando o gerenciador unificado"""
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "error": "Usuário não encontrado"})
@@ -736,17 +1026,29 @@ async def consume_credit(
     if user.is_admin:
         return sanitize_response({"success": True, "credits_consumed": 0, "message": "Admin não consome créditos"})
     
-    success = crud.deduct_credits(db, user, 1, "Análise realizada")
-    if success:
-        db.refresh(user)
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=1,
+        description="Análise realizada"
+    )
+    
+    if result.get("success"):
         return sanitize_response({
-            "success": True, 
-            "credits_consumed": 1, 
-            "credits_remaining": user.credits,
-            "credits_display": crud.get_credits_display(user)
+            "success": True,
+            "credits_consumed": result.get("consumed", 1),
+            "credits_remaining": result.get("remaining", user.credits),
+            "credits_display": result.get("credits_display", crud.get_credits_display(user)),
+            "bonus_granted": result.get("bonus_granted", False),
+            "bonus_amount": result.get("bonus_amount", 0),
+            "needs_attention": result.get("needs_attention", False),
+            "message": result.get("message", "")
         })
-    else:
-        return sanitize_response({"success": False, "error": "Créditos insuficientes"})
+    
+    return sanitize_response({
+        "success": False,
+        "error": result.get("error", "Créditos insuficientes")
+    })
 
 
 @router.post("/premium/check-daily")
@@ -754,43 +1056,41 @@ async def check_daily_credit(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """🔥 Verifica e concede crédito diário premium (usando elegibilidade)"""
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "error": "Usuário não encontrado"})
     
-    premium_status = crud.check_premium_status(db, user.id)
-    if not premium_status.get("is_premium", False):
-        return sanitize_response({"success": False, "message": "Recurso exclusivo para premium"})
+    eligibility = get_credit_eligibility(db, user)
     
-    can_receive = crud.can_receive_daily_credit(db, user.id)
+    if not eligibility.get("is_premium", False):
+        return sanitize_response({
+            "success": False,
+            "message": "Recurso exclusivo para premium",
+            "is_premium": False
+        })
     
-    if can_receive.get("can_receive", False):
-        success = crud.add_credits(db, user.id, 1, "Crédito diário premium")
-        if success:
-            log = DailyCreditLog(
-                user_id=user.id,
-                credits_added=1,
-                date=_today_brasil(),
-                total_after=user.credits,
-                source="premium_daily"
-            )
-            db.add(log)
-            crud.safe_commit(db, "Erro ao salvar log de crédito diário")
-            db.refresh(user)
-            
+    if eligibility.get("can_receive_today", False):
+        # Concede o crédito
+        result = receive_daily_credit(db, user.id)
+        
+        if result.get("success"):
             return sanitize_response({
                 "success": True,
-                "credits_added": 1,
-                "current_credits": user.credits,
+                "credits_added": result.get("credits_added", 1),
+                "current_credits": result.get("current_credits", user.credits),
                 "max_credits": MAX_CREDITS_PREMIUM,
-                "message": "🎉 Você ganhou 1 crédito do seu plano premium hoje!"
+                "message": result.get("message", "🎉 Você ganhou 1 crédito do seu plano premium hoje!"),
+                "remaining_until_limit": result.get("remaining_until_limit", 0)
             })
     
     return sanitize_response({
         "success": False,
-        "message": can_receive.get("message", "Você já recebeu seu crédito hoje ou atingiu o limite"),
+        "message": eligibility.get("reason", "Você já recebeu seu crédito hoje ou atingiu o limite"),
         "current_credits": user.credits,
-        "max_credits": MAX_CREDITS_PREMIUM
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "received_today": eligibility.get("received_today", False)
     })
 
 
@@ -799,21 +1099,23 @@ async def get_subscription_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """🔥 Retorna status da assinatura premium"""
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "error": "Usuário não encontrado"})
     
     if user.is_admin:
         return sanitize_response({
-            "success": True, 
-            "has_subscription": True, 
+            "success": True,
+            "has_subscription": True,
             "is_admin": True,
-            "days_left": 999, 
-            "is_active": True, 
+            "days_left": 999,
+            "is_active": True,
             "message": "👑 Administrador"
         })
     
     premium_status = crud.check_premium_status(db, user.id)
+    eligibility = get_credit_eligibility(db, user)
     
     is_premium = premium_status.get("is_premium", False)
     days_left = premium_status.get("days_left", 0)
@@ -832,19 +1134,22 @@ async def get_subscription_status(
         "activated_at": premium_status.get("activated_at"),
         "plan": premium_status.get("plan"),
         "max_credits": MAX_CREDITS_PREMIUM,
-        # 🔥 INFORMAÇÕES DO PREÇO VITALÍCIO
         "promotional_price_locked": user.promotional_price_locked,
         "promotional_price": user.promotional_price,
         "is_vitalicio": user.promotional_price_locked,
+        "can_receive_today": eligibility.get("can_receive_today", False),
+        "received_today": eligibility.get("received_today", False),
+        "at_max_limit": eligibility.get("at_max_limit", False),
+        "credits_balance": user.credits or 0,
         "message": "✅ Plano ativo" if is_active else "❌ Plano expirado"
     })
 
 
 # ==============================================
-# 🔥 WEBHOOK - CORRIGIDO COM response_model=None
+# 🔥 WEBHOOK (MANTIDO)
 # ==============================================
 
-@router.post("/webhook", response_model=None)  # ✅ ADICIONADO response_model=None
+@router.post("/webhook", response_model=None)
 async def mercadopago_webhook(
     request: Request,
     background_tasks: BackgroundTasks
@@ -863,7 +1168,6 @@ async def mercadopago_webhook(
             data = json.loads(body)
             logger.info(f"🔔 Webhook JSON recebido: {json.dumps(data, indent=2)[:500]}")
         except json.JSONDecodeError:
-            # Pode ser webhook do Mercado Pago em formato x-www-form-urlencoded
             text_body = body.decode('utf-8')
             logger.info(f"🔔 Webhook recebido em formato texto: {text_body[:200]}")
             match = re.search(r'id=(\d+)', text_body)
@@ -875,13 +1179,11 @@ async def mercadopago_webhook(
                 logger.warning(f"⚠️ Não foi possível extrair payment_id do webhook")
             return {"status": "received"}
         
-        # Extrair payment_id do JSON
         payment_id = data.get("data", {}).get("id") or data.get("id")
         if payment_id:
             logger.info(f"📦 Payment ID extraído: {payment_id}")
             background_tasks.add_task(process_payment_webhook, str(payment_id))
         else:
-            # Tentar encontrar em outros lugares
             for key in ["payment_id", "preference_id", "resource"]:
                 if key in data:
                     payment_id = data[key]
@@ -902,25 +1204,20 @@ async def process_payment_webhook(payment_id: str):
     - TRAVA O PREÇO VITALÍCIO quando o pagamento é aprovado
     - Usa lock pessimista para vagas promocionais
     - É idempotente (não processa duas vezes)
-    - Adiciona validação de integridade dos dados
     """
-    # Aguardar um pouco para garantir que o pagamento foi criado no banco
     await asyncio.sleep(2)
     
     db = SessionLocal()
     
     try:
-        # Validar payment_id
         if not payment_id or not str(payment_id).strip():
             logger.error(f"❌ Payment ID inválido: {payment_id}")
             return
         
-        # Buscar pagamento
         payment = db.query(Payment).filter(Payment.mp_id == str(payment_id)).first()
         
         if not payment:
             logger.warning(f"⚠️ Pagamento {payment_id} não encontrado no banco")
-            # Tentar buscar por ID numérico
             if str(payment_id).isdigit():
                 payment = db.query(Payment).filter(Payment.id == int(payment_id)).first()
                 if payment:
@@ -930,7 +1227,6 @@ async def process_payment_webhook(payment_id: str):
             logger.error(f"❌ Pagamento {payment_id} não encontrado após tentativas")
             return
         
-        # 🔥 IDEMPOTÊNCIA: Se já foi aprovado, não processar novamente
         if payment.status == PaymentStatus.APPROVED:
             logger.info(f"✅ Pagamento {payment_id} já estava aprovado. Ignorando webhook duplicado.")
             return
@@ -939,7 +1235,6 @@ async def process_payment_webhook(payment_id: str):
             logger.info(f"ℹ️ Pagamento {payment_id} não está pendente (status: {payment.status}). Ignorando.")
             return
         
-        # Consultar status no Mercado Pago
         logger.info(f"🔍 Consultando status do pagamento {payment_id} no Mercado Pago...")
         payment_info = mp_service.get_payment_status_real(payment_id)
         
@@ -951,7 +1246,6 @@ async def process_payment_webhook(payment_id: str):
         logger.info(f"📊 Status do pagamento {payment_id}: {status}")
         
         if status == "approved":
-            # 🔥 ATUALIZAR STATUS DO PAGAMENTO
             crud.update_payment_status(db, payment.id, PaymentStatus.APPROVED, payment_info)
             logger.info(f"✅ Status do pagamento {payment_id} atualizado para APPROVED")
             
@@ -960,38 +1254,29 @@ async def process_payment_webhook(payment_id: str):
             if user:
                 logger.info(f"👤 Processando usuário: {user.email} (ID: {user.id})")
                 
-                # Verificar se usuário já é premium
                 if user.is_premium():
                     logger.info(f"⚠️ Usuário {user.email} já era premium. Pulando ativação duplicada.")
                 else:
-                    # 🔥 ATIVAR PLANO PREMIUM
                     success = crud.activate_premium_plan(db, user.id, payment.id)
                     
                     if success:
-                        # Adicionar crédito inicial
                         crud.add_credits(db, user.id, 1, "Crédito inicial do plano premium")
                         logger.info(f"✅ Premium ativado para {user.email}")
                     else:
                         logger.error(f"❌ Falha ao ativar premium para {user.email}")
                 
-                # 🔥🔥🔥 TRAVAR PREÇO VITALÍCIO - CRÍTICO!
-                # Verificar se o pagamento foi promocional
                 was_promotional = payment.payment_metadata.get("was_promotional", False)
                 price_type = payment.payment_metadata.get("price_type", "regular")
                 
                 logger.info(f"💰 Verificando preço promocional: was_promotional={was_promotional}, price_type={price_type}")
                 
                 if was_promotional and not user.promotional_price_locked:
-                    # 🔥 USAR LOCK PESSIMISTA PARA USAR VAGA
                     promo = get_or_create_promotion(db)
                     
-                    # Verifica se ainda tem vagas (proteção extra)
                     if promo.has_available_slots():
-                        # Usa lock pessimista para garantir atomicidade
                         if use_promotional_slot_atomic(db, promo.id):
-                            # 🔥 TRAVA O PREÇO VITALÍCIO NO USUÁRIO
                             user.promotional_price_locked = True
-                            user.promotional_price = payment.amount  # R$ 97,00
+                            user.promotional_price = payment.amount
                             user.purchased_at_promotion = _now_brasil()
                             db.commit()
                             
@@ -1000,7 +1285,6 @@ async def process_payment_webhook(payment_id: str):
                             logger.info(f"   📅 Data: {user.purchased_at_promotion}")
                             logger.info(f"   🎯 Vaga utilizada: {promo.used_slots}/{TOTAL_PROMOTIONAL_SLOTS}")
                             
-                            # 🔥 Log adicional para auditoria
                             audit_log = {
                                 "event": "preco_vitalicio_travado",
                                 "user_id": user.id,
@@ -1013,7 +1297,6 @@ async def process_payment_webhook(payment_id: str):
                             }
                             logger.info(f"📋 AUDIT: {json.dumps(audit_log)}")
                         else:
-                            # Não conseguiu usar vaga (race condition)
                             logger.warning(f"⚠️ Não foi possível usar vaga promocional para {user.email}")
                     else:
                         logger.warning(f"⚠️ Promoção esgotada ao tentar travar preço para {user.email}")
@@ -1021,8 +1304,6 @@ async def process_payment_webhook(payment_id: str):
                     logger.info(f"ℹ️ Usuário {user.email} não é elegível para preço vitalício: was_promotional={was_promotional}, locked={user.promotional_price_locked}")
                 
                 db.commit()
-                
-                # Enviar alerta de aprovação
                 alert_payment_approved(user.email, payment.amount)
                 logger.info(f"✅ Alerta de aprovação enviado para {user.email}")
                 
@@ -1033,7 +1314,6 @@ async def process_payment_webhook(payment_id: str):
             crud.update_payment_status(db, payment.id, PaymentStatus.REJECTED, payment_info)
             logger.warning(f"⚠️ Pagamento {payment_id} REJEITADO: {payment_info.get('status_detail')}")
             alert_payment_failed(payment.user_id, payment.amount)
-            logger.info(f"✅ Alerta de falha enviado para usuário {payment.user_id}")
         
         elif status == "cancelled":
             crud.update_payment_status(db, payment.id, PaymentStatus.CANCELLED, payment_info)
@@ -1049,7 +1329,6 @@ async def process_payment_webhook(payment_id: str):
         db.close()
         logger.info(f"✅ Processamento do webhook {payment_id} finalizado")
 
-# backend/api/payment_routes.py - ADICIONAR ESTA ROTA
 
 @router.get("/premium-status", response_model=None)
 async def get_premium_status(
@@ -1064,15 +1343,13 @@ async def get_premium_status(
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    # Verifica status premium
     premium_status = crud.check_premium_status(db, user.id)
     is_premium = premium_status.get("is_premium", False)
     days_left = premium_status.get("days_left", 0)
     expires_at = premium_status.get("expires_at")
     activated_at = premium_status.get("activated_at")
     
-    # Verifica se pode receber crédito hoje
-    can_receive = crud.can_receive_daily_credit(db, user.id) if is_premium else {"can_receive": False}
+    eligibility = get_credit_eligibility(db, user) if is_premium else {}
     
     # Verifica se já recebeu hoje
     received_today = False
@@ -1085,7 +1362,6 @@ async def get_premium_status(
         ).first()
         received_today = daily_log is not None
     
-    # 🔥 Verifica se é admin
     if user.is_admin:
         return sanitize_response({
             "is_premium": True,
@@ -1105,7 +1381,6 @@ async def get_premium_status(
             "days_used": 0
         })
     
-    # 🔥 Verifica se é gratuito
     if not is_premium:
         return sanitize_response({
             "is_premium": False,
@@ -1125,19 +1400,18 @@ async def get_premium_status(
             "days_used": 0
         })
     
-    # 🔥 Usuário premium
-    # Calcular dias usados
     days_used = 0
     if activated_at:
         days_used = (date.today() - activated_at.date()).days
         days_used = max(0, min(DAYS_PREMIUM, days_used))
     
-    # Próximo crédito
     next_credit_date = None
-    if is_premium and not received_today and can_receive.get("can_receive", False):
-        next_credit_date = _today_brasil().isoformat()
-    elif is_premium and received_today:
-        next_credit_date = (_today_brasil() + timedelta(days=1)).isoformat()
+    if is_premium:
+        can_receive = eligibility.get("can_receive_today", False)
+        if not received_today and can_receive:
+            next_credit_date = _today_brasil().isoformat()
+        elif received_today:
+            next_credit_date = (_today_brasil() + timedelta(days=1)).isoformat()
     
     return sanitize_response({
         "is_premium": True,
@@ -1146,8 +1420,9 @@ async def get_premium_status(
         "credits_balance": user.credits or 0,
         "max_credits_balance": MAX_CREDITS_PREMIUM,
         "plan": "premium_mensal",
-        "can_receive_today": can_receive.get("can_receive", False),
+        "can_receive_today": eligibility.get("can_receive_today", False),
         "received_today": received_today,
+        "at_max_limit": eligibility.get("at_max_limit", False),
         "promotional_price_locked": user.promotional_price_locked,
         "promotional_price": user.promotional_price,
         "is_vitalicio": user.promotional_price_locked,
@@ -1155,10 +1430,27 @@ async def get_premium_status(
         "activated_at": activated_at.isoformat() if activated_at else None,
         "expires_at": expires_at.isoformat() if expires_at else None,
         "days_used": days_used,
-        "total_days": DAYS_PREMIUM
+        "total_days": DAYS_PREMIUM,
+        "reason": eligibility.get("reason", "")
     })
-print("✅ payment_routes.py carregado - SISTEMA DE PREÇO FUNDADOR VITALÍCIO")
-print(f"   💰 Preço de fundador: R$ {PROMOTIONAL_PRICE} (vitalício)")
-print(f"   💰 Preço cheio: R$ {REGULAR_PRICE}")
-print(f"   🎯 Vagas totais: {TOTAL_PROMOTIONAL_SLOTS}")
-print(f"   🔒 Preço travado no usuário após confirmação do pagamento")
+
+
+print("=" * 70)
+print("✅ payment_routes.py v2.3 carregado - SISTEMA COMPLETO!")
+print("   💰 Preço de fundador: R$ 97,00 (vitalício)")
+print("   💰 Preço cheio: R$ 149,90")
+print("   🎯 Vagas totais: 100")
+print("   🔒 Preço travado no usuário após confirmação")
+print("   🔥 NOVAS ROTAS V2.3:")
+print("      📌 GET  /credits/eligibility - Elegibilidade")
+print("      📌 POST /credits/receive-daily - Receber crédito diário")
+print("      📌 GET  /bonus/check - Verificar bônus")
+print("      📌 POST /bonus/claim - Resgatar bônus")
+print("      📌 POST /credits/manage - Gerenciamento unificado")
+print("   🔥 ROTAS ATUALIZADAS:")
+print("      📌 GET  /balance - Com elegibilidade")
+print("      📌 GET  /check-analysis - Com elegibilidade")
+print("      📌 POST /consume - Com gerenciamento unificado")
+print("      📌 POST /premium/check-daily - Com elegibilidade")
+print("      📌 GET  /subscription-status - Com elegibilidade")
+print("=" * 70)
