@@ -1,19 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO 16.6 (CRÉDITOS CORRIGIDOS - COMPLETO)
+// frontend/js/dashboard.js - VERSÃO 16.7 (HISTÓRICO E ALTERNÂNCIA DE ANÁLISES)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.6
+ * 🔥 Dashboard Module - AutoAnalytics v16.7
  * 
- * ✅ CORREÇÕES v16.6:
- * - 🔥 CRÉDITOS: Sincronização com múltiplas fontes (App State, Auth, localStorage)
- * - 🔥 CRÉDITOS: Verificação em tempo real com fallback
- * - 🔥 CRÉDITOS: Atualização UI reativa com eventos
- * - 🔥 CRÉDITOS: Display correto para Premium (ex: 2/3)
- * - 🔥 TODAS AS FUNCIONALIDADES PRESERVADAS
+ * ✅ NOVIDADES v16.7:
+ * - 🔥 HISTÓRICO DE ANÁLISES: Mantém todos os arquivos processados
+ * - 🔥 ALTERNÂNCIA: Troca entre análises sem re-processar ML
+ * - 🔥 SELETOR DE ARQUIVOS: Interface para escolher qual análise ver (só aparece com 2+ arquivos)
+ * - 🔥 MODAL "VER TODOS": Lista todos os arquivos processados
+ * - 🔥 SEM FALLBACK: Apenas dados reais do backend (não gera dados falsos)
+ * - 🔥 OCULTO PARA 1 ARQUIVO: Seletor só aparece quando > 1 arquivo
  * 
- * ✅ MANTIDO v16.5:
+ * ✅ MANTIDO v16.6:
+ * - CRÉDITOS: Sincronização multi-fonte
  * - GPSA - Performance da Oficina (3 abas)
  * - 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)
- * - Polling com progresso
- * - Eventos chart:data_ready
  */
 
 (function() {
@@ -91,7 +91,7 @@
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS
+    // 🔥 UTILITÁRIOS (SEM FALLBACK)
     // ==============================================
 
     const Utils = {
@@ -150,6 +150,7 @@
             };
         },
 
+        // 🔥 SEM FALLBACK - apenas extrai dados reais
         extractChartData: (data) => {
             if (!data) {
                 console.warn('⚠️ [extractChartData] Dados vazios');
@@ -164,6 +165,7 @@
                            data.data?.chart_data || 
                            null;
             
+            // 🔥 Converte formato antigo se necessário (mas SEM gerar dados falsos)
             if (chartData && !chartData.weekly && chartData.revenue) {
                 console.log('📊 [extractChartData] Convertendo formato antigo para weekly');
                 chartData = {
@@ -177,13 +179,14 @@
                 };
             }
             
+            // 🔥 VERIFICA SE TEM DADOS REAIS - SEM FALLBACK
             if (chartData && chartData.weekly) {
                 const hasData = chartData.weekly.revenue?.some(v => v > 0) || 
                                chartData.weekly.costs?.some(v => v > 0);
                 
                 if (!hasData) {
-                    console.log('📊 [extractChartData] Dados vazios, gerando fallback');
-                    chartData = Utils.generateFallbackChartData();
+                    console.warn('⚠️ [extractChartData] Dados vazios - SEM FALLBACK');
+                    return null;
                 }
             }
             
@@ -196,35 +199,11 @@
             return chartData;
         },
 
-        generateFallbackChartData: () => {
-            console.log('📊 [generateFallbackChartData] Gerando dados de exemplo');
-            const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-            const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-            const baseRevenue = 1500;
-            const baseCost = 500;
-            
-            return {
-                weekly: {
-                    labels: days,
-                    revenue: days.map((_, i) => Math.round((baseRevenue + (i * 200) + Math.random() * 300) * 100) / 100),
-                    costs: days.map((_, i) => Math.round((baseCost + (i * 50) + Math.random() * 100) * 100) / 100)
-                },
-                performance: {
-                    labels: days,
-                    services: days.map(() => Math.floor(Math.random() * 8) + 3)
-                },
-                monthly: {
-                    labels: months,
-                    revenue: Array.from({ length: 12 }, (_, i) => 
-                        Math.round((10000 + i * 500 + Math.random() * 2000) * 100) / 100
-                    )
-                }
-            };
-        }
+        // 🔥 REMOVIDO: generateFallbackChartData - não será mais usado
     };
 
     // ==============================================
-    // 🔥🔥🔥 CREDIT MANAGER (VERSÃO CORRIGIDA V16.6)
+    // 🔥 CREDIT MANAGER (MANTIDO)
     // ==============================================
 
     class CreditManager {
@@ -254,10 +233,6 @@
             
             console.log('💰 [CreditManager] Inicializado');
         }
-
-        // ==========================================
-        // 🔥 CARREGAMENTO DE DADOS (MULTI-FONTE)
-        // ==========================================
 
         _loadFromAppState() {
             console.log('🔄 [CreditManager] Carregando créditos...');
@@ -333,10 +308,6 @@
             return false;
         }
 
-        // ==========================================
-        // 🔥 EVENT LISTENERS
-        // ==========================================
-
         _setupEventListeners() {
             document.addEventListener('creditsUpdated', (e) => {
                 const data = e.detail || {};
@@ -398,10 +369,6 @@
             });
         }
 
-        // ==========================================
-        // 🔥 GETTERS
-        // ==========================================
-
         get balance() { 
             if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
                 this._balance = window.__APP_STATE.credits;
@@ -435,10 +402,6 @@
             }
             return String(Math.max(0, balance));
         }
-
-        // ==========================================
-        // 🔥 SINCRONIZAÇÃO
-        // ==========================================
 
         async sync(force = false) {
             if (!force) {
@@ -523,10 +486,6 @@
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
-        // ==========================================
-        // 🔥 VERIFICAÇÃO DE CRÉDITOS
-        // ==========================================
-
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
             this._loadFromAppState();
             
@@ -558,10 +517,6 @@
             
             return this.balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
         }
-
-        // ==========================================
-        // 🔥 CONSUMO DE CRÉDITOS
-        // ==========================================
 
         async consume(amount = CONFIG.CREDITS.COST_PER_UPLOAD, description = 'Upload') {
             console.log(`💰 [CreditManager] Consumindo ${amount} crédito(s)...`);
@@ -636,10 +591,6 @@
             }
         }
 
-        // ==========================================
-        // 🔥 REEMBOLSO DE CRÉDITOS
-        // ==========================================
-
         async refund(amount, description = 'Correção de créditos') {
             if (this.isAdmin || amount <= 0) return true;
 
@@ -673,10 +624,6 @@
             }
             return false;
         }
-
-        // ==========================================
-        // 🔥 UI UPDATE
-        // ==========================================
 
         _updateUI() {
             const now = Date.now();
@@ -777,7 +724,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.6 - COMPLETA)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.7)
     // ==============================================
 
     class Dashboard {
@@ -789,6 +736,7 @@
             this._fileCache = new Map();
             this._analysisCache = new Map();
             
+            // 🔥 Instâncias dos gráficos
             this._chartInstances = {
                 revenue: null,
                 performance: null,
@@ -805,6 +753,11 @@
                 timeoutId: null,
             };
             
+            // 🔥 NOVO: Histórico de análises
+            this._analysisHistory = [];
+            this._currentAnalysisId = null;
+            this._isMultiFile = false;
+            
             this.uploadMultipleFiles = this.uploadMultipleFiles.bind(this);
             this._processUploadResult = this._processUploadResult.bind(this);
             this._syncCredits = this._syncCredits.bind(this);
@@ -814,6 +767,10 @@
             this._renderAllCharts = this._renderAllCharts.bind(this);
             this._handleChartDataReady = this._handleChartDataReady.bind(this);
             this._renderGPSA = this._renderGPSA.bind(this);
+            this._switchAnalysis = this._switchAnalysis.bind(this);
+            this._updateFileSelector = this._updateFileSelector.bind(this);
+            this._createFileSelector = this._createFileSelector.bind(this);
+            this._showAllFiles = this._showAllFiles.bind(this);
         }
 
         // ==========================================
@@ -826,7 +783,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.6] Inicializando com créditos corrigidos...');
+            console.log('🚀 [Dashboard v16.7] Inicializando com histórico de análises...');
 
             await this._creditManager.sync(true);
             
@@ -834,6 +791,7 @@
             this._setupUploadHandlers();
             this._setupPolling();
             this._setupChartListener();
+            this._createFileSelector();
             
             const canvases = {
                 revenue: document.getElementById('revenueChart'),
@@ -848,11 +806,12 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.6] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.7] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
-            console.log(`   🔥 Créditos: sincronização multi-fonte corrigida`);
+            console.log(`   📁 Histórico de análises: ${this._analysisHistory.length} arquivos`);
+            console.log(`   🔥 Sem fallback de dados - apenas dados reais do backend`);
             
             return this;
         }
@@ -918,6 +877,7 @@
             console.log('   Weekly:', chartData?.weekly ? '✅' : '❌');
             
             if (chartData) {
+                // 🔥 Se tiver dados, renderiza
                 this._renderAllCharts(chartData);
                 this._renderGPSA(chartData);
                 
@@ -932,7 +892,7 @@
                     placeholder.style.display = 'none';
                 }
             } else {
-                console.warn('⚠️ [Dashboard] chart_data inválido ou vazio');
+                console.warn('⚠️ [Dashboard] chart_data inválido ou vazio - SEM FALLBACK');
             }
         }
 
@@ -985,7 +945,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO (COM CRÉDITOS CORRIGIDOS)
+        // 🔥 UPLOAD MÚLTIPLO (COM HISTÓRICO)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -1364,11 +1324,12 @@
             const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
             const costs = weekly.costs || [0, 0, 0, 0, 0, 0, 0];
 
+            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             const hasData = revenue.some(v => v > 0) || costs.some(v => v > 0);
             
             if (!hasData) {
-                const fallback = Utils.generateFallbackChartData();
-                return this._renderRevenueChart(fallback);
+                console.warn('⚠️ [Chart] Dados vazios - SEM FALLBACK, não renderizando');
+                return;
             }
 
             const ctx = canvas.getContext('2d');
@@ -1485,9 +1446,10 @@
             const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const services = performance.services || weekly.services || [];
 
+            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             if (!services.length || services.every(v => v === 0)) {
-                const fallback = Utils.generateFallbackChartData();
-                return this._renderPerformanceChart(fallback);
+                console.warn('⚠️ [Chart] Dados de serviços vazios - SEM FALLBACK');
+                return;
             }
 
             const ctx = canvas.getContext('2d');
@@ -1572,9 +1534,10 @@
             const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const revenue = monthly.revenue || [];
 
+            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             if (!revenue.length || revenue.every(v => v === 0)) {
-                const fallback = Utils.generateFallbackChartData();
-                return this._renderMonthlyChart(fallback);
+                console.warn('⚠️ [Chart] Dados mensais vazios - SEM FALLBACK');
+                return;
             }
 
             const ctx = canvas.getContext('2d');
@@ -1709,6 +1672,7 @@
                 healthIndicator.style.borderColor = status.borderColor;
             }
             
+            // 🔥 GPSA TABS (mantido igual)
             const tabs = [
                 {
                     id: 'gpsa-financeiro',
@@ -2091,7 +2055,7 @@
         }
 
         // ==========================================
-        // 🔥 PROCESSAR RESULTADO DO UPLOAD
+        // 🔥🔥🔥 PROCESSAR RESULTADO DO UPLOAD (COM HISTÓRICO)
         // ==========================================
 
         async _processUploadResult(result, files) {
@@ -2108,11 +2072,65 @@
 
             console.log('📊 [ProcessResult] chartData:', chartData ? '✅' : '❌');
 
-            if (chartData) {
-                this._renderAllCharts(chartData);
-                this._renderGPSA(chartData);
+            // 🔥 VERIFICAR SE TEM MÚLTIPLOS ARQUIVOS
+            const filesList = result.data?.files || [];
+            const isMultiFile = filesList.length > 1;
+
+            console.log(`📁 [ProcessResult] ${filesList.length} arquivo(s) encontrado(s)`);
+
+            // 🔥 SALVAR NO HISTÓRICO (apenas se tiver dados reais)
+            if (isMultiFile && chartData) {
+                this._isMultiFile = true;
+                this._analysisHistory = filesList.map((file, index) => ({
+                    id: file.process_id || file.id || `file-${index}`,
+                    filename: file.filename || `Arquivo ${index + 1}`,
+                    rows: file.rows || 0,
+                    chart_data: file.chart_data || chartData,
+                    metrics: file.metrics || {},
+                    recommendations: file.recommendations || recommendations,
+                    insights: file.insights || {},
+                    executive_score: file.executive_score || executiveScore,
+                    executive_summary: file.executive_summary || executiveSummary,
+                    isActive: index === 0,
+                    success: file.success || false
+                }));
+
+                // 🔥 DEFINIR ANÁLISE ATUAL (primeira)
+                this._currentAnalysisId = this._analysisHistory[0].id;
+                
+                console.log(`📁 [ProcessResult] ${this._analysisHistory.length} arquivos no histórico`);
+            } else {
+                this._isMultiFile = false;
+                this._analysisHistory = [{
+                    id: result.process_id || Date.now(),
+                    filename: files[0]?.name || 'Análise',
+                    rows: result.rows_processed || 0,
+                    chart_data: chartData,
+                    metrics: result.metrics || {},
+                    recommendations: recommendations,
+                    insights: analysis.insights || {},
+                    executive_score: executiveScore,
+                    executive_summary: executiveSummary,
+                    isActive: true,
+                    success: true
+                }];
+                this._currentAnalysisId = this._analysisHistory[0].id;
             }
 
+            // 🔥 RENDERIZAR GRÁFICO ATUAL (apenas se tiver dados)
+            const currentAnalysis = this._getCurrentAnalysis();
+            if (currentAnalysis && currentAnalysis.chart_data) {
+                console.log('📊 [ProcessResult] Renderizando gráficos da análise atual');
+                this._renderAllCharts(currentAnalysis.chart_data);
+                this._renderGPSA(currentAnalysis.chart_data);
+            } else {
+                console.warn('⚠️ [ProcessResult] Sem dados para renderizar');
+            }
+
+            // 🔥 ATUALIZAR UI COM SELETOR DE ARQUIVOS (só se > 1 arquivo)
+            this._updateFileSelector();
+
+            // 🔥 ATUALIZAR RELATÓRIO
             await this._updateAIReport({
                 executive_score: executiveScore,
                 executive_summary: executiveSummary,
@@ -2129,6 +2147,7 @@
                 chart_data: chartData || {}
             });
 
+            // 🔥 ATUALIZAR ABAS (se houver tab manager)
             if (result.data?.files && result.data.files.length > 0) {
                 const analyses = result.data.files.map((file, index) => ({
                     filename: file.filename || `Arquivo ${index + 1}`,
@@ -2139,7 +2158,7 @@
                         high_risk_percentage: file.metrics?.high_risk_percentage || 0,
                         low_risk_percentage: file.metrics?.low_risk_percentage || 0
                     },
-                    chart_data: chartData || {},
+                    chart_data: file.chart_data || chartData,
                     insights: {
                         summary: { mean: file.metrics?.mean_prediction || 0.5 },
                         risk_distribution: {
@@ -2147,7 +2166,7 @@
                             low_percentage: file.metrics?.low_risk_percentage || 0
                         }
                     },
-                    recommendations: recommendations,
+                    recommendations: file.recommendations || recommendations,
                     predictions: file.predictions || [],
                     model_used: file.model_used || 'AutoML'
                 }));
@@ -2158,12 +2177,18 @@
                 }
             }
 
+            // 🔥 SALVAR NO LOCALSTORAGE
             try {
                 const recent = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
                 recent.unshift({
                     filename: files.map(f => f.name).join(', '),
                     timestamp: Date.now(),
-                    result: result
+                    result: result,
+                    isMultiFile: isMultiFile,
+                    files: this._analysisHistory.map(a => ({
+                        filename: a.filename,
+                        rows: a.rows
+                    }))
                 });
                 if (recent.length > 10) recent.pop();
                 localStorage.setItem('recentAnalyses', JSON.stringify(recent));
@@ -2174,6 +2199,268 @@
             }));
 
             console.log('✅ Upload processado com sucesso!');
+        }
+
+        // ==========================================
+        // 🔥 OBTER ANÁLISE ATUAL
+        // ==========================================
+
+        _getCurrentAnalysis() {
+            return this._analysisHistory.find(a => a.id === this._currentAnalysisId) || this._analysisHistory[0];
+        }
+
+        // ==========================================
+        // 🔥 ALTERNAR ANÁLISE (SEM RE-PROCESSAR ML)
+        // ==========================================
+
+        _switchAnalysis(analysisId) {
+            if (analysisId === this._currentAnalysisId) return;
+
+            console.log(`🔄 [Dashboard] Alternando para análise: ${analysisId}`);
+
+            // 🔥 ATUALIZAR ESTADO
+            this._analysisHistory.forEach(a => {
+                a.isActive = a.id === analysisId;
+            });
+            this._currentAnalysisId = analysisId;
+
+            // 🔥 OBTER DADOS DA ANÁLISE SELECIONADA
+            const analysis = this._getCurrentAnalysis();
+            if (!analysis) return;
+
+            console.log(`📊 [Dashboard] Carregando análise: ${analysis.filename}`);
+
+            // 🔥 ATUALIZAR UI DE SELEÇÃO
+            this._updateFileSelector();
+
+            // 🔥 RENDERIZAR GRÁFICOS (COM DADOS JÁ SALVOS)
+            if (analysis.chart_data) {
+                this._renderAllCharts(analysis.chart_data);
+                this._renderGPSA(analysis.chart_data);
+            } else {
+                console.warn('⚠️ [Dashboard] Análise sem chart_data');
+            }
+
+            // 🔥 ATUALIZAR RELATÓRIO
+            this._updateAIReport({
+                executive_score: analysis.executive_score || {},
+                executive_summary: analysis.executive_summary || '',
+                recommendations: analysis.recommendations || [],
+                chart_data: analysis.chart_data || {},
+                forecast: '',
+                general_conclusion: '',
+                comparison: {},
+                trend: {}
+            });
+
+            // 🔥 ATUALIZAR MÉTRICAS
+            this._updateMetrics({
+                executive_score: analysis.executive_score || {},
+                chart_data: analysis.chart_data || {}
+            });
+
+            // 🔥 ATUALIZAR NOME DO ARQUIVO
+            const filenameEl = document.getElementById('resultFilename');
+            if (filenameEl) {
+                filenameEl.textContent = analysis.filename || 'Análise';
+            }
+
+            console.log(`✅ [Dashboard] Alternado para: ${analysis.filename}`);
+        }
+
+        // ==========================================
+        // 🔥 ATUALIZAR SELETOR DE ARQUIVOS (só aparece com 2+ arquivos)
+        // ==========================================
+
+        _updateFileSelector() {
+            const container = document.getElementById('analysisSelector');
+            if (!container) {
+                this._createFileSelector();
+                return;
+            }
+
+            // 🔥 SÓ MOSTRA SE TIVER MAIS DE 1 ARQUIVO
+            if (this._analysisHistory.length <= 1) {
+                container.style.display = 'none';
+                return;
+            }
+
+            // 🔥 MOSTRAR SELETOR
+            container.style.display = 'block';
+
+            // 🔥 CRIAR BOTÕES PARA CADA ARQUIVO
+            let html = `
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.2rem 0;">
+                    <span style="font-size: 0.6rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;">
+                        📁 Arquivos:
+                    </span>
+            `;
+
+            this._analysisHistory.forEach((analysis) => {
+                const isActive = analysis.isActive;
+                const status = analysis.success ? '✅' : '❌';
+                const filename = analysis.filename.length > 28 
+                    ? analysis.filename.substring(0, 25) + '...' 
+                    : analysis.filename;
+
+                html += `
+                    <button class="analysis-selector-btn ${isActive ? 'active' : ''}" 
+                            data-analysis-id="${analysis.id}"
+                            style="
+                                padding: 0.2rem 0.8rem;
+                                border-radius: 20px;
+                                border: 1px solid ${isActive ? '#ff6b35' : 'rgba(255,255,255,0.08)'};
+                                background: ${isActive ? 'rgba(255,107,53,0.15)' : 'rgba(255,255,255,0.03)'};
+                                color: ${isActive ? '#ff6b35' : 'rgba(255,255,255,0.5)'};
+                                font-size: 0.65rem;
+                                font-weight: ${isActive ? '700' : '400'};
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 0.3rem;
+                                font-family: inherit;
+                            "
+                            onmouseover="this.style.borderColor='#ff6b35'; this.style.background='rgba(255,107,53,0.08)'"
+                            onmouseout="this.style.borderColor='${isActive ? '#ff6b35' : 'rgba(255,255,255,0.08)'}'; this.style.background='${isActive ? 'rgba(255,107,53,0.15)' : 'rgba(255,255,255,0.03)'}'"
+                            onclick="window.__dashboard?._switchAnalysis('${analysis.id}')">
+                        ${status} ${filename}
+                        <span style="font-size: 0.5rem; color: rgba(255,255,255,0.2);">
+                            ${analysis.rows} registros
+                        </span>
+                    </button>
+                `;
+            });
+
+            html += `
+                    <button class="analysis-selector-btn" 
+                            style="
+                                padding: 0.2rem 0.6rem;
+                                border-radius: 20px;
+                                border: none;
+                                background: rgba(255,255,255,0.03);
+                                color: rgba(255,255,255,0.2);
+                                font-size: 0.6rem;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                font-family: inherit;
+                            "
+                            onmouseover="this.style.color='rgba(255,255,255,0.5)'"
+                            onmouseout="this.style.color='rgba(255,255,255,0.2)'"
+                            onclick="window.__dashboard?._showAllFiles()"
+                            title="Ver todos os arquivos">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // 🔥 CRIAR SELETOR DE ARQUIVOS
+        // ==========================================
+
+        _createFileSelector() {
+            // 🔥 VERIFICAR SE JÁ EXISTE
+            if (document.getElementById('analysisSelector')) return;
+
+            // 🔥 ENCONTRAR ONDE INSERIR
+            const resultCard = document.getElementById('resultCard');
+            if (!resultCard) return;
+
+            // 🔥 CRIAR CONTAINER
+            const container = document.createElement('div');
+            container.id = 'analysisSelector';
+            container.style.cssText = `
+                display: none;
+                padding: 0.2rem 0.5rem;
+                margin-bottom: 0.3rem;
+                background: rgba(255,255,255,0.02);
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.04);
+            `;
+
+            // 🔥 INSERIR ANTES DO RESULTADO
+            const resultContainer = document.getElementById('resultContainer');
+            if (resultContainer) {
+                resultCard.insertBefore(container, resultContainer);
+            } else {
+                resultCard.appendChild(container);
+            }
+        }
+
+        // ==========================================
+        // 🔥 MOSTRAR TODOS OS ARQUIVOS (MODAL)
+        // ==========================================
+
+        _showAllFiles() {
+            if (this._analysisHistory.length <= 1) return;
+
+            let html = `
+                <div style="padding: 0.5rem;">
+                    <h6 style="color: #ff6b35; font-size: 0.9rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📁 ${this._analysisHistory.length} arquivos analisados</span>
+                        <span style="font-size: 0.6rem; color: rgba(255,255,255,0.2); font-weight: 400;">
+                            clique para alternar
+                        </span>
+                    </h6>
+                    <div style="display: grid; gap: 0.3rem;">
+            `;
+
+            this._analysisHistory.forEach((analysis) => {
+                const status = analysis.success ? '✅' : '❌';
+                const isActive = analysis.isActive;
+                html += `
+                    <div style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 0.3rem 0.6rem;
+                        background: ${isActive ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)'};
+                        border-radius: 6px;
+                        border-left: 3px solid ${isActive ? '#ff6b35' : 'transparent'};
+                        cursor: pointer;
+                        transition: all 0.3s;
+                    "
+                    onclick="window.__dashboard?._switchAnalysis('${analysis.id}')"
+                    onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                    onmouseout="this.style.background='${isActive ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)'}'">
+                        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); display: flex; align-items: center; gap: 0.4rem;">
+                            ${status} 
+                            <span style="font-weight: ${isActive ? '600' : '400'};">${analysis.filename}</span>
+                        </span>
+                        <span style="font-size: 0.6rem; color: rgba(255,255,255,0.2); display: flex; align-items: center; gap: 0.5rem;">
+                            ${analysis.rows} registros
+                            ${isActive ? '<span style="color: #ff6b35; font-size: 0.5rem; font-weight: 600;">👈 ATUAL</span>' : ''}
+                        </span>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                    <div style="margin-top: 0.5rem; text-align: center; font-size: 0.55rem; color: rgba(255,255,255,0.15);">
+                        Clique em qualquer arquivo para ver seus gráficos
+                    </div>
+                </div>
+            `;
+
+            // 🔥 MOSTRAR EM UM MODAL OU TOAST
+            if (window.toastr) {
+                toastr.info(html, '📁 Arquivos Analisados', {
+                    timeOut: 0,
+                    closeButton: true,
+                    extendedTimeOut: 0,
+                    enableHtml: true,
+                    positionClass: 'toast-top-center',
+                    progressBar: false,
+                    tapToDismiss: false,
+                    newestOnTop: false
+                });
+            } else {
+                alert(html.replace(/<[^>]*>/g, ''));
+            }
         }
 
         // ==========================================
@@ -2664,6 +2951,16 @@
             return this._renderGPSA(chartData);
         }
 
+        // 🔥 NOVO: Método para alternar análise via console (debug)
+        switchToAnalysis(analysisId) {
+            this._switchAnalysis(analysisId);
+        }
+
+        // 🔥 NOVO: Obter histórico de análises
+        getAnalysisHistory() {
+            return this._analysisHistory;
+        }
+
         destroy() {
             this._stopPolling();
             if (this._pollingInterval) {
@@ -2735,21 +3032,14 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.6 carregado - CRÉDITOS CORRIGIDOS');
-    console.log('   ✅ CRÉDITOS: Sincronização multi-fonte (App State, Auth, localStorage)');
-    console.log('   ✅ CRÉDITOS: Verificação em tempo real com fallback');
-    console.log('   ✅ CRÉDITOS: Display correto para Premium (ex: 2/3)');
-    console.log('   ✅ CRÉDITOS: Consumo e refund com validação');
-    console.log('   ✅ GRÁFICO 1: Barras (Receita vs Custos)');
-    console.log('   ✅ GRÁFICO 2: Linha (Serviços Semanais)');
-    console.log('   ✅ GRÁFICO 3: Linha (Evolução Mensal)');
-    console.log('   ✅ GPSA: Performance da Oficina (3 abas)');
-    console.log('   ✅ RENDERIZAÇÃO COMPLETA: Todos os gráficos juntos');
-    console.log('   ✅ ANIMAÇÃO SINCRONIZADA: Transições suaves');
-    console.log('   ✅ CORES COORDENADAS: Paleta consistente');
-    console.log('   ✅ FALLBACK INTELIGENTE: Dados de exemplo');
-    console.log('   ✅ POLLING: Acompanhamento de progresso em tempo real');
-    console.log('   ✅ BARRA DE PROGRESSO: Mostra % e mensagem');
+    console.log('🔥 dashboard.js v16.7 carregado - HISTÓRICO E ALTERNÂNCIA');
+    console.log('   ✅ HISTÓRICO: Mantém todos os arquivos processados');
+    console.log('   ✅ ALTERNÂNCIA: Troca entre análises sem re-processar ML');
+    console.log('   ✅ SELETOR: Interface para escolher qual análise ver');
+    console.log('   ✅ OCULTO: Seletor só aparece com 2+ arquivos');
+    console.log('   ✅ SEM FALLBACK: Apenas dados reais do backend');
+    console.log('   ✅ CRÉDITOS: Sincronização multi-fonte');
+    console.log('   ✅ GRÁFICOS: 3 gráficos + GPSA');
     console.log('='.repeat(60));
 
 })();

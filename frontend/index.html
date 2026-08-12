@@ -405,7 +405,7 @@
         }
 
         /* ==============================================
-                   RESULTADO - VERSÃO SIMPLIFICADA (SEM GRÁFICO FINANCEIRO)
+                   RESULTADO
                 ============================================== */
         #resultCard {
             background: rgba(255, 255, 255, 0.08) !important;
@@ -453,6 +453,16 @@
             z-index: 1;
         }
         .result-container.show { display: block; }
+
+        /* 🔥 SELETOR DE ARQUIVOS (dinâmico) */
+        #analysisSelector {
+            display: none;
+            padding: 0.2rem 0.5rem;
+            margin-bottom: 0.3rem;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
 
         .result-header {
             display: flex;
@@ -1151,6 +1161,9 @@
                             </span>
                         </h5>
                         
+                        <!-- 🔥 SELETOR DE ARQUIVOS (dinâmico) -->
+                        <div id="analysisSelector" style="display: none;"></div>
+                        
                         <div class="result-container" id="resultContainer">
                             <!-- Cabeçalho -->
                             <div class="result-header">
@@ -1454,7 +1467,11 @@
     <script src="/static/js/app.js?ver=7.5.0" defer></script>
     <script src="/static/js/auth.js?ver=4.2.0" defer></script>
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
-    <script src="/static/js/dashboard.js?ver=16.2" defer></script>
+    
+    <!-- 🔥 DASHBOARD v16.7 - COM HISTÓRICO E ALTERNÂNCIA -->
+    <script src="/static/js/dashboard.js?ver=16.7" defer></script>
+
+    <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
     <script src="/static/js/pdf-generator.js?ver=4.2" defer></script>
 
