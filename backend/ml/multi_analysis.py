@@ -1,9 +1,16 @@
-# backend/ml/multi_analysis.py - VERSÃO 5.2 (CORREÇÃO: PASSAR DB_SESSION PARA PROCESS_FILE)
+# backend/ml/multi_analysis.py - VERSÃO 5.3 (CORREÇÃO: COMPARISON E TREND COMO OBJETOS)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V5.2
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V5.3
 ================================================================================
+✅ CORREÇÕES V5.3:
+   - 🔥 CORRIGIDO: comparison agora é objeto ComparisonResults (não dict)
+   - 🔥 CORRIGIDO: trend agora é objeto TrendResults (não dict)
+   - 🔥 CORRIGIDO: to_dict com verificação de atributos (hasattr)
+   - 🔥 MELHORADO: Fallback com objetos corretos
+   - 🔥 MELHORADO: Conversão automática de dict para objetos
+
 ✅ CORREÇÕES V5.2:
-   - 🔥 CORRIGIDO: _process_single_file agora passa db_session e process_id
+   - 🔥 CORRIGIDO: _process_single_file passa db_session e process_id
    - 🔥 CORRIGIDO: process_file_content recebe os parâmetros corretamente
    - 🔥 MELHORADO: Logs mais detalhados no processamento de arquivos
 
@@ -146,22 +153,22 @@ class MLResults:
 
 @dataclass
 class ComparisonResults:
-    best_revenue: str
-    best_profit: str
-    best_growth: str
-    best_efficiency: str
-    highest_risk: str
-    lowest_performance: str
+    best_revenue: str = ""
+    best_profit: str = ""
+    best_growth: str = ""
+    best_efficiency: str = ""
+    highest_risk: str = ""
+    lowest_performance: str = ""
     comparison_table: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     summary: str = ""
 
 
 @dataclass
 class TrendResults:
-    direction: TrendDirection
-    strength: float
-    confidence: float
-    description: str
+    direction: TrendDirection = TrendDirection.ESTAVEL
+    strength: float = 0.5
+    confidence: float = 0.7
+    description: str = ""
     key_observations: List[str] = field(default_factory=list)
 
 
@@ -220,7 +227,9 @@ class ConsolidatedAnalysis:
                 "best_revenue": self.comparison.best_revenue if self.comparison else "",
                 "best_profit": self.comparison.best_profit if self.comparison else "",
                 "best_growth": self.comparison.best_growth if self.comparison else "",
-                "highest_risk": self.comparison.highest_risk if self.comparison else ""
+                "best_efficiency": self.comparison.best_efficiency if self.comparison else "",
+                "highest_risk": self.comparison.highest_risk if self.comparison else "",
+                "lowest_performance": self.comparison.lowest_performance if self.comparison else ""
             } if self.comparison else {},
             "trend": {
                 "direction": self.trend.direction.value if self.trend else "estavel",
@@ -266,6 +275,7 @@ class MultiFileAnalysisResult:
     progress: float = 0.0
     
     def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário com tratamento de erros robusto"""
         return {
             "success": self.success,
             "status": self.status,
@@ -273,43 +283,73 @@ class MultiFileAnalysisResult:
             "total_files": self.total_files,
             "processed_files": self.processed_files,
             "failed_files": self.failed_files,
-            "executive_score": self.executive_score,
+            "executive_score": self.executive_score or {},
             "executive_summary": self.executive_summary,
             "files": self.files,
-            "comparison": {
-                "best_revenue": self.comparison.best_revenue if self.comparison else "",
-                "best_profit": self.comparison.best_profit if self.comparison else "",
-                "best_growth": self.comparison.best_growth if self.comparison else "",
-                "best_efficiency": self.comparison.best_efficiency if self.comparison else "",
-                "highest_risk": self.comparison.highest_risk if self.comparison else "",
-                "lowest_performance": self.comparison.lowest_performance if self.comparison else ""
-            } if self.comparison else {},
-            "trend": {
-                "direction": self.trend.direction.value if self.trend else "estavel",
-                "strength": round(self.trend.strength, 2) if self.trend else 0.5,
-                "confidence": round(self.trend.confidence, 2) if self.trend else 0.7,
-                "description": self.trend.description if self.trend else "",
-                "key_observations": self.trend.key_observations if self.trend else []
-            } if self.trend else {},
+            "comparison": self._comparison_to_dict(),
+            "trend": self._trend_to_dict(),
             "recommendations": self.recommendations,
             "forecast": self.forecast,
             "general_conclusion": self.general_conclusion,
-            "chart_data": self.chart_data,
+            "chart_data": self.chart_data or {},
             "error": self.error,
             "processing_time_ms": self.processing_time_ms,
             "timestamp": self.timestamp,
             "cache_hit": self.cache_hit,
-            "encodings_used": self.encodings_used
+            "encodings_used": list(set(self.encodings_used)) if self.encodings_used else []
         }
+    
+    def _comparison_to_dict(self) -> Dict[str, Any]:
+        """Converte comparison para dict com segurança"""
+        if not self.comparison:
+            return {}
+        
+        # Se for dict, retorna diretamente
+        if isinstance(self.comparison, dict):
+            return self.comparison
+        
+        # Se for objeto ComparisonResults
+        if hasattr(self.comparison, 'best_revenue'):
+            return {
+                "best_revenue": self.comparison.best_revenue or "",
+                "best_profit": self.comparison.best_profit or "",
+                "best_growth": self.comparison.best_growth or "",
+                "best_efficiency": self.comparison.best_efficiency or "",
+                "highest_risk": self.comparison.highest_risk or "",
+                "lowest_performance": self.comparison.lowest_performance or ""
+            }
+        
+        return {}
+    
+    def _trend_to_dict(self) -> Dict[str, Any]:
+        """Converte trend para dict com segurança"""
+        if not self.trend:
+            return {}
+        
+        # Se for dict, retorna diretamente
+        if isinstance(self.trend, dict):
+            return self.trend
+        
+        # Se for objeto TrendResults
+        if hasattr(self.trend, 'direction'):
+            return {
+                "direction": self.trend.direction.value if hasattr(self.trend.direction, 'value') else str(self.trend.direction),
+                "strength": round(self.trend.strength, 2) if hasattr(self.trend, 'strength') else 0.5,
+                "confidence": round(self.trend.confidence, 2) if hasattr(self.trend, 'confidence') else 0.7,
+                "description": self.trend.description or "",
+                "key_observations": self.trend.key_observations or []
+            }
+        
+        return {}
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V5.2
+# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V5.3
 # ==============================================
 
 class MultiFileAnalyzerV5:
     """
-    🔥 Analisador de múltiplos arquivos com IA Avançada - V5.2
+    🔥 Analisador de múltiplos arquivos com IA Avançada - V5.3
     
     Características:
     - Processamento paralelo com semáforo (max 3)
@@ -382,7 +422,7 @@ class MultiFileAnalyzerV5:
         # ==========================================
         self._load_dependencies()
         
-        logger.info("✅ MultiFileAnalyzerV5.2 inicializado")
+        logger.info("✅ MultiFileAnalyzerV5.3 inicializado")
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
         logger.info(f"   🔄 Processamento paralelo: {self.MAX_CONCURRENT}")
@@ -693,13 +733,13 @@ class MultiFileAnalyzerV5:
         return processed
     
     # ==========================================
-    # 🔥🔥🔥 _process_single_file - CORRIGIDA (VERSÃO 5.2)
+    # 🔥🔥🔥 _process_single_file - V5.3
     # ==========================================
     
     async def _process_single_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         🔥 Processa um único arquivo com timeout e retry
-        🔥 AGORA PASSA db_session e process_id para o pipeline
+        🔥 Passa db_session e process_id para o pipeline
         """
         filename = file_data.get('filename', 'arquivo.csv')
         content = file_data.get('content')
@@ -712,13 +752,13 @@ class MultiFileAnalyzerV5:
             return self._error_file_result(filename, "Pipeline ML não disponível")
         
         try:
-            # 🔥 CORRIGIDO: Passar db_session e process_id para process_file_content
+            # 🔥 Passar db_session e process_id para process_file_content
             result = await asyncio.wait_for(
                 self.process_file(
                     content=content,
                     filename=filename,
-                    db_session=self._db_session,    # 🔥 NOVO
-                    process_id=self._process_id      # 🔥 NOVO
+                    db_session=self._db_session,
+                    process_id=self._process_id
                 ),
                 timeout=self.TIMEOUT_SECONDS
             )
@@ -1149,7 +1189,7 @@ class MultiFileAnalyzerV5:
             return self._generate_fallback_analysis(consolidated)
     
     # ==========================================
-    # 🔥 CONSTRUIR RESULTADO
+    # 🔥 CONSTRUIR RESULTADO - V5.3
     # ==========================================
     
     def _build_result(
@@ -1160,7 +1200,7 @@ class MultiFileAnalyzerV5:
         gemini_analysis: Dict[str, Any],
         processing_time_ms: float
     ) -> MultiFileAnalysisResult:
-        """Constrói o resultado final"""
+        """Constrói o resultado final com objetos corretos"""
         
         success_count = sum(1 for r in processed_results if r.get('success'))
         
@@ -1175,6 +1215,17 @@ class MultiFileAnalyzerV5:
         
         logger.info(f"   📝 Encodings no resultado: {set(encodings_used)}")
         
+        # 🔥 GARANTIR QUE comparison E trend SEJAM OBJETOS
+        comparison = self._ensure_comparison_object(
+            gemini_analysis.get('comparison'),
+            consolidated.comparison
+        )
+        
+        trend = self._ensure_trend_object(
+            gemini_analysis.get('trend'),
+            consolidated.trend
+        )
+        
         return MultiFileAnalysisResult(
             success=success_count > 0,
             status=AnalysisStatus.COMPLETED.value if success_count > 0 else AnalysisStatus.FAILED.value,
@@ -1185,8 +1236,8 @@ class MultiFileAnalyzerV5:
             files=processed_results,
             executive_score=gemini_analysis.get('executive_score', {}),
             executive_summary=gemini_analysis.get('executive_summary', ''),
-            comparison=consolidated.comparison,
-            trend=consolidated.trend,
+            comparison=comparison,
+            trend=trend,
             recommendations=gemini_analysis.get('recommendations', []),
             forecast=gemini_analysis.get('forecast', ''),
             general_conclusion=gemini_analysis.get('conclusion', ''),
@@ -1195,6 +1246,63 @@ class MultiFileAnalyzerV5:
             cache_hit=False,
             encodings_used=list(set(encodings_used))
         )
+    
+    def _ensure_comparison_object(self, comparison_data, fallback_comparison) -> Optional[ComparisonResults]:
+        """🔥 Garante que comparison seja um objeto ComparisonResults"""
+        
+        # Se for None, retorna fallback
+        if comparison_data is None:
+            return fallback_comparison
+        
+        # Se já for ComparisonResults, retorna
+        if isinstance(comparison_data, ComparisonResults):
+            return comparison_data
+        
+        # Se for dict, converte
+        if isinstance(comparison_data, dict):
+            return ComparisonResults(
+                best_revenue=comparison_data.get('best_revenue', ''),
+                best_profit=comparison_data.get('best_profit', ''),
+                best_growth=comparison_data.get('best_growth', ''),
+                best_efficiency=comparison_data.get('best_efficiency', ''),
+                highest_risk=comparison_data.get('highest_risk', ''),
+                lowest_performance=comparison_data.get('lowest_performance', ''),
+                comparison_table=comparison_data.get('comparison_table', {}),
+                summary=comparison_data.get('summary', '')
+            )
+        
+        # Fallback
+        return fallback_comparison
+    
+    def _ensure_trend_object(self, trend_data, fallback_trend) -> Optional[TrendResults]:
+        """🔥 Garante que trend seja um objeto TrendResults"""
+        
+        # Se for None, retorna fallback
+        if trend_data is None:
+            return fallback_trend
+        
+        # Se já for TrendResults, retorna
+        if isinstance(trend_data, TrendResults):
+            return trend_data
+        
+        # Se for dict, converte
+        if isinstance(trend_data, dict):
+            direction_str = trend_data.get('direction', 'estavel')
+            try:
+                direction = TrendDirection(direction_str)
+            except ValueError:
+                direction = TrendDirection.ESTAVEL
+            
+            return TrendResults(
+                direction=direction,
+                strength=trend_data.get('strength', 0.5),
+                confidence=trend_data.get('confidence', 0.7),
+                description=trend_data.get('description', ''),
+                key_observations=trend_data.get('key_observations', [])
+            )
+        
+        # Fallback
+        return fallback_trend
     
     # ==========================================
     # 🔥 PARSE DAS RESPOSTAS DO GEMINI
@@ -1276,8 +1384,8 @@ class MultiFileAnalyzerV5:
         
         return "Análise concluída com sucesso."
     
-    def _parse_comparison(self, text: str) -> Dict[str, Any]:
-        """Extrai comparação"""
+    def _parse_comparison(self, text: str) -> ComparisonResults:
+        """🔥 Extrai comparação e retorna objeto ComparisonResults"""
         comparison = {
             'best_revenue': '',
             'best_profit': '',
@@ -1299,31 +1407,46 @@ class MultiFileAnalyzerV5:
             if match:
                 comparison[key] = match.group(1).strip()
         
-        return comparison
+        return ComparisonResults(
+            best_revenue=comparison['best_revenue'],
+            best_profit=comparison['best_profit'],
+            best_growth=comparison['best_growth'],
+            best_efficiency='',
+            highest_risk=comparison['highest_risk'],
+            lowest_performance='',
+            comparison_table={},
+            summary=''
+        )
     
-    def _parse_trend(self, text: str) -> Dict[str, Any]:
-        """Extrai tendência"""
-        trend = {
-            'direction': 'estavel',
-            'strength': 0.5,
-            'confidence': 0.7,
-            'description': '',
-            'key_observations': []
-        }
+    def _parse_trend(self, text: str) -> TrendResults:
+        """🔥 Extrai tendência e retorna objeto TrendResults"""
+        direction = TrendDirection.ESTAVEL
+        strength = 0.5
+        confidence = 0.7
+        description = ''
+        key_observations = []
         
-        if re.search(r'tend[eê]ncia\s*(crescent|aument|alta)', text, re.IGNORECASE):
-            trend['direction'] = 'crescente'
-        elif re.search(r'tend[eê]ncia\s*(decrescent|diminu|baixa)', text, re.IGNORECASE):
-            trend['direction'] = 'decrescente'
+        text_lower = text.lower()
+        if re.search(r'tend[eê]ncia\s*(crescent|aument|alta)', text_lower):
+            direction = TrendDirection.CRESCENTE
+        elif re.search(r'tend[eê]ncia\s*(decrescent|diminu|baixa)', text_lower):
+            direction = TrendDirection.DECRESCENTE
         
+        # Extrair observações
         obs_pattern = r'Observaç[õo]es?\s*[:=]?\s*([^\n]+)'
         match = re.search(obs_pattern, text, re.IGNORECASE)
         if match:
             obs = match.group(1).strip()
             if obs:
-                trend['key_observations'] = [obs]
+                key_observations = [obs]
         
-        return trend
+        return TrendResults(
+            direction=direction,
+            strength=strength,
+            confidence=confidence,
+            description=description,
+            key_observations=key_observations
+        )
     
     def _parse_recommendations(self, text: str) -> List[Dict[str, Any]]:
         """Extrai recomendações priorizadas"""
@@ -1450,7 +1573,7 @@ class MultiFileAnalyzerV5:
         return 'medio'
     
     def _generate_fallback_analysis(self, consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
-        """Gera análise de fallback (sem Gemini)"""
+        """🔥 Gera análise de fallback com objetos corretos"""
         return {
             'success': True,
             'executive_score': {
@@ -1479,7 +1602,25 @@ class MultiFileAnalyzerV5:
                 }
             ],
             'forecast': 'Baseado nos dados analisados, espera-se manutenção da tendência atual.',
-            'conclusion': 'A análise demonstra potencial de melhoria com foco em otimização de custos.'
+            'conclusion': 'A análise demonstra potencial de melhoria com foco em otimização de custos.',
+            # 🔥 ADICIONAR COMPARISON COMO OBJETO
+            'comparison': ComparisonResults(
+                best_revenue='',
+                best_profit='',
+                best_growth='',
+                best_efficiency='',
+                highest_risk='',
+                lowest_performance='',
+                comparison_table={},
+                summary=''
+            ),
+            'trend': TrendResults(
+                direction=TrendDirection.ESTAVEL,
+                strength=0.5,
+                confidence=0.7,
+                description='Tendência estável detectada.',
+                key_observations=['Dados insuficientes para análise detalhada.']
+            )
         }
     
     # ==========================================
@@ -1678,7 +1819,7 @@ async def analyze_multiple_files(
 async def test_multi_analysis():
     """Função de teste completa"""
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V5.2")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V5.3")
     print("=" * 70)
     
     import pandas as pd
