@@ -1,17 +1,19 @@
-// frontend/js/dashboard.js - VERSÃO 16.7 (HISTÓRICO E ALTERNÂNCIA DE ANÁLISES)
+// frontend/js/dashboard.js - VERSÃO 16.8 (CORREÇÃO DE CRÉDITOS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.7
+ * 🔥 Dashboard Module - AutoAnalytics v16.8
  * 
- * ✅ NOVIDADES v16.7:
- * - 🔥 HISTÓRICO DE ANÁLISES: Mantém todos os arquivos processados
- * - 🔥 ALTERNÂNCIA: Troca entre análises sem re-processar ML
- * - 🔥 SELETOR DE ARQUIVOS: Interface para escolher qual análise ver (só aparece com 2+ arquivos)
- * - 🔥 MODAL "VER TODOS": Lista todos os arquivos processados
- * - 🔥 SEM FALLBACK: Apenas dados reais do backend (não gera dados falsos)
- * - 🔥 OCULTO PARA 1 ARQUIVO: Seletor só aparece quando > 1 arquivo
+ * ✅ NOVIDADES v16.8:
+ * - 🔥 CORRIGIDO: NÃO CONSOLE créditos no upload (apenas verifica)
+ * - 🔥 CORRIGIDO: CreditManager.consume() NÃO é chamado no upload
+ * - 🔥 CORRIGIDO: Sincronização de créditos via /auth/me
+ * - 🔥 CORRIGIDO: Evento analysis:success agora sincroniza
+ * - 🔥 ADICIONADO: syncCredits() público para sincronização manual
  * 
- * ✅ MANTIDO v16.6:
- * - CRÉDITOS: Sincronização multi-fonte
+ * ✅ MANTIDO v16.7:
+ * - HISTÓRICO DE ANÁLISES: Mantém todos os arquivos processados
+ * - ALTERNÂNCIA: Troca entre análises sem re-processar ML
+ * - SELETOR DE ARQUIVOS: Interface para escolher qual análise ver
+ * - SEM FALLBACK: Apenas dados reais do backend
  * - GPSA - Performance da Oficina (3 abas)
  * - 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)
  */
@@ -165,7 +167,6 @@
                            data.data?.chart_data || 
                            null;
             
-            // 🔥 Converte formato antigo se necessário (mas SEM gerar dados falsos)
             if (chartData && !chartData.weekly && chartData.revenue) {
                 console.log('📊 [extractChartData] Convertendo formato antigo para weekly');
                 chartData = {
@@ -179,7 +180,6 @@
                 };
             }
             
-            // 🔥 VERIFICA SE TEM DADOS REAIS - SEM FALLBACK
             if (chartData && chartData.weekly) {
                 const hasData = chartData.weekly.revenue?.some(v => v > 0) || 
                                chartData.weekly.costs?.some(v => v > 0);
@@ -198,12 +198,10 @@
             
             return chartData;
         },
-
-        // 🔥 REMOVIDO: generateFallbackChartData - não será mais usado
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER (MANTIDO)
+    // 🔥 CREDIT MANAGER (V16.8 - CORRIGIDO)
     // ==============================================
 
     class CreditManager {
@@ -309,15 +307,20 @@
         }
 
         _setupEventListeners() {
+            // 🔥 V16.8: Só atualiza se o evento vier do backend
             document.addEventListener('creditsUpdated', (e) => {
                 const data = e.detail || {};
                 if (data._silent) return;
                 
-                if (data.credits !== undefined) {
-                    this._balance = data.credits;
-                    this._isPremium = data.isPremium || false;
-                    this._isAdmin = data.isAdmin || false;
-                    this._updateUI();
+                // 🔥 Só atualiza se vier do backend ou for explicitamente permitido
+                if (data._source === 'backend' || data._source === 'loadUserCredits') {
+                    if (data.credits !== undefined) {
+                        this._balance = data.credits;
+                        this._isPremium = data.isPremium || false;
+                        this._isAdmin = data.isAdmin || false;
+                        this._updateUI();
+                        console.log(`💰 [CreditManager] Atualizado via backend: ${this._balance}`);
+                    }
                 }
             });
 
@@ -339,13 +342,11 @@
                 setTimeout(() => this.sync(true), 500);
             });
             
+            // 🔥 V16.8: analysis:success NÃO atualiza créditos diretamente
             document.addEventListener('analysis:success', (e) => {
-                const data = e.detail || {};
-                const credits = data.creditsUpdated || data.result?.credits_remaining;
-                if (credits !== undefined) {
-                    this._balance = credits;
-                    this._updateUI();
-                }
+                // 🔥 NÃO FAZ NADA COM CRÉDITOS AQUI!
+                // Apenas força sincronização com o backend
+                console.log('📊 [CreditManager] Análise concluída, sincronizando créditos...');
                 setTimeout(() => this.sync(true), 800);
             });
             
@@ -359,13 +360,22 @@
                 }
             });
             
+            // 🔥 V16.8: upload:completed NÃO atualiza créditos diretamente
             document.addEventListener('upload:completed', (e) => {
+                // 🔥 NÃO FAZ NADA COM CRÉDITOS AQUI!
+                console.log('📤 [CreditManager] Upload concluído, sincronizando créditos...');
+                setTimeout(() => this.sync(true), 500);
+            });
+
+            // 🔥 V16.8: Escuta evento de créditos consumidos pelo backend
+            document.addEventListener('credits:consumed', (e) => {
                 const data = e.detail || {};
-                if (data.credits_remaining !== undefined) {
-                    this._balance = data.credits_remaining;
+                console.log(`💰 [CreditManager] Créditos consumidos pelo backend: ${data.amount}`);
+                if (data.balance !== undefined) {
+                    this._balance = data.balance;
                     this._updateUI();
                 }
-                setTimeout(() => this.sync(true), 500);
+                setTimeout(() => this.sync(true), 300);
             });
         }
 
@@ -403,6 +413,7 @@
             return String(Math.max(0, balance));
         }
 
+        // 🔥 V16.8: SYNC - Agora usa /auth/me corretamente
         async sync(force = false) {
             if (!force) {
                 const loaded = this._loadFromAppState();
@@ -420,6 +431,7 @@
             this._syncInProgress = true;
             
             try {
+                // 🔥 Primeiro tenta via appAuth
                 if (window.appAuth && typeof window.appAuth.getCredits === 'function') {
                     const credits = window.appAuth.getCredits();
                     if (credits !== undefined && credits !== null) {
@@ -433,6 +445,7 @@
                     }
                 }
                 
+                // 🔥 Fallback: chamada direta ao /auth/me
                 const token = Utils.getToken();
                 if (!token) {
                     console.log('⏳ [CreditManager] Sem token');
@@ -486,6 +499,7 @@
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
+        // 🔥 V16.8: hasCredits - APENAS VERIFICA, NÃO CONSOLE
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
             this._loadFromAppState();
             
@@ -499,10 +513,9 @@
             
             console.log(`💰 [CreditManager] Verificando: ${balance} >= ${required} = ${hasEnough}`);
             
-            if (!hasEnough) {
-                console.log('🔄 [CreditManager] Créditos insuficientes, tentando sync...');
-                setTimeout(() => this.sync(true), 300);
-            }
+            // 🔥 V16.8: NÃO CONSOLE CRÉDITOS AQUI!
+            // Apenas verifica e retorna
+            // O consumo será feito pelo backend no final do ML
             
             return hasEnough;
         }
@@ -518,8 +531,11 @@
             return this.balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
         }
 
+        // 🔥 V16.8: consume - NÃO DEVE SER CHAMADO NO UPLOAD!
+        // Mantido apenas para compatibilidade, mas NÃO é usado no fluxo principal
         async consume(amount = CONFIG.CREDITS.COST_PER_UPLOAD, description = 'Upload') {
-            console.log(`💰 [CreditManager] Consumindo ${amount} crédito(s)...`);
+            console.warn('⚠️ [CreditManager] consume() não deve ser chamado no upload! O consumo é feito pelo backend.');
+            console.warn('⚠️ [CreditManager] Este método está disponível apenas para compatibilidade.');
             
             if (this.isAdmin) {
                 console.log('👑 Admin - créditos ilimitados');
@@ -531,7 +547,6 @@
             const currentBalance = this.balance;
             
             if (!this.hasCredits(amount)) {
-                console.warn(`⚠️ [CreditManager] Créditos insuficientes: ${currentBalance} < ${amount}`);
                 return { 
                     success: false, 
                     error: 'Créditos insuficientes',
@@ -690,7 +705,8 @@
                             display: display,
                             isPremium: this.isPremium,
                             isAdmin: this.isAdmin,
-                            _silent: true
+                            _silent: true,
+                            _source: 'dashboard'
                         }
                     });
                     document.dispatchEvent(event);
@@ -721,10 +737,15 @@
                 this._isProcessingQueue = false;
             }
         }
+
+        // 🔥 V16.8: Método público para sincronizar créditos
+        async syncCredits() {
+            return await this.sync(true);
+        }
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.7)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.8)
     // ==============================================
 
     class Dashboard {
@@ -753,7 +774,7 @@
                 timeoutId: null,
             };
             
-            // 🔥 NOVO: Histórico de análises
+            // 🔥 Histórico de análises
             this._analysisHistory = [];
             this._currentAnalysisId = null;
             this._isMultiFile = false;
@@ -783,7 +804,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.7] Inicializando com histórico de análises...');
+            console.log('🚀 [Dashboard v16.8] Inicializando com correção de créditos...');
 
             await this._creditManager.sync(true);
             
@@ -806,12 +827,13 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.7] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.8] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
             console.log(`   📁 Histórico de análises: ${this._analysisHistory.length} arquivos`);
             console.log(`   🔥 Sem fallback de dados - apenas dados reais do backend`);
+            console.log(`   🔥 V16.8: NÃO CONSOLE créditos no upload`);
             
             return this;
         }
@@ -844,7 +866,14 @@
             return await this._creditManager.sync(true);
         }
 
+        // 🔥 V16.8: syncCredits - Sincroniza créditos com o backend
+        async syncCredits() {
+            return await this._creditManager.syncCredits();
+        }
+
+        // 🔥 V16.8: consumeCredits - NÃO DEVE SER USADO NO UPLOAD!
         async consumeCredits(amount = 1, description = 'Upload') {
+            console.warn('⚠️ [Dashboard] consumeCredits não deve ser usado no upload!');
             return await this._creditManager.consume(amount, description);
         }
 
@@ -877,7 +906,6 @@
             console.log('   Weekly:', chartData?.weekly ? '✅' : '❌');
             
             if (chartData) {
-                // 🔥 Se tiver dados, renderiza
                 this._renderAllCharts(chartData);
                 this._renderGPSA(chartData);
                 
@@ -945,7 +973,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO (COM HISTÓRICO)
+        // 🔥 UPLOAD MÚLTIPLO (V16.8 - NÃO CONSOLE CRÉDITOS)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -979,6 +1007,7 @@
 
                 await this._creditManager.sync(true);
                 
+                // 🔥 V16.8: APENAS VERIFICA CRÉDITOS - NÃO CONSOLE!
                 const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
                 console.log(`💰 [Dashboard] Verificação de créditos: ${hasCredits} (saldo: ${this._creditManager.balance})`);
                 
@@ -1009,10 +1038,10 @@
                 const headers = {
                     'Authorization': `Bearer ${token}`,
                     'X-Files-Count': String(files.length),
-                    'X-Expected-Cost': String(CONFIG.CREDITS.COST_PER_UPLOAD),
                     ...powHeaders
                 };
 
+                // 🔥 V16.8: NÃO ENVIA X-Expected-Cost - O backend decide o custo
                 const response = await fetch('/api/upload-multi-analyze', {
                     method: 'POST',
                     headers: headers,
@@ -1065,6 +1094,7 @@
                         this._showToast('✅ Upload concluído com sucesso!', 'success');
                         this._showResult();
                         
+                        // 🔥 V16.8: Sincroniza créditos após conclusão
                         await this._creditManager.sync(true);
                     } else {
                         console.warn('⚠️ Polling falhou, usando resposta original');
@@ -1283,7 +1313,7 @@
         }
 
         // ==========================================
-        // 🔥 RENDERIZAR TODOS OS GRÁFICOS
+        // 🔥 RENDERIZAR TODOS OS GRÁFICOS (MANTIDO)
         // ==========================================
 
         _renderAllCharts(chartData) {
@@ -1324,7 +1354,6 @@
             const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
             const costs = weekly.costs || [0, 0, 0, 0, 0, 0, 0];
 
-            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             const hasData = revenue.some(v => v > 0) || costs.some(v => v > 0);
             
             if (!hasData) {
@@ -1446,7 +1475,6 @@
             const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const services = performance.services || weekly.services || [];
 
-            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             if (!services.length || services.every(v => v === 0)) {
                 console.warn('⚠️ [Chart] Dados de serviços vazios - SEM FALLBACK');
                 return;
@@ -1534,7 +1562,6 @@
             const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const revenue = monthly.revenue || [];
 
-            // 🔥 SEM FALLBACK - se não tiver dados, não renderiza
             if (!revenue.length || revenue.every(v => v === 0)) {
                 console.warn('⚠️ [Chart] Dados mensais vazios - SEM FALLBACK');
                 return;
@@ -1613,7 +1640,7 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA
+        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA (MANTIDO)
         // ==========================================
 
         _renderGPSA(chartData) {
@@ -1672,7 +1699,6 @@
                 healthIndicator.style.borderColor = status.borderColor;
             }
             
-            // 🔥 GPSA TABS (mantido igual)
             const tabs = [
                 {
                     id: 'gpsa-financeiro',
@@ -2072,13 +2098,11 @@
 
             console.log('📊 [ProcessResult] chartData:', chartData ? '✅' : '❌');
 
-            // 🔥 VERIFICAR SE TEM MÚLTIPLOS ARQUIVOS
             const filesList = result.data?.files || [];
             const isMultiFile = filesList.length > 1;
 
             console.log(`📁 [ProcessResult] ${filesList.length} arquivo(s) encontrado(s)`);
 
-            // 🔥 SALVAR NO HISTÓRICO (apenas se tiver dados reais)
             if (isMultiFile && chartData) {
                 this._isMultiFile = true;
                 this._analysisHistory = filesList.map((file, index) => ({
@@ -2095,7 +2119,6 @@
                     success: file.success || false
                 }));
 
-                // 🔥 DEFINIR ANÁLISE ATUAL (primeira)
                 this._currentAnalysisId = this._analysisHistory[0].id;
                 
                 console.log(`📁 [ProcessResult] ${this._analysisHistory.length} arquivos no histórico`);
@@ -2117,7 +2140,6 @@
                 this._currentAnalysisId = this._analysisHistory[0].id;
             }
 
-            // 🔥 RENDERIZAR GRÁFICO ATUAL (apenas se tiver dados)
             const currentAnalysis = this._getCurrentAnalysis();
             if (currentAnalysis && currentAnalysis.chart_data) {
                 console.log('📊 [ProcessResult] Renderizando gráficos da análise atual');
@@ -2127,10 +2149,8 @@
                 console.warn('⚠️ [ProcessResult] Sem dados para renderizar');
             }
 
-            // 🔥 ATUALIZAR UI COM SELETOR DE ARQUIVOS (só se > 1 arquivo)
             this._updateFileSelector();
 
-            // 🔥 ATUALIZAR RELATÓRIO
             await this._updateAIReport({
                 executive_score: executiveScore,
                 executive_summary: executiveSummary,
@@ -2147,7 +2167,6 @@
                 chart_data: chartData || {}
             });
 
-            // 🔥 ATUALIZAR ABAS (se houver tab manager)
             if (result.data?.files && result.data.files.length > 0) {
                 const analyses = result.data.files.map((file, index) => ({
                     filename: file.filename || `Arquivo ${index + 1}`,
@@ -2177,7 +2196,6 @@
                 }
             }
 
-            // 🔥 SALVAR NO LOCALSTORAGE
             try {
                 const recent = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
                 recent.unshift({
@@ -2210,7 +2228,7 @@
         }
 
         // ==========================================
-        // 🔥 ALTERNAR ANÁLISE (SEM RE-PROCESSAR ML)
+        // 🔥 ALTERNAR ANÁLISE
         // ==========================================
 
         _switchAnalysis(analysisId) {
@@ -2218,22 +2236,18 @@
 
             console.log(`🔄 [Dashboard] Alternando para análise: ${analysisId}`);
 
-            // 🔥 ATUALIZAR ESTADO
             this._analysisHistory.forEach(a => {
                 a.isActive = a.id === analysisId;
             });
             this._currentAnalysisId = analysisId;
 
-            // 🔥 OBTER DADOS DA ANÁLISE SELECIONADA
             const analysis = this._getCurrentAnalysis();
             if (!analysis) return;
 
             console.log(`📊 [Dashboard] Carregando análise: ${analysis.filename}`);
 
-            // 🔥 ATUALIZAR UI DE SELEÇÃO
             this._updateFileSelector();
 
-            // 🔥 RENDERIZAR GRÁFICOS (COM DADOS JÁ SALVOS)
             if (analysis.chart_data) {
                 this._renderAllCharts(analysis.chart_data);
                 this._renderGPSA(analysis.chart_data);
@@ -2241,7 +2255,6 @@
                 console.warn('⚠️ [Dashboard] Análise sem chart_data');
             }
 
-            // 🔥 ATUALIZAR RELATÓRIO
             this._updateAIReport({
                 executive_score: analysis.executive_score || {},
                 executive_summary: analysis.executive_summary || '',
@@ -2253,13 +2266,11 @@
                 trend: {}
             });
 
-            // 🔥 ATUALIZAR MÉTRICAS
             this._updateMetrics({
                 executive_score: analysis.executive_score || {},
                 chart_data: analysis.chart_data || {}
             });
 
-            // 🔥 ATUALIZAR NOME DO ARQUIVO
             const filenameEl = document.getElementById('resultFilename');
             if (filenameEl) {
                 filenameEl.textContent = analysis.filename || 'Análise';
@@ -2269,7 +2280,7 @@
         }
 
         // ==========================================
-        // 🔥 ATUALIZAR SELETOR DE ARQUIVOS (só aparece com 2+ arquivos)
+        // 🔥 ATUALIZAR SELETOR DE ARQUIVOS
         // ==========================================
 
         _updateFileSelector() {
@@ -2279,16 +2290,13 @@
                 return;
             }
 
-            // 🔥 SÓ MOSTRA SE TIVER MAIS DE 1 ARQUIVO
             if (this._analysisHistory.length <= 1) {
                 container.style.display = 'none';
                 return;
             }
 
-            // 🔥 MOSTRAR SELETOR
             container.style.display = 'block';
 
-            // 🔥 CRIAR BOTÕES PARA CADA ARQUIVO
             let html = `
                 <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.2rem 0;">
                     <span style="font-size: 0.6rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;">
@@ -2362,14 +2370,11 @@
         // ==========================================
 
         _createFileSelector() {
-            // 🔥 VERIFICAR SE JÁ EXISTE
             if (document.getElementById('analysisSelector')) return;
 
-            // 🔥 ENCONTRAR ONDE INSERIR
             const resultCard = document.getElementById('resultCard');
             if (!resultCard) return;
 
-            // 🔥 CRIAR CONTAINER
             const container = document.createElement('div');
             container.id = 'analysisSelector';
             container.style.cssText = `
@@ -2381,7 +2386,6 @@
                 border: 1px solid rgba(255,255,255,0.04);
             `;
 
-            // 🔥 INSERIR ANTES DO RESULTADO
             const resultContainer = document.getElementById('resultContainer');
             if (resultContainer) {
                 resultCard.insertBefore(container, resultContainer);
@@ -2391,7 +2395,7 @@
         }
 
         // ==========================================
-        // 🔥 MOSTRAR TODOS OS ARQUIVOS (MODAL)
+        // 🔥 MOSTRAR TODOS OS ARQUIVOS
         // ==========================================
 
         _showAllFiles() {
@@ -2446,7 +2450,6 @@
                 </div>
             `;
 
-            // 🔥 MOSTRAR EM UM MODAL OU TOAST
             if (window.toastr) {
                 toastr.info(html, '📁 Arquivos Analisados', {
                     timeOut: 0,
@@ -2464,7 +2467,7 @@
         }
 
         // ==========================================
-        // 🔥 ATUALIZAR RELATÓRIO DA IA
+        // 🔥 ATUALIZAR RELATÓRIO DA IA (MANTIDO)
         // ==========================================
 
         async _updateAIReport(data) {
@@ -2738,19 +2741,22 @@
                 return;
             }
             
-            if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
-                this._creditManager._balance = data.credits;
-                this._creditManager._isPremium = data.isPremium || false;
-                this._creditManager._isAdmin = data.isAdmin || false;
-                
-                const display = this._creditManager.display;
-                const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
-                elements.forEach(el => {
-                    if (el) el.textContent = display;
-                });
-                
-                this._creditManager._cachedDisplay = display;
-                this._creditManager._lastUpdate = Date.now();
+            // 🔥 V16.8: Só atualiza se vier do backend
+            if (data._source === 'backend' || data._source === 'loadUserCredits') {
+                if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
+                    this._creditManager._balance = data.credits;
+                    this._creditManager._isPremium = data.isPremium || false;
+                    this._creditManager._isAdmin = data.isAdmin || false;
+                    
+                    const display = this._creditManager.display;
+                    const elements = document.querySelectorAll('#creditsCount, #uploadCredits, #creditsDisplay, .credits-display');
+                    elements.forEach(el => {
+                        if (el) el.textContent = display;
+                    });
+                    
+                    this._creditManager._cachedDisplay = display;
+                    this._creditManager._lastUpdate = Date.now();
+                }
             }
         }
 
@@ -2943,6 +2949,11 @@
             return await this._creditManager.sync(true);
         }
 
+        // 🔥 V16.8: Método público para sincronizar créditos
+        async syncCredits() {
+            return await this._creditManager.syncCredits();
+        }
+
         renderAllCharts(chartData) {
             return this._renderAllCharts(chartData);
         }
@@ -2951,12 +2962,10 @@
             return this._renderGPSA(chartData);
         }
 
-        // 🔥 NOVO: Método para alternar análise via console (debug)
         switchToAnalysis(analysisId) {
             this._switchAnalysis(analysisId);
         }
 
-        // 🔥 NOVO: Obter histórico de análises
         getAnalysisHistory() {
             return this._analysisHistory;
         }
@@ -3032,13 +3041,15 @@
     window.initDashboard = initDashboard;
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.7 carregado - HISTÓRICO E ALTERNÂNCIA');
+    console.log('🔥 dashboard.js v16.8 carregado - CORREÇÃO DE CRÉDITOS');
+    console.log('   ✅ NÃO CONSOLE créditos no upload (apenas verifica)');
+    console.log('   ✅ CreditManager.consume() NÃO é chamado no upload');
+    console.log('   ✅ Sincronização de créditos via /auth/me');
+    console.log('   ✅ Evento analysis:success agora sincroniza');
+    console.log('   ✅ syncCredits() público para sincronização manual');
     console.log('   ✅ HISTÓRICO: Mantém todos os arquivos processados');
     console.log('   ✅ ALTERNÂNCIA: Troca entre análises sem re-processar ML');
-    console.log('   ✅ SELETOR: Interface para escolher qual análise ver');
-    console.log('   ✅ OCULTO: Seletor só aparece com 2+ arquivos');
     console.log('   ✅ SEM FALLBACK: Apenas dados reais do backend');
-    console.log('   ✅ CRÉDITOS: Sincronização multi-fonte');
     console.log('   ✅ GRÁFICOS: 3 gráficos + GPSA');
     console.log('='.repeat(60));
 

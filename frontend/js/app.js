@@ -1,24 +1,21 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.6 (COM ELEGIBILIDADE)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.7 (CORREÇÃO DE CRÉDITOS)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.6:
- * 1. 🔥 CORRIGIDO: URLs absolutas com /api/
- * 2. 🔥 ADICIONADO: Helper buildApiUrl global
- * 3. 🔥 MELHORADO: Estrutura modular do Pow
- * 4. 🔥 OTIMIZADO: Cache e performance
- * 5. 🔥 ADICIONADO: Logging estruturado
- * 6. 🔥 CORRIGIDO: Tratamento de erros avançado
- * 7. 🔥 NOVO: Sistema de inatividade e limpeza automática
- * 8. 🔥 NOVO: Sistema de elegibilidade de créditos integrado
- * 9. 🔥 NOVO: Verificação automática de crédito diário
- * 10. 🔥 NOVO: UI reativa para elegibilidade
+ * 🏗️ ARQUITETURA V7.7:
+ * 1. 🔥 CORRIGIDO: NÃO CONSOLE créditos no upload (apenas verifica)
+ * 2. 🔥 CORRIGIDO: Sincronização de créditos via /auth/me
+ * 3. 🔥 CORRIGIDO: Evento credits:consumed escuta o backend
+ * 4. 🔥 CORRIGIDO: UI atualiza corretamente após consumo
+ * 5. 🔥 MANTIDO: Elegibilidade de créditos
+ * 6. 🔥 MANTIDO: Verificação automática de crédito diário
+ * 7. 🔥 MANTIDO: UI reativa para elegibilidade
  * 
- * 🔥 CORREÇÕES V7.6:
- * - Elegibilidade de créditos integrada no app.js
- * - Verificação automática de canReceiveDailyCredit
- * - UI para botão de receber crédito diário
- * - Sincronização com backend via /payments/credits/eligibility
+ * 🔥 CORREÇÕES V7.7:
+ * - Removido consumo de créditos no frontend
+ * - Apenas verifica se tem créditos suficientes
+ * - Sincroniza com backend após análise
+ * - Eventos agora usam sync ao invés de update direto
  */
 
 (function() {
@@ -30,7 +27,7 @@
 
     const CONFIG = Object.freeze({
         // App
-        VERSION: '7.6.0',
+        VERSION: '7.7.0',
         
         // Upload
         MAX_FILES: 3,
@@ -325,7 +322,6 @@
                     timeOut: 10000, closeButton: true, progressBar: true, positionClass: 'toast-top-center'
                 });
             }
-            // ... resto da UI de aviso (mantido)
         },
         _hideWarning: function() {
             const container = document.getElementById('messageContainer');
@@ -951,7 +947,6 @@
                         UI.updateVitalicioBadge();
                         UI.updatePowStatus();
                         UI.updateRateLimitStatus();
-                        // 🔥 NOVO: Atualiza elegibilidade na UI
                         UI.updateEligibilityUI();
                     } catch (e) { Logger.warn('Erro ao atualizar navbar:', e); }
                 }
@@ -1054,7 +1049,7 @@
         },
 
         // ==========================================
-        // 🔥 NOVO: UI DE ELEGIBILIDADE
+        // 🔥 UI DE ELEGIBILIDADE
         // ==========================================
 
         updateEligibilityUI: function() {
@@ -1066,7 +1061,6 @@
                 const receivedToday = State.receivedDailyCreditToday;
                 const reason = State.eligibilityReason || '';
 
-                // 🔥 Atualiza o botão de crédito diário
                 const dailyBtn = document.getElementById('dailyCreditBtn');
                 const dailyStatus = document.getElementById('dailyCreditStatus');
 
@@ -1125,7 +1119,6 @@
                     }
                 }
 
-                // 🔥 Atualiza aviso de limite máximo
                 const maxLimitWarning = document.getElementById('maxLimitWarning');
                 if (maxLimitWarning) {
                     if (atMaxLimit && isPremium) {
@@ -1151,7 +1144,7 @@
         },
 
         // ==========================================
-        // 🔥 MÉTODOS EXISTENTES (MANTIDOS)
+        // 🔥 MÉTODOS EXISTENTES
         // ==========================================
 
         showLoading: function(message = 'Processando...', submessage = '') {
@@ -1232,31 +1225,62 @@
         updateState: StateManager.updateState,
         updateCredits: StateManager.updateCredits,
         updatePremiumStatus: StateManager.updatePremiumStatus,
+        
+        // 🔥 V7.7: CARREGA CRÉDITOS DO BACKEND (NÃO CONSOLE)
         loadUserCredits: async function() {
             try {
                 const url = buildApiUrl('/auth/me');
                 const response = await fetchWithAuth(url);
                 if (response?.ok) {
                     const data = await response.json();
+                    const newCredits = data.credits || 0;
+                    const oldCredits = State.credits;
+                    
                     StateManager.updateState({
                         user: data.user || null,
-                        credits: data.credits || 0,
+                        credits: newCredits,
                         isPremium: data.is_premium || false,
                         isAdmin: data.is_admin || false,
-                        tokenValid: true, userInitialized: true, isAppReady: true
+                        tokenValid: true,
+                        userInitialized: true,
+                        isAppReady: true
                     });
+                    
                     if (data.user) {
-                        try { localStorage.setItem('user_data', JSON.stringify(data.user)); localStorage.setItem('user_email', data.user.email || ''); } catch (e) {}
+                        try {
+                            localStorage.setItem('user_data', JSON.stringify(data.user));
+                            localStorage.setItem('user_email', data.user.email || '');
+                        } catch (e) {}
                     }
-                    Logger.info(`✅ Créditos carregados: ${data.credits || 0}`);
+                    
+                    // 🔥 DISPARA EVENTO APENAS SE MUDOU
+                    if (newCredits !== oldCredits) {
+                        Logger.info(`💰 Créditos atualizados: ${oldCredits} → ${newCredits}`);
+                        window.dispatchEvent(new CustomEvent('creditsUpdated', {
+                            detail: {
+                                credits: newCredits,
+                                display: State.creditsDisplay,
+                                isPremium: data.is_premium || false,
+                                isAdmin: data.is_admin || false,
+                                oldCredits: oldCredits,
+                                _source: 'loadUserCredits'
+                            }
+                        }));
+                    }
+                    
+                    Logger.info(`✅ Créditos carregados: ${newCredits}`);
+                    
                     // 🔥 Carrega elegibilidade após créditos
                     setTimeout(() => Eligibility.checkEligibility(), 300);
                     if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
                     return data;
                 }
-            } catch (e) { Logger.warn('Erro ao carregar créditos:', e); }
+            } catch (e) {
+                Logger.warn('Erro ao carregar créditos:', e);
+            }
             return null;
         },
+        
         getRateLimitStatus: () => ({
             blocked: State.rateLimitBlocked,
             blockedUntil: State.rateLimitBlockedUntil,
@@ -1264,6 +1288,7 @@
             for: State.rateLimitBlockedFor,
             timeRemaining: Utils.getRateLimitTimeRemaining()
         }),
+        
         refreshMessageContext: async function() {
             try {
                 const token = localStorage.getItem('access_token');
@@ -1290,7 +1315,7 @@
     };
 
     // ==============================================
-    // 🔥🔥🔥 SISTEMA DE ELEGIBILIDADE (NOVO)
+    // 🔥🔥🔥 SISTEMA DE ELEGIBILIDADE
     // ==============================================
 
     const Eligibility = {
@@ -1299,9 +1324,6 @@
         _isChecking: false,
         _cache: null,
 
-        /**
-         * 🔥 Verifica elegibilidade do usuário para receber créditos
-         */
         checkEligibility: async function(force = false) {
             const now = Date.now();
             if (!force && this._cache && (now - this._lastCheck) < CONFIG.ELIGIBILITY_CACHE_TTL) {
@@ -1336,7 +1358,6 @@
                 this._cache = data;
                 this._lastCheck = now;
 
-                // 🔥 ATUALIZA ESTADO GLOBAL
                 StateManager.updateEligibility({
                     can_receive_today: data.can_receive_today || false,
                     received_today: data.received_today || false,
@@ -1350,10 +1371,8 @@
                     is_admin: data.is_admin || false
                 });
 
-                // 🔥 ATUALIZA UI
                 UI.updateEligibilityUI();
 
-                // 🔥 DISPARA EVENTO
                 window.dispatchEvent(new CustomEvent('eligibility:updated', {
                     detail: data
                 }));
@@ -1369,9 +1388,6 @@
             }
         },
 
-        /**
-         * 🔥 Recebe crédito diário (apenas premium)
-         */
         receiveDailyCredit: async function() {
             if (!State.isPremium) {
                 Utils.showNotification('💎 Crédito diário exclusivo para Premium. Assine o plano!', 'warning');
@@ -1403,17 +1419,14 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // 🔥 ATUALIZA CRÉDITOS
                     StateManager.updateCredits(data.current_credits || 0, true);
                     UI.updateCredits();
                     UI.updateEligibilityUI();
 
                     Utils.showNotification('🌅 Crédito recebido com sucesso!', 'success');
 
-                    // 🔥 RECARREGA ELEGIBILIDADE
                     setTimeout(() => Eligibility.checkEligibility(true), 500);
 
-                    // 🔥 DISPARA EVENTO
                     window.dispatchEvent(new CustomEvent('dailyCredit:received', {
                         detail: data
                     }));
@@ -1431,19 +1444,14 @@
             }
         },
 
-        /**
-         * 🔥 Inicia monitoramento automático de elegibilidade
-         */
         startMonitoring: function() {
             if (this._checkInterval) {
                 clearInterval(this._checkInterval);
                 this._checkInterval = null;
             }
 
-            // 🔥 Primeira verificação (após login)
             setTimeout(() => this.checkEligibility(true), 1000);
 
-            // 🔥 Verificações periódicas
             this._checkInterval = setInterval(() => {
                 if (Utils.isAuthenticated()) {
                     this.checkEligibility();
@@ -1453,9 +1461,6 @@
             Logger.info(`⏰ [Eligibility] Monitoramento iniciado (intervalo: ${CONFIG.ELIGIBILITY_CHECK_INTERVAL/1000}s)`);
         },
 
-        /**
-         * 🔥 Para monitoramento
-         */
         stopMonitoring: function() {
             if (this._checkInterval) {
                 clearInterval(this._checkInterval);
@@ -1464,9 +1469,6 @@
             Logger.info('⏹️ [Eligibility] Monitoramento parado');
         },
 
-        /**
-         * 🔥 Obtém status atual de elegibilidade
-         */
         getStatus: function() {
             return {
                 canReceiveDaily: State.canReceiveDailyCredit,
@@ -1484,24 +1486,87 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS
+    // 🔥 GERENCIADOR DE EVENTOS (V7.7 - CORRIGIDO)
     // ==============================================
 
     const EventManager = {
         setup: function() {
             Logger.info('📡 Configurando gerenciador de eventos...');
 
+            // 🔥 V7.7: CRÉDITOS ATUALIZADOS - SÓ SINCRONIZA, NÃO CONSOLE
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
-                StateManager.updateCredits(data.credits || 0, data.isPremium || false);
-                if (window.App && typeof window.App.updateCredits === 'function') window.App.updateCredits();
+                
+                // 🔥 NÃO CONSOLE CRÉDITOS AQUI!
+                // Apenas atualiza o estado se os dados vierem do backend
+                if (data._source === 'loadUserCredits' || data._source === 'backend') {
+                    StateManager.updateCredits(data.credits || 0, data.isPremium || false);
+                    if (window.App && typeof window.App.updateCredits === 'function') {
+                        window.App.updateCredits();
+                    }
+                }
+                
                 setTimeout(() => {
-                    if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
-                    // 🔥 Atualiza elegibilidade após mudança de créditos
+                    if (window.appAuth?.refreshMessageContext) {
+                        window.appAuth.refreshMessageContext();
+                    }
                     setTimeout(() => Eligibility.checkEligibility(true), 300);
                 }, 300);
             });
 
+            // 🔥 V7.7: ANÁLISE CONCLUÍDA - SINCRONIZA CRÉDITOS
+            document.addEventListener('analysis:success', function(e) {
+                const detail = e.detail || {};
+                
+                // 🔥 NÃO ATUALIZA CRÉDITOS DIRETAMENTE!
+                // Força sincronização com o backend
+                Logger.info('📊 Análise concluída, sincronizando créditos...');
+                
+                setTimeout(() => {
+                    if (window.appAuth?.loadUserCredits) {
+                        window.appAuth.loadUserCredits();
+                    }
+                    Eligibility.checkEligibility(true);
+                }, 500);
+            });
+
+            // 🔥 V7.7: UPLOAD CONCLUÍDO - SINCRONIZA CRÉDITOS
+            document.addEventListener('upload:completed', function(e) {
+                const detail = e.detail || {};
+                
+                // 🔥 NÃO ATUALIZA CRÉDITOS DIRETAMENTE!
+                // Força sincronização com o backend
+                Logger.info('📤 Upload concluído, sincronizando créditos...');
+                
+                setTimeout(() => {
+                    if (window.appAuth?.loadUserCredits) {
+                        window.appAuth.loadUserCredits();
+                    }
+                    Eligibility.checkEligibility(true);
+                }, 500);
+            });
+
+            // 🔥 V7.7: CRÉDITO CONSUMIDO (EVENTO DO BACKEND)
+            document.addEventListener('credits:consumed', function(e) {
+                const data = e.detail || {};
+                Logger.info(`💰 [Event] Créditos consumidos pelo backend: ${data.amount}, Saldo: ${data.balance}`);
+                
+                // 🔥 Atualiza com os dados do backend
+                StateManager.updateCredits(data.balance || 0, State.isPremium);
+                
+                if (window.App && typeof window.App.updateCredits === 'function') {
+                    window.App.updateCredits();
+                }
+                
+                setTimeout(() => {
+                    if (window.appAuth?.loadUserCredits) {
+                        window.appAuth.loadUserCredits();
+                    }
+                    Eligibility.checkEligibility(true);
+                }, 500);
+            });
+
+            // 🔥 PREMIUM STATUS ATUALIZADO
             document.addEventListener('premiumStatusUpdated', function(e) {
                 const data = e.detail || {};
                 StateManager.updatePremiumStatus({
@@ -1516,18 +1581,17 @@
                 if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
                 setTimeout(() => {
                     if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
-                    // 🔥 Atualiza elegibilidade após mudança de status premium
                     setTimeout(() => Eligibility.checkEligibility(true), 300);
                 }, 400);
             });
 
+            // 🔥 PAYMENT READY
             document.addEventListener('paymentReady', function(e) {
                 window._paymentReady = true;
                 setTimeout(() => {
                     if (window.loadPremiumStatus) window.loadPremiumStatus();
                     if (window.appAuth?.loadUserCredits) window.appAuth.loadUserCredits();
                     if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
-                    // 🔥 Inicia monitoramento de elegibilidade
                     setTimeout(() => Eligibility.startMonitoring(), 500);
                     setTimeout(() => {
                         if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
@@ -1535,37 +1599,14 @@
                 }, 300);
             });
 
-            // 🔥 Evento para atualização de elegibilidade
+            // 🔥 ELEGIBILIDADE ATUALIZADA
             document.addEventListener('eligibility:updated', function(e) {
                 const data = e.detail || {};
                 UI.updateEligibilityUI();
-                // 🔥 Atualiza badges se necessário
                 if (data.is_premium !== undefined) UI.updatePremiumBadge();
             });
 
-            // ... resto dos eventos existentes (mantidos)
-            document.addEventListener('analysis:success', function(e) {
-                const detail = e.detail || {};
-                if (detail.result?.user_credits !== undefined) StateManager.updateCredits(detail.result.user_credits);
-                if (detail.result?.credits_balance !== undefined) StateManager.updateCredits(detail.result.credits_balance);
-                if (window.App && typeof window.App.updateCredits === 'function') window.App.updateCredits();
-                // 🔥 Atualiza elegibilidade após análise
-                setTimeout(() => Eligibility.checkEligibility(true), 300);
-                setTimeout(() => {
-                    if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
-                }, 300);
-            });
-
-            document.addEventListener('upload:completed', function(e) {
-                const detail = e.detail || {};
-                if (detail.credits_remaining !== undefined) StateManager.updateCredits(detail.credits_remaining);
-                if (window.App && typeof window.App.updateCredits === 'function') window.App.updateCredits();
-                setTimeout(() => {
-                    if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
-                    setTimeout(() => Eligibility.checkEligibility(true), 300);
-                }, 300);
-            });
-
+            // 🔥 CRÉDITOS INSUFICIENTES
             document.addEventListener('credits:insufficient', function(e) {
                 const detail = e.detail || {};
                 Utils.showNotification(detail.message || 'Créditos insuficientes!', 'warning');
@@ -1574,6 +1615,7 @@
                 }));
             });
 
+            // 🔥 RATE LIMIT
             document.addEventListener('rate_limit:blocked', function(e) {
                 const detail = e.detail || {};
                 State.rateLimitBlocked = true;
@@ -1583,6 +1625,7 @@
                 Utils.showNotification(detail.message || 'Muitas tentativas. Aguarde um momento.', 'warning');
             });
 
+            // 🔥 AUTH READY
             document.addEventListener('authReady', function(e) {
                 const detail = e.detail || {};
                 if (detail.isAuthenticated) {
@@ -1590,7 +1633,6 @@
                     setTimeout(() => {
                         if (window.appAuth?.loadUserCredits) window.appAuth.loadUserCredits();
                         if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
-                        // 🔥 Inicia monitoramento de elegibilidade
                         setTimeout(() => Eligibility.startMonitoring(), 500);
                         if (window.appAuth?.refreshMessageContext) {
                             setTimeout(() => window.appAuth.refreshMessageContext(), 500);
@@ -1601,12 +1643,12 @@
 
             document.addEventListener('authLogout', handleUnauthorized);
 
-            Logger.info('✅ Event listeners configurados');
+            Logger.info('✅ Event listeners configurados (v7.7 - créditos corrigidos)');
         }
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE PoW (REFATORADO)
+    // 🔥 GERENCIADOR DE PoW
     // ==============================================
 
     const Pow = {
@@ -1700,13 +1742,17 @@
                 State.recentAnalyses.unshift(analysis);
                 State.totalAnalyses++;
                 if (State.recentAnalyses.length > 50) State.recentAnalyses = State.recentAnalyses.slice(0, 50);
-                if (result && result.user_credits !== undefined) {
-                    StateManager.updateCredits(result.user_credits);
-                    if (window.App && typeof window.App.updateCredits === 'function') window.App.updateCredits();
-                    // 🔥 Atualiza elegibilidade após análise
-                    setTimeout(() => Eligibility.checkEligibility(true), 300);
-                }
-                EventBus.emit('analysis:success', { analysis, result, total: State.totalAnalyses, today: State.analysesToday, creditsUpdated: result?.credits || 0 });
+                
+                // 🔥 V7.7: NÃO ATUALIZA CRÉDITOS DIRETAMENTE
+                // Força sincronização com o backend
+                setTimeout(() => {
+                    if (window.appAuth?.loadUserCredits) {
+                        window.appAuth.loadUserCredits();
+                    }
+                    Eligibility.checkEligibility(true);
+                }, 500);
+                
+                EventBus.emit('analysis:success', { analysis, result, total: State.totalAnalyses, today: State.analysesToday });
             }
         },
         failAnalysis: function(analysisId, error) {
@@ -1728,7 +1774,7 @@
     };
 
     // ==============================================
-    // 🔥 SINCRONIZAÇÃO (OTIMIZADA)
+    // 🔥 SINCRONIZAÇÃO
     // ==============================================
 
     const Sync = {
@@ -1741,7 +1787,6 @@
                     StateManager.updateState({ tokenValid: true, userInitialized: true });
                     if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
                     Auth.startSessionTimer();
-                    // 🔥 Inicia monitoramento de elegibilidade
                     setTimeout(() => Eligibility.startMonitoring(), 500);
                     setTimeout(() => {
                         if (window.appAuth?.refreshMessageContext) window.appAuth.refreshMessageContext();
@@ -1759,7 +1804,6 @@
                 if (typeof window.loadPremiumStatus === 'function') {
                     await window.loadPremiumStatus();
                     Logger.info('✅ Payment sincronizado com sucesso!');
-                    // 🔥 Atualiza elegibilidade após payment
                     setTimeout(() => Eligibility.checkEligibility(true), 500);
                 }
             } catch (e) { Logger.warn('⚠️ Payment não carregou. Será sincronizado quando disponível.'); }
@@ -1809,7 +1853,7 @@
     // ==============================================
 
     async function initApp() {
-        Logger.info('🚀 Inicializando App (Orquestrador) v7.6...');
+        Logger.info('🚀 Inicializando App (Orquestrador) v7.7...');
 
         try {
             ReloadManager.reset();
@@ -1843,7 +1887,6 @@
                 await Sync.syncPayment();
                 await Sync.syncPromotion();
 
-                // 🔥 Inicia monitoramento de elegibilidade
                 setTimeout(() => Eligibility.startMonitoring(), 500);
 
                 setTimeout(() => {
@@ -1894,7 +1937,6 @@
                 workshopName: State.user?.workshop_name || 'Oficina',
                 userInitialized: State.userInitialized,
                 userSegment: State.userSegment || 'regular',
-                // 🔥 ELEGIBILIDADE
                 canReceiveDailyCredit: State.canReceiveDailyCredit,
                 receivedDailyCreditToday: State.receivedDailyCreditToday,
                 atMaxLimit: State.atMaxLimit,
@@ -1903,10 +1945,8 @@
                 version: CONFIG.VERSION
             };
 
-            // 🔥 INICIAR GERENCIADOR DE INATIVIDADE
             InactivityManager.init();
 
-            // 🔥 Registrar callbacks de limpeza
             InactivityManager.registerCleanup(() => {
                 if (window.__dashboard && window.__dashboard.state) window.__dashboard.state.reset();
                 Eligibility.stopMonitoring();
@@ -1920,27 +1960,19 @@
                 detail: { isReady: true, version: CONFIG.VERSION }
             }));
 
-            Logger.info('✅ App (Orquestrador) v7.6 inicializado com sucesso!');
+            Logger.info('✅ App (Orquestrador) v7.7 inicializado com sucesso!');
             Logger.info(`📌 Autenticado: ${isAuth}`);
             Logger.info(`📌 Página: ${currentPath}`);
             Logger.info(`📌 Admin: ${State.isAdmin}`);
             Logger.info(`📌 Premium: ${State.isPremium}`);
             Logger.info(`📌 Créditos: ${State.creditsDisplay}`);
             Logger.info(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
-            Logger.info(`📌 Mensagem: ${State.currentMessage?.message_id || 'Nenhuma'}`);
             Logger.info(`📌 Elegibilidade: canReceive=${State.canReceiveDailyCredit}, atMaxLimit=${State.atMaxLimit}`);
             Logger.info(`⏰ Inatividade: ${CONFIG.INACTIVITY_TIMEOUT/60000} minutos`);
             Logger.info(`⏰ Elegibilidade: ${CONFIG.ELIGIBILITY_CHECK_INTERVAL/60000} minutos`);
-            Logger.info('🌉 window.appAuth centralizado');
-            Logger.info('📦 AppUtils disponível');
-            Logger.info('⚡ fetchWithAuth com refresh automático');
-            Logger.info('🔄 Estado reativo via Proxy');
-            Logger.info('📡 EventBus com fila de eventos');
-            Logger.info('📢 Sistema de mensagens inteligentes ativo');
-            Logger.info('🔗 Integrado com auth.js, payment.js, dashboard.js');
-            Logger.info('🔧 CORREÇÃO V7.6: Elegibilidade de créditos integrada');
-            Logger.info('🔧 CORREÇÃO V7.6: Botão de crédito diário reativo');
-            Logger.info('🔧 CORREÇÃO V7.6: Aviso de limite máximo');
+            Logger.info('🔧 CORREÇÃO V7.7: NÃO CONSOLE créditos no frontend');
+            Logger.info('🔧 CORREÇÃO V7.7: Sincroniza créditos via /auth/me');
+            Logger.info('🔧 CORREÇÃO V7.7: Events corrigidos');
 
         } catch (error) {
             Logger.error('❌ Erro na inicialização do App:', error);
@@ -1970,10 +2002,7 @@
         Analysis,
         Sync,
 
-        // 🔥 NOVO: InactivityManager
         InactivityManager,
-
-        // 🔥 NOVO: Eligibility
         Eligibility,
 
         init: initApp,
@@ -1997,7 +2026,6 @@
         isTokenValid: () => State.tokenValid,
         isAtMaxLimit: () => State.atMaxLimit,
 
-        // 🔥 NOVOS MÉTODOS DE ELEGIBILIDADE
         checkEligibility: Eligibility.checkEligibility,
         receiveDailyCredit: Eligibility.receiveDailyCredit,
         getEligibilityStatus: Eligibility.getStatus,
@@ -2024,7 +2052,6 @@
             return null;
         },
 
-        // MÉTODOS UI COM BIND EXPLÍCITO
         updateNavbar: UI.updateNavbar.bind(UI),
         updateCredits: UI.updateCredits.bind(UI),
         updateAdminBadge: UI.updateAdminBadge.bind(UI),
@@ -2093,7 +2120,10 @@
         logout: handleUnauthorized
     };
 
-    // EXPORTAÇÕES GLOBAIS
+    // ==============================================
+    // 🔥 EXPORTAÇÕES GLOBAIS
+    // ==============================================
+
     window.App = App;
     window.app = App;
     window.autoAnalytics = App;
@@ -2116,12 +2146,23 @@
     window.updateRateLimitStatus = UI.updateRateLimitStatus.bind(UI);
     window.loadPremiumStatus = window.loadPremiumStatus || (() => {});
 
-    // 🔥 EXPORTA FUNÇÕES DE ELEGIBILIDADE GLOBALMENTE
     window.checkEligibility = Eligibility.checkEligibility;
     window.receiveDailyCredit = Eligibility.receiveDailyCredit;
     window.getEligibilityStatus = Eligibility.getStatus;
 
-    // INICIAR
+    // 🔥 V7.7: Função para sincronizar créditos manualmente
+    window.syncCredits = async function() {
+        Logger.info('🔄 Sincronizando créditos manualmente...');
+        if (window.appAuth?.loadUserCredits) {
+            return await window.appAuth.loadUserCredits();
+        }
+        return null;
+    };
+
+    // ==============================================
+    // 🔥 INICIAR
+    // ==============================================
+
     if (window._appInitialized) {
         Logger.warn('⚠️ App já inicializado, ignorando...');
     } else {
@@ -2134,21 +2175,12 @@
         }
     }
 
-    Logger.info('✅ app.js (Orquestrador) v7.6 carregado!');
-    Logger.info('   🔥 CORRIGIDO: URLs absolutas com /api/');
-    Logger.info('   🔥 ADICIONADO: Helper buildApiUrl global');
-    Logger.info('   🔥 MELHORADO: Estrutura modular do Pow');
-    Logger.info('   🔥 OTIMIZADO: Cache e performance');
-    Logger.info('   🔥 ADICIONADO: Logging estruturado');
-    Logger.info('   🔥 CORRIGIDO: Tratamento de erros avançado');
-    Logger.info('   🔥 NOVO: Sistema de inatividade (15 min)');
-    Logger.info('   📢 Sistema de mensagens inteligentes integrado');
-    Logger.info('   🔗 Integrado com auth.js, payment.js, dashboard.js');
-    Logger.info('   ⏰ Use window.InactivityManager.getStatus() para ver status');
-    Logger.info('   🔥 NOVO: Sistema de elegibilidade de créditos integrado');
-    Logger.info('   🔥 NOVO: Verificação automática de crédito diário');
-    Logger.info('   🔥 NOVO: UI reativa para elegibilidade');
-    Logger.info('   🔥 Use window.checkEligibility() para verificar manualmente');
+    Logger.info('✅ app.js (Orquestrador) v7.7 carregado!');
+    Logger.info('   🔥 CORREÇÃO V7.7: NÃO CONSOLE créditos no frontend');
+    Logger.info('   🔥 CORREÇÃO V7.7: Sincroniza créditos via /auth/me');
+    Logger.info('   🔥 CORREÇÃO V7.7: Evento credits:consumed escuta o backend');
+    Logger.info('   🔥 Use window.syncCredits() para sincronizar manualmente');
+    Logger.info('   🔥 Use window.checkEligibility() para verificar elegibilidade');
     Logger.info('   🔥 Use window.receiveDailyCredit() para receber crédito diário');
 
 })();
