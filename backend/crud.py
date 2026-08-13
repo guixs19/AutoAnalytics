@@ -1,7 +1,13 @@
-# backend/crud.py - VERSÃO 2.3 (COMPLETA E CORRIGIDA)
+# backend/crud.py - VERSÃO 2.5 (COM CONTROLE DE CRÉDITOS INICIAIS)
+
 """
 CRUD - Operações de banco de dados
-VERSÃO: 2.3 - CORREÇÃO FINAL DE CRÉDITOS
+VERSÃO: 2.5 - COM CONTROLE DE CRÉDITOS INICIAIS
+
+🔥 NOVIDADES v2.5:
+   - ✅ ADICIONADO: received_initial_credits no create_user
+   - ✅ ADICIONADO: grant_initial_credits_if_needed() - Função dedicada
+   - ✅ ADICIONADO: has_received_initial_credits() - Verificação
 
 🔥 REGRAS DE NEGÓCIO V2.3:
    - FREE: 3 créditos iniciais, NUNCA ganha mais
@@ -10,15 +16,6 @@ VERSÃO: 2.3 - CORREÇÃO FINAL DE CRÉDITOS
    - Premium PRECISA gastar para ganhar mais
    - Se saldo = 3, NÃO ganha (precisa gastar)
    - Se saldo = 0 e já recebeu hoje, ganha amanhã
-
-🔥 MELHORIAS v2.3:
-   - ✅ CORRIGIDO: Usuários FREE NUNCA ganham créditos extras
-   - ✅ CORRIGIDO: Premium só ganha se saldo < 3
-   - ✅ CORRIGIDO: Bônus automático para premium ao zerar
-   - ✅ ADICIONADO: get_credit_eligibility() - Verificação completa
-   - ✅ ADICIONADO: receive_daily_credit() - Função dedicada
-   - ✅ REFATORADO: manage_credits_after_consumption() - Unificado
-   - ✅ MELHORADO: Logs com mais informações
 """
 
 from sqlalchemy.orm import Session
@@ -151,6 +148,7 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
 
 
 def create_user(db: Session, user_data: Any) -> models.User:
+    """🔥 Cria usuário com créditos iniciais e marca como recebido"""
     phone_value = getattr(user_data, "phone", None)
     if phone_value:
         phone_value = phone_value.strip()
@@ -168,6 +166,7 @@ def create_user(db: Session, user_data: Any) -> models.User:
         role=models.UserRole.USER,
         plan=models.UserPlan.BASICO,
         credits=INITIAL_FREE_CREDITS,
+        received_initial_credits=True,  # 🔥 MARCA QUE JÁ RECEBEU OS CRÉDITOS INICIAIS
         is_active=True,
         is_admin=False,
         is_verified=False,
@@ -179,7 +178,69 @@ def create_user(db: Session, user_data: Any) -> models.User:
     db.refresh(db_user)
     
     logger.info(f"✅ Usuário criado: {db_user.email} (ID: {db_user.id}) - {INITIAL_FREE_CREDITS} créditos grátis")
+    logger.info(f"💰 {db_user.email} - received_initial_credits = True")
     return db_user
+
+
+# ==============================================
+# 🔥 CRÉDITOS INICIAIS - NOVA FUNÇÃO V2.5
+# ==============================================
+
+def has_received_initial_credits(db: Session, user: models.User) -> bool:
+    """Verifica se o usuário já recebeu os créditos iniciais"""
+    if not user:
+        return False
+    return user.received_initial_credits
+
+
+def grant_initial_credits_if_needed(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    🔥 V2.5: Concede créditos iniciais APENAS se o usuário NUNCA recebeu
+    Esta função NÃO deve ser chamada automaticamente em rotas de login!
+    Apenas para uso administrativo ou durante o cadastro.
+    
+    Retorna: { granted: bool, message: str, credits: int }
+    """
+    if not user:
+        return {"granted": False, "message": "Usuário não encontrado", "credits": 0}
+    
+    # Admin não precisa
+    if user.is_admin:
+        return {"granted": False, "message": "Admin tem créditos ilimitados", "credits": "∞"}
+    
+    # Verificar se já recebeu
+    if user.received_initial_credits:
+        logger.info(f"ℹ️ [INITIAL_CREDITS] {user.email} já recebeu créditos iniciais")
+        return {
+            "granted": False, 
+            "message": f"Créditos iniciais já recebidos anteriormente. Saldo: {user.credits}",
+            "credits": user.credits or 0
+        }
+    
+    # Se já tem créditos > 0, marcar como recebido
+    if user.credits > 0:
+        user.received_initial_credits = True
+        db.commit()
+        logger.info(f"ℹ️ [INITIAL_CREDITS] {user.email} já tem {user.credits} créditos, marcando como recebido")
+        return {
+            "granted": False,
+            "message": f"Usuário já possui {user.credits} créditos",
+            "credits": user.credits
+        }
+    
+    # 🔥 CONCEDER CRÉDITOS INICIAIS (APENAS SE NUNCA RECEBEU)
+    user.credits = INITIAL_FREE_CREDITS
+    user.received_initial_credits = True
+    db.commit()
+    db.refresh(user)
+    
+    logger.info(f"💰 [INITIAL_CREDITS] {user.email} recebeu +{INITIAL_FREE_CREDITS} créditos iniciais (1ª vez)")
+    
+    return {
+        "granted": True,
+        "message": f"✅ {INITIAL_FREE_CREDITS} créditos iniciais concedidos!",
+        "credits": user.credits
+    }
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[models.User]:
@@ -334,17 +395,6 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
     - FREE: NUNCA recebe créditos (só os 3 iniciais)
     - PREMIUM: Recebe 1/dia se saldo < 3 e NÃO recebeu hoje
     - PREMIUM: Só ganha se gastou (saldo < 3)
-    
-    Retorna:
-        - can_receive_today: bool - Pode receber hoje?
-        - is_premium: bool - É premium?
-        - credits_balance: int - Saldo atual
-        - max_credits: int - Limite máximo (3)
-        - received_today: bool - Já recebeu hoje?
-        - days_left: int - Dias restantes de premium
-        - at_max_limit: bool - Está no limite (3/3)?
-        - reason: str - Motivo se não puder receber
-        - next_credit_date: str - Próxima data de crédito
     """
     if not user:
         return {"error": "Usuário não encontrado"}
@@ -407,7 +457,7 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
         is_premium and
         not received_today and
         days_left > 0 and
-        current_credits < MAX_CREDITS_PREMIUM  # 🔥 PRECISA TER GASTO
+        current_credits < MAX_CREDITS_PREMIUM
     )
     
     # Próxima data de crédito
@@ -564,7 +614,7 @@ def deduct_credits(db: Session, user: models.User, amount: int = 1, description:
 
 
 # ==============================================
-# 🔥 RECEIVE_DAILY_CREDIT - VERSÃO 2.3 (NOVA)
+# 🔥 RECEIVE_DAILY_CREDIT - VERSÃO 2.3
 # ==============================================
 
 def receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
@@ -1592,15 +1642,15 @@ def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
 # ==============================================
 
 print("=" * 70)
-print("✅ crud.py v2.3 carregado - CORREÇÃO FINAL!")
+print("✅ crud.py v2.5 carregado - CONTROLE DE CRÉDITOS INICIAIS!")
+print("   🔥 NOVO:")
+print("   📌 received_initial_credits no create_user")
+print("   📌 grant_initial_credits_if_needed() - Função dedicada")
+print("   📌 has_received_initial_credits() - Verificação")
 print("   🔥 REGRAS DE CRÉDITOS CORRETAS:")
 print("   📌 FREE: 3 créditos iniciais, NUNCA ganha mais")
 print("   📌 PREMIUM: 3 créditos iniciais, ganha 1/dia (máx 3)")
 print("   📌 Premium SÓ ganha se saldo < 3 e NÃO recebeu hoje")
 print("   📌 Se saldo = 3, NÃO ganha (precisa gastar)")
 print("   📌 Se saldo = 0 e já recebeu hoje, ganha amanhã")
-print("   🔥 NOVAS FUNÇÕES:")
-print("   📌 get_credit_eligibility() - Verificação completa")
-print("   📌 receive_daily_credit() - Função dedicada")
-print("   📌 manage_credits_after_consumption() - Unificado")
 print("=" * 70)

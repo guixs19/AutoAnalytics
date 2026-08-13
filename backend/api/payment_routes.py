@@ -1,17 +1,17 @@
-# backend/api/payment_routes.py - VERSÃO 2.3 (OTIMIZADA E INTELIGENTE)
+# backend/api/payment_routes.py - VERSÃO 2.5 (COM ROTA DE CORREÇÃO)
 """
 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 2.3 - COM SUPORTE A ELEGIBILIDADE E BÔNUS PREMIUM
+VERSÃO: 2.5 - COM ROTA DE CORREÇÃO DE CRÉDITOS INICIAIS
 
-🔥 MELHORIAS v2.3:
-   - ✅ ADICIONADO: Rota /credits/eligibility - Verificação de elegibilidade
-   - ✅ ADICIONADO: Rota /credits/receive-daily - Receber crédito diário
-   - ✅ ADICIONADO: Rota /bonus/check - Verificar bônus premium
-   - ✅ ADICIONADO: Rota /bonus/claim - Resgatar bônus premium
-   - ✅ ADICIONADO: Rota /credits/manage - Gerenciamento unificado
-   - ✅ OTIMIZADO: Uso do crud v2.3 para consistência
-   - ✅ MELHORADO: Logs mais informativos
-   - ✅ CORRIGIDO: Verificação de elegibilidade para FREE
+🔥 CORREÇÃO v2.5:
+   - ✅ ADICIONADO: Rota /admin/fix-initial-credits - Corrigir usuários existentes
+   - ✅ ADICIONADO: Rota /admin/check-initial-credits - Verificar status
+
+🔥 CORREÇÃO v2.4:
+   - ✅ REMOVIDO: Créditos automáticos na rota /balance
+   - ✅ DESATIVADO: initialize_new_user_credits (agora só no cadastro)
+   - ✅ ADICIONADO: received_initial_credits no retorno do /balance
+   - ✅ CORRIGIDO: Usuários FREE não ganham créditos repetidos
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -303,45 +303,19 @@ def check_payment_rate_limit(user_id: int, db: Session) -> bool:
     return True
 
 
+# 🔥 V2.4: FUNÇÃO DESATIVADA - Créditos iniciais são dados APENAS no cadastro
 def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
-    """Inicializa créditos para novo usuário usando CRUD"""
-    try:
-        user = crud.get_user_by_id(db, user_id)
-        if not user:
-            return {"success": False, "error": "Usuário não encontrado"}
-        
-        if (user.credits is None or user.credits == 0) and not user.is_admin:
-            success = crud.add_credits(
-                db, user_id, INITIAL_FREE_CREDITS, 
-                f"Créditos iniciais (boas-vindas)"
-            )
-            
-            if success:
-                log = DailyCreditLog(
-                    user_id=user.id,
-                    credits_added=INITIAL_FREE_CREDITS,
-                    date=_today_brasil(),
-                    total_after=user.credits,
-                    source="initial_bonus"
-                )
-                db.add(log)
-                crud.safe_commit(db, "Erro ao salvar log de créditos iniciais")
-                
-                logger.info(f"🎉 Usuário ID {user.id} ganhou {INITIAL_FREE_CREDITS} créditos gratuitos!")
-                
-                return {
-                    "success": True,
-                    "credits_added": INITIAL_FREE_CREDITS,
-                    "current_credits": user.credits,
-                    "message": f"🎉 Boas-vindas! Você ganhou {INITIAL_FREE_CREDITS} créditos grátis!"
-                }
-        
-        return {"success": False, "message": "Usuário já possui créditos"}
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao inicializar créditos: {e}")
-        db.rollback()
-        return {"success": False, "error": str(e)}
+    """
+    🔥 FUNÇÃO DESATIVADA V2.4
+    Créditos iniciais são concedidos APENAS no momento do cadastro.
+    Esta função NÃO DEVE SER CHAMADA automaticamente.
+    """
+    logger.warning(f"⚠️ [DESATIVADO] initialize_new_user_credits chamado para user_id {user_id} - IGNORADO")
+    return {
+        "success": False, 
+        "error": "Créditos iniciais são concedidos apenas no cadastro",
+        "message": "Usuário já recebeu créditos iniciais ou não é elegível"
+    }
 
 
 async def simulate_payment_approval(payment_id: int, user_id: int):
@@ -448,7 +422,7 @@ async def create_simulated_pix_payment(
 
 
 # ==============================================
-# 🔥 ROTAS DE ELEGIBILIDADE E CRÉDITOS (NOVAS V2.3)
+# 🔥 ROTAS DE ELEGIBILIDADE E CRÉDITOS
 # ==============================================
 
 @router.get("/credits/eligibility", response_model=CreditEligibilityResponse)
@@ -671,7 +645,7 @@ async def manage_credits(
 
 
 # ==============================================
-# 🔥 ROTAS DE PAGAMENTO (MANTIDAS E OTIMIZADAS)
+# 🔥 ROTAS DE PAGAMENTO
 # ==============================================
 
 @router.get("/promotion-status", response_model=PromotionStatusResponse)
@@ -707,21 +681,30 @@ async def get_promotion_status(
     )
 
 
+# ==============================================
+# 🔥🔥🔥 ROTA /balance - CORRIGIDA V2.4
+# ==============================================
+
 @router.get("/balance")
 async def get_user_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Obtém saldo de créditos do usuário"""
+    """
+    🔥 Obtém saldo de créditos do usuário
+    🔥 V2.4: NUNCA CONCEDE CRÉDITOS AUTOMATICAMENTE!
+    """
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "credits": 0, "error": "Usuário não encontrado"})
     
-    is_new_user = (user.credits is None or user.credits == 0) and not user.is_admin
-    if is_new_user:
-        initialize_new_user_credits(user.id, db)
-        db.refresh(user)
+    # ❌ V2.4: REMOVIDA A CHAMADA QUE DAVA CRÉDITOS AUTOMATICAMENTE
+    # is_new_user = (user.credits is None or user.credits == 0) and not user.is_admin
+    # if is_new_user:
+    #     initialize_new_user_credits(user.id, db)
+    #     db.refresh(user)
     
+    # ✅ APENAS RETORNAR O SALDO
     premium_status = crud.check_premium_status(db, user.id)
     eligibility = get_credit_eligibility(db, user)
     
@@ -741,7 +724,9 @@ async def get_user_balance(
             "has_locked_price": user.promotional_price_locked,
             "locked_price": user.promotional_price,
             "is_vitalicio": user.promotional_price_locked
-        }
+        },
+        # 🔥 V2.4: NOVO CAMPO PARA CONTROLE
+        "received_initial_credits": user.received_initial_credits
     })
 
 
@@ -1146,6 +1131,132 @@ async def get_subscription_status(
 
 
 # ==============================================
+# 🔥🔥🔥 ROTA ADMIN: CORRIGIR CRÉDITOS INICIAIS (V2.5)
+# ==============================================
+
+@router.post("/admin/fix-initial-credits")
+async def fix_initial_credits(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    confirm: bool = False
+):
+    """
+    🔥 ROTA ADMIN: Corrige usuários existentes marcando received_initial_credits = True
+    
+    ATENÇÃO: Esta rota deve ser executada apenas uma vez, após a migração.
+    Use confirm=True para executar.
+    
+    Exemplo: POST /api/payments/admin/fix-initial-credits?confirm=true
+    """
+    # Verifica se é admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
+    
+    if not confirm:
+        return sanitize_response({
+            "success": False,
+            "message": "⚠️ Esta ação é irreversível. Use confirm=true para executar.",
+            "dry_run": True,
+            "action": "Marcar todos os usuários como received_initial_credits = True"
+        })
+    
+    try:
+        # Busca todos os usuários
+        users = db.query(User).all()
+        total = len(users)
+        fixed_count = 0
+        already_fixed = 0
+        fixed_users = []
+        
+        for user in users:
+            if not user.received_initial_credits:
+                user.received_initial_credits = True
+                fixed_count += 1
+                fixed_users.append({
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "credits": user.credits
+                })
+                logger.info(f"✅ Usuário {user.email} (ID: {user.id}) marcado como received_initial_credits=True")
+            else:
+                already_fixed += 1
+        
+        db.commit()
+        
+        logger.info(f"✅ CORREÇÃO CONCLUÍDA: {fixed_count} usuários corrigidos, {already_fixed} já estavam corretos")
+        
+        return sanitize_response({
+            "success": True,
+            "message": f"✅ {fixed_count} usuários corrigidos!",
+            "total_users": total,
+            "fixed_count": fixed_count,
+            "already_fixed": already_fixed,
+            "fixed_users": fixed_users[:20],  # Mostra apenas os 20 primeiros
+            "action": "received_initial_credits = True para todos os usuários",
+            "warning": "Esta ação deve ser executada apenas uma vez, após a migração."
+        })
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Erro ao corrigir usuários: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao corrigir usuários: {str(e)}")
+
+
+# ==============================================
+# 🔥 ROTA ADMIN: VERIFICAR STATUS (V2.5)
+# ==============================================
+
+@router.get("/admin/check-initial-credits")
+async def check_initial_credits_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 ROTA ADMIN: Verifica status dos créditos iniciais dos usuários
+    """
+    # Verifica se é admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
+    
+    try:
+        total_users = db.query(User).count()
+        users_without_flag = db.query(User).filter(User.received_initial_credits == False).count()
+        users_with_flag = total_users - users_without_flag
+        
+        # Amostra de usuários que precisam ser corrigidos
+        pending_users = db.query(User).filter(User.received_initial_credits == False).limit(10).all()
+        
+        return sanitize_response({
+            "success": True,
+            "total_users": total_users,
+            "users_with_flag": users_with_flag,
+            "users_without_flag": users_without_flag,
+            "needs_fix": users_without_flag > 0,
+            "pending_users": [
+                {
+                    "id": u.id,
+                    "email": u.email,
+                    "name": u.name,
+                    "credits": u.credits,
+                    "received_initial_credits": u.received_initial_credits
+                }
+                for u in pending_users
+            ] if pending_users else [],
+            "fix_endpoint": "/api/payments/admin/fix-initial-credits?confirm=true",
+            "message": (
+                f"⚠️ {users_without_flag} usuários precisam ser corrigidos." 
+                if users_without_flag > 0 
+                else "✅ Todos os usuários estão corretos."
+            )
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar status: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao verificar status: {str(e)}")
+
+
+# ==============================================
 # 🔥 WEBHOOK (MANTIDO)
 # ==============================================
 
@@ -1436,21 +1547,18 @@ async def get_premium_status(
 
 
 print("=" * 70)
-print("✅ payment_routes.py v2.3 carregado - SISTEMA COMPLETO!")
+print("✅ payment_routes.py v2.5 carregado - COM ROTA DE CORREÇÃO!")
+print("   🔥 CORREÇÃO V2.5:")
+print("      - ADICIONADO: POST /admin/fix-initial-credits - Corrigir usuários")
+print("      - ADICIONADO: GET  /admin/check-initial-credits - Verificar status")
+print("   🔥 CORREÇÃO V2.4:")
+print("      - REMOVIDO: Créditos automáticos na rota /balance")
+print("      - DESATIVADO: initialize_new_user_credits")
+print("      - ADICIONADO: received_initial_credits no retorno do /balance")
 print("   💰 Preço de fundador: R$ 97,00 (vitalício)")
 print("   💰 Preço cheio: R$ 149,90")
 print("   🎯 Vagas totais: 100")
-print("   🔒 Preço travado no usuário após confirmação")
-print("   🔥 NOVAS ROTAS V2.3:")
-print("      📌 GET  /credits/eligibility - Elegibilidade")
-print("      📌 POST /credits/receive-daily - Receber crédito diário")
-print("      📌 GET  /bonus/check - Verificar bônus")
-print("      📌 POST /bonus/claim - Resgatar bônus")
-print("      📌 POST /credits/manage - Gerenciamento unificado")
-print("   🔥 ROTAS ATUALIZADAS:")
-print("      📌 GET  /balance - Com elegibilidade")
-print("      📌 GET  /check-analysis - Com elegibilidade")
-print("      📌 POST /consume - Com gerenciamento unificado")
-print("      📌 POST /premium/check-daily - Com elegibilidade")
-print("      📌 GET  /subscription-status - Com elegibilidade")
+print("   🔥 ROTAS ADMIN:")
+print("      📌 POST /admin/fix-initial-credits?confirm=true - Executar correção")
+print("      📌 GET  /admin/check-initial-credits - Verificar status")
 print("=" * 70)

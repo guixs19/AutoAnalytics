@@ -1,8 +1,13 @@
-# backend/models.py - VERSÃO 2.4 COM CAMPOS DE CRÉDITO PARA ANALYSIS
+# backend/models.py - VERSÃO 2.5 COM CONTROLE DE CRÉDITOS INICIAIS
 
 """
 🔥 Models - AutoAnalytics
-Versão: 2.4 - Com campos de crédito para Analysis
+Versão: 2.5 - Com controle de créditos iniciais
+
+🔥 NOVIDADES v2.5:
+   - ✅ ADICIONADO: received_initial_credits - Controle de créditos iniciais
+   - ✅ ADICIONADO: Método has_received_initial_credits()
+   - ✅ ADICIONADO: Método mark_initial_credits_received()
 
 🔥 MELHORIAS v2.4:
    - ✅ ADICIONADO: credits_consumed - Indica se o crédito foi consumido
@@ -16,7 +21,6 @@ Versão: 2.4 - Com campos de crédito para Analysis
 🔥 MANTIDO v2.3:
    - last_bonus_at - Controle de último bônus recebido
    - bonus_count - Total de bônus recebidos
-   - Métodos para gerenciamento de bônus
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
@@ -85,6 +89,9 @@ class User(Base):
     total_purchased = Column(Integer, default=0)
     last_payment_date = Column(DateTime, onupdate=_now_brasil)
     
+    # 🔥 CONTROLE DE CRÉDITOS INICIAIS (NOVO v2.5)
+    received_initial_credits = Column(Boolean, default=False, nullable=False, comment="Indica se o usuário já recebeu os créditos iniciais")
+    
     # 🔥 NOVOS CAMPOS PARA CONTROLE DE BÔNUS PREMIUM
     last_bonus_at = Column(DateTime, nullable=True, comment="Última vez que recebeu bônus premium por zerar créditos")
     bonus_count = Column(Integer, default=0, comment="Número total de bônus premium recebidos")
@@ -135,6 +142,15 @@ class User(Base):
         self.credits += amount
         self.total_purchased += amount
         self.last_payment_date = _now_brasil()
+    
+    # 🔥 NOVOS MÉTODOS PARA CRÉDITOS INICIAIS (v2.5)
+    def has_received_initial_credits(self) -> bool:
+        """Verifica se o usuário já recebeu os créditos iniciais"""
+        return self.received_initial_credits
+    
+    def mark_initial_credits_received(self):
+        """Marca que o usuário já recebeu os créditos iniciais"""
+        self.received_initial_credits = True
     
     # 🔥 NOVOS MÉTODOS PARA BÔNUS
     def has_received_bonus_today(self) -> bool:
@@ -555,14 +571,18 @@ class BlacklistedToken(Base):
 
 
 print("=" * 70)
-print("🔥 models.py v2.4 carregado - COM CAMPOS DE CRÉDITO PARA ANALYSIS!")
+print("🔥 models.py v2.5 carregado - CONTROLE DE CRÉDITOS INICIAIS!")
+print("   ✅ NOVO CAMPO:")
+print("      - received_initial_credits: Controle de créditos iniciais")
+print("      - has_received_initial_credits(): Verifica se já recebeu")
+print("      - mark_initial_credits_received(): Marca como recebido")
 print("   ✅ ANÁLISES:")
 print("      - Analysis com campos PoW")
 print("      - Analysis com file_size")
 print("      - Analysis com métricas de performance")
 print("      - Analysis com chart_data para gráficos")
 print("      - Analysis com progress para polling")
-print("   ✅ CRÉDITOS (NOVO v2.4):")
+print("   ✅ CRÉDITOS (v2.4):")
 print("      - credits_consumed: Indica se o crédito foi consumido")
 print("      - credits_consumed_at: Data do consumo")
 print("      - credits_consumed_amount: Quantidade consumida (1)")
