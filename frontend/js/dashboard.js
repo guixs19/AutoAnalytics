@@ -1,21 +1,21 @@
-// frontend/js/dashboard.js - VERSÃO 16.8 (CORREÇÃO DE CRÉDITOS)
+// frontend/js/dashboard.js - VERSÃO 16.9 (CORREÇÃO DEFINITIVA DE CRÉDITOS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.8
+ * 🔥 Dashboard Module - AutoAnalytics v16.9
  * 
- * ✅ NOVIDADES v16.8:
- * - 🔥 CORRIGIDO: NÃO CONSOLE créditos no upload (apenas verifica)
- * - 🔥 CORRIGIDO: CreditManager.consume() NÃO é chamado no upload
- * - 🔥 CORRIGIDO: Sincronização de créditos via /auth/me
- * - 🔥 CORRIGIDO: Evento analysis:success agora sincroniza
- * - 🔥 ADICIONADO: syncCredits() público para sincronização manual
+ * ✅ NOVIDADES v16.9:
+ * - 🔥 CORRIGIDO: Sincronização automática de créditos após cada análise
+ * - 🔥 CORRIGIDO: Evento analysis:success agora sincroniza E atualiza UI
+ * - 🔥 ADICIONADO: _forceSyncCredits() para sincronização forçada
+ * - 🔥 ADICIONADO: Evento credits:sync_required para comunicação com app.js
+ * - 🔥 ADICIONADO: Polling automático para manter créditos atualizados
+ * - 🔥 CORRIGIDO: UI de créditos atualiza corretamente após consumo
  * 
- * ✅ MANTIDO v16.7:
- * - HISTÓRICO DE ANÁLISES: Mantém todos os arquivos processados
- * - ALTERNÂNCIA: Troca entre análises sem re-processar ML
- * - SELETOR DE ARQUIVOS: Interface para escolher qual análise ver
- * - SEM FALLBACK: Apenas dados reais do backend
- * - GPSA - Performance da Oficina (3 abas)
- * - 3 gráficos: Barras + Linha (Serviços) + Linha (Mensal)
+ * ✅ MANTIDO v16.8:
+ * - NÃO CONSOLE créditos no upload
+ * - Histórico de análises
+ * - Alternância entre análises
+ * - GPSA - Performance da Oficina
+ * - 3 gráficos
  */
 
 (function() {
@@ -50,6 +50,7 @@
             UI_THROTTLE: 300,
             SYNC_DEBOUNCE: 500,
             AUTO_SYNC_DELAY: 1000,
+            FORCE_SYNC_DELAY: 500, // 🔥 V16.9: Delay para forçar sync
         },
         
         COLORS: {
@@ -93,7 +94,7 @@
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (SEM FALLBACK)
+    // 🔥 UTILITÁRIOS
     // ==============================================
 
     const Utils = {
@@ -152,7 +153,6 @@
             };
         },
 
-        // 🔥 SEM FALLBACK - apenas extrai dados reais
         extractChartData: (data) => {
             if (!data) {
                 console.warn('⚠️ [extractChartData] Dados vazios');
@@ -201,7 +201,7 @@
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER (V16.8 - CORRIGIDO)
+    // 🔥 CREDIT MANAGER (V16.9 - CORRIGIDO)
     // ==============================================
 
     class CreditManager {
@@ -307,19 +307,19 @@
         }
 
         _setupEventListeners() {
-            // 🔥 V16.8: Só atualiza se o evento vier do backend
+            // 🔥 V16.9: Escuta eventos de créditos
             document.addEventListener('creditsUpdated', (e) => {
                 const data = e.detail || {};
                 if (data._silent) return;
                 
-                // 🔥 Só atualiza se vier do backend ou for explicitamente permitido
-                if (data._source === 'backend' || data._source === 'loadUserCredits') {
+                // 🔥 Atualiza se vier do backend ou for atualização forçada
+                if (data._source === 'backend' || data._source === 'loadUserCredits' || data._source === 'force') {
                     if (data.credits !== undefined) {
                         this._balance = data.credits;
                         this._isPremium = data.isPremium || false;
                         this._isAdmin = data.isAdmin || false;
                         this._updateUI();
-                        console.log(`💰 [CreditManager] Atualizado via backend: ${this._balance}`);
+                        console.log(`💰 [CreditManager] Atualizado: ${this._balance}`);
                     }
                 }
             });
@@ -342,12 +342,11 @@
                 setTimeout(() => this.sync(true), 500);
             });
             
-            // 🔥 V16.8: analysis:success NÃO atualiza créditos diretamente
+            // 🔥 V16.9: analysis:success - FORÇA SINCRONIZAÇÃO
             document.addEventListener('analysis:success', (e) => {
-                // 🔥 NÃO FAZ NADA COM CRÉDITOS AQUI!
-                // Apenas força sincronização com o backend
                 console.log('📊 [CreditManager] Análise concluída, sincronizando créditos...');
-                setTimeout(() => this.sync(true), 800);
+                // 🔥 Força sincronização imediata
+                this._forceSyncCredits();
             });
             
             document.addEventListener('eligibility:updated', (e) => {
@@ -360,14 +359,11 @@
                 }
             });
             
-            // 🔥 V16.8: upload:completed NÃO atualiza créditos diretamente
             document.addEventListener('upload:completed', (e) => {
-                // 🔥 NÃO FAZ NADA COM CRÉDITOS AQUI!
                 console.log('📤 [CreditManager] Upload concluído, sincronizando créditos...');
-                setTimeout(() => this.sync(true), 500);
+                setTimeout(() => this._forceSyncCredits(), 500);
             });
 
-            // 🔥 V16.8: Escuta evento de créditos consumidos pelo backend
             document.addEventListener('credits:consumed', (e) => {
                 const data = e.detail || {};
                 console.log(`💰 [CreditManager] Créditos consumidos pelo backend: ${data.amount}`);
@@ -375,8 +371,39 @@
                     this._balance = data.balance;
                     this._updateUI();
                 }
-                setTimeout(() => this.sync(true), 300);
+                setTimeout(() => this._forceSyncCredits(), 300);
             });
+
+            // 🔥 V16.9: Evento para forçar sincronização
+            document.addEventListener('credits:sync_required', (e) => {
+                console.log('🔄 [CreditManager] Sync required, forçando...');
+                this._forceSyncCredits();
+            });
+        }
+
+        // 🔥 V16.9: Força sincronização imediata
+        async _forceSyncCredits() {
+            console.log('🔄 [CreditManager] Forçando sincronização...');
+            try {
+                const result = await this.sync(true);
+                this._updateUI();
+                
+                // 🔥 Dispara evento para app.js
+                window.dispatchEvent(new CustomEvent('credits:synced', {
+                    detail: {
+                        credits: this._balance,
+                        display: this.display,
+                        isPremium: this.isPremium,
+                        isAdmin: this.isAdmin,
+                        timestamp: Date.now()
+                    }
+                }));
+                
+                return result;
+            } catch (e) {
+                console.error('❌ [CreditManager] Erro na sync forçada:', e);
+                return this._balance;
+            }
         }
 
         get balance() { 
@@ -413,7 +440,7 @@
             return String(Math.max(0, balance));
         }
 
-        // 🔥 V16.8: SYNC - Agora usa /auth/me corretamente
+        // 🔥 V16.9: SYNC - com retry e fallback
         async sync(force = false) {
             if (!force) {
                 const loaded = this._loadFromAppState();
@@ -499,7 +526,7 @@
             this.sync().catch(() => {});
         }, CONFIG.CREDITS.SYNC_DEBOUNCE);
 
-        // 🔥 V16.8: hasCredits - APENAS VERIFICA, NÃO CONSOLE
+        // 🔥 V16.9: hasCredits - APENAS VERIFICA
         hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
             this._loadFromAppState();
             
@@ -512,10 +539,6 @@
             const hasEnough = balance >= required;
             
             console.log(`💰 [CreditManager] Verificando: ${balance} >= ${required} = ${hasEnough}`);
-            
-            // 🔥 V16.8: NÃO CONSOLE CRÉDITOS AQUI!
-            // Apenas verifica e retorna
-            // O consumo será feito pelo backend no final do ML
             
             return hasEnough;
         }
@@ -531,11 +554,9 @@
             return this.balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
         }
 
-        // 🔥 V16.8: consume - NÃO DEVE SER CHAMADO NO UPLOAD!
-        // Mantido apenas para compatibilidade, mas NÃO é usado no fluxo principal
+        // 🔥 V16.9: consume - NÃO DEVE SER CHAMADO NO UPLOAD!
         async consume(amount = CONFIG.CREDITS.COST_PER_UPLOAD, description = 'Upload') {
-            console.warn('⚠️ [CreditManager] consume() não deve ser chamado no upload! O consumo é feito pelo backend.');
-            console.warn('⚠️ [CreditManager] Este método está disponível apenas para compatibilidade.');
+            console.warn('⚠️ [CreditManager] consume() não deve ser chamado no upload!');
             
             if (this.isAdmin) {
                 console.log('👑 Admin - créditos ilimitados');
@@ -672,7 +693,8 @@
                     '.credits-display',
                     '#modalCreditsCount',
                     '.credits-badge-nav span',
-                    '.user-credits'
+                    '.user-credits',
+                    '#creditsCountDisplay'
                 ];
                 
                 let updated = false;
@@ -738,14 +760,14 @@
             }
         }
 
-        // 🔥 V16.8: Método público para sincronizar créditos
+        // 🔥 V16.9: Método público para sincronizar créditos
         async syncCredits() {
-            return await this.sync(true);
+            return await this._forceSyncCredits();
         }
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.8)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (V16.9)
     // ==============================================
 
     class Dashboard {
@@ -756,6 +778,9 @@
             this._creditManager = new CreditManager();
             this._fileCache = new Map();
             this._analysisCache = new Map();
+            
+            // 🔥 V16.9: Timer para sincronização automática
+            this._autoSyncTimer = null;
             
             // 🔥 Instâncias dos gráficos
             this._chartInstances = {
@@ -792,6 +817,57 @@
             this._updateFileSelector = this._updateFileSelector.bind(this);
             this._createFileSelector = this._createFileSelector.bind(this);
             this._showAllFiles = this._showAllFiles.bind(this);
+            
+            // 🔥 V16.9: Bind do force sync
+            this._forceSyncCredits = this._forceSyncCredits.bind(this);
+        }
+
+        // ==========================================
+        // 🔥 FORÇAR SINCRONIZAÇÃO DE CRÉDITOS (V16.9)
+        // ==========================================
+
+        async _forceSyncCredits() {
+            console.log('🔄 [Dashboard] Forçando sincronização de créditos...');
+            
+            try {
+                // 1. Sincronizar pelo CreditManager
+                await this._creditManager._forceSyncCredits();
+                
+                // 2. Sincronizar pelo appAuth
+                if (window.appAuth?.loadUserCredits) {
+                    await window.appAuth.loadUserCredits();
+                    console.log('✅ [Dashboard] appAuth sincronizado');
+                }
+                
+                // 3. Atualizar UI
+                if (window.App?.updateCredits) {
+                    window.App.updateCredits();
+                }
+                if (window.updateCreditsDisplay) {
+                    window.updateCreditsDisplay();
+                }
+                if (window.App?.updateNavbar) {
+                    window.App.updateNavbar();
+                }
+                
+                // 4. Disparar evento
+                window.dispatchEvent(new CustomEvent('credits:synced', {
+                    detail: {
+                        credits: this._creditManager.balance,
+                        display: this._creditManager.display,
+                        isPremium: this._creditManager.isPremium,
+                        isAdmin: this._creditManager.isAdmin,
+                        source: 'dashboard',
+                        timestamp: Date.now()
+                    }
+                }));
+                
+                console.log(`✅ [Dashboard] Sincronização concluída: ${this._creditManager.display}`);
+                return true;
+            } catch (e) {
+                console.error('❌ [Dashboard] Erro na sincronização:', e);
+                return false;
+            }
         }
 
         // ==========================================
@@ -804,7 +880,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.8] Inicializando com correção de créditos...');
+            console.log('🚀 [Dashboard v16.9] Inicializando com correção definitiva de créditos...');
 
             await this._creditManager.sync(true);
             
@@ -813,6 +889,9 @@
             this._setupPolling();
             this._setupChartListener();
             this._createFileSelector();
+            
+            // 🔥 V16.9: Iniciar sync automático
+            this._startAutoSync();
             
             const canvases = {
                 revenue: document.getElementById('revenueChart'),
@@ -827,15 +906,42 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.8] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.9] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Polling: ${CONFIG.POLLING.INTERVAL}ms / ${CONFIG.POLLING.MAX_ATTEMPTS} tentativas`);
+            console.log(`   🔥 Auto Sync: ${CONFIG.CREDITS.SYNC_INTERVAL/1000}s`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
             console.log(`   📁 Histórico de análises: ${this._analysisHistory.length} arquivos`);
-            console.log(`   🔥 Sem fallback de dados - apenas dados reais do backend`);
-            console.log(`   🔥 V16.8: NÃO CONSOLE créditos no upload`);
+            console.log(`   🔥 V16.9: Sincronização automática de créditos`);
             
             return this;
+        }
+
+        // ==========================================
+        // 🔥 AUTO SYNC (V16.9)
+        // ==========================================
+
+        _startAutoSync() {
+            if (this._autoSyncTimer) {
+                clearInterval(this._autoSyncTimer);
+                this._autoSyncTimer = null;
+            }
+            
+            this._autoSyncTimer = setInterval(() => {
+                if (Utils.isAuthenticated()) {
+                    this._forceSyncCredits();
+                }
+            }, CONFIG.CREDITS.SYNC_INTERVAL);
+            
+            console.log(`⏰ [Dashboard] Auto sync iniciado (${CONFIG.CREDITS.SYNC_INTERVAL/1000}s)`);
+        }
+
+        _stopAutoSync() {
+            if (this._autoSyncTimer) {
+                clearInterval(this._autoSyncTimer);
+                this._autoSyncTimer = null;
+                console.log('⏹️ [Dashboard] Auto sync parado');
+            }
         }
 
         // ==========================================
@@ -866,12 +972,10 @@
             return await this._creditManager.sync(true);
         }
 
-        // 🔥 V16.8: syncCredits - Sincroniza créditos com o backend
         async syncCredits() {
             return await this._creditManager.syncCredits();
         }
 
-        // 🔥 V16.8: consumeCredits - NÃO DEVE SER USADO NO UPLOAD!
         async consumeCredits(amount = 1, description = 'Upload') {
             console.warn('⚠️ [Dashboard] consumeCredits não deve ser usado no upload!');
             return await this._creditManager.consume(amount, description);
@@ -973,7 +1077,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO (V16.8 - NÃO CONSOLE CRÉDITOS)
+        // 🔥 UPLOAD MÚLTIPLO (V16.9 - COM SYNC)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -1007,7 +1111,7 @@
 
                 await this._creditManager.sync(true);
                 
-                // 🔥 V16.8: APENAS VERIFICA CRÉDITOS - NÃO CONSOLE!
+                // 🔥 APENAS VERIFICA CRÉDITOS - NÃO CONSOLE!
                 const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
                 console.log(`💰 [Dashboard] Verificação de créditos: ${hasCredits} (saldo: ${this._creditManager.balance})`);
                 
@@ -1041,7 +1145,6 @@
                     ...powHeaders
                 };
 
-                // 🔥 V16.8: NÃO ENVIA X-Expected-Cost - O backend decide o custo
                 const response = await fetch('/api/upload-multi-analyze', {
                     method: 'POST',
                     headers: headers,
@@ -1094,19 +1197,23 @@
                         this._showToast('✅ Upload concluído com sucesso!', 'success');
                         this._showResult();
                         
-                        // 🔥 V16.8: Sincroniza créditos após conclusão
-                        await this._creditManager.sync(true);
+                        // 🔥 V16.9: FORÇA SINCRONIZAÇÃO APÓS ANÁLISE
+                        await this._forceSyncCredits();
                     } else {
                         console.warn('⚠️ Polling falhou, usando resposta original');
                         await this._processUploadResult(result, files);
                         this._showToast('✅ Upload processado!', 'success');
                         this._showResult();
+                        // 🔥 V16.9: FORÇA SINCRONIZAÇÃO
+                        await this._forceSyncCredits();
                     }
                 } else {
                     await this._processUploadResult(result, files);
                     this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
                     this._showToast('✅ Upload concluído com sucesso!', 'success');
                     this._showResult();
+                    // 🔥 V16.9: FORÇA SINCRONIZAÇÃO
+                    await this._forceSyncCredits();
                 }
 
                 await this._invalidateCache();
@@ -1132,7 +1239,7 @@
         }
 
         // ==========================================
-        // 🔥 POLLING DE PROGRESSO
+        // 🔥 POLLING DE PROGRESSO (MANTIDO)
         // ==========================================
 
         async _pollProgress(processId) {
@@ -1313,7 +1420,7 @@
         }
 
         // ==========================================
-        // 🔥 RENDERIZAR TODOS OS GRÁFICOS (MANTIDO)
+        // 🔥 RENDERIZAR GRÁFICOS (MANTIDO)
         // ==========================================
 
         _renderAllCharts(chartData) {
@@ -1640,7 +1747,7 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 GPSA - PERFORMANCE DA OFICINA (MANTIDO)
+        // 🔥 GPSA (MANTIDO)
         // ==========================================
 
         _renderGPSA(chartData) {
@@ -1815,7 +1922,7 @@
         }
 
         // ==========================================
-        // 🔥 GPSA - ABA FINANCEIRO
+        // 🔥 GPSA - ABAS (MANTIDAS)
         // ==========================================
 
         _renderGPSAFinanceiro(totalRevenue, totalCosts, profit, margin, ticketMedio, totalServices) {
@@ -1879,10 +1986,6 @@
                 </div>
             `;
         }
-
-        // ==========================================
-        // 🔥 GPSA - ABA SERVIÇOS
-        // ==========================================
 
         _renderGPSAServicos(labels, services, totalServices, avgServices, maxService, peakDay) {
             const daysWithServices = services.filter(s => s > 0).length;
@@ -1955,10 +2058,6 @@
                 </div>
             `;
         }
-
-        // ==========================================
-        // 🔥 GPSA - ABA TENDÊNCIA
-        // ==========================================
 
         _renderGPSATendencia(monthlyLabels, monthlyRevenue) {
             const totalYear = monthlyRevenue.reduce((a, b) => a + b, 0);
@@ -2081,7 +2180,7 @@
         }
 
         // ==========================================
-        // 🔥🔥🔥 PROCESSAR RESULTADO DO UPLOAD (COM HISTÓRICO)
+        // 🔥 PROCESSAR RESULTADO DO UPLOAD (MANTIDO)
         // ==========================================
 
         async _processUploadResult(result, files) {
@@ -2741,8 +2840,8 @@
                 return;
             }
             
-            // 🔥 V16.8: Só atualiza se vier do backend
-            if (data._source === 'backend' || data._source === 'loadUserCredits') {
+            // 🔥 V16.9: Atualiza se vier do backend ou for força
+            if (data._source === 'backend' || data._source === 'loadUserCredits' || data._source === 'force') {
                 if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
                     this._creditManager._balance = data.credits;
                     this._creditManager._isPremium = data.isPremium || false;
@@ -2877,7 +2976,8 @@
 
             document.addEventListener('analysis:success', () => {
                 this._invalidateCache();
-                setTimeout(() => this._creditManager.sync(true), 500);
+                // 🔥 V16.9: Força sincronização após análise
+                this._forceSyncCredits();
             });
 
             document.addEventListener('visibilitychange', () => {
@@ -2896,6 +2996,7 @@
             window.addEventListener('beforeunload', () => {
                 this._stopPolling();
                 this._destroyAllCharts();
+                this._stopAutoSync();
             });
         }
 
@@ -2949,9 +3050,13 @@
             return await this._creditManager.sync(true);
         }
 
-        // 🔥 V16.8: Método público para sincronizar créditos
         async syncCredits() {
             return await this._creditManager.syncCredits();
+        }
+
+        // 🔥 V16.9: Força sincronização manual
+        async forceSyncCredits() {
+            return await this._forceSyncCredits();
         }
 
         renderAllCharts(chartData) {
@@ -2978,6 +3083,7 @@
             }
             
             this._destroyAllCharts();
+            this._stopAutoSync();
             
             document.removeEventListener('creditsUpdated', this._handleCreditsUpdated);
             document.removeEventListener('chart:data_ready', this._handleChartDataReady);
@@ -3040,13 +3146,22 @@
     window.Dashboard = Dashboard;
     window.initDashboard = initDashboard;
 
+    // 🔥 V16.9: Função para forçar sync via console
+    window.forceSyncCredits = function() {
+        if (window.__dashboard) {
+            return window.__dashboard.forceSyncCredits();
+        }
+        console.warn('⚠️ Dashboard não inicializado');
+        return null;
+    };
+
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.8 carregado - CORREÇÃO DE CRÉDITOS');
+    console.log('🔥 dashboard.js v16.9 carregado - CORREÇÃO DEFINITIVA DE CRÉDITOS');
     console.log('   ✅ NÃO CONSOLE créditos no upload (apenas verifica)');
-    console.log('   ✅ CreditManager.consume() NÃO é chamado no upload');
-    console.log('   ✅ Sincronização de créditos via /auth/me');
-    console.log('   ✅ Evento analysis:success agora sincroniza');
-    console.log('   ✅ syncCredits() público para sincronização manual');
+    console.log('   ✅ Sincronização automática de créditos após cada análise');
+    console.log('   ✅ Auto sync a cada ' + (CONFIG.CREDITS.SYNC_INTERVAL/1000) + 's');
+    console.log('   ✅ Evento credits:sync_required para comunicação com app.js');
+    console.log('   ✅ Use window.forceSyncCredits() para sincronizar manualmente');
     console.log('   ✅ HISTÓRICO: Mantém todos os arquivos processados');
     console.log('   ✅ ALTERNÂNCIA: Troca entre análises sem re-processar ML');
     console.log('   ✅ SEM FALLBACK: Apenas dados reais do backend');

@@ -1448,6 +1448,10 @@
     <!-- 🔥 SCRIPTS - VERSÕES ATUALIZADAS -->
     <!-- ============================================== -->
     
+        <!-- ============================================== -->
+    <!-- 🔥 SCRIPTS - VERSÕES ATUALIZADAS (v9.1) -->
+    <!-- ============================================== -->
+    
     <!-- 1️⃣ BIBLIOTECAS (Carregamento otimizado) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer></script>
@@ -1462,19 +1466,18 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
-    <!-- 2️⃣ SCRIPTS PRÓPRIOS (COM VERSÕES ATUALIZADAS) -->
+    <!-- 2️⃣ SCRIPTS PRÓPRIOS (VERSÕES ATUALIZADAS) -->
     <script src="/static/js/pow-client.js?ver=5.2" defer></script>
-    <script src="/static/js/app.js?ver=7.5.0" defer></script>
-    <script src="/static/js/auth.js?ver=4.2.0" defer></script>
+    <script src="/static/js/app.js?ver=7.8.0" defer></script>
+    <script src="/static/js/auth.js?ver=4.3.0" defer></script>
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
     
-    <!-- 🔥 DASHBOARD v16.7 - COM HISTÓRICO E ALTERNÂNCIA -->
-    <script src="/static/js/dashboard.js?ver=16.7" defer></script>
+    <!-- 🔥 DASHBOARD v16.9 - CORREÇÃO DEFINITIVA DE CRÉDITOS -->
+    <script src="/static/js/dashboard.js?ver=16.9" defer></script>
 
     <!-- 3️⃣ UPLOAD E RELATÓRIO -->
     <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
-    <script src="/static/js/pdf-generator.js?ver=4.2" defer></script>
-
+    <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
     <!-- ============================================== -->
     <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
     <!-- ============================================== -->
@@ -2133,6 +2136,164 @@
             console.log('✅ welcome-notification.js v2 carregado!');
         })();
     </script>
+ <!-- ============================================== -->
+    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS (v3) -->
+    <!-- ============================================== -->
+    <script>
+    (function() {
+        'use strict';
+        console.log('🔄 [Sync] Inicializando sistema de sincronização v3...');
 
+        // 🔥 Função principal de sincronização
+        async function forceSyncCredits() {
+            console.log('🔄 [Sync] Forçando sincronização de créditos...');
+            
+            try {
+                // 1. Via appAuth
+                if (window.appAuth?.loadUserCredits) {
+                    await window.appAuth.loadUserCredits();
+                    console.log('✅ [Sync] appAuth sincronizado');
+                }
+                
+                // 2. Via dashboard
+                if (window.__dashboard?.syncCredits) {
+                    await window.__dashboard.syncCredits();
+                    console.log('✅ [Sync] dashboard sincronizado');
+                }
+                
+                // 3. Via App
+                if (window.App?.syncCredits) {
+                    await window.App.syncCredits();
+                    console.log('✅ [Sync] App sincronizado');
+                }
+                
+                // 4. Atualizar UI
+                if (window.App?.updateCredits) {
+                    window.App.updateCredits();
+                }
+                if (window.updateCreditsDisplay) {
+                    window.updateCreditsDisplay();
+                }
+                if (window.App?.updateNavbar) {
+                    window.App.updateNavbar();
+                }
+                
+                // 5. Recarregar elegibilidade
+                if (window.checkEligibility) {
+                    await window.checkEligibility(true);
+                }
+                
+                console.log('✅ [Sync] Sincronização concluída!');
+                
+                if (window.toastr) {
+                    toastr.success('✅ Créditos sincronizados!');
+                }
+                
+                return true;
+            } catch (e) {
+                console.error('❌ [Sync] Erro na sincronização:', e);
+                if (window.toastr) {
+                    toastr.error('Erro ao sincronizar créditos');
+                }
+                return false;
+            }
+        }
+
+        // 🔥 Sincronizar após eventos importantes
+        document.addEventListener('analysis:success', function() {
+            console.log('📊 [Sync] Análise concluída, sincronizando em 500ms...');
+            setTimeout(forceSyncCredits, 500);
+        });
+
+        document.addEventListener('upload:completed', function() {
+            console.log('📤 [Sync] Upload concluído, sincronizando em 500ms...');
+            setTimeout(forceSyncCredits, 500);
+        });
+
+        document.addEventListener('credits:consumed', function(e) {
+            const data = e.detail || {};
+            console.log(`💰 [Sync] Créditos consumidos: ${data.amount}, saldo: ${data.balance}`);
+            setTimeout(forceSyncCredits, 300);
+        });
+
+        document.addEventListener('authLoginSuccess', function() {
+            console.log('🔐 [Sync] Login realizado, sincronizando em 300ms...');
+            setTimeout(forceSyncCredits, 300);
+        });
+
+        document.addEventListener('credits:synced', function(e) {
+            const data = e.detail || {};
+            console.log(`🔄 [Sync] Evento credits:synced recebido: ${data.credits || 'N/A'}`);
+        });
+
+        // 🔥 Sincronização periódica (a cada 15 segundos)
+        let syncInterval = setInterval(function() {
+            if (window.appAuth?.isAuthenticated?.()) {
+                forceSyncCredits();
+            }
+        }, 15000);
+
+        // 🔥 Parar quando a página for descarregada
+        window.addEventListener('beforeunload', function() {
+            if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
+            }
+        });
+
+        // 🔥 Expor função global
+        window.forceSyncCredits = forceSyncCredits;
+
+        console.log('✅ [Sync] Sistema de sincronização v3 carregado!');
+        console.log('   🔄 Use window.forceSyncCredits() para sincronizar manualmente');
+        console.log('   ⏰ Sincronização automática a cada 15 segundos');
+    })();
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 BOTÃO DE SINCRONIZAÇÃO (FLUTUANTE - DEBUG) -->
+    <!-- ============================================== -->
+    <style>
+        #syncDebugBtn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: rgba(255,107,53,0.15);
+            backdrop-filter: blur(10px);
+            color: #ff6b35;
+            border: 1px solid rgba(255,107,53,0.2);
+            border-radius: 50px;
+            padding: 6px 14px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            opacity: 0.5;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        #syncDebugBtn:hover {
+            opacity: 1;
+            background: rgba(255,107,53,0.25);
+            transform: scale(1.05);
+        }
+        #syncDebugBtn i {
+            margin-right: 4px;
+        }
+        @media (max-width: 768px) {
+            #syncDebugBtn {
+                bottom: 15px;
+                right: 15px;
+                padding: 4px 10px;
+                font-size: 9px;
+            }
+        }
+    </style>
+    <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos">
+        <i class="fas fa-sync"></i> Sync
+    </button>
+</body>
+</html>
 </body>
 </html>
