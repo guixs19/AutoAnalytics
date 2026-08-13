@@ -1,26 +1,20 @@
-# backend/api/routes.py - VERSÃO 5.0 (CORRIGIDA E OTIMIZADA)
+# backend/api/routes.py - VERSÃO 5.1 (CORRIGIDA E OTIMIZADA)
 """
 ROUTES.PY - Rotas base da API (Gemini, Health, Admin, Análise Múltipla)
 ================================================================================
-✅ CORREÇÕES V5.0:
-   - 🔥 CORRIGIDO: request não definido em /analyze-multiple
-   - 🔥 CORRIGIDO: client_ip quando request é None
-   - 🔥 CORRIGIDO: Importação duplicada de schemas
-   - 🔥 CORRIGIDO: Verificação de disponibilidade do Gemini
-   - 🔥 CORRIGIDO: Tratamento de erros em /analyze-multiple
-   - 🔥 CORRIGIDO: Cache key com files vazios
+✅ CORREÇÕES V5.1:
+   - 🔥 CORRIGIDO: /report/{analysis_id} NÃO CONSUME CRÉDITOS (já consumido no ML)
+   - 🔥 CORRIGIDO: Verificação de credits_consumed antes de liberar PDF
+   - 🔥 CORRIGIDO: Fallback para consumir crédito se não foi consumido
+   - 🔥 ADICIONADO: Logs detalhados de status de créditos
 
-✅ NOVAS MELHORIAS V5.0:
-   - 🚀 HEALTH CHECK AVANÇADO: Métricas detalhadas do Gemini
-   - 🚀 DIAGNÓSTICO AUTO-CORRETIVO: Tenta recarregar serviços
-   - 🚀 CACHE PREDITIVO: Pré-carrega análises comuns
-   - 🚀 RATE LIMITING POR USUÁRIO: Individualizado
-   - 🚀 LOGS ESTRUTURADOS: Com correlation ID
-   - 🚀 FALLBACK INTELIGENTE: Quando Gemini falha
-   - 🚀 MÉTRICAS DE PERFORMANCE: Tempo de resposta por endpoint
-   - 🚀 VALIDAÇÃO DE ARQUIVOS: Mais robusta
-   - 🚀 COMPRESSÃO DE RESPOSTA: Para grandes volumes de dados
-   - 🚀 BACKGROUND TASKS: Processamento assíncrono
+✅ MANTIDO V5.0:
+   - request não definido em /analyze-multiple
+   - client_ip quando request é None
+   - Verificação de disponibilidade do Gemini
+   - Health check avançado
+   - Cache preditivo
+   - Rate limiting por usuário
 ================================================================================
 """
 
@@ -54,7 +48,7 @@ from backend.database import get_db
 from backend import crud
 from backend.security import get_current_user
 from backend.models import User
-from backend.crud import deduct_credits
+from backend.crud import deduct_credits, manage_credits_after_consumption
 
 # Configurações
 from backend.config.settings import settings
@@ -96,6 +90,8 @@ class RoutesConfig:
     MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10MB
     ENABLE_RESPONSE_COMPRESSION = True
     ENABLE_PREDICTIVE_CACHE = True
+    # 🔥 V5.1: Créditos
+    CREDITS_PER_ANALYSIS = 1
 
 
 # ==============================================
@@ -586,7 +582,7 @@ async def test_endpoint():
         "ml_pipeline_available": pipeline.is_initialized if hasattr(pipeline, 'is_initialized') else False,
         "multi_analysis_available": True,
         "report_builder_available": True,
-        "version": "5.0.0",
+        "version": "5.1.0",
         "endpoint_metrics": endpoint_metrics
     }
 
@@ -855,7 +851,7 @@ async def analyze_multiple_endpoint(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 ANÁLISE MÚLTIPLA COM RELATÓRIO EXECUTIVO (V5.0)
+    🔥 ANÁLISE MÚLTIPLA COM RELATÓRIO EXECUTIVO (V5.1)
     
     Recursos:
     - Envia até 3 arquivos (CSV, Excel, TSV)
@@ -863,7 +859,7 @@ async def analyze_multiple_endpoint(
     - Gera relatório com report_builder.py (HTML, PDF, JSON)
     - Cache inteligente (5 minutos)
     - Rate limiting (5 requisições por minuto)
-    - Consome 1 crédito por arquivo
+    - 🔥 V5.1: Consome 1 crédito por análise (não por arquivo)
     """
     start_time = time.time()
     
@@ -909,18 +905,20 @@ async def analyze_multiple_endpoint(
         )
     
     # ==========================================
-    # PASSO 3: VALIDAR CRÉDITOS
+    # PASSO 3: VALIDAR CRÉDITOS (V5.1 - 1 por análise)
     # ==========================================
     
     if not current_user.is_admin:
-        if current_user.credits < total_files:
+        if current_user.credits < RoutesConfig.CREDITS_PER_ANALYSIS:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "error": "insufficient_credits",
-                    "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de {total_files}.",
+                    "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de {RoutesConfig.CREDITS_PER_ANALYSIS}.",
                     "credits_available": current_user.credits,
-                    "credits_needed": total_files
+                    "credits_needed": RoutesConfig.CREDITS_PER_ANALYSIS,
+                    "files_uploaded": total_files,
+                    "credits_per_analysis": RoutesConfig.CREDITS_PER_ANALYSIS
                 }
             )
     
@@ -1033,23 +1031,18 @@ async def analyze_multiple_endpoint(
         )
     
     # ==========================================
-    # PASSO 7: CONSUMIR CRÉDITOS
+    # PASSO 7: CONSUMIR CRÉDITOS (V5.1 - 1 por análise)
     # ==========================================
     
     if not current_user.is_admin:
-        consumed = 0
-        for file_info in file_data_list:
-            success = deduct_credits(db, current_user, 1, f"Análise múltipla: {file_info['filename']}")
-            if success:
-                consumed += 1
-                db.commit()
-                logger.info(f"💰 [REQ-{request_id}] Crédito consumido: {file_info['filename']}")
-            else:
-                db.rollback()
-                logger.warning(f"⚠️ [REQ-{request_id}] Falha ao consumir crédito: {file_info['filename']}")
-        
-        if consumed < len(file_data_list):
-            logger.warning(f"⚠️ [REQ-{request_id}] Apenas {consumed}/{len(file_data_list)} créditos consumidos")
+        # 🔥 V5.1: Consome APENAS 1 crédito por análise (não por arquivo)
+        success = deduct_credits(db, current_user, RoutesConfig.CREDITS_PER_ANALYSIS, f"Análise múltipla: {len(file_data_list)} arquivo(s)")
+        if success:
+            db.commit()
+            logger.info(f"💰 [REQ-{request_id}] {RoutesConfig.CREDITS_PER_ANALYSIS} crédito consumido para {len(file_data_list)} arquivo(s). Saldo: {current_user.credits}")
+        else:
+            db.rollback()
+            logger.warning(f"⚠️ [REQ-{request_id}] Falha ao consumir crédito para {current_user.email}")
     
     db.refresh(current_user)
     
@@ -1109,7 +1102,9 @@ async def analyze_multiple_endpoint(
                 "chart_data": analysis_result.get('chart_data', {}),
                 "credits": {
                     "remaining": current_user.credits if not current_user.is_admin else "∞",
-                    "is_admin": current_user.is_admin
+                    "is_admin": current_user.is_admin,
+                    "consumed": RoutesConfig.CREDITS_PER_ANALYSIS if not current_user.is_admin else 0,
+                    "credits_per_analysis": RoutesConfig.CREDITS_PER_ANALYSIS
                 },
                 "performance": {
                     "processing_time_ms": round(processing_time_ms, 2)
@@ -1144,7 +1139,9 @@ async def analyze_multiple_endpoint(
         "chart_data": analysis_result.get('chart_data', {}),
         "credits": {
             "remaining": current_user.credits if not current_user.is_admin else "∞",
-            "is_admin": current_user.is_admin
+            "is_admin": current_user.is_admin,
+            "consumed": RoutesConfig.CREDITS_PER_ANALYSIS if not current_user.is_admin else 0,
+            "credits_per_analysis": RoutesConfig.CREDITS_PER_ANALYSIS
         },
         "performance": {
             "processing_time_ms": round(processing_time_ms, 2)
@@ -1384,7 +1381,7 @@ async def get_diagnostics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """🔥 Endpoint de diagnóstico detalhado (apenas admin) V5.0"""
+    """🔥 Endpoint de diagnóstico detalhado (apenas admin) V5.1"""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=403,
@@ -1399,7 +1396,7 @@ async def get_diagnostics(
         "success": True,
         "data": {
             "timestamp": datetime.now().isoformat(),
-            "version": "5.0.0",
+            "version": "5.1.0",
             "services": SERVICES_STATUS,
             "critical_services_ok": CRITICAL_SERVICES_OK,
             "missing_critical": service_factory.get_missing_critical_services(),
@@ -1432,6 +1429,9 @@ async def get_diagnostics(
                 "platform": os.name,
                 "cpu_count": os.cpu_count(),
                 "pid": os.getpid()
+            },
+            "credits_config": {
+                "credits_per_analysis": RoutesConfig.CREDITS_PER_ANALYSIS
             }
         }
     }
@@ -1755,7 +1755,8 @@ async def analyze_multiple_status(
             "rate_limit_per_minute": RoutesConfig.RATE_LIMIT_MULTI_ANALYZE,
             "rate_limit_window_seconds": RoutesConfig.RATE_LIMIT_WINDOW,
             "processing_timeout_seconds": RoutesConfig.PROCESSING_TIMEOUT,
-            "allowed_extensions": list(RoutesConfig.ALLOWED_EXTENSIONS)
+            "allowed_extensions": list(RoutesConfig.ALLOWED_EXTENSIONS),
+            "credits_per_analysis": RoutesConfig.CREDITS_PER_ANALYSIS
         },
         "cache": {
             "size": cache_size,
@@ -1771,7 +1772,7 @@ async def analyze_multiple_status(
 
 
 # ==============================================
-# 🔥 ENDPOINT: DOWNLOAD RELATÓRIO (CORRIGIDO)
+# 🔥🔥🔥 ENDPOINT: DOWNLOAD RELATÓRIO (V5.1 - NÃO CONSUME CRÉDITOS)
 # ==============================================
 
 @router.get("/report/{analysis_id}", response_model=None)
@@ -1782,8 +1783,15 @@ async def download_report_endpoint(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 Baixa relatório de uma análise existente
+    🔥 Baixa relatório de uma análise existente (V5.1)
+    
+    🔥 NÃO CONSUME CRÉDITOS - já foram consumidos no ML
+    🔥 Verifica se o crédito foi consumido antes de liberar
+    🔥 Fallback: se não foi consumido, tenta consumir agora
     """
+    start_time = time.time()
+    
+    # Buscar análise
     analysis = crud.get_analysis(db, analysis_id)
     
     if not analysis:
@@ -1792,8 +1800,140 @@ async def download_report_endpoint(
     if analysis.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
+    if analysis.status == "pending_credit":
+        # 🔥 V5.1: Análise aguardando crédito - tentar consumir agora
+        logger.info(f"📄 [REPORT] Análise {analysis_id} em pending_credit. Tentando consumir crédito...")
+        
+        if current_user.is_admin:
+            # Admin: marcar como consumido
+            analysis.credits_consumed = True
+            analysis.credits_consumed_at = datetime.now()
+            analysis.status = "completed"
+            db.commit()
+            logger.info(f"👑 [REPORT] Admin - análise {analysis_id} marcada como consumida")
+        else:
+            # Usuário normal: tentar consumir crédito
+            if current_user.credits >= 1:
+                try:
+                    result = manage_credits_after_consumption(
+                        db=db,
+                        user=current_user,
+                        amount=1,
+                        description=f"PDF da análise {analysis_id} (fallback)"
+                    )
+                    
+                    if result.get("success"):
+                        db.refresh(current_user)
+                        analysis.credits_consumed = True
+                        analysis.credits_consumed_at = datetime.now()
+                        analysis.credits_consumed_amount = 1
+                        analysis.credits_remaining_after = current_user.credits
+                        analysis.status = "completed"
+                        db.commit()
+                        logger.info(f"💰 [REPORT] Crédito consumido no fallback para análise {analysis_id}")
+                    else:
+                        raise HTTPException(
+                            status_code=402,
+                            detail={
+                                "error": "insufficient_credits",
+                                "message": f"Créditos insuficientes: {result.get('message', 'Erro ao consumir crédito')}",
+                                "credits_available": current_user.credits,
+                                "credits_needed": 1
+                            }
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"❌ [REPORT] Erro ao consumir crédito no fallback: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "error": "credit_consumption_failed",
+                            "message": f"Erro ao consumir crédito: {str(e)}"
+                        }
+                    )
+            else:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "error": "insufficient_credits",
+                        "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de 1.",
+                        "credits_available": current_user.credits,
+                        "credits_needed": 1
+                    }
+                )
+    
     if analysis.status != "completed":
-        raise HTTPException(status_code=400, detail="Análise não concluída")
+        raise HTTPException(
+            status_code=400, 
+            detail={
+                "error": "analysis_not_completed",
+                "message": f"Análise não concluída. Status atual: {analysis.status}"
+            }
+        )
+    
+    # 🔥 V5.1: Verificar se o crédito foi consumido (exceto admin)
+    if not current_user.is_admin:
+        credits_consumed = hasattr(analysis, 'credits_consumed') and analysis.credits_consumed
+        
+        if not credits_consumed:
+            # 🔥 Tentar consumir crédito agora (fallback)
+            logger.warning(f"⚠️ [REPORT] Análise {analysis_id} sem crédito consumido. Tentando consumir agora...")
+            
+            if current_user.credits >= 1:
+                try:
+                    result = manage_credits_after_consumption(
+                        db=db,
+                        user=current_user,
+                        amount=1,
+                        description=f"PDF da análise {analysis_id} (fallback)"
+                    )
+                    
+                    if result.get("success"):
+                        db.refresh(current_user)
+                        analysis.credits_consumed = True
+                        analysis.credits_consumed_at = datetime.now()
+                        analysis.credits_consumed_amount = 1
+                        analysis.credits_remaining_after = current_user.credits
+                        db.commit()
+                        logger.info(f"💰 [REPORT] Crédito consumido no fallback para análise {analysis_id}")
+                    else:
+                        raise HTTPException(
+                            status_code=402,
+                            detail={
+                                "error": "insufficient_credits",
+                                "message": f"Créditos insuficientes: {result.get('message', 'Erro ao consumir crédito')}",
+                                "credits_available": current_user.credits,
+                                "credits_needed": 1
+                            }
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"❌ [REPORT] Erro ao consumir crédito no fallback: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "error": "credit_consumption_failed",
+                            "message": f"Erro ao consumir crédito: {str(e)}"
+                        }
+                    )
+            else:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "error": "insufficient_credits",
+                        "message": f"Créditos insuficientes. Você tem {current_user.credits}, precisa de 1.",
+                        "credits_available": current_user.credits,
+                        "credits_needed": 1
+                    }
+                )
+    
+    # ==========================================
+    # GERAR RELATÓRIO
+    # ==========================================
+    
+    logger.info(f"📄 [REPORT] Gerando relatório para análise {analysis_id} (formato: {format})")
     
     # Construir resultado a partir dos dados salvos
     analysis_result = {
@@ -1823,6 +1963,18 @@ async def download_report_endpoint(
         format=format
     )
     
+    elapsed = (time.time() - start_time) * 1000
+    track_endpoint_metrics("/report", elapsed, True)
+    
+    credits_info = {
+        "consumed": analysis.credits_consumed if hasattr(analysis, 'credits_consumed') else False,
+        "consumed_at": analysis.credits_consumed_at.isoformat() if hasattr(analysis, 'credits_consumed_at') and analysis.credits_consumed_at else None,
+        "remaining_after": analysis.credits_remaining_after if hasattr(analysis, 'credits_remaining_after') else None
+    }
+    
+    logger.info(f"✅ [REPORT] Relatório gerado para análise {analysis_id} em {elapsed:.0f}ms")
+    logger.info(f"💰 [REPORT] Status créditos: consumido={credits_info['consumed']}")
+    
     return Response(
         content=report_data["content"],
         media_type=report_data["content_type"],
@@ -1830,7 +1982,10 @@ async def download_report_endpoint(
             "Content-Disposition": f"attachment; filename={report_data['filename']}",
             "Access-Control-Expose-Headers": "Content-Disposition",
             "X-Analysis-ID": str(analysis_id),
-            "X-User-ID": str(current_user.id)
+            "X-User-ID": str(current_user.id),
+            "X-Credits-Consumed": str(credits_info["consumed"]),
+            "X-Report-Format": format,
+            "X-Response-Time-MS": str(round(elapsed, 2))
         }
     )
 
@@ -1870,12 +2025,14 @@ async def clear_cache_endpoint(
 # ==============================================
 
 print("=" * 80)
-print("✅ routes.py v5.0 carregado com CORREÇÕES e MELHORIAS:")
-print("   🔥 CORRIGIDO: request não definido em /analyze-multiple")
-print("   🔥 CORRIGIDO: client_ip quando request é None")
-print("   🔥 CORRIGIDO: Importação duplicada de schemas")
-print("   🔥 CORRIGIDO: Verificação de disponibilidade do Gemini")
-print("   🔥 CORRIGIDO: Tratamento de erros em /analyze-multiple")
+print("✅ routes.py v5.1 carregado com CORREÇÕES e MELHORIAS:")
+print("   🔥 CORRIGIDO: /report/{analysis_id} NÃO CONSUME CRÉDITOS")
+print("   🔥 CORRIGIDO: Verificação de credits_consumed antes de liberar PDF")
+print("   🔥 CORRIGIDO: Fallback para consumir crédito se não foi consumido")
+print("   🔥 ADICIONADO: Logs detalhados de status de créditos")
+print("   🔥 MANTIDO: request não definido em /analyze-multiple")
+print("   🔥 MANTIDO: client_ip quando request é None")
+print("   🔥 MANTIDO: Verificação de disponibilidade do Gemini")
 print("   🚀 Health check avançado com métricas do Gemini")
 print("   🚀 Diagnóstico auto-corretivo")
 print("   🚀 Cache preditivo")

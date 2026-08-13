@@ -1,13 +1,22 @@
-# backend/models.py - VERSÃO 2.3 COM CONTROLE DE CRÉDITOS PREMIUM
+# backend/models.py - VERSÃO 2.4 COM CAMPOS DE CRÉDITO PARA ANALYSIS
 
 """
 🔥 Models - AutoAnalytics
-Versão: 2.3 - Com suporte a controle de créditos premium
+Versão: 2.4 - Com campos de crédito para Analysis
 
-🔥 MELHORIAS v2.3:
-   - ✅ ADICIONADO: last_bonus_at - Controle de último bônus recebido
-   - ✅ ADICIONADO: bonus_count - Total de bônus recebidos
-   - ✅ ADICIONADO: Métodos para gerenciamento de bônus
+🔥 MELHORIAS v2.4:
+   - ✅ ADICIONADO: credits_consumed - Indica se o crédito foi consumido
+   - ✅ ADICIONADO: credits_consumed_at - Data do consumo do crédito
+   - ✅ ADICIONADO: credits_consumed_amount - Quantidade consumida (1)
+   - ✅ ADICIONADO: credits_remaining_after - Saldo após consumo
+   - ✅ ADICIONADO: credits_error - Erro no consumo de crédito
+   - ✅ ADICIONADO: credits_bonus_granted - Se bônus foi concedido
+   - ✅ ADICIONADO: credits_bonus_amount - Quantidade de bônus
+
+🔥 MANTIDO v2.3:
+   - last_bonus_at - Controle de último bônus recebido
+   - bonus_count - Total de bônus recebidos
+   - Métodos para gerenciamento de bônus
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
@@ -279,7 +288,7 @@ class DailyCreditLog(Base):
 
 
 # ==============================================
-# 🔥🔥🔥 ANALYSIS - VERSÃO 2.2 COM CHART_DATA
+# 🔥🔥🔥 ANALYSIS - VERSÃO 2.4 COM CRÉDITOS
 # ==============================================
                
 class Analysis(Base):
@@ -343,11 +352,23 @@ class Analysis(Base):
     chart_data = Column(JSON, nullable=True, comment="Dados para renderização de gráficos")
     
     # ==========================================
-    # 🔥🔥🔥 NOVO: PROGRESSO PARA POLLING
+    # 🔥 PROGRESSO PARA POLLING
     # ==========================================
     
     progress = Column(Integer, default=0, comment="Progresso do processamento (0-100)")
     progress_message = Column(String(255), default="Aguardando início...", comment="Mensagem de progresso")
+    
+    # ==========================================
+    # 🔥🔥🔥 CAMPOS DE CRÉDITO (V2.4 - NOVOS)
+    # ==========================================
+    
+    credits_consumed = Column(Boolean, default=False, comment="Indica se o crédito foi consumido")
+    credits_consumed_at = Column(DateTime, nullable=True, comment="Data do consumo do crédito")
+    credits_consumed_amount = Column(Integer, default=0, comment="Quantidade consumida (1)")
+    credits_remaining_after = Column(Integer, nullable=True, comment="Saldo após consumo")
+    credits_error = Column(String(255), nullable=True, comment="Erro no consumo de crédito")
+    credits_bonus_granted = Column(Boolean, default=False, comment="Se bônus foi concedido")
+    credits_bonus_amount = Column(Integer, default=0, comment="Quantidade de bônus")
     
     # ==========================================
     # RESULTADOS
@@ -356,6 +377,7 @@ class Analysis(Base):
     predictions_summary = Column(JSON, nullable=True, comment="Resumo das predições")
     insights = Column(JSON, nullable=True, comment="Insights gerados")
     recommendations = Column(JSON, nullable=True, comment="Recomendações geradas")
+    executive_score = Column(JSON, nullable=True, comment="Score executivo")
     
     # ===== MÉTODOS =====
     
@@ -402,6 +424,34 @@ class Analysis(Base):
             self.recommendations = results['recommendations']
         if 'chart_data' in results:
             self.chart_data = results['chart_data']
+        if 'executive_score' in results:
+            self.executive_score = results['executive_score']
+    
+    # 🔥 NOVOS MÉTODOS PARA CRÉDITOS
+    def mark_credit_consumed(self, amount: int = 1, remaining: int = None):
+        """Marca que o crédito foi consumido"""
+        self.credits_consumed = True
+        self.credits_consumed_at = _now_brasil()
+        self.credits_consumed_amount = amount
+        if remaining is not None:
+            self.credits_remaining_after = remaining
+    
+    def mark_credit_error(self, error: str):
+        """Marca erro no consumo de crédito"""
+        self.credits_error = error
+    
+    def mark_bonus_granted(self, amount: int = 1):
+        """Marca que bônus foi concedido"""
+        self.credits_bonus_granted = True
+        self.credits_bonus_amount = amount
+    
+    def has_credit_consumed(self) -> bool:
+        """Verifica se o crédito já foi consumido"""
+        return self.credits_consumed
+    
+    def is_pending_credit(self) -> bool:
+        """Verifica se está aguardando crédito"""
+        return self.status == "pending_credit" or (not self.credits_consumed and self.status == "completed")
     
     def to_dict(self):
         return {
@@ -435,6 +485,15 @@ class Analysis(Base):
             "predictions_summary": self.predictions_summary,
             "insights": self.insights,
             "recommendations": self.recommendations,
+            "executive_score": self.executive_score,
+            # 🔥 CAMPOS DE CRÉDITO
+            "credits_consumed": self.credits_consumed,
+            "credits_consumed_at": self.credits_consumed_at.isoformat() if self.credits_consumed_at else None,
+            "credits_consumed_amount": self.credits_consumed_amount,
+            "credits_remaining_after": self.credits_remaining_after,
+            "credits_error": self.credits_error,
+            "credits_bonus_granted": self.credits_bonus_granted,
+            "credits_bonus_amount": self.credits_bonus_amount,
         }
 
 
@@ -496,17 +555,23 @@ class BlacklistedToken(Base):
 
 
 print("=" * 70)
-print("🔥 models.py v2.3 carregado - COM CONTROLE DE CRÉDITOS PREMIUM!")
+print("🔥 models.py v2.4 carregado - COM CAMPOS DE CRÉDITO PARA ANALYSIS!")
 print("   ✅ ANÁLISES:")
 print("      - Analysis com campos PoW")
 print("      - Analysis com file_size")
 print("      - Analysis com métricas de performance")
 print("      - Analysis com chart_data para gráficos")
-print("   ✅ USUÁRIOS:")
+print("      - Analysis com progress para polling")
+print("   ✅ CRÉDITOS (NOVO v2.4):")
+print("      - credits_consumed: Indica se o crédito foi consumido")
+print("      - credits_consumed_at: Data do consumo")
+print("      - credits_consumed_amount: Quantidade consumida (1)")
+print("      - credits_remaining_after: Saldo após consumo")
+print("      - credits_error: Erro no consumo")
+print("      - credits_bonus_granted: Bônus concedido")
+print("      - credits_bonus_amount: Quantidade de bônus")
+print("   ✅ USUÁRIOS (v2.3):")
 print("      - last_bonus_at: controle de bônus premium")
 print("      - bonus_count: total de bônus recebidos")
-print("      - has_received_bonus_today()")
-print("      - mark_bonus_received()")
-print("      - can_receive_bonus_today()")
 print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
 print("=" * 70)
