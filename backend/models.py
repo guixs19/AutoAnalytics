@@ -1,8 +1,11 @@
-# backend/models.py - VERSÃO 2.5 COM CONTROLE DE CRÉDITOS INICIAIS
+# backend/models.py - VERSÃO 2.6 COM CREDITS_NEEDED
 
 """
 🔥 Models - AutoAnalytics
-Versão: 2.5 - Com controle de créditos iniciais
+Versão: 2.6 - Com campo credits_needed
+
+🔥 NOVIDADES v2.6:
+   - ✅ ADICIONADO: credits_needed - Créditos necessários para liberar a análise
 
 🔥 NOVIDADES v2.5:
    - ✅ ADICIONADO: received_initial_credits - Controle de créditos iniciais
@@ -304,7 +307,7 @@ class DailyCreditLog(Base):
 
 
 # ==============================================
-# 🔥🔥🔥 ANALYSIS - VERSÃO 2.4 COM CRÉDITOS
+# 🔥🔥🔥 ANALYSIS - VERSÃO 2.6 COM CREDITS_NEEDED
 # ==============================================
                
 class Analysis(Base):
@@ -375,9 +378,13 @@ class Analysis(Base):
     progress_message = Column(String(255), default="Aguardando início...", comment="Mensagem de progresso")
     
     # ==========================================
-    # 🔥🔥🔥 CAMPOS DE CRÉDITO (V2.4 - NOVOS)
+    # 🔥🔥🔥 CAMPOS DE CRÉDITO (V2.6 - NOVOS)
     # ==========================================
     
+    # 🔥 V2.6: Créditos necessários para liberar a análise
+    credits_needed = Column(Integer, default=1, comment="Créditos necessários para liberar a análise")
+    
+    # V2.4: Controle de consumo
     credits_consumed = Column(Boolean, default=False, comment="Indica se o crédito foi consumido")
     credits_consumed_at = Column(DateTime, nullable=True, comment="Data do consumo do crédito")
     credits_consumed_amount = Column(Integer, default=0, comment="Quantidade consumida (1)")
@@ -469,6 +476,24 @@ class Analysis(Base):
         """Verifica se está aguardando crédito"""
         return self.status == "pending_credit" or (not self.credits_consumed and self.status == "completed")
     
+    def needs_credits(self) -> bool:
+        """Verifica se a análise precisa de créditos para ser liberada"""
+        return not self.credits_consumed and self.status in ["completed", "pending_credit"]
+    
+    def get_credits_status(self) -> Dict[str, Any]:
+        """Retorna o status completo dos créditos da análise"""
+        return {
+            "needed": self.credits_needed or 1,
+            "consumed": self.credits_consumed,
+            "consumed_at": self.credits_consumed_at.isoformat() if self.credits_consumed_at else None,
+            "amount_consumed": self.credits_consumed_amount,
+            "remaining_after": self.credits_remaining_after,
+            "error": self.credits_error,
+            "bonus_granted": self.credits_bonus_granted,
+            "bonus_amount": self.credits_bonus_amount,
+            "is_pending": self.is_pending_credit()
+        }
+    
     def to_dict(self):
         return {
             "id": self.id,
@@ -502,7 +527,8 @@ class Analysis(Base):
             "insights": self.insights,
             "recommendations": self.recommendations,
             "executive_score": self.executive_score,
-            # 🔥 CAMPOS DE CRÉDITO
+            # 🔥 CAMPOS DE CRÉDITO (V2.6)
+            "credits_needed": self.credits_needed,
             "credits_consumed": self.credits_consumed,
             "credits_consumed_at": self.credits_consumed_at.isoformat() if self.credits_consumed_at else None,
             "credits_consumed_amount": self.credits_consumed_amount,
@@ -510,6 +536,7 @@ class Analysis(Base):
             "credits_error": self.credits_error,
             "credits_bonus_granted": self.credits_bonus_granted,
             "credits_bonus_amount": self.credits_bonus_amount,
+            "is_pending_credit": self.is_pending_credit()
         }
 
 
@@ -571,8 +598,12 @@ class BlacklistedToken(Base):
 
 
 print("=" * 70)
-print("🔥 models.py v2.5 carregado - CONTROLE DE CRÉDITOS INICIAIS!")
-print("   ✅ NOVO CAMPO:")
+print("🔥 models.py v2.6 carregado - COM CREDITS_NEEDED!")
+print("   ✅ NOVO CAMPO (v2.6):")
+print("      - credits_needed: Créditos necessários para liberar a análise")
+print("      - needs_credits(): Verifica se precisa de créditos")
+print("      - get_credits_status(): Status completo dos créditos")
+print("   ✅ NOVO CAMPO (v2.5):")
 print("      - received_initial_credits: Controle de créditos iniciais")
 print("      - has_received_initial_credits(): Verifica se já recebeu")
 print("      - mark_initial_credits_received(): Marca como recebido")
