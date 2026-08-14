@@ -1,5 +1,12 @@
 # backend/models.py - VERSÃO 2.6 COM CREDITS_NEEDED
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date, BigInteger
+from sqlalchemy.orm import relationship
+from datetime import datetime, date, timedelta, timezone
+import enum
+from typing import Dict, Any, Optional, List, Union  # 🔥 ADICIONAR ESTA LINHA
 
+from backend.database import Base
+from backend.security import hasher
 """
 🔥 Models - AutoAnalytics
 Versão: 2.6 - Com campo credits_needed
