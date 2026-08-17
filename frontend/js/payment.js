@@ -1,20 +1,20 @@
-// payment.js - VERSÃO 7.1 (INTEGRAÇÃO TOTAL COM APP.JS)
+// payment.js - VERSÃO 7.2 (CORREÇÃO 422 + MELHORIAS INTELIGENTES)
 // ==============================================
-// 🔥 MELHORIAS V7.1:
-// 1. ✅ REMOVIDO: Fallback do EventBus (usa apenas window.EventBus)
-// 2. ✅ REMOVIDO: Fallback do AppUtils (usa apenas window.AppUtils)
-// 3. ✅ REMOVIDO: Fallback do fetchWithAuth (usa apenas window.fetchWithAuth)
-// 4. ✅ ADICIONADO: Sistema de espera inteligente (aguarda app.js)
-// 5. ✅ ADICIONADO: Validação de dependências no carregamento
-// 6. ✅ MELHORADO: Logs com nível de severidade
-// 7. ✅ CORRIGIDO: Inicialização só após app:ready
-// 8. ✅ OTIMIZADO: Uso de window.__APP_STATE como fonte única
+// 🔥 MELHORIAS V7.2:
+// 1. ✅ CORRIGIDO: Erro 422 - campo 'plan' → 'plan_id'
+// 2. ✅ ADICIONADO: Validação de CPF com algoritmo real (DV)
+// 3. ✅ ADICIONADO: Sistema de retry inteligente com backoff exponencial
+// 4. ✅ ADICIONADO: Cache de status de pagamento
+// 5. ✅ ADICIONADO: Debounce para evitar cliques duplicados
+// 6. ✅ ADICIONADO: Logging estruturado com níveis
+// 7. ✅ MELHORADO: Tratamento de erros com mensagens amigáveis
+// 8. ✅ OTIMIZADO: Redução de chamadas de rede desnecessárias
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 [payment.js v7.1] Carregando...');
+    console.log('🚀 [payment.js v7.2] Carregando...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -43,7 +43,239 @@
         // 🔥 TIMEOUTS
         WAIT_FOR_APP_TIMEOUT: 10000,
         WAIT_FOR_APP_INTERVAL: 200,
-        MAX_WAIT_ATTEMPTS: 50
+        MAX_WAIT_ATTEMPTS: 50,
+
+        // 🔥 NOVAS CONFIGURAÇÕES V7.2
+        MAX_RETRY_ATTEMPTS: 3,
+        RETRY_BASE_DELAY: 1000,
+        RETRY_MAX_DELAY: 10000,
+        REQUEST_TIMEOUT: 30000,
+        DEBOUNCE_DELAY: 500,
+        STATUS_CACHE_TTL: 3000
+    };
+
+    // ==============================================
+    // 🔥 SISTEMA DE LOGGER ESTRUTURADO
+    // ==============================================
+
+    const Logger = {
+        _levels: {
+            DEBUG: 0,
+            INFO: 1,
+            WARN: 2,
+            ERROR: 3
+        },
+        _level: 0, // DEBUG por padrão
+
+        setLevel: function(level) {
+            if (this._levels[level] !== undefined) {
+                this._level = this._levels[level];
+            }
+        },
+
+        _log: function(level, module, message, data) {
+            if (this._levels[level] < this._level) return;
+            
+            const timestamp = new Date().toISOString();
+            const prefix = `[${timestamp}] [${level}] [${module}]`;
+            
+            if (data) {
+                console.log(`${prefix} ${message}`, data);
+            } else {
+                console.log(`${prefix} ${message}`);
+            }
+        },
+
+        debug: function(module, message, data) {
+            this._log('DEBUG', module, message, data);
+        },
+
+        info: function(module, message, data) {
+            this._log('INFO', module, message, data);
+        },
+
+        warn: function(module, message, data) {
+            this._log('WARN', module, message, data);
+        },
+
+        error: function(module, message, data) {
+            this._log('ERROR', module, message, data);
+        }
+    };
+
+    // ==============================================
+    // 🔥 VALIDADOR DE CPF (COM ALGORITMO DV)
+    // ==============================================
+
+    const CpfValidator = {
+        /**
+         * Valida CPF com algoritmo de dígitos verificadores
+         */
+        validate: function(cpf) {
+            // Remove caracteres não numéricos
+            const cleaned = cpf.replace(/\D/g, '');
+            
+            // Verifica tamanho
+            if (cleaned.length !== 11) {
+                return { valid: false, message: 'CPF deve conter 11 dígitos' };
+            }
+            
+            // Verifica se todos os dígitos são iguais (CPF inválido)
+            if (/^(\d)\1{10}$/.test(cleaned)) {
+                return { valid: false, message: 'CPF inválido (dígitos repetidos)' };
+            }
+            
+            // Calcula primeiro dígito verificador
+            let sum = 0;
+            for (let i = 0; i < 9; i++) {
+                sum += parseInt(cleaned.charAt(i)) * (10 - i);
+            }
+            let remainder = 11 - (sum % 11);
+            let firstDigit = remainder >= 10 ? 0 : remainder;
+            
+            if (parseInt(cleaned.charAt(9)) !== firstDigit) {
+                return { valid: false, message: 'CPF inválido (primeiro dígito verificador)' };
+            }
+            
+            // Calcula segundo dígito verificador
+            sum = 0;
+            for (let i = 0; i < 10; i++) {
+                sum += parseInt(cleaned.charAt(i)) * (11 - i);
+            }
+            remainder = 11 - (sum % 11);
+            let secondDigit = remainder >= 10 ? 0 : remainder;
+            
+            if (parseInt(cleaned.charAt(10)) !== secondDigit) {
+                return { valid: false, message: 'CPF inválido (segundo dígito verificador)' };
+            }
+            
+            return { valid: true, cleaned: cleaned };
+        },
+
+        /**
+         * Formata CPF para exibição
+         */
+        format: function(cpf) {
+            const cleaned = cpf.replace(/\D/g, '');
+            if (cleaned.length !== 11) return cpf;
+            return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+        },
+
+        /**
+         * Máscara para input
+         */
+        mask: function(value) {
+            let cleaned = value.replace(/\D/g, '');
+            if (cleaned.length > 11) cleaned = cleaned.slice(0, 11);
+            
+            if (cleaned.length > 9) {
+                return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+            } else if (cleaned.length > 6) {
+                return cleaned.replace(/^(\d{3})(\d{3})(\d{0,3})$/, '$1.$2.$3');
+            } else if (cleaned.length > 3) {
+                return cleaned.replace(/^(\d{3})(\d{0,3})$/, '$1.$2');
+            }
+            return cleaned;
+        }
+    };
+
+    // ==============================================
+    // 🔥 SISTEMA DE RETRY COM BACKOFF EXPONENCIAL
+    // ==============================================
+
+    const RetrySystem = {
+        /**
+         * Executa uma função com retry automático
+         */
+        execute: async function(fn, options = {}) {
+            const {
+                maxAttempts = CONFIG.MAX_RETRY_ATTEMPTS,
+                baseDelay = CONFIG.RETRY_BASE_DELAY,
+                maxDelay = CONFIG.RETRY_MAX_DELAY,
+                onRetry = null,
+                onError = null,
+                context = 'RetrySystem'
+            } = options;
+
+            let lastError = null;
+            
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    Logger.debug(context, `Tentativa ${attempt}/${maxAttempts}`);
+                    const result = await fn(attempt);
+                    if (attempt > 1) {
+                        Logger.info(context, `Sucesso na tentativa ${attempt}`);
+                    }
+                    return result;
+                } catch (error) {
+                    lastError = error;
+                    
+                    if (attempt < maxAttempts) {
+                        // Calcula delay com backoff exponencial + jitter
+                        const delay = Math.min(
+                            baseDelay * Math.pow(2, attempt - 1) + Math.random() * 200,
+                            maxDelay
+                        );
+                        
+                        Logger.warn(context, `Falha na tentativa ${attempt}: ${error.message}`);
+                        
+                        if (onRetry) {
+                            await onRetry(attempt, error, delay);
+                        }
+                        
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        if (onError) {
+                            await onError(error);
+                        }
+                        Logger.error(context, `Todas as ${maxAttempts} tentativas falharam`);
+                    }
+                }
+            }
+            
+            throw lastError || new Error('Todas as tentativas falharam');
+        }
+    };
+
+    // ==============================================
+    // 🔥 SISTEMA DE DEBOUNCE
+    // ==============================================
+
+    const DebounceSystem = {
+        _timeouts: {},
+        
+        /**
+         * Executa função com debounce
+         */
+        debounce: function(key, fn, delay = CONFIG.DEBOUNCE_DELAY) {
+            if (this._timeouts[key]) {
+                clearTimeout(this._timeouts[key]);
+                Logger.debug('DebounceSystem', `Debounce cancelado para ${key}`);
+            }
+            
+            this._timeouts[key] = setTimeout(() => {
+                delete this._timeouts[key];
+                fn();
+            }, delay);
+        },
+        
+        /**
+         * Verifica se uma ação está em debounce
+         */
+        isPending: function(key) {
+            return !!this._timeouts[key];
+        },
+        
+        /**
+         * Cancela debounce
+         */
+        cancel: function(key) {
+            if (this._timeouts[key]) {
+                clearTimeout(this._timeouts[key]);
+                delete this._timeouts[key];
+                Logger.debug('DebounceSystem', `Debounce cancelado para ${key}`);
+            }
+        }
     };
 
     // ==============================================
@@ -56,21 +288,16 @@
         _interval: CONFIG.WAIT_FOR_APP_INTERVAL,
         _resolved: false,
 
-        /**
-         * Aguarda o app.js ficar pronto
-         * @returns {Promise<boolean>} - true se app pronto, false se timeout
-         */
         waitForApp: function() {
             return new Promise((resolve) => {
-                // Verifica se já está pronto
                 if (this._isAppReady()) {
-                    console.log('✅ [payment.js] app.js já está pronto');
+                    Logger.info('Waiter', 'app.js já está pronto');
                     this._resolved = true;
                     resolve(true);
                     return;
                 }
 
-                console.log('⏳ [payment.js] Aguardando app.js...');
+                Logger.info('Waiter', 'Aguardando app.js...');
 
                 const startTime = Date.now();
                 this._attempts = 0;
@@ -79,20 +306,18 @@
                     this._attempts++;
 
                     if (this._isAppReady()) {
-                        console.log(`✅ [payment.js] app.js pronto após ${this._attempts} tentativas`);
+                        Logger.info('Waiter', `app.js pronto após ${this._attempts} tentativas`);
                         this._resolved = true;
                         resolve(true);
                         return;
                     }
 
-                    // Timeout
                     if (Date.now() - startTime > CONFIG.WAIT_FOR_APP_TIMEOUT) {
-                        console.error('❌ [payment.js] Timeout aguardando app.js');
+                        Logger.error('Waiter', 'Timeout aguardando app.js');
                         resolve(false);
                         return;
                     }
 
-                    // Próxima verificação
                     setTimeout(check, this._interval);
                 };
 
@@ -101,37 +326,20 @@
         },
 
         _isAppReady: function() {
-            // 1. Verifica pelo flag do app.js
-            if (window._appReadyFired === true) {
-                return true;
-            }
-
-            // 2. Verifica pelo estado do App
+            if (window._appReadyFired === true) return true;
+            
             if (window.App && typeof window.App.isReady === 'function') {
                 try {
-                    if (window.App.isReady()) {
-                        return true;
-                    }
+                    if (window.App.isReady()) return true;
                 } catch (e) { /* ignora */ }
             }
 
-            // 3. Verifica pelo estado global
-            if (window.__APP_STATE && window.__APP_STATE.isAppReady === true) {
-                return true;
-            }
-
-            // 4. Verifica dependências essenciais
-            if (window.EventBus && window.AppUtils && window.fetchWithAuth) {
-                // Se tem as dependências, considera pronto
-                return true;
-            }
+            if (window.__APP_STATE && window.__APP_STATE.isAppReady === true) return true;
+            if (window.EventBus && window.AppUtils && window.fetchWithAuth) return true;
 
             return false;
         },
 
-        /**
-         * Obtém as dependências do app.js, com validação
-         */
         getDependencies: function() {
             return {
                 EventBus: window.EventBus,
@@ -143,15 +351,12 @@
             };
         },
 
-        /**
-         * Valida se todas as dependências estão disponíveis
-         */
         validateDependencies: function(deps) {
             const required = ['EventBus', 'AppUtils', 'fetchWithAuth'];
             const missing = required.filter(key => !deps[key]);
 
             if (missing.length > 0) {
-                console.warn(`⚠️ [payment.js] Dependências faltando: ${missing.join(', ')}`);
+                Logger.warn('Waiter', `Dependências faltando: ${missing.join(', ')}`);
                 return false;
             }
 
@@ -160,7 +365,7 @@
     };
 
     // ==============================================
-    // 🔥 SISTEMA DE VAGAS (REFATORADO)
+    // 🔥 SISTEMA DE VAGAS (MELHORADO)
     // ==============================================
 
     const VagasSystem = {
@@ -171,34 +376,31 @@
         _isUrgent: false,
         _deps: null,
         _initialized: false,
+        _updatePromise: null,
 
-        /**
-         * Inicializa o sistema de vagas
-         */
         init: function(deps) {
             if (this._initialized) return;
 
             this._deps = deps;
             this._initialized = true;
 
-            console.log('🎯 [VagasSystem] Inicializando...');
+            Logger.info('VagasSystem', 'Inicializando...');
 
-            // 🔥 Primeira atualização
             this.updateVagas();
 
-            // 🔥 Inicia polling
             this._startPolling();
 
-            // 🔥 Eventos que disparam atualização
             const events = ['payment:completed', 'premiumStatusUpdated', 'app:state_changed'];
             events.forEach(eventName => {
                 document.addEventListener(eventName, () => {
-                    console.log(`🔄 [VagasSystem] Evento ${eventName} - atualizando`);
-                    setTimeout(() => this.updateVagas(true), 1000);
+                    Logger.debug('VagasSystem', `Evento ${eventName} - atualizando`);
+                    DebounceSystem.debounce('vagas_update', () => {
+                        this.updateVagas(true);
+                    }, 1000);
                 });
             });
 
-            console.log('✅ [VagasSystem] Inicializado com sucesso');
+            Logger.info('VagasSystem', 'Inicializado com sucesso');
         },
 
         _startPolling: function() {
@@ -214,7 +416,7 @@
                 this.updateVagas();
             }, interval);
 
-            console.log(`⏰ [VagasSystem] Polling: ${interval/1000}s`);
+            Logger.debug('VagasSystem', `Polling: ${interval/1000}s`);
         },
 
         _adjustPolling: function(remaining) {
@@ -222,16 +424,19 @@
             this._isUrgent = remaining <= CONFIG.VAGAS_URGENT_THRESHOLD && remaining > 0;
 
             if (wasUrgent !== this._isUrgent) {
-                console.log(`🔄 [VagasSystem] Ajustando polling: ${this._isUrgent ? 'URGENTE (5s)' : 'NORMAL (30s)'}`);
+                Logger.info('VagasSystem', 
+                    `Ajustando polling: ${this._isUrgent ? 'URGENTE (5s)' : 'NORMAL (30s)'}`
+                );
                 this._startPolling();
             }
         },
 
-        /**
-         * Atualiza dados das vagas
-         */
         updateVagas: async function(force = false) {
-            if (this._isUpdating) return;
+            // Evita múltiplas chamadas simultâneas
+            if (this._isUpdating) {
+                if (this._updatePromise) return this._updatePromise;
+                return null;
+            }
 
             const now = Date.now();
             if (!force && (now - this._lastUpdate) < CONFIG.VAGAS_CACHE_TTL) {
@@ -239,28 +444,38 @@
             }
 
             this._isUpdating = true;
+            this._updatePromise = this._doUpdate(force);
+            
+            try {
+                const result = await this._updatePromise;
+                return result;
+            } finally {
+                this._isUpdating = false;
+                this._updatePromise = null;
+            }
+        },
 
+        _doUpdate: async function(force) {
             try {
                 const response = await this._deps.fetchWithAuth('/api/payments/promotion-status');
                 
                 if (!response) {
-                    console.warn('⚠️ [VagasSystem] Sem resposta da API');
+                    Logger.warn('VagasSystem', 'Sem resposta da API');
                     return null;
                 }
 
                 if (!response.ok) {
-                    console.warn(`⚠️ [VagasSystem] API retornou ${response.status}`);
+                    Logger.warn('VagasSystem', `API retornou ${response.status}`);
                     return null;
                 }
 
                 const data = await response.json();
                 this._currentData = data;
-                this._lastUpdate = now;
+                this._lastUpdate = Date.now();
 
                 this._adjustPolling(data.remaining_slots || 0);
                 this._updateUI(data);
 
-                // 🔥 Dispara evento via EventBus do app.js
                 if (this._deps.EventBus) {
                     this._deps.EventBus.emit('vagas:updated', data);
                 }
@@ -269,23 +484,17 @@
                 return data;
 
             } catch (error) {
-                console.error('❌ [VagasSystem] Erro ao atualizar:', error);
+                Logger.error('VagasSystem', 'Erro ao atualizar:', error);
                 return null;
-            } finally {
-                this._isUpdating = false;
             }
         },
 
-        /**
-         * Atualiza a UI com os dados das vagas
-         */
         _updateUI: function(data) {
             const remaining = data.remaining_slots || 0;
             const total = data.total_slots || CONFIG.TOTAL_PROMOTIONAL_SLOTS;
             const isSoldOut = remaining <= 0;
             const isUrgent = remaining <= CONFIG.VAGAS_URGENT_THRESHOLD && remaining > 0;
 
-            // 🔥 Elementos da UI
             const elements = {
                 vagasRestantes: document.getElementById('vagasRestantes'),
                 vagasTotal: document.getElementById('vagasTotal'),
@@ -300,7 +509,7 @@
                 planBadgeText: document.getElementById('planBadgeText')
             };
 
-            // 1. Número de vagas com animação
+            // Atualiza elementos
             if (elements.vagasRestantes) {
                 const oldValue = parseInt(elements.vagasRestantes.textContent) || 0;
                 elements.vagasRestantes.textContent = remaining;
@@ -314,12 +523,10 @@
                 }
             }
 
-            // 2. Total
             if (elements.vagasTotal) {
                 elements.vagasTotal.textContent = total;
             }
 
-            // 3. Barra de progresso
             if (elements.vagasProgress) {
                 const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
                 elements.vagasProgress.style.width = `${Math.min(100, percent)}%`;
@@ -335,7 +542,6 @@
                     : 'none';
             }
 
-            // 4. Alertas
             if (elements.vagasUrgentAlert && elements.vagasUrgentCount) {
                 elements.vagasUrgentAlert.style.display = isUrgent ? 'block' : 'none';
                 if (isUrgent) elements.vagasUrgentCount.textContent = remaining;
@@ -345,7 +551,6 @@
                 elements.vagasSoldOutAlert.style.display = isSoldOut ? 'block' : 'none';
             }
 
-            // 5. Preço e botão
             if (isSoldOut) {
                 if (elements.currentPrice) elements.currentPrice.textContent = '149.90';
                 if (elements.oldPrice) elements.oldPrice.style.display = 'none';
@@ -373,7 +578,6 @@
                 }
             }
 
-            // 6. Badge
             if (elements.planBadgeText) {
                 if (isSoldOut) {
                     elements.planBadgeText.textContent = '❌ PROMOÇÃO ENCERRADA';
@@ -384,7 +588,6 @@
                 }
             }
 
-            // 7. Evento para outros módulos
             window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
                 detail: { remaining, total, isSoldOut, isUrgent }
             }));
@@ -413,10 +616,9 @@
     // ==============================================
 
     let deps = null;
+    let _statusCache = {};
+    let _isCreatingPayment = false;
 
-    /**
-     * Obtém status de autenticação do app.js
-     */
     function getAuthStatus() {
         if (window.__APP_STATE) {
             const s = window.__APP_STATE;
@@ -446,12 +648,9 @@
         };
     }
 
-    /**
-     * Carrega status premium
-     */
     async function loadPremiumStatus() {
         if (!deps || !deps.fetchWithAuth) {
-            console.warn('⚠️ [payment.js] fetchWithAuth não disponível');
+            Logger.warn('payment.js', 'fetchWithAuth não disponível');
             return null;
         }
 
@@ -480,14 +679,11 @@
                 return data;
             }
         } catch (error) {
-            console.error('❌ [payment.js] Erro ao carregar status premium:', error);
+            Logger.error('payment.js', 'Erro ao carregar status premium:', error);
         }
         return null;
     }
 
-    /**
-     * Recebe crédito diário
-     */
     async function receiveDailyCredit() {
         if (!deps) return null;
 
@@ -509,15 +705,12 @@
                 }
             }
         } catch (error) {
-            console.error('❌ [payment.js] Erro ao receber crédito:', error);
+            Logger.error('payment.js', 'Erro ao receber crédito:', error);
             deps?.AppUtils?.showNotification('Erro de conexão. Tente novamente.', 'error');
         }
         return null;
     }
 
-    /**
-     * Atualiza exibição de créditos
-     */
     function updateCreditsDisplay(credits, isPremium, isAdmin) {
         const appState = window.__APP_STATE || {};
         const _credits = credits !== undefined ? credits : appState.credits || 0;
@@ -541,12 +734,13 @@
         }));
     }
 
-    /**
-     * Abre modal CPF
-     */
+    // ==============================================
+    // 🔥 CORREÇÃO PRINCIPAL: MODAL CPF MELHORADO
+    // ==============================================
+
     function openCpfModal(planId) {
         if (!deps) {
-            console.warn('⚠️ [payment.js] Dependências não carregadas');
+            Logger.warn('payment.js', 'Dependências não carregadas');
             return;
         }
 
@@ -563,6 +757,12 @@
             return;
         }
 
+        // Verifica se já está processando
+        if (_isCreatingPayment) {
+            deps.AppUtils.showNotification('⏳ Aguarde o processamento atual...', 'warning');
+            return;
+        }
+
         let cpfModal = document.getElementById('cpfModal');
         if (!cpfModal) {
             cpfModal = document.createElement('div');
@@ -572,7 +772,6 @@
             document.body.appendChild(cpfModal);
         }
 
-        // 🔥 Usa template se disponível
         const template = document.getElementById('cpfModalTemplate');
         if (template) {
             const clone = template.content.cloneNode(true);
@@ -587,7 +786,7 @@
         try {
             new bootstrap.Modal(cpfModal).show();
         } catch (e) {
-            console.warn('⚠️ [payment.js] Bootstrap Modal não disponível:', e);
+            Logger.warn('payment.js', 'Bootstrap Modal não disponível:', e);
             cpfModal.style.display = 'block';
             cpfModal.classList.add('show');
         }
@@ -612,7 +811,8 @@
                             <label class="form-label text-white">CPF</label>
                             <input type="text" class="form-control form-control-lg" 
                                    id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
-                                   style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;">
+                                   style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;"
+                                   autocomplete="off">
                             <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
                         </div>
                         <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
@@ -634,28 +834,42 @@
         const confirmBtn = document.getElementById('cpfConfirmBtn');
 
         if (cpfInput) {
+            // 🔥 MASCARA COM VALIDAÇÃO EM TEMPO REAL
             cpfInput.addEventListener('input', function(e) {
-                let value = e.target.value.replace(/\D/g, '');
-                if (value.length > 11) value = value.slice(0, 11);
+                const formatted = CpfValidator.mask(e.target.value);
+                e.target.value = formatted;
                 
-                if (value.length > 9) {
-                    value = value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
-                } else if (value.length > 6) {
-                    value = value.replace(/^(\d{3})(\d{3})(\d{0,3})$/, '$1.$2.$3');
-                } else if (value.length > 3) {
-                    value = value.replace(/^(\d{3})(\d{0,3})$/, '$1.$2');
+                if (cpfError) {
+                    cpfError.classList.add('d-none');
                 }
-                e.target.value = value;
                 
-                if (cpfError) cpfError.classList.add('d-none');
+                // Validação em tempo real
+                const cleaned = e.target.value.replace(/\D/g, '');
+                if (cleaned.length === 11) {
+                    const result = CpfValidator.validate(cleaned);
+                    if (!result.valid) {
+                        if (cpfError) {
+                            cpfError.textContent = `❌ ${result.message}`;
+                            cpfError.classList.remove('d-none');
+                        }
+                    }
+                }
             });
 
             cpfInput.addEventListener('blur', function(e) {
-                const cpf = e.target.value.replace(/\D/g, '');
-                if (cpf.length > 0 && cpf.length !== 11) {
+                const cleaned = e.target.value.replace(/\D/g, '');
+                if (cleaned.length > 0 && cleaned.length !== 11) {
                     if (cpfError) {
                         cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
                         cpfError.classList.remove('d-none');
+                    }
+                } else if (cleaned.length === 11) {
+                    const result = CpfValidator.validate(cleaned);
+                    if (!result.valid) {
+                        if (cpfError) {
+                            cpfError.textContent = `❌ ${result.message}`;
+                            cpfError.classList.remove('d-none');
+                        }
                     }
                 }
             });
@@ -667,9 +881,12 @@
                 
                 const cpfLimpo = cpfInput.value.replace(/\D/g, '');
                 
-                if (cpfLimpo.length !== 11) {
+                // 🔥 VALIDAÇÃO COMPLETA COM ALGORITMO
+                const validation = CpfValidator.validate(cpfLimpo);
+                
+                if (!validation.valid) {
                     if (cpfError) {
-                        cpfError.textContent = '❌ CPF inválido. Digite um CPF válido com 11 dígitos.';
+                        cpfError.textContent = `❌ ${validation.message}`;
                         cpfError.classList.remove('d-none');
                     }
                     return;
@@ -680,54 +897,108 @@
                 const modal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
                 if (modal) modal.hide();
                 
-                createPaymentWithPix(cpfLimpo, planId);
+                // 🔥 DEBOUNCE PARA EVITAR CLICK DUPLICADO
+                DebounceSystem.debounce('create_payment', () => {
+                    createPaymentWithPix(validation.cleaned, planId);
+                }, 300);
             });
         }
 
         if (cpfInput) {
             cpfInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && confirmBtn) {
+                    e.preventDefault();
                     confirmBtn.click();
                 }
             });
         }
     }
 
-    /**
-     * Cria pagamento PIX
-     */
+    // ==============================================
+    // 🔥 CORREÇÃO PRINCIPAL: createPaymentWithPix
+    // 🔥 CAMPO 'plan' → 'plan_id' (CORRIGE ERRO 422)
+    // ==============================================
+
     async function createPaymentWithPix(cpf, planId = 'premium_mensal') {
-        if (!deps) {
-            console.error('❌ [payment.js] Dependências não carregadas');
+        // 🔥 PREVENÇÃO: evita múltiplas chamadas simultâneas
+        if (_isCreatingPayment) {
+            Logger.warn('payment.js', 'Já existe um pagamento em andamento');
+            deps?.AppUtils?.showNotification('⏳ Aguarde o processamento atual...', 'warning');
             return;
         }
 
-        console.log('💳 [payment.js] Criando pagamento PIX para CPF:', cpf.substring(0, 3) + '***' + cpf.substring(cpf.length - 3));
+        if (!deps) {
+            Logger.error('payment.js', 'Dependências não carregadas');
+            deps?.AppUtils?.showNotification('Erro interno. Recarregue a página.', 'error');
+            return;
+        }
+
+        // 🔥 GARANTE planId VÁLIDO
+        const validPlanId = planId || 'premium_mensal';
+        
+        Logger.info('payment.js', `Criando pagamento PIX para CPF: ${cpf.substring(0, 3)}***${cpf.substring(cpf.length - 3)}`);
+        Logger.debug('payment.js', `Plan ID: ${validPlanId}`);
+        
         deps.AppUtils.showNotification('🔄 Gerando QR Code PIX...', 'info');
+        
+        _isCreatingPayment = true;
 
         try {
-            const response = await deps.fetchWithAuth('/api/payments/create-pix', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cpf: cpf,
-                    plan: planId || 'premium_mensal'
-                })
+            // 🔥 RETRY AUTOMÁTICO COM BACKOFF EXPONENCIAL
+            const response = await RetrySystem.execute(async (attempt) => {
+                Logger.debug('payment.js', `Tentativa ${attempt} de criar pagamento`);
+                
+                const resp = await deps.fetchWithAuth('/api/payments/create-pix', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cpf: cpf,
+                        plan_id: validPlanId  // 🔥 CORRIGIDO: 'plan_id' em vez de 'plan'
+                    })
+                });
+
+                if (!resp) {
+                    throw new Error('Falha na conexão com o servidor');
+                }
+
+                if (!resp.ok) {
+                    let errorData = {};
+                    try {
+                        errorData = await resp.json();
+                    } catch (e) {
+                        // Erro de parsing - tenta texto
+                        try {
+                            const text = await resp.text();
+                            errorData = { detail: text || `Erro ${resp.status}` };
+                        } catch (e2) {
+                            errorData = { detail: `Erro ${resp.status}` };
+                        }
+                    }
+                    
+                    const errorMsg = errorData.detail || errorData.message || `Erro ${resp.status}`;
+                    throw new Error(errorMsg);
+                }
+
+                return resp;
+            }, {
+                maxAttempts: CONFIG.MAX_RETRY_ATTEMPTS,
+                baseDelay: CONFIG.RETRY_BASE_DELAY,
+                maxDelay: CONFIG.RETRY_MAX_DELAY,
+                onRetry: (attempt, error, delay) => {
+                    Logger.warn('payment.js', `Retry ${attempt}: ${error.message}, aguardando ${delay}ms`);
+                    deps.AppUtils.showNotification(`⏳ Tentando novamente (${attempt}/${CONFIG.MAX_RETRY_ATTEMPTS})...`, 'warning');
+                },
+                onError: (error) => {
+                    Logger.error('payment.js', `Falha após todas as tentativas: ${error.message}`);
+                },
+                context: 'createPaymentWithPix'
             });
 
-            if (!response) {
-                throw new Error('Falha na conexão com o servidor');
-            }
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || errorData.message || 'Erro ao criar pagamento');
-            }
-
             const data = await response.json();
-            console.log('✅ [payment.js] Pagamento criado:', data.payment_id || 'ID desconhecido');
+            
+            Logger.info('payment.js', `Pagamento criado: ${data.payment_id || 'ID desconhecido'}`);
+            Logger.debug('payment.js', 'Dados do pagamento:', data);
 
-            // 🔥 Dispara eventos via EventBus do app.js
             if (deps.EventBus) {
                 if (data.credits_balance !== undefined) {
                     deps.EventBus.emit('creditsUpdated', {
@@ -756,22 +1027,39 @@
             }
 
             showPixModal(data);
+            _isCreatingPayment = false;
 
         } catch (error) {
-            console.error('❌ [payment.js] Erro ao criar pagamento:', error);
-            deps.AppUtils.showNotification(error.message || 'Erro ao gerar pagamento. Tente novamente.', 'error');
+            Logger.error('payment.js', 'Erro ao criar pagamento:', error);
+            
+            let userMessage = error.message || 'Erro ao gerar pagamento. Tente novamente.';
+            
+            // 🔥 TRADUZ MENSAGENS DE ERRO PARA O USUÁRIO
+            if (userMessage.includes('422')) {
+                userMessage = 'Dados inválidos. Verifique seu CPF e tente novamente.';
+            } else if (userMessage.includes('429') || userMessage.includes('rate')) {
+                userMessage = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+            } else if (userMessage.includes('CPF')) {
+                userMessage = 'CPF inválido. Verifique e tente novamente.';
+            } else if (userMessage.includes('conexão') || userMessage.includes('connection')) {
+                userMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+            }
+            
+            deps.AppUtils.showNotification(`❌ ${userMessage}`, 'error');
+            _isCreatingPayment = false;
         }
     }
 
     // ==============================================
-    // 🔥 MODAL PIX
+    // 🔥 MODAL PIX (MELHORADO)
     // ==============================================
 
     let countdownInterval = null;
     let statusPollingInterval = null;
+    let _pixModalInstance = null;
 
     function showPixModal(data) {
-        console.log('📱 [payment.js] Mostrando modal PIX...');
+        Logger.info('payment.js', 'Mostrando modal PIX...');
 
         let pixModal = document.getElementById('pixModal');
         if (!pixModal) {
@@ -788,18 +1076,18 @@
         const planName = data.plan_name || 'Plano Bronze';
         const paymentId = data.payment_id;
 
-        // 🔥 Usa template se disponível
         const template = document.getElementById('pixModalTemplate');
         if (template) {
             const clone = template.content.cloneNode(true);
             pixModal.innerHTML = '';
             pixModal.appendChild(clone);
             
-            // Preenche dados
             const qrImg = pixModal.querySelector('#pixQrCode');
             if (qrImg && qrCode) {
                 qrImg.src = qrCode;
                 qrImg.style.display = 'block';
+                const placeholder = pixModal.querySelector('#pixQrPlaceholder');
+                if (placeholder) placeholder.style.display = 'none';
             }
             
             const codeText = pixModal.querySelector('#pixCodeText');
@@ -823,9 +1111,10 @@
         startStatusPolling(paymentId);
 
         try {
-            new bootstrap.Modal(pixModal).show();
+            _pixModalInstance = new bootstrap.Modal(pixModal);
+            _pixModalInstance.show();
         } catch (e) {
-            console.warn('⚠️ [payment.js] Bootstrap Modal não disponível:', e);
+            Logger.warn('payment.js', 'Bootstrap Modal não disponível:', e);
             pixModal.style.display = 'block';
             pixModal.classList.add('show');
         }
@@ -854,7 +1143,7 @@
                             <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
                                 ${qrCode ? 
                                     `<img src="${qrCode}" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px;" id="pixQrCode">` :
-                                    `<div style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>`
+                                    `<div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>`
                                 }
                             </div>
                         </div>
@@ -890,7 +1179,7 @@
     }
 
     // ==============================================
-    // 🔥 STATUS POLLING
+    // 🔥 STATUS POLLING (COM CACHE)
     // ==============================================
 
     function startStatusPolling(paymentId) {
@@ -907,36 +1196,35 @@
         statusPollingInterval = setInterval(async () => {
             attempts++;
 
+            // 🔥 VERIFICA CACHE
+            const cacheKey = `status_${paymentId}`;
+            const cached = _statusCache[cacheKey];
+            if (cached && (Date.now() - cached.timestamp) < CONFIG.STATUS_CACHE_TTL) {
+                Logger.debug('payment.js', `Usando cache para status ${paymentId}`);
+                if (cached.status === 'approved') {
+                    clearInterval(statusPollingInterval);
+                    statusPollingInterval = null;
+                    handlePaymentApproved(paymentId);
+                }
+                return;
+            }
+
             try {
                 const response = await deps.fetchWithAuth(`/api/payments/status/${paymentId}`);
                 if (response?.ok) {
                     const data = await response.json();
                     const payment = data.payment || data;
                     
+                    // 🔥 ATUALIZA CACHE
+                    _statusCache[cacheKey] = {
+                        status: payment.status,
+                        timestamp: Date.now()
+                    };
+                    
                     if (payment.status === 'approved') {
                         clearInterval(statusPollingInterval);
                         statusPollingInterval = null;
-                        
-                        deps.AppUtils.showNotification('✅ Pagamento confirmado! Seu plano foi ativado.', 'success');
-                        
-                        window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
-                            detail: {
-                                isPremium: true,
-                                daysLeft: 30,
-                                creditsBalance: data.credits_balance || 0
-                            }
-                        }));
-                        
-                        window.dispatchEvent(new CustomEvent('payment:completed', {
-                            detail: {
-                                payment_id: paymentId,
-                                status: 'approved'
-                            }
-                        }));
-                        
-                        const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
-                        if (modal) modal.hide();
-                        setTimeout(() => window.location.reload(), 1500);
+                        handlePaymentApproved(paymentId);
                         
                     } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
                         clearInterval(statusPollingInterval);
@@ -945,17 +1233,41 @@
                     }
                 }
             } catch (error) {
-                console.warn('⚠️ [payment.js] Erro no status polling:', error);
+                Logger.warn('payment.js', 'Erro no status polling:', error);
             }
 
             if (attempts >= maxAttempts) {
                 clearInterval(statusPollingInterval);
                 statusPollingInterval = null;
-                console.log('⏰ [payment.js] Status polling finalizado (timeout)');
+                Logger.info('payment.js', 'Status polling finalizado (timeout)');
             }
         }, CONFIG.STATUS_POLLING_INTERVAL);
 
-        console.log(`⏰ [payment.js] Status polling iniciado para payment ${paymentId}`);
+        Logger.info('payment.js', `Status polling iniciado para payment ${paymentId}`);
+    }
+
+    function handlePaymentApproved(paymentId) {
+        deps.AppUtils.showNotification('✅ Pagamento confirmado! Seu plano foi ativado.', 'success');
+        
+        window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
+            detail: {
+                isPremium: true,
+                daysLeft: 30,
+                creditsBalance: 30
+            }
+        }));
+        
+        window.dispatchEvent(new CustomEvent('payment:completed', {
+            detail: {
+                payment_id: paymentId,
+                status: 'approved'
+            }
+        }));
+        
+        if (_pixModalInstance) {
+            _pixModalInstance.hide();
+        }
+        setTimeout(() => window.location.reload(), 1500);
     }
 
     // ==============================================
@@ -1030,7 +1342,7 @@
 
     window.verifyPayment = async function() {
         if (!deps) {
-            console.warn('⚠️ [payment.js] Dependências não carregadas');
+            Logger.warn('payment.js', 'Dependências não carregadas');
             return;
         }
 
@@ -1054,26 +1366,14 @@
 
             if (payment.status === 'approved') {
                 deps.AppUtils.showNotification('✅ Pagamento confirmado!', 'success');
-                
-                window.dispatchEvent(new CustomEvent('premiumStatusUpdated', {
-                    detail: {
-                        isPremium: true,
-                        daysLeft: 30,
-                        creditsBalance: data.credits_balance || 0
-                    }
-                }));
-                
-                const modal = bootstrap.Modal.getInstance(document.getElementById('pixModal'));
-                if (modal) modal.hide();
-                setTimeout(() => window.location.reload(), 1500);
-                
+                handlePaymentApproved(paymentId);
             } else if (payment.status === 'pending') {
                 deps.AppUtils.showNotification('⏳ Pagamento ainda não confirmado. Aguarde alguns minutos.', 'warning');
             } else {
                 deps.AppUtils.showNotification(`⏳ Status: ${payment.status}`, 'info');
             }
         } catch (error) {
-            console.error('❌ [payment.js] Erro ao verificar pagamento:', error);
+            Logger.error('payment.js', 'Erro ao verificar pagamento:', error);
             deps.AppUtils.showNotification('Erro ao verificar pagamento. Tente novamente.', 'error');
         }
     };
@@ -1083,16 +1383,14 @@
     // ==============================================
 
     async function init() {
-        console.log('🚀 [payment.js v7.1] Iniciando...');
+        Logger.info('payment.js', 'v7.2 Iniciando...');
 
-        // 🔥 1. Aguarda app.js
         const appReady = await Waiter.waitForApp();
         
         if (!appReady) {
-            console.error('❌ [payment.js] Não foi possível carregar dependências do app.js');
-            console.warn('⚠️ [payment.js] O sistema pode não funcionar corretamente');
+            Logger.error('payment.js', 'Não foi possível carregar dependências do app.js');
+            Logger.warn('payment.js', 'O sistema pode não funcionar corretamente');
             
-            // Tenta usar fallback mínimo
             deps = {
                 EventBus: window.EventBus || null,
                 AppUtils: window.AppUtils || null,
@@ -1101,20 +1399,16 @@
                 StateManager: window.__APP_STATE_MANAGER || null
             };
         } else {
-            // 🔥 2. Obtém dependências
             deps = Waiter.getDependencies();
         }
 
-        // 🔥 3. Valida dependências
         const valid = Waiter.validateDependencies(deps);
         if (!valid) {
-            console.warn('⚠️ [payment.js] Algumas dependências estão faltando');
+            Logger.warn('payment.js', 'Algumas dependências estão faltando');
         }
 
-        // 🔥 4. Inicializa VagasSystem
         VagasSystem.init(deps);
 
-        // 🔥 5. Configura listeners de eventos
         document.addEventListener('app:state_changed', function(e) {
             const detail = e.detail || {};
             if (detail.key === 'credits' || detail.key === 'isPremium' || detail.key === 'isAdmin') {
@@ -1127,23 +1421,21 @@
             updateCreditsDisplay(data.credits, data.isPremium);
         });
 
-        // 🔥 6. Expõe funções globais
         window.loadPremiumStatus = loadPremiumStatus;
         window.receiveDailyCredit = receiveDailyCredit;
         window.updateCreditsDisplay = updateCreditsDisplay;
         window.openCpfModal = openCpfModal;
         window.createPaymentWithPix = createPaymentWithPix;
         window.VagasSystem = VagasSystem;
+        window.CpfValidator = CpfValidator;
 
-        // 🔥 7. Marca como pronto
         window.paymentReady = true;
-        window.paymentVersion = '7.1';
+        window.paymentVersion = '7.2';
         window._paymentInitialized = true;
 
-        // 🔥 8. Dispara evento
         window.dispatchEvent(new CustomEvent('paymentReady', {
             detail: {
-                version: '7.1',
+                version: '7.2',
                 integrated: true,
                 appReady: appReady,
                 dependencies: {
@@ -1155,32 +1447,29 @@
             }
         }));
 
-        console.log('✅ [payment.js v7.1] Carregado com sucesso!');
-        console.log(`   📦 EventBus: ${!!deps.EventBus}`);
-        console.log(`   📦 AppUtils: ${!!deps.AppUtils}`);
-        console.log(`   📦 fetchWithAuth: ${!!deps.fetchWithAuth}`);
-        console.log(`   📦 State: ${!!deps.State}`);
-        console.log(`   🎯 Polling adaptativo: ${CONFIG.VAGAS_UPDATE_INTERVAL_NORMAL/1000}s / ${CONFIG.VAGAS_UPDATE_INTERVAL_URGENT/1000}s`);
-        console.log(`   ⏰ Status polling: ${CONFIG.STATUS_POLLING_INTERVAL/1000}s`);
+        Logger.info('payment.js', 'v7.2 Carregado com sucesso!');
+        Logger.debug('payment.js', `EventBus: ${!!deps.EventBus}`);
+        Logger.debug('payment.js', `AppUtils: ${!!deps.AppUtils}`);
+        Logger.debug('payment.js', `fetchWithAuth: ${!!deps.fetchWithAuth}`);
+        Logger.debug('payment.js', `State: ${!!deps.State}`);
+        Logger.debug('payment.js', `Polling adaptativo: ${CONFIG.VAGAS_UPDATE_INTERVAL_NORMAL/1000}s / ${CONFIG.VAGAS_UPDATE_INTERVAL_URGENT/1000}s`);
+        Logger.debug('payment.js', `Status polling: ${CONFIG.STATUS_POLLING_INTERVAL/1000}s`);
     }
 
     // ==============================================
     // 🔥 INICIAR
     // ==============================================
 
-    // Aguarda DOM e bibliotecas
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
-            // Pequeno delay para garantir que o app.js tenha tempo de carregar
             setTimeout(init, 300);
         });
     } else {
         setTimeout(init, 300);
     }
 
-    // Fallback: se o app:ready chegar, inicia imediatamente
     document.addEventListener('app:ready', function() {
-        console.log('📢 [payment.js] app:ready recebido, inicializando...');
+        Logger.info('payment.js', 'app:ready recebido, inicializando...');
         init();
     });
 
