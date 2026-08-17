@@ -1,16 +1,15 @@
-# backend/services/payment_service.py - VERSÃO 2.0 (INTELIGENTE E ROBUSTA)
+# backend/services/payment_service.py - VERSÃO 2.1 (CORRIGIDA E ESTÁVEL)
 """
-🔥 SISTEMA DE PAGAMENTO V2.0 - AUTOANALYTICS
+🔥 SISTEMA DE PAGAMENTO - AUTOANALYTICS
 ================================================================================
-✅ NOVIDADES:
-   1. 🔥 RETRY AUTOMÁTICO: 3 tentativas com backoff exponencial
-   2. 🔥 VALIDAÇÃO DE DATA: Múltiplos formatos aceitos
-   3. 🔥 FALLBACK INTELIGENTE: Simulação se MP estiver offline
-   4. 🔥 LOGGING ESTRUTURADO: Rastreabilidade completa
-   5. 🔥 MÉTRICAS: Estatísticas de pagamento
-   6. 🔥 HEALTH CHECK: Status do serviço MP
-   7. 🔥 CACHE DE STATUS: Reduz chamadas desnecessárias
-   8. 🔥 VALIDAÇÃO DE CPF: Algoritmo completo com DV
+VERSÃO 2.1 - CORREÇÃO DE LOGGER E MELHORIAS
+================================================================================
+✅ CORREÇÕES:
+   1. ✅ LOGGER CORRIGIDO: logger definido corretamente no escopo
+   2. ✅ DATA COM MILISSEGUNDOS: formato aceito pelo Mercado Pago
+   3. ✅ VALIDAÇÃO DE CPF: com dígitos verificadores
+   4. ✅ TRATAMENTO DE ERROS: robusto e com fallback
+   5. ✅ LOGS ESTRUTURADOS: facilitam debug
 ================================================================================
 """
 
@@ -20,62 +19,33 @@ import qrcode
 import base64
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 import json
 import uuid
 import logging
 import re
-import time
-from functools import wraps
-from enum import Enum
 
 # ==============================================
-# CONFIGURAÇÕES
+# LOGGER CONFIGURADO
 # ==============================================
 
-class MPEnvironment(str, Enum):
-    PRODUCTION = "production"
-    SANDBOX = "sandbox"
-    SIMULATED = "simulated"
-
-class PaymentStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
+logger = logging.getLogger(__name__)
 
 # ==============================================
-# DECORATOR DE RETRY INTELIGENTE
+# WEBHOOK (IMPORTAÇÃO SEGURA)
 # ==============================================
 
-def retry_on_failure(max_retries: int = 3, base_delay: float = 1.0, backoff: float = 2.0):
-    """
-    🔥 Decorator para retry automático com backoff exponencial
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_error = e
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (backoff ** attempt)
-                        logger.warning(f"⚠️ Tentativa {attempt+1}/{max_retries} falhou: {e}. Aguardando {delay:.1f}s...")
-                        time.sleep(delay)
-                    else:
-                        logger.error(f"❌ Todas as {max_retries} tentativas falharam: {e}")
-            raise last_error
-        return wrapper
-    return decorator
+try:
+    from backend.observability.sentinel import get_webhook
+except ImportError:
+    def get_webhook():
+        return None
+    logger.warning("⚠️ webhook não disponível, usando fallback")
 
 
 # ==============================================
-# VALIDADOR DE CPF (COM ALGORITMO DV)
+# VALIDADOR DE CPF
 # ==============================================
 
 class CpfValidator:
@@ -83,20 +53,17 @@ class CpfValidator:
     
     @staticmethod
     def validate(cpf: str) -> Dict[str, Any]:
-        """
-        Valida CPF com algoritmo completo
-        Retorna: {valid: bool, cleaned: str, message: str}
-        """
+        """Valida CPF com algoritmo completo"""
         cleaned = re.sub(r'\D', '', str(cpf))
         
         if len(cleaned) != 11:
             return {"valid": False, "cleaned": cleaned, "message": "CPF deve conter 11 dígitos"}
         
-        # Verifica se todos os dígitos são iguais (CPF inválido)
+        # Verifica dígitos repetidos
         if cleaned == cleaned[0] * 11:
             return {"valid": False, "cleaned": cleaned, "message": "CPF inválido (dígitos repetidos)"}
         
-        # Calcula primeiro dígito verificador
+        # Primeiro dígito verificador
         sum_ = 0
         for i in range(9):
             sum_ += int(cleaned[i]) * (10 - i)
@@ -106,7 +73,7 @@ class CpfValidator:
         if int(cleaned[9]) != first_digit:
             return {"valid": False, "cleaned": cleaned, "message": "CPF inválido (primeiro dígito verificador)"}
         
-        # Calcula segundo dígito verificador
+        # Segundo dígito verificador
         sum_ = 0
         for i in range(10):
             sum_ += int(cleaned[i]) * (11 - i)
@@ -120,7 +87,7 @@ class CpfValidator:
     
     @staticmethod
     def mask(cpf: str) -> str:
-        """Formata CPF para exibição: XXX.XXX.XXX-XX"""
+        """Formata CPF para exibição"""
         cleaned = re.sub(r'\D', '', str(cpf))
         if len(cleaned) != 11:
             return cpf
@@ -128,21 +95,17 @@ class CpfValidator:
 
 
 # ==============================================
-# CLASSE PRINCIPAL - MercadoPagoService V2.0
+# CLASSE PRINCIPAL
 # ==============================================
 
 class MercadoPagoService:
-    """
-    🔥 Serviço de pagamento V2.0 - Inteligente e Robusto
-    """
+    """Serviço para integração REAL com Mercado Pago"""
     
     # Constantes
-    MAX_RETRIES = 3
-    RETRY_BASE_DELAY = 1.0
-    PIX_EXPIRY_MINUTES = 30
-    STATUS_CACHE_TTL = 10  # segundos
     DEFAULT_PRICE = 97.00
     REGULAR_PRICE = 149.90
+    PIX_EXPIRY_MINUTES = 30
+    TOTAL_SLOTS = 100
     
     def __init__(self):
         # ==========================================
@@ -153,10 +116,7 @@ class MercadoPagoService:
         self.webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "")
         self.webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "https://seu-dominio.com")
         
-        env = os.getenv("MP_ENVIRONMENT", "production").lower()
-        self.environment = MPEnvironment(env) if env in ["production", "sandbox"] else MPEnvironment.PRODUCTION
-        
-        # Fuso horário Brasil
+        self.environment = os.getenv("MP_ENVIRONMENT", "production")
         self.tz_brasil = timezone(timedelta(hours=-3))
         
         # ==========================================
@@ -166,89 +126,59 @@ class MercadoPagoService:
         self._init_sdk()
         
         # ==========================================
-        # CACHE
-        # ==========================================
-        self._status_cache: Dict[str, Dict[str, Any]] = {}
-        self._cache_hits = 0
-        self._cache_misses = 0
-        
-        # ==========================================
-        # MÉTRICAS
-        # ==========================================
-        self.metrics = {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "total_retries": 0,
-            "cache_hits": 0,
-            "cache_misses": 0,
-            "last_request_time": None,
-            "last_error": None,
-            "uptime_start": datetime.now(self.tz_brasil).isoformat()
-        }
-        
-        # ==========================================
         # WEBHOOK
         # ==========================================
         self.webhook = get_webhook()
         
         logger.info("=" * 60)
-        logger.info("🚀 MercadoPagoService V2.0 inicializado")
-        logger.info(f"   📍 Ambiente: {self.environment.value}")
+        logger.info("🚀 MercadoPagoService inicializado")
+        logger.info(f"   📍 Ambiente: {self.environment}")
         logger.info(f"   🔑 SDK: {'✅ Conectado' if self.sdk else '❌ Não configurado'}")
-        logger.info(f"   🔄 Retry: {self.MAX_RETRIES} tentativas")
         logger.info(f"   ⏰ PIX Expira: {self.PIX_EXPIRY_MINUTES} min")
-        logger.info(f"   💾 Cache TTL: {self.STATUS_CACHE_TTL}s")
         logger.info("=" * 60)
     
+    # ==============================================
+    # SDK
+    # ==============================================
+    
     def _init_sdk(self):
-        """Inicializa o SDK do Mercado Pago com validação"""
+        """Inicializa SDK do Mercado Pago"""
         if not self.access_token:
-            logger.warning("⚠️ MP_ACCESS_TOKEN não configurado")
+            logger.warning("⚠️ MP_ACCESS_TOKEN não configurado - PIX real não funcionará")
             return
         
         try:
             self.sdk = mercadopago.SDK(self.access_token)
-            # Testa a conexão
-            test = self.sdk.payment().get("test")
-            if test.get("status") == 200:
-                logger.info("✅ SDK conectado com sucesso")
-            else:
-                logger.warning(f"⚠️ SDK conectado mas retornou: {test.get('status')}")
+            logger.info(f"✅ Mercado Pago SDK inicializado ({self.environment})")
+            logger.info(f"🕐 Fuso horário configurado: UTC-3 (Brasília)")
         except Exception as e:
             logger.error(f"❌ Erro ao inicializar SDK: {e}")
             self.sdk = None
     
     # ==============================================
-    # 🔥 FORMATADOR DE DATA INTELIGENTE
+    # DATAS
     # ==============================================
+    
+    def _get_current_datetime_brasil(self) -> datetime:
+        """Retorna datetime atual no fuso Brasília"""
+        return datetime.now(self.tz_brasil)
     
     def _get_pix_expiration_datetime_mp(self) -> str:
         """
         🔥 RETORNA DATA NO FORMATO EXATO QUE O MERCADO PAGO ESPERA
-        Tenta múltiplos formatos até encontrar o aceito
+        Formato: yyyy-MM-dd'T'HH:mm:ss.SSSZ (com milissegundos)
         """
         now_utc = datetime.now(timezone.utc)
         expiry_utc = now_utc + timedelta(minutes=self.PIX_EXPIRY_MINUTES)
-        
-        # 🔥 Tenta múltiplos formatos (o MP aceita com milissegundos)
-        formats = [
-            "%Y-%m-%dT%H:%M:%S.%fZ",  # Com milissegundos (preferido)
-            "%Y-%m-%dT%H:%M:%SZ",      # Sem milissegundos
-            "%Y-%m-%dT%H:%M:%S.%f-03:00",  # Com timezone
-            "%Y-%m-%dT%H:%M:%S-03:00"      # Sem milissegundos com timezone
-        ]
-        
-        # Usa o formato com milissegundos (mais compatível)
-        result = expiry_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        logger.debug(f"📅 Data formatada: {result}")
-        return result
+        # Com milissegundos (3 casas decimais)
+        return expiry_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     
     # ==============================================
-    # 🔥 VALIDAÇÃO DE CPF
+    # CPF
     # ==============================================
     
     def _clean_cpf(self, cpf: str) -> str:
+        """Remove caracteres não numéricos do CPF"""
         if not cpf:
             return ""
         return re.sub(r'\D', '', str(cpf))
@@ -258,30 +188,28 @@ class MercadoPagoService:
         return CpfValidator.validate(cpf)
     
     # ==============================================
-    # 🔥 GET PLAN DETAILS (COM CACHE)
+    # PLANOS
     # ==============================================
     
     def get_plan_details(self, plan_id: str, db: Session = None) -> Dict[str, Any]:
-        """Retorna detalhes do plano com PREÇO DINÂMICO e cache"""
+        """Retorna detalhes do plano com PREÇO DINÂMICO"""
         regular_price = self.REGULAR_PRICE
         promotional_price = self.DEFAULT_PRICE
         current_price = promotional_price
         has_promotion = True
         price_type = "promotional"
+        remaining_slots = self.TOTAL_SLOTS
         
         if db and plan_id == "premium_mensal":
             try:
                 from backend.models import PromotionControl
-                
-                # 🔥 Cache em memória por 30s
-                cache_key = f"promotion_{id(db)}"
                 
                 promo = db.query(PromotionControl).first()
                 
                 if not promo:
                     logger.info("✨ Tabela PromotionControl vazia. Inicializando...")
                     promo = PromotionControl(
-                        total_slots=100,
+                        total_slots=self.TOTAL_SLOTS,
                         used_slots=0,
                         promotional_price=self.DEFAULT_PRICE,
                         regular_price=self.REGULAR_PRICE,
@@ -296,12 +224,13 @@ class MercadoPagoService:
                 current_price = promo.get_current_price()
                 has_promotion = promo.has_available_slots()
                 price_type = "promotional" if current_price < regular_price else "regular"
+                remaining_slots = promo.get_remaining_slots()
                 
-                remaining = promo.get_remaining_slots()
-                logger.info(f"💰 Plano {plan_id}: R$ {current_price} ({price_type}) - {remaining} vagas")
+                logger.info(f"💰 Plano {plan_id}: R$ {current_price} ({price_type}) - {remaining_slots} vagas")
                     
             except Exception as e:
                 logger.error(f"❌ Erro ao buscar preço: {e}")
+                logger.warning(f"⚠️ Usando preço padrão: R$ {current_price}")
         
         return {
             "name": "Plano Bronze",
@@ -315,44 +244,67 @@ class MercadoPagoService:
             "max_credits_balance": 3,
             "has_promotion": has_promotion and current_price < regular_price,
             "price_type": price_type,
-            "remaining_slots": promo.get_remaining_slots() if db else 0
+            "remaining_slots": remaining_slots
         }
     
+    def get_current_price(self, plan_id: str, db: Session = None) -> float:
+        """Retorna o preço atual do plano"""
+        details = self.get_plan_details(plan_id, db)
+        return details.get("price", self.DEFAULT_PRICE)
+    
     # ==============================================
-    # 🔥 CRIAÇÃO DE PAGAMENTO (COM RETRY)
+    # PROMOÇÃO
     # ==============================================
     
-    @retry_on_failure(max_retries=3, base_delay=1.0, backoff=2.0)
-    def _create_payment_internal(self, payment_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        🔥 CRIA PAGAMENTO INTERNO COM RETRY AUTOMÁTICO
-        """
-        if not self.sdk:
-            return {
-                "success": False,
-                "error": "SDK não configurado",
-                "simulated": True
-            }
-        
-        response = self.sdk.payment().create(payment_data)
-        self.metrics["total_requests"] += 1
-        
-        if response["status"] in [200, 201]:
-            self.metrics["successful_requests"] += 1
+    def get_promotion_status(self, db: Session) -> Dict[str, Any]:
+        """Retorna status da promoção"""
+        try:
+            from backend.models import PromotionControl
+            
+            promo = db.query(PromotionControl).first()
+            
+            if not promo:
+                promo = PromotionControl(
+                    total_slots=self.TOTAL_SLOTS,
+                    used_slots=0,
+                    promotional_price=self.DEFAULT_PRICE,
+                    regular_price=self.REGULAR_PRICE,
+                    is_active=True
+                )
+                db.add(promo)
+                db.commit()
+                db.refresh(promo)
+                logger.info("✅ Promoção padrão criada")
+            
             return {
                 "success": True,
-                "status_code": response["status"],
-                "response": response["response"]
+                "total_slots": promo.total_slots,
+                "used_slots": promo.used_slots,
+                "remaining_slots": promo.get_remaining_slots(),
+                "promotional_price": float(promo.promotional_price),
+                "regular_price": float(promo.regular_price),
+                "current_price": promo.get_current_price(),
+                "is_active": promo.is_active and promo.get_remaining_slots() > 0,
+                "has_available_slots": promo.has_available_slots()
             }
-        else:
-            self.metrics["failed_requests"] += 1
-            self.metrics["last_error"] = response.get("message", "Erro desconhecido")
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar status: {e}")
             return {
                 "success": False,
-                "status_code": response["status"],
-                "error": response.get("message", f"Erro {response['status']}"),
-                "details": response.get("response", {})
+                "error": str(e),
+                "total_slots": self.TOTAL_SLOTS,
+                "used_slots": 0,
+                "remaining_slots": self.TOTAL_SLOTS,
+                "promotional_price": self.DEFAULT_PRICE,
+                "regular_price": self.REGULAR_PRICE,
+                "current_price": self.DEFAULT_PRICE,
+                "is_active": True,
+                "has_available_slots": True
             }
+    
+    # ==============================================
+    # PAGAMENTO
+    # ==============================================
     
     def create_real_pix_payment(
         self, 
@@ -365,20 +317,22 @@ class MercadoPagoService:
         db: Session = None
     ) -> Dict[str, Any]:
         """
-        🔥 CRIA PAGAMENTO PIX REAL - V2.0
+        🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
         """
-        start_time = time.time()
-        
         # ==========================================
-        # 1️⃣ VALIDAÇÕES INICIAIS
+        # 1. VALIDAÇÕES
         # ==========================================
         
         if not self.sdk:
-            logger.warning("⚠️ SDK não configurado - usando simulação")
-            return self._create_simulated_payment(plan_id, user_email, user_id, price)
+            logger.warning("⚠️ SDK não configurado")
+            return {
+                "success": False,
+                "error": "Mercado Pago não configurado. Configure MP_ACCESS_TOKEN no .env",
+                "simulated": True
+            }
         
-        # 🔥 VALIDA CPF
-        if self.environment == MPEnvironment.PRODUCTION and not user_cpf:
+        # CPF obrigatório em produção
+        if self.environment == "production" and not user_cpf:
             logger.error(f"❌ CPF obrigatório para usuário {user_id}")
             return {
                 "success": False,
@@ -386,23 +340,22 @@ class MercadoPagoService:
                 "requires_cpf": True
             }
         
+        # Valida CPF
+        cleaned_cpf = ""
         if user_cpf:
-            cpf_validation = self._validate_cpf(user_cpf)
-            if not cpf_validation["valid"]:
-                logger.warning(f"⚠️ CPF inválido: {cpf_validation['message']}")
+            validation = self._validate_cpf(user_cpf)
+            if not validation["valid"]:
+                logger.warning(f"⚠️ CPF inválido: {validation['message']}")
                 return {
                     "success": False,
-                    "error": cpf_validation["message"],
+                    "error": validation["message"],
                     "requires_cpf": True
                 }
-            cleaned_cpf = cpf_validation["cleaned"]
-            masked_cpf = CpfValidator.mask(cleaned_cpf)
-            logger.info(f"🔒 CPF validado: {masked_cpf}")
-        else:
-            cleaned_cpf = ""
+            cleaned_cpf = validation["cleaned"]
+            logger.info(f"🔒 CPF validado: {CpfValidator.mask(cleaned_cpf)}")
         
         # ==========================================
-        # 2️⃣ DETERMINAR PREÇO
+        # 2. PREÇO
         # ==========================================
         
         price_type = "regular"
@@ -418,24 +371,24 @@ class MercadoPagoService:
                 logger.warning(f"⚠️ Sem db, usando preço padrão: R$ {price}")
         
         # ==========================================
-        # 3️⃣ PREPARAR DADOS
+        # 3. DADOS DO PAGAMENTO
         # ==========================================
         
-        if plan_id == "premium_mensal":
-            description = "Plano Bronze - 30 dias de acesso premium"
-            credits = 30
-        else:
+        if plan_id != "premium_mensal":
             return {
                 "success": False,
-                "error": f"Plano {plan_id} não suportado"
+                "error": f"Plano {plan_id} não suportado para PIX real"
             }
+        
+        description = "Plano Bronze - 30 dias de acesso premium com 1 crédito por dia"
+        credits = 30
         
         external_reference = f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
         expiration_date = self._get_pix_expiration_datetime_mp()
         
-        brasil_now = datetime.now(self.tz_brasil)
-        logger.info(f"🕐 Brasília: {brasil_now.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"⏰ Expira em {self.PIX_EXPIRY_MINUTES}min: {expiration_date}")
+        brasil_now = self._get_current_datetime_brasil()
+        logger.info(f"🕐 Horário Brasília: {brasil_now.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"⏰ Expira em {self.PIX_EXPIRY_MINUTES}min (UTC): {expiration_date}")
         
         # CPF para produção ou sandbox
         cpf_to_use = cleaned_cpf if cleaned_cpf else "12345678909"
@@ -460,42 +413,44 @@ class MercadoPagoService:
                 "user_id": user_id,
                 "plan_type": "daily_credits",
                 "credits": credits,
-                "environment": self.environment.value,
+                "credits_per_day": 1,
+                "duration_days": 30,
+                "max_credits_balance": 3,
+                "cpf_provided": bool(user_cpf),
+                "environment": self.environment,
+                "timezone": "America/Sao_Paulo (UTC-3)",
+                "expiration_minutes": self.PIX_EXPIRY_MINUTES,
                 "price_type": price_type,
-                "price": price,
-                "timezone": "America/Sao_Paulo"
+                "price": price
             }
         }
         
         # ==========================================
-        # 4️⃣ EXECUTAR PAGAMENTO
+        # 4. EXECUTA
         # ==========================================
         
-        logger.info(f"💰 Criando PIX para {user_email} - R$ {price}")
-        logger.info(f"📅 Expiração: {expiration_date}")
-        
         try:
-            result = self._create_payment_internal(payment_data)
+            logger.info(f"💰 Criando PIX para {user_email} - R$ {price}")
+            logger.info(f"📅 Data expiração: {expiration_date}")
             
-            if result.get("success"):
-                payment = result["response"]
+            response = self.sdk.payment().create(payment_data)
+            
+            if response["status"] == 201:
+                payment = response["response"]
                 
                 # Extrai QR Code
                 qr_code_base64 = None
                 qr_code_text = None
                 
                 if "point_of_interaction" in payment and "transaction_data" in payment["point_of_interaction"]:
-                    trans_data = payment["point_of_interaction"]["transaction_data"]
-                    qr_code_text = trans_data.get("qr_code")
-                    qr_code_base64 = trans_data.get("qr_code_base64")
+                    transaction_data = payment["point_of_interaction"]["transaction_data"]
+                    qr_code_text = transaction_data.get("qr_code")
+                    qr_code_base64 = transaction_data.get("qr_code_base64")
                     
                     if qr_code_text and not qr_code_base64:
                         qr_code_base64 = self.generate_qr_code_base64(qr_code_text)
                 
                 logger.info(f"✅ PIX criado: {payment['id']} - Status: {payment.get('status')}")
-                
-                # Atualiza métricas
-                self.metrics["last_request_time"] = datetime.now(self.tz_brasil).isoformat()
                 
                 return {
                     "success": True,
@@ -507,79 +462,29 @@ class MercadoPagoService:
                     "status": payment.get("status", "pending"),
                     "amount": price,
                     "credits": credits,
+                    "plan_type": "daily_credits",
                     "price_type": price_type,
-                    "environment": self.environment.value,
-                    "processing_time_ms": (time.time() - start_time) * 1000
+                    "environment": self.environment,
+                    "cpf_used": bool(user_cpf),
+                    "timezone": "America/Sao_Paulo (UTC-3)"
                 }
             else:
-                logger.error(f"❌ Erro: {result.get('error')}")
+                logger.error(f"❌ Erro ao criar pagamento: {response}")
                 return {
                     "success": False,
-                    "error": result.get("error", "Erro ao criar pagamento"),
-                    "details": result.get("details", {})
+                    "error": response.get("message", "Erro ao criar pagamento PIX"),
+                    "details": response
                 }
                 
         except Exception as e:
             logger.error(f"❌ Exceção: {e}")
-            self.metrics["last_error"] = str(e)
-            
-            # 🔥 FALLBACK: se falhar, tenta simulação
-            if self.environment == MPEnvironment.PRODUCTION:
-                logger.warning("⚠️ Erro no MP real, tentando simulação como fallback")
-                return self._create_simulated_payment(plan_id, user_email, user_id, price)
-            
             return {
                 "success": False,
                 "error": str(e)
             }
     
     # ==============================================
-    # 🔥 SIMULAÇÃO DE PAGAMENTO (FALLBACK)
-    # ==============================================
-    
-    def _create_simulated_payment(
-        self, 
-        plan_id: str, 
-        user_email: str, 
-        user_id: int, 
-        price: float = None
-    ) -> Dict[str, Any]:
-        """🔥 Cria pagamento simulado (fallback quando MP offline)"""
-        
-        if price is None:
-            price = self.DEFAULT_PRICE
-        
-        payment_id = f"SIM_{uuid.uuid4().hex[:8].upper()}"
-        
-        logger.info(f"🔄 Criando pagamento SIMULADO para {user_email} - R$ {price}")
-        logger.info(f"   📝 ID: {payment_id}")
-        logger.info(f"   ⏰ Aprovação em 8 segundos (simulada)")
-        
-        # Gera QR Code simulado
-        pix_code = f"00020126360014BR.GOV.BCB.PIX0114{payment_id[:14]}5204000053039865404{int(price)}.005802BR5913AutoAnalytics6008SaoPaulo62070503***6304E2F3"
-        qr_code_base64 = self.generate_qr_code_base64(pix_code)
-        
-        # Agenda aprovação simulada (será processada pelo backend)
-        # A função simulate_payment_approval no payment_routes.py fará isso
-        
-        return {
-            "success": True,
-            "payment_id": payment_id,
-            "status": "pending",
-            "amount": price,
-            "price_type": "promotional",
-            "was_promotional": True,
-            "remaining_slots": 100,
-            "qr_code": pix_code,
-            "qr_code_base64": qr_code_base64,
-            "expires_in": 30 * 60,
-            "simulated": True,
-            "simulation_delay": 8,
-            "message": f"💰 Pagamento SIMULADO de R$ {price:.2f} gerado!"
-        }
-    
-    # ==============================================
-    # 🔥 QR CODE GENERATOR
+    # QR CODE
     # ==============================================
     
     def generate_qr_code_base64(self, qr_code_text: str) -> str:
@@ -598,28 +503,15 @@ class MercadoPagoService:
             return ""
     
     # ==============================================
-    # 🔥 STATUS COM CACHE
+    # STATUS
     # ==============================================
     
-    def get_payment_status_real(self, payment_id: str, use_cache: bool = True) -> Dict[str, Any]:
-        """🔥 Consulta status com cache inteligente"""
-        
-        # 🔥 VERIFICA CACHE
-        if use_cache and payment_id in self._status_cache:
-            cached = self._status_cache[payment_id]
-            if time.time() - cached.get("timestamp", 0) < self.STATUS_CACHE_TTL:
-                self.metrics["cache_hits"] += 1
-                self._cache_hits += 1
-                logger.debug(f"📦 Cache hit: {payment_id}")
-                return cached["data"]
-        
-        self.metrics["cache_misses"] += 1
-        self._cache_misses += 1
-        
+    def get_payment_status_real(self, payment_id: str) -> Dict[str, Any]:
+        """Consulta status do pagamento"""
         if not self.sdk:
             return {
                 "success": False,
-                "error": "SDK não configurado"
+                "error": "Mercado Pago não configurado"
             }
         
         try:
@@ -627,7 +519,7 @@ class MercadoPagoService:
             
             if response["status"] == 200:
                 payment = response["response"]
-                data = {
+                return {
                     "success": True,
                     "status": payment.get("status"),
                     "external_reference": payment.get("external_reference"),
@@ -636,14 +528,6 @@ class MercadoPagoService:
                     "metadata": payment.get("metadata", {}),
                     "approved_at": payment.get("date_approved")
                 }
-                
-                # 🔥 SALVA CACHE
-                self._status_cache[payment_id] = {
-                    "data": data,
-                    "timestamp": time.time()
-                }
-                
-                return data
             else:
                 return {
                     "success": False,
@@ -655,108 +539,6 @@ class MercadoPagoService:
                 "success": False,
                 "error": str(e)
             }
-    
-    # ==============================================
-    # 🔥 PROMOTION STATUS
-    # ==============================================
-    
-    def get_promotion_status(self, db: Session) -> Dict[str, Any]:
-        """Retorna status da promoção"""
-        try:
-            from backend.models import PromotionControl
-            
-            promo = db.query(PromotionControl).first()
-            
-            if not promo:
-                promo = PromotionControl()
-                db.add(promo)
-                db.commit()
-                db.refresh(promo)
-                logger.info("✅ Promoção padrão criada")
-            
-            return {
-                "success": True,
-                "total_slots": promo.total_slots,
-                "used_slots": promo.used_slots,
-                "remaining_slots": promo.get_remaining_slots(),
-                "promotional_price": float(promo.promotional_price),
-                "regular_price": float(promo.regular_price),
-                "current_price": promo.get_current_price(),
-                "is_active": promo.is_active and promo.get_remaining_slots() > 0,
-                "has_available_slots": promo.has_available_slots(),
-                "percentage_used": round((promo.used_slots / promo.total_slots) * 100, 1) if promo.total_slots > 0 else 0
-            }
-        except Exception as e:
-            logger.error(f"❌ Erro ao buscar status: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "total_slots": 100,
-                "used_slots": 0,
-                "remaining_slots": 100,
-                "promotional_price": self.DEFAULT_PRICE,
-                "regular_price": self.REGULAR_PRICE,
-                "current_price": self.DEFAULT_PRICE,
-                "is_active": True,
-                "has_available_slots": True,
-                "percentage_used": 0
-            }
-    
-    # ==============================================
-    # 🔥 HEALTH CHECK
-    # ==============================================
-    
-    def health_check(self) -> Dict[str, Any]:
-        """Verifica saúde do serviço"""
-        uptime = (datetime.now(self.tz_brasil) - datetime.fromisoformat(self.metrics["uptime_start"])).total_seconds()
-        
-        return {
-            "status": "healthy" if self.sdk else "degraded",
-            "environment": self.environment.value,
-            "sdk_connected": self.sdk is not None,
-            "access_token_configured": bool(self.access_token),
-            "webhook_configured": bool(self.webhook_base_url),
-            "cache_size": len(self._status_cache),
-            "cache_hit_rate": (
-                self._cache_hits / (self._cache_hits + self._cache_misses) * 100
-                if (self._cache_hits + self._cache_misses) > 0 else 0
-            ),
-            "metrics": {
-                "total_requests": self.metrics["total_requests"],
-                "success_rate": (
-                    self.metrics["successful_requests"] / self.metrics["total_requests"] * 100
-                    if self.metrics["total_requests"] > 0 else 0
-                ),
-                "last_error": self.metrics["last_error"]
-            },
-            "uptime_seconds": uptime,
-            "timestamp": datetime.now(self.tz_brasil).isoformat()
-        }
-    
-    # ==============================================
-    # 🔥 MÉTRICAS DETALHADAS
-    # ==============================================
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Retorna métricas detalhadas do serviço"""
-        return {
-            **self.metrics,
-            "cache_size": len(self._status_cache),
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
-            "environment": self.environment.value,
-            "sdk_available": self.sdk is not None
-        }
-    
-    # ==============================================
-    # 🔥 LIMPEZA DE CACHE
-    # ==============================================
-    
-    def clear_cache(self):
-        """Limpa o cache de status"""
-        size = len(self._status_cache)
-        self._status_cache.clear()
-        logger.info(f"🧹 Cache limpo: {size} entradas removidas")
 
 
 # ==============================================
@@ -775,9 +557,8 @@ def get_mp_service() -> Optional[MercadoPagoService]:
 # INICIALIZAÇÃO
 # ==============================================
 
-print("\n" + "=" * 60)
-print("✅ payment_service.py V2.0 carregado")
-print(f"   📍 Ambiente: {mp_service.environment.value}")
-print(f"   🔑 SDK: {'✅' if mp_service.sdk else '❌'}")
-print(f"   💾 Cache TTL: {mp_service.STATUS_CACHE_TTL}s")
-print("=" * 60)
+logger.info("=" * 60)
+logger.info("✅ payment_service.py V2.1 carregado")
+logger.info(f"   📍 Ambiente: {mp_service.environment}")
+logger.info(f"   🔑 SDK: {'✅' if mp_service.sdk else '❌'}")
+logger.info("=" * 60)
