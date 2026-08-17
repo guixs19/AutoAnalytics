@@ -1,4 +1,5 @@
-# backend/services/payment_service.py
+# backend/services/payment_service.py - VERSÃO CORRIGIDA
+
 import mercadopago
 import os
 import qrcode
@@ -12,7 +13,6 @@ import uuid
 import logging
 import re
 
-# 🔧 CORREÇÃO: import seguro do webhook
 try:
     from backend.observability.sentinel import get_webhook
 except ImportError:
@@ -48,8 +48,20 @@ class MercadoPagoService:
     def _get_current_datetime_brasil(self) -> datetime:
         return datetime.now(self.tz_brasil)
     
-    def _get_pix_expiration_datetime(self) -> datetime:
-        return self._get_current_datetime_brasil() + timedelta(minutes=30)
+    def _get_pix_expiration_datetime_mp(self) -> str:
+        """
+        🔥 RETORNA DATA NO FORMATO EXATO QUE O MERCADO PAGO ESPERA
+        Formato: yyyy-MM-dd'T'HH:mm:ssZ
+        Exemplo: 2026-08-17T20:23:00Z
+        
+        IMPORTANTE: O Mercado Pago NÃO aceita milissegundos nem timezone offset (+/-)
+        """
+        # Data atual em UTC (Mercado Pago usa UTC)
+        now_utc = datetime.now(timezone.utc)
+        # Adiciona 30 minutos
+        expiry_utc = now_utc + timedelta(minutes=30)
+        # Formato exato: yyyy-MM-dd'T'HH:mm:ssZ
+        return expiry_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     
     def _clean_cpf(self, cpf: str) -> str:
         if not cpf:
@@ -61,29 +73,19 @@ class MercadoPagoService:
         return len(cleaned) == 11
     
     def get_plan_details(self, plan_id: str, db: Session = None) -> Dict[str, Any]:
-        """
-        🔥 CORREÇÃO CRÍTICA: Retorna detalhes do plano com PREÇO DINÂMICO baseado no banco
-        
-        Args:
-            plan_id: ID do plano (premium_mensal)
-            db: Sessão do banco para consultar preço promocional (opcional)
-        """
-        # Preços padrão (fallback caso banco não esteja disponível)
+        """Retorna detalhes do plano com PREÇO DINÂMICO"""
         regular_price = 149.90
         promotional_price = 97.00
         current_price = promotional_price
         has_promotion = True
         price_type = "promotional"
         
-        # 🔥 Buscar preço dinâmico do banco de dados
         if db and plan_id == "premium_mensal":
             try:
                 from backend.models import PromotionControl
                 
-                # Buscar a promoção ativa (apenas uma, pois é controle único)
                 promo = db.query(PromotionControl).first()
                 
-                # Se não existir a linha no banco ainda, cria automaticamente para não quebrar!
                 if not promo:
                     logger.info("✨ Tabela PromotionControl vazia. Inicializando lote de fundador...")
                     promo = PromotionControl(
@@ -104,14 +106,11 @@ class MercadoPagoService:
                 price_type = "promotional" if current_price < regular_price else "regular"
                 
                 logger.info(f"💰 Preço dinâmico para plano {plan_id}: R$ {current_price} ({price_type})")
-                logger.info(f"   ======= Vagas restantes: {promo.get_remaining_slots()}/{promo.total_slots} =======")
+                logger.info(f"   Vagas restantes: {promo.get_remaining_slots()}/{promo.total_slots}")
                     
             except Exception as e:
                 logger.error(f"❌ Erro ao buscar preço dinâmico do banco: {e}")
                 logger.warning(f"⚠️ Usando preço padrão de fallback: R$ {current_price}")
-        else:
-            if not db:
-                logger.debug("⚠️ Sessão db não fornecida, usando preço padrão de fallback")
         
         plans = {
             "premium_mensal": {
@@ -178,16 +177,7 @@ class MercadoPagoService:
                                  user_name: str = "", price: float = None,
                                  user_cpf: str = None, db: Session = None) -> Dict[str, Any]:
         """
-        CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
-        
-        Args:
-            plan_id: ID do plano (premium_mensal)
-            user_email: Email do usuário
-            user_id: ID do usuário
-            user_name: Nome do usuário
-            price: Preço (opcional - se não informado, busca do banco)
-            user_cpf: CPF do usuário (OBRIGATÓRIO para produção)
-            db: Sessão do banco para buscar preço promocional
+        🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
         """
         if not self.sdk:
             return {
@@ -234,12 +224,13 @@ class MercadoPagoService:
             }
         
         external_reference = f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
-        expiration_datetime = self._get_pix_expiration_datetime()
-        expiration_date = expiration_datetime.isoformat()
+        
+        # 🔥 CORREÇÃO: Usar formato exato do Mercado Pago
+        expiration_date = self._get_pix_expiration_datetime_mp()
         
         brasil_now = self._get_current_datetime_brasil()
         logger.info(f"🕐 Horário atual Brasília (UTC-3): {brasil_now.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"⏰ PIX expira em 30 minutos: {expiration_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"⏰ PIX expira em 30 minutos (UTC): {expiration_date}")
         
         if self.environment == "production":
             cpf_to_use = cleaned_cpf
@@ -261,7 +252,7 @@ class MercadoPagoService:
                 }
             },
             "external_reference": external_reference,
-            "date_of_expiration": expiration_date,
+            "date_of_expiration": expiration_date,  # 🔥 FORMATO CORRETO
             "notification_url": f"{self.webhook_base_url}/api/payments/webhook",
             "metadata": {
                 "plan_id": plan_id,
@@ -282,7 +273,7 @@ class MercadoPagoService:
         
         try:
             logger.info(f"💰 Criando pagamento PIX real para {user_email} - Valor: R$ {price}")
-            logger.info(f"📅 Data expiração (UTC-3): {expiration_date}")
+            logger.info(f"📅 Data expiração (formato MP): {expiration_date}")
             
             response = self.sdk.payment().create(payment_data)
             
@@ -300,7 +291,7 @@ class MercadoPagoService:
                     if qr_code_text and not qr_code_base64:
                         qr_code_base64 = self.generate_qr_code_base64(qr_code_text)
                 
-                logger.info(f"✅ Pagamento PIX criado: {payment['id']} - Expira: {expiration_date}")
+                logger.info(f"✅ Pagamento PIX criado: {payment['id']}")
                 
                 return {
                     "success": True,
@@ -309,7 +300,6 @@ class MercadoPagoService:
                     "qr_code_base64": qr_code_base64,
                     "qr_code": qr_code_text,
                     "expiration_date": expiration_date,
-                    "expiration_timestamp": int(expiration_datetime.timestamp()),
                     "status": payment["status"],
                     "amount": price,
                     "credits": credits,
