@@ -9,16 +9,14 @@
     <!-- 🔥 SEGURANÇA E BLOQUEIO (MODO PASSIVO) -->
     <!-- ============================================== -->
     <style>
-        /* 🔥 Oculta a interface por padrão para evitar Flash de Conteúdo Protegido (FOUC) */
         body {
             opacity: 0;
-            transition: opacity 0.2s ease;
+            transition: opacity 0.3s ease;
             min-height: 100vh;
         }
         body.app-ready {
             opacity: 1;
         }
-        /* Fallback: se o JS falhar, mostra uma mensagem amigável */
         body.loading-state::before {
             content: '🔄 Carregando...';
             position: fixed;
@@ -136,16 +134,12 @@
         /* ===== BADGES REATIVAS ===== */
         .auth-required { display: none; }
         .auth-required.show { display: inline-block; }
-        
         .guest-only { display: none; }
         .guest-only.show { display: inline-block; }
-        
         .admin-only { display: none; }
         .admin-only.show { display: inline-block; }
-        
         .premium-only { display: none; }
         .premium-only.show { display: inline-block; }
-        
         .premium-days-badge { display: none; }
         .premium-days-badge.show { display: inline-block; }
 
@@ -254,7 +248,6 @@
             box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
         }
 
-        /* ===== CARD PREMIUM (verde) ===== */
         .bronze-card.premium-active {
             background: linear-gradient(145deg, rgba(26, 71, 42, 0.95) 0%, rgba(45, 106, 79, 0.95) 100%);
             border: 2px solid #48bb78;
@@ -264,7 +257,6 @@
             background: linear-gradient(135deg, #48bb78, #2d6a4f);
         }
 
-        /* ===== CARD ADMIN (dourado) ===== */
         .bronze-card.admin-card {
             border: 2px solid #f5a623;
             box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(245, 166, 35, 0.3);
@@ -438,7 +430,7 @@
         }
 
         /* ============================================== */
-        /* 🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ (EM TEMPO REAL) */
+        /* 🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ */
         /* ============================================== */
         
         .vagas-container {
@@ -494,12 +486,6 @@
             100% { transform: scale(1); }
         }
 
-        .vagas-label {
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.5);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
         .vagas-total {
             font-size: 0.9rem;
             color: rgba(255, 255, 255, 0.25);
@@ -537,7 +523,6 @@
             50% { opacity: 0.7; }
         }
 
-        /* ===== ALERTAS ===== */
         .vagas-alert {
             margin-top: 0.8rem;
             padding: 0.6rem 1rem;
@@ -548,9 +533,7 @@
             display: none;
             animation: slideDown 0.5s ease;
         }
-        .vagas-alert.show {
-            display: block;
-        }
+        .vagas-alert.show { display: block; }
 
         @keyframes slideDown {
             from { opacity: 0; transform: translateY(-10px) scale(0.95); }
@@ -582,9 +565,6 @@
             text-align: center;
             margin-top: 0.5rem;
             letter-spacing: 0.5px;
-        }
-        .vagas-counter-text i {
-            color: rgba(255, 255, 255, 0.2);
         }
 
         /* ============================================== */
@@ -625,6 +605,19 @@
         }
         .btn-upgrade.sold-out:hover {
             transform: none;
+        }
+        .btn-upgrade.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .btn-upgrade.loading .spinner {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .btn-premium-active {
@@ -919,6 +912,17 @@
             50% { opacity: 0.5; }
         }
 
+        /* ===== TOAST PERSONALIZADO ===== */
+        .toast-custom {
+            background: rgba(0,0,0,0.8) !important;
+            backdrop-filter: blur(10px) !important;
+            border: 1px solid rgba(255,107,53,0.3) !important;
+            color: white !important;
+        }
+        .toast-custom .toast-title {
+            color: #ff6b35 !important;
+        }
+
         /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 992px) {
             .hero-section { padding: 90px 0 30px; }
@@ -1034,16 +1038,14 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 1: PLANOS (CARD ESTÁTICO + VAGAS) -->
+            <!-- 🔥 ABA 1: PLANOS -->
             <!-- ============================================== -->
             <div class="tab-content active" id="tab-planos">
                 <div class="row justify-content-center">
                     <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
-                        <!-- Badge de status do usuário -->
                         <span id="userStatusBadge" class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
                             <i class="fas fa-user me-1"></i> Plano Grátis
                         </span>
-                        <!-- Badge de dias restantes (Premium) -->
                         <span class="premium-days-badge" id="premiumDaysBadge">
                             <i class="fas fa-clock me-1"></i>
                             <span id="premiumDaysCount">0</span> dias restantes
@@ -1056,19 +1058,16 @@
                     <div class="col-lg-8 mx-auto">
                         <div class="bronze-card" id="planCard">
                             
-                            <!-- Badge do Plano -->
                             <div class="bronze-badge" id="planBadge">
                                 <i class="fas fa-fire"></i> <span id="planBadgeText">🔥 CARREGANDO VAGAS...</span>
                             </div>
                             
-                            <!-- Título -->
                             <div class="bronze-title">
                                 <span class="icon-big"><i class="fas fa-crown"></i></span>
                                 <h2>Plano Bronze</h2>
                                 <p class="subtitle">O plano ideal para sua oficina crescer com IA</p>
                             </div>
                             
-                            <!-- Preço -->
                             <div class="price-container" id="priceContainer">
                                 <span class="old-price" id="oldPrice">De R$ 149,90</span>
                                 <div class="price-tag" id="priceTag">
@@ -1080,9 +1079,7 @@
                                 </span>
                             </div>
                             
-                            <!-- ============================================== -->
-                            <!-- 🔥🔥🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ 🔥🔥🔥 -->
-                            <!-- ============================================== -->
+                            <!-- 🔥 VAGAS -->
                             <div class="vagas-container" id="vagasContainer">
                                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
                                     <div style="flex:1;">
@@ -1106,13 +1103,11 @@
                                     </div>
                                 </div>
                                 
-                                <!-- ALERTA URGENTE (últimas 20 vagas) -->
                                 <div class="vagas-alert urgent" id="vagasUrgentAlert">
                                     <i class="fas fa-exclamation-triangle me-2"></i>
                                     ⚡ <strong>ÚLTIMAS <span id="vagasUrgentCount">0</span> VAGAS!</strong> Corra antes que acabe!
                                 </div>
                                 
-                                <!-- ALERTA ESGOTADO -->
                                 <div class="vagas-alert sold-out" id="vagasSoldOutAlert">
                                     <i class="fas fa-times-circle me-2"></i>
                                     ❌ <strong>PROMOÇÃO ESGOTADA!</strong> O preço voltou para R$ 149,90
@@ -1123,7 +1118,6 @@
                                 </div>
                             </div>
                             
-                            <!-- Informações do Plano -->
                             <div class="plan-info">
                                 <div class="row">
                                     <div class="col-4">
@@ -1141,7 +1135,6 @@
                                 </div>
                             </div>
                             
-                            <!-- Features -->
                             <div class="bronze-features">
                                 <div class="bronze-feature">
                                     <i class="fas fa-check-circle check"></i>
@@ -1172,21 +1165,18 @@
                             <!-- 🔥 BOTÕES REATIVOS -->
                             <div class="d-grid gap-3 mt-4">
                                 
-                                <!-- Botão UPGRADE (usuário free) -->
                                 <button class="btn-upgrade" id="btnUpgrade" onclick="window.handleUpgrade()">
                                     <i class="fas fa-bolt me-2"></i>
                                     🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
                                     <small class="d-block fs-10">Pagamento seguro via PIX</small>
                                 </button>
                                 
-                                <!-- Botão PLANO ATIVO (usuário premium) -->
                                 <button class="btn-premium-active" id="btnPremiumActive">
                                     <i class="fas fa-check-circle me-2"></i>
                                     ✅ PLANO ATIVO
                                     <small class="d-block fs-10">Aproveite todos os benefícios</small>
                                 </button>
                                 
-                                <!-- Botão ADMIN -->
                                 <button class="btn-admin" id="btnAdmin">
                                     <i class="fas fa-crown me-2"></i>
                                     👑 ADMIN - ACESSO ILIMITADO
@@ -1195,13 +1185,11 @@
                                 
                             </div>
                             
-                            <!-- Warning -->
                             <div class="limit-warning">
                                 <i class="fas fa-info-circle"></i>
                                 <span>Este é um <strong>plano vitalício</strong> com preço especial para os primeiros <strong>100 clientes</strong>. Após esgotar, o preço volta para R$ 149,90.</span>
                             </div>
                             
-                            <!-- Explicação dos Créditos -->
                             <div class="credits-explanation">
                                 <div class="step">
                                     <i class="fas fa-coins"></i>
@@ -1231,7 +1219,6 @@
                                 </div>
                             </div>
                             
-                            <!-- Security Seals -->
                             <div class="security-seals">
                                 <span class="seal"><i class="fas fa-lock"></i> Pagamento Seguro</span>
                                 <span class="seal"><i class="fas fa-shield-alt"></i> PoW Protegido</span>
@@ -1306,7 +1293,6 @@
                             <p style="color:rgba(255,255,255,0.5);">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
                         </div>
                         <div class="row g-4">
-                            <!-- Coluna do Email -->
                             <div class="col-md-6">
                                 <div class="support-card h-100">
                                     <div class="d-flex align-items-start mb-3">
@@ -1443,7 +1429,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v3.4 - Planos e Suporte
+                        AutoAnalytics v3.5 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1458,7 +1444,7 @@
     </section>
 
     <!-- ============================================== -->
-    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js v7.0) -->
+    <!-- 🔥 TEMPLATES PARA MODAIS -->
     <!-- ============================================== -->
 
     <!-- Template: Modal CPF -->
@@ -1587,7 +1573,7 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS (ORDEM CORRETA - APP PRIMEIRO) -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
     <!-- 1️⃣ JQUERY -->
@@ -1615,8 +1601,8 @@
     <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
     <script src="/static/js/auth.js?ver=3.1.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v7.0 (DEPENDE DO APP) -->
-    <script src="/static/js/payment.js?ver=7.0.0"></script>
+    <!-- 4️⃣ PAYMENT - v7.2 (CORREÇÃO 422 + MELHORIAS) -->
+    <script src="/static/js/payment.js?ver=7.2.0"></script>
 
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (PASSIVO) -->
@@ -1627,12 +1613,10 @@
 
             console.log('🔐 Inicializando fallback de autenticação (planos)...');
 
-            // ===== REFERÊNCIA AO APP =====
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
-            // ===== VERIFICA SE O APP ESTÁ PRONTO =====
             function isAppReady() {
                 var app = getApp();
                 if (app && typeof app.isReady === 'function') {
@@ -1641,15 +1625,12 @@
                 return !!window._appReadyFired;
             }
 
-            // ===== FALLBACK DE REDIRECIONAMENTO =====
             function redirectToLogin() {
                 console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
                 window.location.replace('/login');
             }
 
-            // ===== VERIFICA AUTENTICAÇÃO DE FORMA PASSIVA =====
             function checkAuth() {
-                // 🔥 Aguarda o app.js completar seu ciclo
                 if (isAppReady()) {
                     console.log('🔐 App pronto - verificando autenticação...');
                     var app = getApp();
@@ -1662,14 +1643,12 @@
                         return false;
                     }
                     
-                    // ✅ Autenticado - mostra a página
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
                     console.log('🔐 Autenticação verificada com sucesso!');
                     return true;
                 }
 
-                // 🔥 Se o app não estiver pronto, aguarda o evento 'app:ready'
                 console.log('🔐 Aguardando app:ready...');
                 document.addEventListener('app:ready', function handler(e) {
                     document.removeEventListener('app:ready', handler);
@@ -1690,7 +1669,6 @@
                     console.log('🔐 Autenticação verificada com sucesso!');
                 });
 
-                // 🔥 Timeout de segurança: se o app não responder em 5s, verifica token
                 var timeoutId = setTimeout(function() {
                     document.removeEventListener('app:ready', function() {});
                     console.warn('🔐 Timeout: app não respondeu, verificando token...');
@@ -1701,13 +1679,11 @@
                         return;
                     }
                     
-                    // Token existe - libera acesso (o app.js cuidará da validação completa)
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
                     console.log('🔐 Acesso liberado por fallback (token presente)');
                 }, 5000);
 
-                // Cancela timeout se app:ready chegar
                 document.addEventListener('app:ready', function() {
                     clearTimeout(timeoutId);
                 }, { once: true });
@@ -1715,7 +1691,6 @@
                 return null;
             }
 
-            // ===== INICIALIZA =====
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
                     setTimeout(checkAuth, 100);
@@ -1724,7 +1699,6 @@
                 setTimeout(checkAuth, 100);
             }
 
-            // ===== EXPÕE FUNÇÃO DE FALLBACK =====
             window._authFallback = {
                 check: checkAuth,
                 redirectToLogin: redirectToLogin,
@@ -1745,14 +1719,12 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.4 (Unificação de Autenticação)');
+            console.log('🚀 AutoAnalytics - Planos v3.5 (Sincronizado com payment.js v7.2)');
 
-            // ===== REFERÊNCIA AO APP =====
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
 
-            // ===== ESPERA O APP FICAR PRONTO =====
             function waitForApp(maxAttempts) {
                 maxAttempts = maxAttempts || 30;
                 return new Promise(function(resolve) {
@@ -1791,7 +1763,6 @@
                 var isUrgent = remaining <= 20 && remaining > 0;
                 var percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
 
-                // Elementos
                 var vagasEl = document.getElementById('vagasRestantes');
                 var totalEl = document.getElementById('vagasTotal');
                 var percentEl = document.getElementById('vagasPercentText');
@@ -1807,7 +1778,6 @@
                 var economyBadge = document.getElementById('economyBadge');
                 var btnUpgrade = document.getElementById('btnUpgrade');
 
-                // 1. Número
                 if (vagasEl) {
                     var old = vagasEl.textContent;
                     vagasEl.textContent = remaining;
@@ -1818,16 +1788,10 @@
                     }
                 }
 
-                // 2. Total
                 if (totalEl) totalEl.textContent = total;
-
-                // 3. Percentual
                 if (percentEl) percentEl.textContent = Math.round(percent) + '% preenchidas';
-
-                // 4. Header
                 if (headerEl) headerEl.textContent = remaining;
 
-                // 5. Progresso
                 if (progressEl) {
                     progressEl.style.width = Math.min(100, percent) + '%';
                     progressEl.classList.remove('urgent', 'sold-out');
@@ -1835,14 +1799,12 @@
                     else if (isUrgent) progressEl.classList.add('urgent');
                 }
 
-                // 6. Container
                 if (containerEl) {
                     containerEl.classList.remove('urgent', 'sold-out');
                     if (isSoldOut) containerEl.classList.add('sold-out');
                     else if (isUrgent) containerEl.classList.add('urgent');
                 }
 
-                // 7. Alertas
                 if (urgentAlert && urgentCount) {
                     if (isUrgent) {
                         urgentAlert.classList.add('show');
@@ -1859,23 +1821,21 @@
                     }
                 }
 
-                // 8. Badge
                 if (badgeText) {
                     if (isSoldOut) {
                         badgeText.textContent = '❌ PROMOÇÃO ESGOTADA';
                         badgeText.style.color = '#dc3545';
                     } else if (isUrgent) {
-                        badgeText.textContent = '\uD83D\uDD25 ÚLTIMAS ' + remaining + ' VAGAS!';
+                        badgeText.textContent = '🔥 ÚLTIMAS ' + remaining + ' VAGAS!';
                         badgeText.style.color = '#f5a623';
                         badgeText.style.animation = 'badgePulse 0.8s ease-in-out infinite';
                     } else {
-                        badgeText.textContent = '\uD83D\uDD25 ' + remaining + ' VAGAS DISPONÍVEIS';
+                        badgeText.textContent = '🔥 ' + remaining + ' VAGAS DISPONÍVEIS';
                         badgeText.style.color = '#ffffff';
                         badgeText.style.animation = 'badgePulse 2s ease-in-out infinite';
                     }
                 }
 
-                // 9. Preço
                 if (isSoldOut) {
                     if (priceTag) priceTag.textContent = '149.90';
                     if (oldPrice) oldPrice.style.display = 'none';
@@ -1896,13 +1856,12 @@
                         btnUpgrade.classList.remove('sold-out');
                         btnUpgrade.innerHTML = `
                             <i class="fas fa-bolt me-2"></i>
-                            \uD83D\uDD25 GARANTIR PREÇO FUNDADOR R$ 97,00
+                            🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
                             <small class="d-block fs-10">Pagamento seguro via PIX</small>
                         `;
                     }
                 }
 
-                // 10. Evento
                 window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
                     detail: { remaining: remaining, total: total, isSoldOut: isSoldOut, isUrgent: isUrgent, percent: percent }
                 }));
@@ -1920,7 +1879,6 @@
                 var daysLeft = state && state.daysLeftPremium !== undefined ? state.daysLeftPremium : 0;
                 var user = state && state.user ? state.user : (app && typeof app.getCurrentUser === 'function' ? app.getCurrentUser() : {});
 
-                // Status Badge
                 var statusBadge = document.getElementById('userStatusBadge');
                 if (statusBadge) {
                     if (isAdmin) {
@@ -1938,7 +1896,6 @@
                     }
                 }
 
-                // Dias Premium
                 var daysBadge = document.getElementById('premiumDaysBadge');
                 var daysCount = document.getElementById('premiumDaysCount');
                 if (daysBadge && daysCount) {
@@ -1950,7 +1907,6 @@
                     }
                 }
 
-                // Card
                 var planCard = document.getElementById('planCard');
                 if (planCard) {
                     planCard.classList.remove('premium-active', 'admin-card');
@@ -1958,7 +1914,6 @@
                     else if (isPremium) planCard.classList.add('premium-active');
                 }
 
-                // Botões
                 var btnUpgrade = document.getElementById('btnUpgrade');
                 var btnPremiumActive = document.getElementById('btnPremiumActive');
                 var btnAdmin = document.getElementById('btnAdmin');
@@ -1977,19 +1932,17 @@
                     if (btnAdmin) btnAdmin.style.display = 'none';
                 }
 
-                // Créditos
                 var displayText = isAdmin ? '∞' : (isPremium ? credits + '/3' : String(credits));
                 document.querySelectorAll('#creditsCount, #modalCreditsCount').forEach(function(el) {
                     if (el) el.textContent = displayText;
                 });
 
-                // Nome
                 var nameEl = document.getElementById('userName');
                 if (nameEl && user && user.name) nameEl.textContent = user.name;
             }
 
             // ==============================================
-            // 🔥 HANDLE UPGRADE
+            // 🔥 HANDLE UPGRADE - Sincronizado com payment.js v7.2
             // ==============================================
 
             window.handleUpgrade = function() {
@@ -2014,11 +1967,13 @@
                     return;
                 }
 
+                // 🔥 Verifica se o payment.js v7.2 está disponível
                 if (typeof window.openCpfModal === 'function') {
                     window.openCpfModal('premium_mensal');
                 } else {
+                    console.error('❌ payment.js v7.2 não carregado!');
                     if (app && typeof app.showNotification === 'function') {
-                        app.showNotification('Sistema de pagamento indisponível.', 'error');
+                        app.showNotification('Sistema de pagamento indisponível. Recarregue a página.', 'error');
                     }
                 }
             };
@@ -2027,20 +1982,17 @@
             // 🔥 ESCUTA EVENTOS
             // ==============================================
 
-            // Vagas
             document.addEventListener('vagas:updated', function(e) {
                 var data = e.detail || {};
                 updateVagasUI(data);
             });
 
-            // Estado do App
             document.addEventListener('app:state_changed', function(e) {
                 var detail = e.detail || {};
                 var state = detail.state || detail || {};
                 updateUserUI(state);
             });
 
-            // App Ready
             document.addEventListener('app:ready', function(e) {
                 var detail = e.detail || {};
                 updateUserUI(detail);
@@ -2049,7 +2001,6 @@
                 }
             });
 
-            // Créditos
             document.addEventListener('creditsUpdated', function(e) {
                 var data = e.detail || {};
                 var app = getApp();
@@ -2062,7 +2013,6 @@
                 });
             });
 
-            // Premium Status
             document.addEventListener('premiumStatusUpdated', function(e) {
                 var data = e.detail || {};
                 if (data.isPremium && data.daysLeft > 0) {
@@ -2072,6 +2022,15 @@
                     if (daysCount) daysCount.textContent = data.daysLeft;
                 }
                 updateUserUI(data);
+            });
+
+            // 🔥 Evento para quando o payment.js v7.2 estiver pronto
+            document.addEventListener('paymentReady', function(e) {
+                console.log('✅ payment.js v7.2 está pronto!');
+                var detail = e.detail || {};
+                if (detail.version) {
+                    console.log('   📦 Versão:', detail.version);
+                }
             });
 
             // ==============================================
@@ -2109,7 +2068,6 @@
             }
 
             async function init() {
-                // Aguarda app pronto
                 var ready = await waitForApp(30);
                 
                 if (ready) {
@@ -2118,7 +2076,6 @@
                     updateUserUI(state);
                 }
 
-                // Atualiza PoW
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
 
@@ -2126,19 +2083,17 @@
                     AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
                 }
 
-                // Carrega vagas iniciais via payment.js
                 if (window.VagasSystem && typeof window.VagasSystem.updateVagas === 'function') {
                     window.VagasSystem.updateVagas();
                 }
 
-                console.log('✅ planos.html v3.4 carregado com sucesso!');
-                console.log('   🔥 Templates para modais (payment.js v7.0)');
+                console.log('✅ planos.html v3.5 carregado com sucesso!');
+                console.log('   🔥 Sincronizado com payment.js v7.2');
                 console.log('   🔥 Vagas em tempo real via evento');
                 console.log('   🔥 UI reativa sincronizada');
                 console.log('   🔐 Autenticação unificada via app.js');
             }
 
-            // ===== DOMContentLoaded =====
             document.addEventListener('DOMContentLoaded', function() {
                 if (typeof toastr !== 'undefined') {
                     toastr.options = {
@@ -2151,7 +2106,6 @@
                     };
                 }
 
-                // Form de suporte
                 var form = document.getElementById('quickSupportForm');
                 if (form) {
                     form.addEventListener('submit', function(e) {
@@ -2174,7 +2128,6 @@
                     });
                 }
 
-                // Logout
                 var logoutBtn = document.getElementById('logoutBtn');
                 if (logoutBtn) {
                     logoutBtn.addEventListener('click', function(e) {
@@ -2189,11 +2142,9 @@
                     });
                 }
 
-                // Inicia
                 init();
             });
 
-            // Funções globais
             window.switchTab = function(tabId) {
                 document.querySelectorAll('.tab-btn').forEach(function(btn) {
                     btn.classList.remove('active');
