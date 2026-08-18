@@ -1,17 +1,18 @@
-# backend/api/payment_routes.py - VERSÃO 3.0 (PRODUÇÃO - CORRIGIDA E OTIMIZADA)
+# backend/api/payment_routes.py - VERSÃO 3.2 (COMPLETA E CORRIGIDA)
 """
 🔥 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 3.0 - PRODUÇÃO READY
+VERSÃO: 3.2 - COMPLETA COM TODAS AS FUNCIONALIDADES
 
-🔥 CORREÇÕES v3.0:
-   1. ✅ CORRIGIDO: alert_payment_pending() com 3 argumentos (method="pix")
-   2. ✅ ADICIONADO: Sistema de cache para promoção (60s TTL)
-   3. ✅ ADICIONADO: Métricas de pagamento para monitoramento
-   4. ✅ ADICIONADO: Health check do serviço MP
-   5. ✅ OTIMIZADO: Redução de chamadas ao banco com cache
-   6. ✅ MELHORADO: Logs estruturados para debug
-   7. ✅ ROBUSTEZ: Tratamento de erros mais refinado
-   8. ✅ SEM SIMULAÇÕES: Usa apenas Mercado Pago real
+🔥 CORREÇÕES v3.2:
+   1. ✅ CORRIGIDO: CreditEligibilityResponse definido ANTES de ser usado
+   2. ✅ CORRIGIDO: alert_payment_pending() com 3 argumentos (method="pix")
+   3. ✅ MANTIDO: Sistema de cache para promoção (60s TTL)
+   4. ✅ MANTIDO: Métricas de pagamento para monitoramento
+   5. ✅ MANTIDO: Health check do serviço MP
+   6. ✅ MANTIDO: Rotas de bônus premium
+   7. ✅ MANTIDO: Logs estruturados para debug
+   8. ✅ MANTIDO: Tratamento de erros refinado
+   9. ✅ MANTIDO: Modo produção (apenas Mercado Pago real)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -68,7 +69,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 DAYS_PREMIUM = 30
 CREDITS_PER_DAY = 1
-MAX_PAYMENT_ATTEMPTS_PER_DAY = 5  # 🔥 AUMENTADO PARA PRODUÇÃO
+MAX_PAYMENT_ATTEMPTS_PER_DAY = 5
 PIX_QR_CODE_EXPIRY_MINUTES = 30
 USE_REAL_MERCADO_PAGO = True  # 🔥 FORÇADO PARA PRODUÇÃO
 SIMULATION_DELAY_SECONDS = int(os.getenv("SIMULATION_DELAY_SECONDS", "8"))
@@ -96,7 +97,7 @@ REGULAR_PRICE = 149.90
 TOTAL_PROMOTIONAL_SLOTS = 100
 
 # ==============================================
-# MODELOS PYDANTIC
+# 🔥 MODELOS PYDANTIC - TODOS DEFINIDOS NO TOPO
 # ==============================================
 
 class CreatePaymentRequest(BaseModel):
@@ -126,14 +127,46 @@ class CreatePaymentRequest(BaseModel):
         return cpf_clean
 
 
-class PixQRCodeResponse(BaseModel):
+class CreditEligibilityResponse(BaseModel):
     success: bool
-    qr_code_base64: Optional[str] = None
-    qr_code: Optional[str] = None
-    status: str
-    max_credits_balance: int = MAX_CREDITS_PREMIUM
-    expires_in: int = PIX_QR_CODE_EXPIRY_MINUTES * 60
-    message: str = ""
+    can_receive_today: bool
+    is_premium: bool
+    is_admin: bool
+    credits_balance: int
+    max_credits: int
+    received_today: bool
+    days_left: int
+    at_max_limit: bool
+    reason: str
+    next_credit_date: Optional[str] = None
+    credits_until_limit: int
+    timezone: str = "America/Sao_Paulo (UTC-3)"
+    today_date: str
+
+
+class BonusCheckResponse(BaseModel):
+    success: bool
+    can_receive: bool
+    is_premium: bool
+    credits_balance: int
+    max_credits: int
+    received_today: bool
+    at_max_limit: bool
+    message: str
+    next_credit_date: Optional[str] = None
+
+
+class CreditManageResponse(BaseModel):
+    success: bool
+    consumed: int
+    remaining: int
+    bonus_granted: bool
+    bonus_amount: int
+    message: str
+    needs_attention: bool
+    is_premium: bool
+    max_credits: int
+    credits_display: str
 
 
 class PromotionStatusResponse(BaseModel):
@@ -148,6 +181,16 @@ class PromotionStatusResponse(BaseModel):
     user_locked_price: Optional[float] = None
     is_vitalicio: bool = True
     message: str
+
+
+class PixQRCodeResponse(BaseModel):
+    success: bool
+    qr_code_base64: Optional[str] = None
+    qr_code: Optional[str] = None
+    status: str
+    max_credits_balance: int = MAX_CREDITS_PREMIUM
+    expires_in: int = PIX_QR_CODE_EXPIRY_MINUTES * 60
+    message: str = ""
 
 
 # ==============================================
@@ -286,7 +329,7 @@ def get_user_price(user: User, db: Session) -> tuple:
 
 
 def check_payment_rate_limit(user_id: int, db: Session) -> bool:
-    """🔥 Verifica limite de tentativas com cache"""
+    """🔥 Verifica limite de tentativas"""
     today = _today_brasil()
     payments_today = db.query(Payment).filter(
         Payment.user_id == user_id,
@@ -397,17 +440,153 @@ async def receive_daily_credit_endpoint(
     })
 
 
+@router.get("/bonus/check", response_model=BonusCheckResponse)
+async def check_bonus_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🔥 Verifica se o usuário pode receber bônus premium"""
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    result = can_receive_bonus(db, user)
+    
+    return BonusCheckResponse(
+        success=True,
+        can_receive=result.get("can_receive", False),
+        is_premium=result.get("is_premium", False),
+        credits_balance=result.get("credits_balance", user.credits or 0),
+        max_credits=result.get("max_credits", MAX_CREDITS_PREMIUM),
+        received_today=result.get("received_today", False),
+        at_max_limit=result.get("at_max_limit", False),
+        message=result.get("message", ""),
+        next_credit_date=result.get("next_credit_date")
+    )
+
+
+@router.post("/bonus/claim")
+async def claim_bonus(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🔥 Resgata o bônus premium (1 crédito por zerar)"""
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verifica se é premium
+    is_premium = _is_premium_user(user)
+    if not is_premium:
+        raise HTTPException(
+            status_code=403,
+            detail="Bônus exclusivo para usuários Premium. Assine o plano!"
+        )
+    
+    # Verifica elegibilidade
+    eligibility = get_credit_eligibility(db, user)
+    if not eligibility.get("can_receive_today", False):
+        raise HTTPException(
+            status_code=400,
+            detail=eligibility.get("reason", "Você não pode receber bônus no momento")
+        )
+    
+    # 🔥 Concede o bônus usando o gerenciador unificado
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=0,
+        description="Bônus premium por zerar créditos"
+    )
+    
+    # Se não conseguiu conceder, tenta o método direto
+    if not result.get("success"):
+        # Concede 1 crédito diretamente
+        user.credits = (user.credits or 0) + 1
+        
+        log = DailyCreditLog(
+            user_id=user.id,
+            credits_added=1,
+            date=_today_brasil(),
+            total_after=user.credits,
+            source="premium_bonus_claimed"
+        )
+        db.add(log)
+        crud.safe_commit(db, "Erro ao conceder bônus premium")
+        db.refresh(user)
+        
+        logger.info(f"⭐ Bônus premium concedido para {user.email} via claim")
+        
+        return sanitize_response({
+            "success": True,
+            "credits_added": 1,
+            "current_credits": user.credits,
+            "message": "⭐ Bônus premium concedido! Você recebeu 1 crédito.",
+            "is_premium": True,
+            "max_credits": MAX_CREDITS_PREMIUM,
+            "credits_display": crud.get_credits_display(user)
+        })
+    
+    return sanitize_response({
+        "success": True,
+        "credits_added": result.get("bonus_amount", 1),
+        "current_credits": result.get("remaining", user.credits),
+        "message": result.get("message", "⭐ Bônus premium concedido!"),
+        "is_premium": True,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "credits_display": crud.get_credits_display(user)
+    })
+
+
+@router.post("/credits/manage", response_model=CreditManageResponse)
+async def manage_credits(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    amount: int = 1,
+    description: str = "Consumo de crédito"
+):
+    """🔥 Gerenciamento unificado de créditos"""
+    user = crud.get_user_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    result = manage_credits_after_consumption(
+        db=db,
+        user=user,
+        amount=amount,
+        description=description
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Erro ao gerenciar créditos"))
+    
+    return CreditManageResponse(
+        success=True,
+        consumed=result.get("consumed", 0),
+        remaining=result.get("remaining", 0),
+        bonus_granted=result.get("bonus_granted", False),
+        bonus_amount=result.get("bonus_amount", 0),
+        message=result.get("message", ""),
+        needs_attention=result.get("needs_attention", False),
+        is_premium=result.get("is_premium", False),
+        max_credits=result.get("max_credits", MAX_CREDITS_PREMIUM),
+        credits_display=result.get("credits_display", "0")
+    )
+
+
 # ==============================================
-# 🔥 ROTA DE PAGAMENTO - CORRIGIDA
+# 🔥 ROTAS DE PAGAMENTO
 # ==============================================
 
 @router.get("/promotion-status", response_model=PromotionStatusResponse)
 async def get_promotion_status(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    force_refresh: bool = False
 ):
     """🔥 Retorna status da promoção de fundador com cache"""
-    promo = get_cached_promotion(db)
+    promo = get_cached_promotion(db, force_refresh)
     
     user_price = None
     if current_user.promotional_price_locked and current_user.promotional_price:
@@ -476,7 +655,7 @@ async def create_pix_payment(
 ):
     """
     🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
-    V3.0 - CORRIGIDO E OTIMIZADO PARA PRODUÇÃO
+    V3.2 - COMPLETO E CORRIGIDO
     """
     start_time = time.time()
     
@@ -1145,12 +1324,14 @@ async def get_subscription_status(
 # ==============================================
 
 print("=" * 70)
-print("✅ payment_routes.py v3.0 carregado - PRODUÇÃO READY!")
+print("✅ payment_routes.py v3.2 carregado - COMPLETO E CORRIGIDO!")
 print("   🔥 CORREÇÕES:")
+print("      - ✅ CreditEligibilityResponse definido ANTES de ser usado")
 print("      - ✅ alert_payment_pending() com 3 argumentos (CORRIGIDO)")
 print("      - ✅ Sistema de cache (60s TTL)")
 print("      - ✅ Métricas de pagamento")
 print("      - ✅ Health check")
+print("      - ✅ Rotas de bônus premium")
 print("   📊 CONFIGURAÇÕES:")
 print(f"      - Rate limit: {MAX_PAYMENT_ATTEMPTS_PER_DAY} tentativas/dia")
 print(f"      - Cache TTL: {PROMOTION_CACHE_TTL}s")
