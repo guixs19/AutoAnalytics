@@ -1,18 +1,16 @@
-# backend/api/payment_routes.py - VERSÃO 3.2 (COMPLETA E CORRIGIDA)
+# backend/api/payment_routes.py - VERSÃO 3.3 (CORRIGIDA E OTIMIZADA)
 """
 🔥 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 3.2 - COMPLETA COM TODAS AS FUNCIONALIDADES
+VERSÃO: 3.3 - CORRIGIDA E OTIMIZADA
 
-🔥 CORREÇÕES v3.2:
-   1. ✅ CORRIGIDO: CreditEligibilityResponse definido ANTES de ser usado
-   2. ✅ CORRIGIDO: alert_payment_pending() com 3 argumentos (method="pix")
-   3. ✅ MANTIDO: Sistema de cache para promoção (60s TTL)
-   4. ✅ MANTIDO: Métricas de pagamento para monitoramento
-   5. ✅ MANTIDO: Health check do serviço MP
-   6. ✅ MANTIDO: Rotas de bônus premium
-   7. ✅ MANTIDO: Logs estruturados para debug
-   8. ✅ MANTIDO: Tratamento de erros refinado
-   9. ✅ MANTIDO: Modo produção (apenas Mercado Pago real)
+🔥 CORREÇÕES v3.3:
+   1. ✅ CORRIGIDO: DetachedInstanceError - cache agora guarda dict, não objeto SQLAlchemy
+   2. ✅ CORRIGIDO: CreditEligibilityResponse definido ANTES de ser usado
+   3. ✅ CORRIGIDO: alert_payment_pending() com 3 argumentos (method="pix")
+   4. ✅ MELHORADO: Cache com dados serializados
+   5. ✅ MELHORADO: Validação de resposta do Mercado Pago
+   6. ✅ MELHORADO: Logs com mais informações
+   7. ✅ MANTIDO: Todas as funcionalidades existentes
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -71,13 +69,13 @@ DAYS_PREMIUM = 30
 CREDITS_PER_DAY = 1
 MAX_PAYMENT_ATTEMPTS_PER_DAY = 5
 PIX_QR_CODE_EXPIRY_MINUTES = 30
-USE_REAL_MERCADO_PAGO = True  # 🔥 FORÇADO PARA PRODUÇÃO
+USE_REAL_MERCADO_PAGO = True
 SIMULATION_DELAY_SECONDS = int(os.getenv("SIMULATION_DELAY_SECONDS", "8"))
 
 # 🔥 CACHE
 PROMOTION_CACHE_TTL = 60  # segundos
 _promotion_cache = {
-    "data": None,
+    "data": None,  # Agora guarda dict, não objeto SQLAlchemy
     "timestamp": 0
 }
 
@@ -194,25 +192,47 @@ class PixQRCodeResponse(BaseModel):
 
 
 # ==============================================
-# 🔥 SISTEMA DE CACHE
+# 🔥 SISTEMA DE CACHE CORRIGIDO
 # ==============================================
 
-def get_cached_promotion(db: Session, force_refresh: bool = False) -> PromotionControl:
-    """🔥 Obtém promoção com cache para reduzir chamadas ao banco"""
+def get_cached_promotion_data(db: Session, force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    🔥 Obtém dados da promoção com cache
+    ✅ CORRIGIDO: Retorna dict, não objeto SQLAlchemy
+    """
     global _promotion_cache
     
     now = time.time()
     
+    # Verifica se tem cache válido
     if not force_refresh and _promotion_cache["data"] is not None:
         if now - _promotion_cache["timestamp"] < PROMOTION_CACHE_TTL:
             logger.debug("📦 Usando promoção em cache")
             return _promotion_cache["data"]
     
+    # Busca no banco
     promo = get_or_create_promotion(db)
-    _promotion_cache["data"] = promo
+    
+    # 🔥 SALVA APENAS OS DADOS, NÃO O OBJETO
+    promo_data = {
+        "id": promo.id,
+        "total_slots": promo.total_slots,
+        "used_slots": promo.used_slots,
+        "remaining_slots": promo.get_remaining_slots(),
+        "promotional_price": float(promo.promotional_price),
+        "regular_price": float(promo.regular_price),
+        "current_price": promo.get_current_price(),
+        "is_active": promo.is_active,
+        "has_available_slots": promo.has_available_slots(),
+        "updated_at": _now_brasil().isoformat()
+    }
+    
+    _promotion_cache["data"] = promo_data
     _promotion_cache["timestamp"] = now
     
-    return promo
+    logger.debug(f"💾 Promoção em cache: {promo_data['remaining_slots']} vagas restantes")
+    
+    return promo_data
 
 
 def invalidate_promotion_cache():
@@ -311,14 +331,14 @@ def get_user_price(user: User, db: Session) -> tuple:
         logger.info(f"💰 Usuário {user.email} tem preço vitalício: R$ {user.promotional_price}")
         return (user.promotional_price, "locked_promotional", True)
     
-    # 🔥 REGRA 2: Verificar se ainda tem vagas promocionais
-    promo = get_cached_promotion(db)
+    # 🔥 REGRA 2: Verificar se ainda tem vagas promocionais - USANDO DADOS EM CACHE
+    promo_data = get_cached_promotion_data(db)
     
-    if promo.has_available_slots():
+    if promo_data["has_available_slots"]:
         price = PROMOTIONAL_PRICE
         price_type = "promotional"
         was_promotional = True
-        logger.info(f"💰 Usuário {user.email} - PREÇO FUNDADOR: R$ {price} (vaga {promo.used_slots + 1}/{TOTAL_PROMOTIONAL_SLOTS})")
+        logger.info(f"💰 Usuário {user.email} - PREÇO FUNDADOR: R$ {price} (vaga {promo_data['used_slots'] + 1}/{TOTAL_PROMOTIONAL_SLOTS})")
     else:
         price = REGULAR_PRICE
         price_type = "regular"
@@ -586,7 +606,8 @@ async def get_promotion_status(
     force_refresh: bool = False
 ):
     """🔥 Retorna status da promoção de fundador com cache"""
-    promo = get_cached_promotion(db, force_refresh)
+    # 🔥 CORRIGIDO: usa dados em cache (dict), não objeto SQLAlchemy
+    promo_data = get_cached_promotion_data(db, force_refresh)
     
     user_price = None
     if current_user.promotional_price_locked and current_user.promotional_price:
@@ -594,20 +615,20 @@ async def get_promotion_status(
     
     return PromotionStatusResponse(
         success=True,
-        total_slots=promo.total_slots,
-        used_slots=promo.used_slots,
-        remaining_slots=promo.get_remaining_slots(),
-        promotional_price=float(promo.promotional_price),
-        regular_price=float(promo.regular_price),
-        current_price=float(promo.get_current_price()),
-        is_active=promo.has_available_slots(),
+        total_slots=promo_data["total_slots"],
+        used_slots=promo_data["used_slots"],
+        remaining_slots=promo_data["remaining_slots"],
+        promotional_price=promo_data["promotional_price"],
+        regular_price=promo_data["regular_price"],
+        current_price=promo_data["current_price"],
+        is_active=promo_data["has_available_slots"],
         user_locked_price=user_price,
         is_vitalicio=True,
         message=(
-            f"🔥 Preço de fundador: R$ {promo.promotional_price} (vitalício) - "
-            f"{promo.get_remaining_slots()} vagas restantes!"
-            if promo.has_available_slots() 
-            else f"⛔ Promoção esgotada! Preço cheio: R$ {promo.regular_price}"
+            f"🔥 Preço de fundador: R$ {promo_data['promotional_price']} (vitalício) - "
+            f"{promo_data['remaining_slots']} vagas restantes!"
+            if promo_data["has_available_slots"] 
+            else f"⛔ Promoção esgotada! Preço cheio: R$ {promo_data['regular_price']}"
         )
     )
 
@@ -655,7 +676,7 @@ async def create_pix_payment(
 ):
     """
     🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
-    V3.2 - COMPLETO E CORRIGIDO
+    V3.3 - COMPLETO E CORRIGIDO
     """
     start_time = time.time()
     
@@ -693,8 +714,8 @@ async def create_pix_payment(
     # ==========================================
     
     price, price_type, was_promotional = get_user_price(user, db)
-    promo = get_cached_promotion(db)
-    remaining_slots = promo.get_remaining_slots()
+    promo_data = get_cached_promotion_data(db)
+    remaining_slots = promo_data["remaining_slots"]
     
     logger.info(f"💰 PREÇO DEFINIDO para {user.email}:")
     logger.info(f"   - Valor: R$ {price:.2f}")
@@ -736,6 +757,14 @@ async def create_pix_payment(
             update_payment_metrics(False, price)
             raise HTTPException(status_code=400, detail=result.get("error", "Erro ao criar pagamento"))
         
+        # 🔥 VALIDA SE O QR CODE FOI GERADO
+        qr_code = result.get("qr_code")
+        qr_code_base64 = result.get("qr_code_base64")
+        
+        if not qr_code and not qr_code_base64:
+            logger.warning(f"⚠️ QR Code não gerado para pagamento {result.get('payment_id')}")
+            # Continua mesmo sem QR Code (pode ser gerado depois)
+        
         # ==========================================
         # 6️⃣ SALVA NO BANCO
         # ==========================================
@@ -747,8 +776,8 @@ async def create_pix_payment(
             amount=result["amount"],
             credits=result["credits"],
             payment_method="pix",
-            qr_code=result.get("qr_code"),
-            qr_code_base64=result.get("qr_code_base64"),
+            qr_code=qr_code,
+            qr_code_base64=qr_code_base64,
             description=f"Plano Bronze - {price_type}",
             payment_metadata={
                 "price_type": price_type,
@@ -758,7 +787,8 @@ async def create_pix_payment(
                 "cpf_provided": bool(request_data.cpf),
                 "plan_id": request_data.plan_id,
                 "remaining_slots_at_purchase": remaining_slots,
-                "environment": mp_service.environment if hasattr(mp_service, 'environment') else "production"
+                "environment": mp_service.environment if hasattr(mp_service, 'environment') else "production",
+                "qr_code_generated": bool(qr_code or qr_code_base64)
             }
         )
         
@@ -776,6 +806,7 @@ async def create_pix_payment(
         
         elapsed = (time.time() - start_time) * 1000
         logger.info(f"✅ Pagamento PIX criado em {elapsed:.0f}ms - ID: {payment.id} - MP ID: {result['payment_id']}")
+        logger.info(f"   📱 QR Code gerado: {'✅' if (qr_code or qr_code_base64) else '❌'}")
         
         return sanitize_response({
             "success": True,
@@ -785,8 +816,8 @@ async def create_pix_payment(
             "price_type": price_type,
             "was_promotional": was_promotional,
             "remaining_slots": remaining_slots,
-            "qr_code_base64": result.get("qr_code_base64"),
-            "qr_code": result.get("qr_code"),
+            "qr_code_base64": qr_code_base64,
+            "qr_code": qr_code,
             "expires_in": PIX_QR_CODE_EXPIRY_MINUTES * 60,
             "message": f"💰 Pagamento PIX gerado! Valor: R$ {price:.2f} - {'🔥 Preço de fundador garantido!' if was_promotional else 'Preço regular'}"
         })
@@ -861,7 +892,8 @@ async def check_payment_status(
             "approved_at": payment.approved_at.isoformat() if payment.approved_at else None,
             "was_promotional": payment.payment_metadata.get("was_promotional", False),
             "price_type": payment.payment_metadata.get("price_type", "regular"),
-            "is_real": payment.payment_metadata.get("real_payment", True)
+            "is_real": payment.payment_metadata.get("real_payment", True),
+            "qr_code_generated": payment.payment_metadata.get("qr_code_generated", False)
         }
     })
 
@@ -961,11 +993,14 @@ async def get_payment_metrics(
 @router.get("/health")
 async def payment_health_check():
     """🔥 Health check do serviço de pagamento"""
+    cache_active = _promotion_cache["data"] is not None
+    
     return {
         "status": "healthy" if (mp_service and mp_service.sdk) else "degraded",
         "service": "payment",
         "mp_sdk_available": mp_service and mp_service.sdk is not None,
-        "cache_active": _promotion_cache["data"] is not None,
+        "cache_active": cache_active,
+        "cache_ttl": PROMOTION_CACHE_TTL,
         "metrics": {
             "total_attempts": _payment_metrics["total_attempts"],
             "successful": _payment_metrics["successful_payments"],
@@ -1324,14 +1359,12 @@ async def get_subscription_status(
 # ==============================================
 
 print("=" * 70)
-print("✅ payment_routes.py v3.2 carregado - COMPLETO E CORRIGIDO!")
-print("   🔥 CORREÇÕES:")
+print("✅ payment_routes.py v3.3 carregado - CORRIGIDO E OTIMIZADO!")
+print("   🔥 CORREÇÕES v3.3:")
+print("      - ✅ DetachedInstanceError corrigido (cache usa dict)")
 print("      - ✅ CreditEligibilityResponse definido ANTES de ser usado")
-print("      - ✅ alert_payment_pending() com 3 argumentos (CORRIGIDO)")
-print("      - ✅ Sistema de cache (60s TTL)")
-print("      - ✅ Métricas de pagamento")
-print("      - ✅ Health check")
-print("      - ✅ Rotas de bônus premium")
+print("      - ✅ alert_payment_pending() com 3 argumentos")
+print("      - ✅ Validação de QR Code gerado")
 print("   📊 CONFIGURAÇÕES:")
 print(f"      - Rate limit: {MAX_PAYMENT_ATTEMPTS_PER_DAY} tentativas/dia")
 print(f"      - Cache TTL: {PROMOTION_CACHE_TTL}s")
