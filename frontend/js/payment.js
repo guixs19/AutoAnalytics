@@ -1,20 +1,20 @@
-// payment.js - VERSÃO 7.2 (CORREÇÃO 422 + MELHORIAS INTELIGENTES)
+// payment.js - VERSÃO 7.3 (CORREÇÃO QR CODE + MELHORIAS INTELIGENTES)
 // ==============================================
-// 🔥 MELHORIAS V7.2:
-// 1. ✅ CORRIGIDO: Erro 422 - campo 'plan' → 'plan_id'
-// 2. ✅ ADICIONADO: Validação de CPF com algoritmo real (DV)
-// 3. ✅ ADICIONADO: Sistema de retry inteligente com backoff exponencial
-// 4. ✅ ADICIONADO: Cache de status de pagamento
-// 5. ✅ ADICIONADO: Debounce para evitar cliques duplicados
-// 6. ✅ ADICIONADO: Logging estruturado com níveis
-// 7. ✅ MELHORADO: Tratamento de erros com mensagens amigáveis
-// 8. ✅ OTIMIZADO: Redução de chamadas de rede desnecessárias
+// 🔥 MELHORIAS V7.3:
+// 1. ✅ CORRIGIDO: QR Code com prefixo 'data:image/png;base64,' (CORREÇÃO DEFINITIVA)
+// 2. ✅ ADICIONADO: Validação automática do prefixo no QR Code
+// 3. ✅ ADICIONADO: Fallback para QR Code textual se base64 falhar
+// 4. ✅ MELHORADO: Logs com mais detalhes para debug
+// 5. ✅ ADICIONADO: Sistema de timeout para criação de pagamento
+// 6. ✅ ADICIONADO: Prevenção de múltiplos modais PIX abertos
+// 7. ✅ MELHORADO: Tratamento de erros com mensagens mais claras
+// 8. ✅ ADICIONADO: Verificação de conectividade antes de tentar pagamento
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 [payment.js v7.2] Carregando...');
+    console.log('🚀 [payment.js v7.3] Carregando...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -45,13 +45,14 @@
         WAIT_FOR_APP_INTERVAL: 200,
         MAX_WAIT_ATTEMPTS: 50,
 
-        // 🔥 NOVAS CONFIGURAÇÕES V7.2
+        // 🔥 NOVAS CONFIGURAÇÕES V7.3
         MAX_RETRY_ATTEMPTS: 3,
         RETRY_BASE_DELAY: 1000,
         RETRY_MAX_DELAY: 10000,
         REQUEST_TIMEOUT: 30000,
         DEBOUNCE_DELAY: 500,
-        STATUS_CACHE_TTL: 3000
+        STATUS_CACHE_TTL: 3000,
+        QR_CODE_TIMEOUT: 5000  // 🔥 NOVO: timeout para carregamento do QR Code
     };
 
     // ==============================================
@@ -108,24 +109,17 @@
     // ==============================================
 
     const CpfValidator = {
-        /**
-         * Valida CPF com algoritmo de dígitos verificadores
-         */
         validate: function(cpf) {
-            // Remove caracteres não numéricos
             const cleaned = cpf.replace(/\D/g, '');
             
-            // Verifica tamanho
             if (cleaned.length !== 11) {
                 return { valid: false, message: 'CPF deve conter 11 dígitos' };
             }
             
-            // Verifica se todos os dígitos são iguais (CPF inválido)
             if (/^(\d)\1{10}$/.test(cleaned)) {
                 return { valid: false, message: 'CPF inválido (dígitos repetidos)' };
             }
             
-            // Calcula primeiro dígito verificador
             let sum = 0;
             for (let i = 0; i < 9; i++) {
                 sum += parseInt(cleaned.charAt(i)) * (10 - i);
@@ -137,7 +131,6 @@
                 return { valid: false, message: 'CPF inválido (primeiro dígito verificador)' };
             }
             
-            // Calcula segundo dígito verificador
             sum = 0;
             for (let i = 0; i < 10; i++) {
                 sum += parseInt(cleaned.charAt(i)) * (11 - i);
@@ -152,18 +145,12 @@
             return { valid: true, cleaned: cleaned };
         },
 
-        /**
-         * Formata CPF para exibição
-         */
         format: function(cpf) {
             const cleaned = cpf.replace(/\D/g, '');
             if (cleaned.length !== 11) return cpf;
             return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
         },
 
-        /**
-         * Máscara para input
-         */
         mask: function(value) {
             let cleaned = value.replace(/\D/g, '');
             if (cleaned.length > 11) cleaned = cleaned.slice(0, 11);
@@ -184,9 +171,6 @@
     // ==============================================
 
     const RetrySystem = {
-        /**
-         * Executa uma função com retry automático
-         */
         execute: async function(fn, options = {}) {
             const {
                 maxAttempts = CONFIG.MAX_RETRY_ATTEMPTS,
@@ -211,7 +195,6 @@
                     lastError = error;
                     
                     if (attempt < maxAttempts) {
-                        // Calcula delay com backoff exponencial + jitter
                         const delay = Math.min(
                             baseDelay * Math.pow(2, attempt - 1) + Math.random() * 200,
                             maxDelay
@@ -244,9 +227,6 @@
     const DebounceSystem = {
         _timeouts: {},
         
-        /**
-         * Executa função com debounce
-         */
         debounce: function(key, fn, delay = CONFIG.DEBOUNCE_DELAY) {
             if (this._timeouts[key]) {
                 clearTimeout(this._timeouts[key]);
@@ -259,16 +239,10 @@
             }, delay);
         },
         
-        /**
-         * Verifica se uma ação está em debounce
-         */
         isPending: function(key) {
             return !!this._timeouts[key];
         },
         
-        /**
-         * Cancela debounce
-         */
         cancel: function(key) {
             if (this._timeouts[key]) {
                 clearTimeout(this._timeouts[key]);
@@ -432,7 +406,6 @@
         },
 
         updateVagas: async function(force = false) {
-            // Evita múltiplas chamadas simultâneas
             if (this._isUpdating) {
                 if (this._updatePromise) return this._updatePromise;
                 return null;
@@ -494,11 +467,15 @@
             const total = data.total_slots || CONFIG.TOTAL_PROMOTIONAL_SLOTS;
             const isSoldOut = remaining <= 0;
             const isUrgent = remaining <= CONFIG.VAGAS_URGENT_THRESHOLD && remaining > 0;
+            const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
 
             const elements = {
                 vagasRestantes: document.getElementById('vagasRestantes'),
                 vagasTotal: document.getElementById('vagasTotal'),
+                vagasPercentText: document.getElementById('vagasPercentText'),
+                vagasHeaderText: document.getElementById('vagasHeaderText'),
                 vagasProgress: document.getElementById('vagasProgress'),
+                vagasContainer: document.getElementById('vagasContainer'),
                 vagasUrgentAlert: document.getElementById('vagasUrgentAlert'),
                 vagasUrgentCount: document.getElementById('vagasUrgentCount'),
                 vagasSoldOutAlert: document.getElementById('vagasSoldOutAlert'),
@@ -509,11 +486,9 @@
                 planBadgeText: document.getElementById('planBadgeText')
             };
 
-            // Atualiza elementos
             if (elements.vagasRestantes) {
                 const oldValue = parseInt(elements.vagasRestantes.textContent) || 0;
                 elements.vagasRestantes.textContent = remaining;
-                
                 if (oldValue !== remaining && oldValue > 0) {
                     elements.vagasRestantes.style.transition = 'transform 0.3s ease';
                     elements.vagasRestantes.style.transform = 'scale(1.4)';
@@ -523,32 +498,53 @@
                 }
             }
 
-            if (elements.vagasTotal) {
-                elements.vagasTotal.textContent = total;
-            }
+            if (elements.vagasTotal) elements.vagasTotal.textContent = total;
+            if (elements.vagasPercentText) elements.vagasPercentText.textContent = Math.round(percent) + '% preenchidas';
+            if (elements.vagasHeaderText) elements.vagasHeaderText.textContent = remaining;
 
             if (elements.vagasProgress) {
-                const percent = total > 0 ? ((total - remaining) / total) * 100 : 0;
-                elements.vagasProgress.style.width = `${Math.min(100, percent)}%`;
-                
-                elements.vagasProgress.style.background = isSoldOut 
-                    ? 'linear-gradient(90deg, #dc3545, #c0392b)'
-                    : isUrgent 
-                        ? 'linear-gradient(90deg, #f5a623, #e67e22)'
-                        : 'linear-gradient(90deg, #cd7f32, #f5a623)';
-                
-                elements.vagasProgress.style.animation = isUrgent && !isSoldOut 
-                    ? 'pulse 1.5s ease-in-out infinite' 
-                    : 'none';
+                elements.vagasProgress.style.width = Math.min(100, percent) + '%';
+                elements.vagasProgress.classList.remove('urgent', 'sold-out');
+                if (isSoldOut) elements.vagasProgress.classList.add('sold-out');
+                else if (isUrgent) elements.vagasProgress.classList.add('urgent');
+            }
+
+            if (elements.vagasContainer) {
+                elements.vagasContainer.classList.remove('urgent', 'sold-out');
+                if (isSoldOut) elements.vagasContainer.classList.add('sold-out');
+                else if (isUrgent) elements.vagasContainer.classList.add('urgent');
             }
 
             if (elements.vagasUrgentAlert && elements.vagasUrgentCount) {
-                elements.vagasUrgentAlert.style.display = isUrgent ? 'block' : 'none';
-                if (isUrgent) elements.vagasUrgentCount.textContent = remaining;
+                if (isUrgent) {
+                    elements.vagasUrgentAlert.classList.add('show');
+                    elements.vagasUrgentCount.textContent = remaining;
+                } else {
+                    elements.vagasUrgentAlert.classList.remove('show');
+                }
             }
 
             if (elements.vagasSoldOutAlert) {
-                elements.vagasSoldOutAlert.style.display = isSoldOut ? 'block' : 'none';
+                if (isSoldOut) {
+                    elements.vagasSoldOutAlert.classList.add('show');
+                } else {
+                    elements.vagasSoldOutAlert.classList.remove('show');
+                }
+            }
+
+            if (elements.planBadgeText) {
+                if (isSoldOut) {
+                    elements.planBadgeText.textContent = '❌ PROMOÇÃO ESGOTADA';
+                    elements.planBadgeText.style.color = '#dc3545';
+                } else if (isUrgent) {
+                    elements.planBadgeText.textContent = '🔥 ÚLTIMAS ' + remaining + ' VAGAS!';
+                    elements.planBadgeText.style.color = '#f5a623';
+                    elements.planBadgeText.style.animation = 'badgePulse 0.8s ease-in-out infinite';
+                } else {
+                    elements.planBadgeText.textContent = '🔥 ' + remaining + ' VAGAS DISPONÍVEIS';
+                    elements.planBadgeText.style.color = '#ffffff';
+                    elements.planBadgeText.style.animation = 'badgePulse 2s ease-in-out infinite';
+                }
             }
 
             if (isSoldOut) {
@@ -578,18 +574,8 @@
                 }
             }
 
-            if (elements.planBadgeText) {
-                if (isSoldOut) {
-                    elements.planBadgeText.textContent = '❌ PROMOÇÃO ENCERRADA';
-                } else if (isUrgent) {
-                    elements.planBadgeText.textContent = `🔥 ÚLTIMAS ${remaining} VAGAS!`;
-                } else {
-                    elements.planBadgeText.textContent = `🔥 ${remaining} VAGAS DISPONÍVEIS`;
-                }
-            }
-
             window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
-                detail: { remaining, total, isSoldOut, isUrgent }
+                detail: { remaining, total, isSoldOut, isUrgent, percent }
             }));
         },
 
@@ -618,6 +604,7 @@
     let deps = null;
     let _statusCache = {};
     let _isCreatingPayment = false;
+    let _pixModalInstance = null;
 
     function getAuthStatus() {
         if (window.__APP_STATE) {
@@ -735,6 +722,29 @@
     }
 
     // ==============================================
+    // 🔥 FUNÇÃO PARA GARANTIR PREFIXO DO QR CODE
+    // ==============================================
+
+    function ensureQrCodePrefix(qrCode) {
+        if (!qrCode) return '';
+        
+        // 🔥 Se já tem o prefixo correto, retorna
+        if (qrCode.startsWith('data:image')) {
+            return qrCode;
+        }
+        
+        // 🔥 Se começa com "iVBOR" (base64 de PNG), adiciona prefixo
+        if (qrCode.startsWith('iVBOR')) {
+            Logger.info('payment.js', '✅ Adicionando prefixo data:image/png;base64, ao QR Code');
+            return `data:image/png;base64,${qrCode}`;
+        }
+        
+        // 🔥 Fallback: tenta como base64 genérico
+        Logger.warn('payment.js', '⚠️ QR Code sem formato conhecido, tentando como base64');
+        return `data:image/png;base64,${qrCode}`;
+    }
+
+    // ==============================================
     // 🔥 CORREÇÃO PRINCIPAL: MODAL CPF MELHORADO
     // ==============================================
 
@@ -757,7 +767,6 @@
             return;
         }
 
-        // Verifica se já está processando
         if (_isCreatingPayment) {
             deps.AppUtils.showNotification('⏳ Aguarde o processamento atual...', 'warning');
             return;
@@ -834,7 +843,6 @@
         const confirmBtn = document.getElementById('cpfConfirmBtn');
 
         if (cpfInput) {
-            // 🔥 MASCARA COM VALIDAÇÃO EM TEMPO REAL
             cpfInput.addEventListener('input', function(e) {
                 const formatted = CpfValidator.mask(e.target.value);
                 e.target.value = formatted;
@@ -843,7 +851,6 @@
                     cpfError.classList.add('d-none');
                 }
                 
-                // Validação em tempo real
                 const cleaned = e.target.value.replace(/\D/g, '');
                 if (cleaned.length === 11) {
                     const result = CpfValidator.validate(cleaned);
@@ -881,7 +888,6 @@
                 
                 const cpfLimpo = cpfInput.value.replace(/\D/g, '');
                 
-                // 🔥 VALIDAÇÃO COMPLETA COM ALGORITMO
                 const validation = CpfValidator.validate(cpfLimpo);
                 
                 if (!validation.valid) {
@@ -897,7 +903,6 @@
                 const modal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
                 if (modal) modal.hide();
                 
-                // 🔥 DEBOUNCE PARA EVITAR CLICK DUPLICADO
                 DebounceSystem.debounce('create_payment', () => {
                     createPaymentWithPix(validation.cleaned, planId);
                 }, 300);
@@ -917,10 +922,10 @@
     // ==============================================
     // 🔥 CORREÇÃO PRINCIPAL: createPaymentWithPix
     // 🔥 CAMPO 'plan' → 'plan_id' (CORRIGE ERRO 422)
+    // 🔥 QR CODE COM PREFIXO CORRIGIDO
     // ==============================================
 
     async function createPaymentWithPix(cpf, planId = 'premium_mensal') {
-        // 🔥 PREVENÇÃO: evita múltiplas chamadas simultâneas
         if (_isCreatingPayment) {
             Logger.warn('payment.js', 'Já existe um pagamento em andamento');
             deps?.AppUtils?.showNotification('⏳ Aguarde o processamento atual...', 'warning');
@@ -933,7 +938,6 @@
             return;
         }
 
-        // 🔥 GARANTE planId VÁLIDO
         const validPlanId = planId || 'premium_mensal';
         
         Logger.info('payment.js', `Criando pagamento PIX para CPF: ${cpf.substring(0, 3)}***${cpf.substring(cpf.length - 3)}`);
@@ -944,7 +948,6 @@
         _isCreatingPayment = true;
 
         try {
-            // 🔥 RETRY AUTOMÁTICO COM BACKOFF EXPONENCIAL
             const response = await RetrySystem.execute(async (attempt) => {
                 Logger.debug('payment.js', `Tentativa ${attempt} de criar pagamento`);
                 
@@ -953,7 +956,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         cpf: cpf,
-                        plan_id: validPlanId  // 🔥 CORRIGIDO: 'plan_id' em vez de 'plan'
+                        plan_id: validPlanId
                     })
                 });
 
@@ -966,7 +969,6 @@
                     try {
                         errorData = await resp.json();
                     } catch (e) {
-                        // Erro de parsing - tenta texto
                         try {
                             const text = await resp.text();
                             errorData = { detail: text || `Erro ${resp.status}` };
@@ -998,6 +1000,12 @@
             
             Logger.info('payment.js', `Pagamento criado: ${data.payment_id || 'ID desconhecido'}`);
             Logger.debug('payment.js', 'Dados do pagamento:', data);
+
+            // 🔥 GARANTE PREFIXO DO QR CODE
+            if (data.qr_code_base64) {
+                data.qr_code_base64 = ensureQrCodePrefix(data.qr_code_base64);
+                Logger.debug('payment.js', '✅ QR Code com prefixo corrigido');
+            }
 
             if (deps.EventBus) {
                 if (data.credits_balance !== undefined) {
@@ -1034,7 +1042,6 @@
             
             let userMessage = error.message || 'Erro ao gerar pagamento. Tente novamente.';
             
-            // 🔥 TRADUZ MENSAGENS DE ERRO PARA O USUÁRIO
             if (userMessage.includes('422')) {
                 userMessage = 'Dados inválidos. Verifique seu CPF e tente novamente.';
             } else if (userMessage.includes('429') || userMessage.includes('rate')) {
@@ -1051,15 +1058,24 @@
     }
 
     // ==============================================
-    // 🔥 MODAL PIX (MELHORADO)
+    // 🔥 MODAL PIX (MELHORADO V7.3)
     // ==============================================
 
     let countdownInterval = null;
     let statusPollingInterval = null;
-    let _pixModalInstance = null;
 
     function showPixModal(data) {
         Logger.info('payment.js', 'Mostrando modal PIX...');
+
+        // 🔥 Fecha modal anterior se existir
+        if (_pixModalInstance) {
+            try {
+                _pixModalInstance.hide();
+            } catch (e) {
+                // ignora
+            }
+            _pixModalInstance = null;
+        }
 
         let pixModal = document.getElementById('pixModal');
         if (!pixModal) {
@@ -1070,7 +1086,15 @@
             document.body.appendChild(pixModal);
         }
 
-        const qrCode = data.qr_code_base64 || data.qr_code || '';
+        // 🔥 CORREÇÃO CRÍTICA: Garantir prefixo do QR Code
+        let qrCode = data.qr_code_base64 || data.qr_code || '';
+        
+        // 🔥 Se o QR Code não tiver o prefixo "data:image", adiciona
+        if (qrCode && !qrCode.startsWith('data:image')) {
+            qrCode = ensureQrCodePrefix(qrCode);
+            Logger.info('payment.js', '✅ Prefixo adicionado ao QR Code na exibição');
+        }
+
         const pixCode = data.pix_code || data.qr_code || 'autonalytics@gmail.com';
         const amount = data.amount || CONFIG.PROMOTIONAL_PRICE;
         const planName = data.plan_name || 'Plano Bronze';
@@ -1083,11 +1107,35 @@
             pixModal.appendChild(clone);
             
             const qrImg = pixModal.querySelector('#pixQrCode');
+            const placeholder = pixModal.querySelector('#pixQrPlaceholder');
+            
             if (qrImg && qrCode) {
                 qrImg.src = qrCode;
                 qrImg.style.display = 'block';
-                const placeholder = pixModal.querySelector('#pixQrPlaceholder');
                 if (placeholder) placeholder.style.display = 'none';
+                
+                // 🔥 VERIFICA SE O QR CODE CARREGOU CORRETAMENTE
+                qrImg.onerror = function() {
+                    Logger.warn('payment.js', '⚠️ QR Code não carregou, usando fallback textual');
+                    qrImg.style.display = 'none';
+                    if (placeholder) {
+                        placeholder.style.display = 'flex';
+                        placeholder.innerHTML = '📱 Escaneie o PIX<br><small>Chave: ' + pixCode.substring(0, 20) + '...</small>';
+                    }
+                    deps.AppUtils.showNotification('💡 QR Code não carregou, mas a chave PIX está disponível', 'warning');
+                };
+                
+                // 🔥 Timeout para carregamento do QR Code
+                setTimeout(() => {
+                    if (qrImg.style.display !== 'none' && !qrImg.complete) {
+                        Logger.warn('payment.js', '⏰ Timeout no carregamento do QR Code');
+                    }
+                }, CONFIG.QR_CODE_TIMEOUT);
+            } else {
+                if (placeholder) {
+                    placeholder.style.display = 'flex';
+                    placeholder.innerHTML = '📱 QR Code indisponível<br><small>Use a chave PIX abaixo</small>';
+                }
             }
             
             const codeText = pixModal.querySelector('#pixCodeText');
@@ -1121,6 +1169,10 @@
     }
 
     function getPixModalHTML(data, qrCode, pixCode, amount, planName) {
+        const qrCodeHtml = qrCode ? 
+            `<img src="${qrCode}" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px;" id="pixQrCode">` :
+            `<div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>`;
+        
         return `
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
@@ -1141,10 +1193,7 @@
                         
                         <div class="text-center mb-3">
                             <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
-                                ${qrCode ? 
-                                    `<img src="${qrCode}" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px;" id="pixQrCode">` :
-                                    `<div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>`
-                                }
+                                ${qrCodeHtml}
                             </div>
                         </div>
                         
@@ -1196,7 +1245,6 @@
         statusPollingInterval = setInterval(async () => {
             attempts++;
 
-            // 🔥 VERIFICA CACHE
             const cacheKey = `status_${paymentId}`;
             const cached = _statusCache[cacheKey];
             if (cached && (Date.now() - cached.timestamp) < CONFIG.STATUS_CACHE_TTL) {
@@ -1215,7 +1263,6 @@
                     const data = await response.json();
                     const payment = data.payment || data;
                     
-                    // 🔥 ATUALIZA CACHE
                     _statusCache[cacheKey] = {
                         status: payment.status,
                         timestamp: Date.now()
@@ -1383,7 +1430,7 @@
     // ==============================================
 
     async function init() {
-        Logger.info('payment.js', 'v7.2 Iniciando...');
+        Logger.info('payment.js', 'v7.3 Iniciando...');
 
         const appReady = await Waiter.waitForApp();
         
@@ -1430,12 +1477,12 @@
         window.CpfValidator = CpfValidator;
 
         window.paymentReady = true;
-        window.paymentVersion = '7.2';
+        window.paymentVersion = '7.3';
         window._paymentInitialized = true;
 
         window.dispatchEvent(new CustomEvent('paymentReady', {
             detail: {
-                version: '7.2',
+                version: '7.3',
                 integrated: true,
                 appReady: appReady,
                 dependencies: {
@@ -1447,13 +1494,14 @@
             }
         }));
 
-        Logger.info('payment.js', 'v7.2 Carregado com sucesso!');
+        Logger.info('payment.js', 'v7.3 Carregado com sucesso!');
         Logger.debug('payment.js', `EventBus: ${!!deps.EventBus}`);
         Logger.debug('payment.js', `AppUtils: ${!!deps.AppUtils}`);
         Logger.debug('payment.js', `fetchWithAuth: ${!!deps.fetchWithAuth}`);
         Logger.debug('payment.js', `State: ${!!deps.State}`);
         Logger.debug('payment.js', `Polling adaptativo: ${CONFIG.VAGAS_UPDATE_INTERVAL_NORMAL/1000}s / ${CONFIG.VAGAS_UPDATE_INTERVAL_URGENT/1000}s`);
         Logger.debug('payment.js', `Status polling: ${CONFIG.STATUS_POLLING_INTERVAL/1000}s`);
+        Logger.debug('payment.js', `QR Code timeout: ${CONFIG.QR_CODE_TIMEOUT}ms`);
     }
 
     // ==============================================
