@@ -42,6 +42,9 @@
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
+    <!-- 🔥 QRCode.js para geração local de QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
     <style>
         /* ===== RESET E BASE ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1165,7 +1168,7 @@
                             <!-- 🔥 BOTÕES REATIVOS -->
                             <div class="d-grid gap-3 mt-4">
                                 
-                                <button class="btn-upgrade" id="btnUpgrade" onclick="window.handleUpgrade()">
+                                <button class="btn-upgrade" id="btnUpgrade">
                                     <i class="fas fa-bolt me-2"></i>
                                     🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
                                     <small class="d-block fs-10">Pagamento seguro via PIX</small>
@@ -1429,7 +1432,7 @@
                 <div class="col-12 text-center">
                     <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
                         <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v3.5 - Planos e Suporte
+                        AutoAnalytics v3.7 - Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1601,7 +1604,7 @@
     <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
     <script src="/static/js/auth.js?ver=3.1.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v7.3 (CORREÇÃO QR CODE + MELHORIAS INTELIGENTES) -->
+    <!-- 4️⃣ PAYMENT - v7.4 (CORREÇÃO QR CODE + GERADOR LOCAL) -->
     <script src="/static/js/payment.js?ver=7.4.0"></script>
 
     <!-- ============================================== -->
@@ -1713,17 +1716,51 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO -->
+    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO V3.7 (CORRIGIDA) -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.6 (Sincronizado com payment.js v7.3)');
+            console.log('🚀 AutoAnalytics - Planos v3.7 (Sincronizado com payment.js v7.4)');
+
+            // ==============================================
+            // 🔥 VARIÁVEIS DE CONTROLE - PREVENIR MÚLTIPLOS CLIQUES
+            // ==============================================
+            
+            var _upgradeInProgress = false;
+            var _cpfModalOpen = false;
+
+            // ==============================================
+            // 🔥 FUNÇÃO PARA REABILITAR O BOTÃO
+            // ==============================================
+            
+            window.resetUpgradeButton = function() {
+                var btn = document.getElementById('btnUpgrade');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `
+                        <i class="fas fa-bolt me-2"></i>
+                        🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                        <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                    `;
+                    btn.classList.remove('loading');
+                }
+                _upgradeInProgress = false;
+                _cpfModalOpen = false;
+            };
+
+            // ==============================================
+            // 🔥 FUNÇÃO GETAPP
+            // ==============================================
 
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
+
+            // ==============================================
+            // 🔥 WAIT FOR APP
+            // ==============================================
 
             function waitForApp(maxAttempts) {
                 maxAttempts = maxAttempts || 30;
@@ -1942,12 +1979,22 @@
             }
 
             // ==============================================
-            // 🔥 HANDLE UPGRADE - Sincronizado com payment.js v7.3
+            // 🔥 HANDLE UPGRADE - CORRIGIDO COM PREVENÇÃO DE MÚLTIPLOS CLIQUES
             // ==============================================
 
             window.handleUpgrade = function() {
                 console.log('🛒 Iniciando upgrade...');
                 
+                // 🔥 PREVENIR MÚLTIPLOS CLIQUES
+                if (_upgradeInProgress) {
+                    console.warn('⚠️ Upgrade já em andamento. Aguarde...');
+                    var app = getApp();
+                    if (app && typeof app.showNotification === 'function') {
+                        app.showNotification('⏳ Aguarde o processamento atual...', 'warning');
+                    }
+                    return;
+                }
+
                 var app = getApp();
                 var isPremium = app && typeof app.isPremium === 'function' ? app.isPremium() : false;
                 var isAdmin = app && typeof app.isAdmin === 'function' ? app.isAdmin() : false;
@@ -1967,14 +2014,27 @@
                     return;
                 }
 
-                // 🔥 Verifica se o payment.js v7.3 está disponível
+                // 🔥 DESABILITAR BOTÃO IMEDIATAMENTE
+                var btn = document.getElementById('btnUpgrade');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processando...';
+                    btn.classList.add('loading');
+                }
+
+                // 🔥 MARCAR COMO EM ANDAMENTO
+                _upgradeInProgress = true;
+
+                // 🔥 Verifica se o payment.js v7.4 está disponível
                 if (typeof window.openCpfModal === 'function') {
                     window.openCpfModal('premium_mensal');
                 } else {
-                    console.error('❌ payment.js v7.3 não carregado!');
+                    console.error('❌ payment.js v7.4 não carregado!');
                     if (app && typeof app.showNotification === 'function') {
                         app.showNotification('Sistema de pagamento indisponível. Recarregue a página.', 'error');
                     }
+                    // 🔥 REABILITAR BOTÃO EM CASO DE ERRO
+                    window.resetUpgradeButton();
                 }
             };
 
@@ -2024,9 +2084,9 @@
                 updateUserUI(data);
             });
 
-            // 🔥 Evento para quando o payment.js v7.3 estiver pronto
+            // 🔥 Evento para quando o payment.js v7.4 estiver pronto
             document.addEventListener('paymentReady', function(e) {
-                console.log('✅ payment.js v7.3 está pronto!');
+                console.log('✅ payment.js v7.4 está pronto!');
                 var detail = e.detail || {};
                 if (detail.version) {
                     console.log('   📦 Versão:', detail.version);
@@ -2034,6 +2094,11 @@
                 if (detail.integrated) {
                     console.log('   🔗 Integrado com app.js');
                 }
+            });
+
+            // 🔥 Evento para quando o modal PIX for fechado
+            document.addEventListener('paymentModalClosed', function() {
+                window.resetUpgradeButton();
             });
 
             // ==============================================
@@ -2090,12 +2155,14 @@
                     window.VagasSystem.updateVagas();
                 }
 
-                console.log('✅ planos.html v3.6 carregado com sucesso!');
-                console.log('   🔥 Sincronizado com payment.js v7.3');
+                console.log('✅ planos.html v3.7 carregado com sucesso!');
+                console.log('   🔥 Sincronizado com payment.js v7.4');
+                console.log('   🔥 PREVENÇÃO DE MÚLTIPLOS CLIQUES ATIVA');
                 console.log('   🔥 Vagas em tempo real via evento');
                 console.log('   🔥 UI reativa sincronizada');
                 console.log('   🔐 Autenticação unificada via app.js');
-                console.log('   📱 QR Code com prefixo corrigido');
+                console.log('   📱 QR Code com geração local fallback');
+                console.log('   ⏰ Expiração PIX: 2 minutos');
             }
 
             document.addEventListener('DOMContentLoaded', function() {
@@ -2144,6 +2211,12 @@
                             window.location.replace('/login');
                         }
                     });
+                }
+
+                // 🔥 Adicionar listener para o botão de upgrade
+                var upgradeBtn = document.getElementById('btnUpgrade');
+                if (upgradeBtn) {
+                    upgradeBtn.addEventListener('click', window.handleUpgrade);
                 }
 
                 init();

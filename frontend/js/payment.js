@@ -1,6 +1,6 @@
-// payment.js - VERSÃO 7.4 (CORREÇÃO DEFINITIVA QR CODE + MELHORIAS INTELIGENTES)
+// payment.js - VERSÃO 7.5 (CORREÇÃO DEFINITIVA + PREVENÇÃO DE MÚLTIPLAS REQUISIÇÕES)
 // ==============================================
-// 🔥 MELHORIAS V7.4:
+// 🔥 MELHORIAS V7.5:
 // 1. ✅ CORRIGIDO: QR Code com prefixo 'data:image/png;base64,' (CORREÇÃO DEFINITIVA)
 // 2. ✅ ADICIONADO: Geração local de QR Code quando o MP não retorna
 // 3. ✅ ADICIONADO: Fallback inteligente com múltiplas estratégias
@@ -11,12 +11,16 @@
 // 8. ✅ MELHORADO: Tratamento de erros com mensagens mais claras
 // 9. ✅ ADICIONADO: Verificação de integridade do QR Code
 // 10. ✅ ADICIONADO: Sistema de fallback textual quando imagem falha
+// 11. ✅ CORRIGIDO: Prevenção de múltiplas requisições (rate limit)
+// 12. ✅ ADICIONADO: Flag de controle para modal CPF
+// 13. ✅ ADICIONADO: Função resetUpgradeButton global
+// 14. ✅ CORRIGIDO: Retry system não tenta novamente em rate limit 429
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 [payment.js v7.4] Carregando...');
+    console.log('🚀 [payment.js v7.5] Carregando...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -47,15 +51,15 @@
         WAIT_FOR_APP_INTERVAL: 200,
         MAX_WAIT_ATTEMPTS: 50,
 
-        // 🔥 CONFIGURAÇÕES V7.4
-        MAX_RETRY_ATTEMPTS: 3,
-        RETRY_BASE_DELAY: 1000,
-        RETRY_MAX_DELAY: 10000,
+        // 🔥 CONFIGURAÇÕES V7.5
+        MAX_RETRY_ATTEMPTS: 2,  // 🔥 REDUZIDO para evitar rate limit
+        RETRY_BASE_DELAY: 2000, // 🔥 AUMENTADO para dar tempo
+        RETRY_MAX_DELAY: 5000,
         REQUEST_TIMEOUT: 30000,
-        DEBOUNCE_DELAY: 500,
+        DEBOUNCE_DELAY: 800,    // 🔥 AUMENTADO para evitar múltiplos cliques
         STATUS_CACHE_TTL: 3000,
         QR_CODE_TIMEOUT: 5000,
-        QR_CODE_CACHE_TTL: 60000  // 🔥 NOVO: Cache de QR Code
+        QR_CODE_CACHE_TTL: 60000
     };
 
     // ==============================================
@@ -111,24 +115,18 @@
     const QrCodeSystem = {
         _cache: {},
         
-        /**
-         * 🔥 Gera QR Code localmente a partir do texto PIX
-         * Usado como fallback quando o Mercado Pago não retorna a imagem
-         */
         generateFromText: function(pixCode) {
             if (!pixCode) return null;
             
             try {
-                Logger.info('QrCodeSystem', '🔄 Gerando QR Code localmente a partir do texto PIX...');
+                Logger.info('QrCodeSystem', '🔄 Gerando QR Code localmente...');
                 
-                // 🔥 Verifica se já temos no cache
                 const cacheKey = pixCode.substring(0, 50);
                 if (this._cache[cacheKey]) {
                     Logger.debug('QrCodeSystem', '📦 QR Code do cache local');
                     return this._cache[cacheKey];
                 }
                 
-                // 🔥 Tenta usar a biblioteca QRCode.js
                 if (typeof QRCode !== 'undefined') {
                     const canvas = document.createElement('canvas');
                     canvas.width = 200;
@@ -143,17 +141,15 @@
                         correctLevel: QRCode.CorrectLevel.H
                     });
                     
-                    // Aguarda o canvas ser desenhado
                     const dataUrl = canvas.toDataURL('image/png');
                     
                     if (dataUrl && dataUrl.startsWith('data:image')) {
                         this._cache[cacheKey] = dataUrl;
-                        Logger.info('QrCodeSystem', '✅ QR Code gerado localmente com sucesso!');
+                        Logger.info('QrCodeSystem', '✅ QR Code gerado localmente!');
                         return dataUrl;
                     }
                 }
                 
-                // 🔥 Fallback: usa a biblioteca qrcode-generator se disponível
                 if (typeof QRCodeGenerator !== 'undefined') {
                     const qr = QRCodeGenerator(0, 'M');
                     qr.addData(pixCode);
@@ -196,53 +192,37 @@
             }
         },
         
-        /**
-         * 🔥 Garante que o QR Code tenha o prefixo correto
-         */
         ensurePrefix: function(qrCode) {
             if (!qrCode) return '';
             
-            // Se já tem o prefixo correto, retorna
             if (qrCode.startsWith('data:image')) {
                 return qrCode;
             }
             
-            // Se começa com "iVBOR" (base64 de PNG), adiciona prefixo
             if (qrCode.startsWith('iVBOR')) {
-                Logger.info('QrCodeSystem', '✅ Adicionando prefixo data:image/png;base64, ao QR Code');
+                Logger.info('QrCodeSystem', '✅ Adicionando prefixo data:image/png;base64,');
                 return `data:image/png;base64,${qrCode}`;
             }
             
-            // Se começa com "000201" (PIX Copia e Cola), é texto
             if (qrCode.startsWith('000201')) {
                 Logger.debug('QrCodeSystem', '📱 QR Code textual detectado');
                 return qrCode;
             }
             
-            // Fallback: tenta como base64 genérico
-            Logger.warn('QrCodeSystem', '⚠️ QR Code sem formato conhecido, tentando como base64');
+            Logger.warn('QrCodeSystem', '⚠️ QR Code sem formato conhecido');
             return `data:image/png;base64,${qrCode}`;
         },
         
-        /**
-         * 🔥 Valida se o QR Code é uma imagem válida
-         */
         isValidImage: function(qrCode) {
             if (!qrCode) return false;
             return qrCode.startsWith('data:image') && qrCode.length > 100;
         },
         
-        /**
-         * 🔥 Verifica se o QR Code é textual (PIX Copia e Cola)
-         */
         isTextual: function(qrCode) {
             if (!qrCode) return false;
             return qrCode.startsWith('000201') || qrCode.includes('br.gov.bcb.pix');
         },
         
-        /**
-         * 🔥 Limpa o cache de QR Code
-         */
         clearCache: function() {
             this._cache = {};
             Logger.debug('QrCodeSystem', '🧹 Cache de QR Code limpo');
@@ -338,6 +318,12 @@
                     return result;
                 } catch (error) {
                     lastError = error;
+                    
+                    // 🔥 V7.5: Se for rate limit (429), não tenta novamente
+                    if (error.message && (error.message.includes('429') || error.message.includes('rate'))) {
+                        Logger.warn(context, `Rate limit detectado, não tentando novamente`);
+                        throw error;
+                    }
                     
                     if (attempt < maxAttempts) {
                         const delay = Math.min(
@@ -481,6 +467,27 @@
 
             return true;
         }
+    };
+
+    // ==============================================
+    // 🔥 FUNÇÃO GLOBAL PARA REABILITAR O BOTÃO
+    // ==============================================
+
+    window.resetUpgradeButton = function() {
+        var btn = document.getElementById('btnUpgrade');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `
+                <i class="fas fa-bolt me-2"></i>
+                🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
+                <small class="d-block fs-10">Pagamento seguro via PIX</small>
+            `;
+            btn.classList.remove('loading');
+        }
+        window._upgradeInProgress = false;
+        window._cpfModalOpen = false;
+        _isCreatingPayment = false;
+        Logger.info('payment.js', '🔄 Botão reabilitado');
     };
 
     // ==============================================
@@ -751,6 +758,10 @@
     let _isCreatingPayment = false;
     let _pixModalInstance = null;
 
+    // 🔥 V7.5: Variáveis de controle globais
+    window._upgradeInProgress = false;
+    window._cpfModalOpen = false;
+
     function getAuthStatus() {
         if (window.__APP_STATE) {
             const s = window.__APP_STATE;
@@ -867,12 +878,20 @@
     }
 
     // ==============================================
-    // 🔥 CORREÇÃO PRINCIPAL: MODAL CPF MELHORADO
+    // 🔥 CORREÇÃO V7.5: openCpfModal com prevenção de duplicidade
     // ==============================================
 
     function openCpfModal(planId) {
         if (!deps) {
             Logger.warn('payment.js', 'Dependências não carregadas');
+            window.resetUpgradeButton();
+            return;
+        }
+
+        // 🔥 PREVENIR MÚLTIPLOS MODAIS
+        if (window._cpfModalOpen) {
+            Logger.warn('payment.js', 'Modal CPF já está aberto');
+            deps.AppUtils.showNotification('⏳ Aguarde o processamento atual...', 'warning');
             return;
         }
 
@@ -880,19 +899,25 @@
 
         if (authStatus.isAdmin) {
             deps.AppUtils.showNotification('👑 Administrador tem acesso ilimitado.', 'info');
+            window.resetUpgradeButton();
             return;
         }
 
         if (authStatus.isPremium) {
             deps.AppUtils.showNotification('✅ Você já possui um plano ativo!', 'success');
             window.location.href = '/dashboard';
+            window.resetUpgradeButton();
             return;
         }
 
         if (_isCreatingPayment) {
             deps.AppUtils.showNotification('⏳ Aguarde o processamento atual...', 'warning');
+            window.resetUpgradeButton();
             return;
         }
+
+        // 🔥 MARCAR MODAL COMO ABERTO
+        window._cpfModalOpen = true;
 
         let cpfModal = document.getElementById('cpfModal');
         if (!cpfModal) {
@@ -914,12 +939,29 @@
 
         setupCpfModalEvents(cpfModal, planId);
 
+        // 🔥 QUANDO O MODAL FECHAR, LIBERAR
+        cpfModal.addEventListener('hidden.bs.modal', function() {
+            window._cpfModalOpen = false;
+            window.resetUpgradeButton();
+        });
+
+        // 🔥 QUANDO O MODAL FOR FECHADO POR CLIQUE FORA
+        cpfModal.addEventListener('hide.bs.modal', function() {
+            window._cpfModalOpen = false;
+            window.resetUpgradeButton();
+        });
+
         try {
             new bootstrap.Modal(cpfModal).show();
         } catch (e) {
             Logger.warn('payment.js', 'Bootstrap Modal não disponível:', e);
             cpfModal.style.display = 'block';
             cpfModal.classList.add('show');
+            // Fallback: liberar após 5 segundos
+            setTimeout(() => {
+                window._cpfModalOpen = false;
+                window.resetUpgradeButton();
+            }, 5000);
         }
     }
 
@@ -1025,9 +1067,10 @@
                 const modal = bootstrap.Modal.getInstance(document.getElementById('cpfModal'));
                 if (modal) modal.hide();
                 
+                // 🔥 V7.5: Debounce com delay maior
                 DebounceSystem.debounce('create_payment', () => {
                     createPaymentWithPix(validation.cleaned, planId);
-                }, 300);
+                }, 500);
             });
         }
 
@@ -1042,20 +1085,34 @@
     }
 
     // ==============================================
-    // 🔥 CORREÇÃO PRINCIPAL: createPaymentWithPix
+    // 🔥 CORREÇÃO V7.5: createPaymentWithPix com prevenção de múltiplas chamadas
     // ==============================================
 
     async function createPaymentWithPix(cpf, planId = 'premium_mensal') {
+        // 🔥 PREVENIR MÚLTIPLAS CHAMADAS SIMULTÂNEAS
         if (_isCreatingPayment) {
             Logger.warn('payment.js', 'Já existe um pagamento em andamento');
             deps?.AppUtils?.showNotification('⏳ Aguarde o processamento atual...', 'warning');
+            window.resetUpgradeButton();
             return;
         }
 
         if (!deps) {
             Logger.error('payment.js', 'Dependências não carregadas');
             deps?.AppUtils?.showNotification('Erro interno. Recarregue a página.', 'error');
+            window.resetUpgradeButton();
             return;
+        }
+
+        // 🔥 MARCAR COMO EM ANDAMENTO
+        _isCreatingPayment = true;
+        
+        // 🔥 DESABILITAR BOTÃO NOVAMENTE (por segurança)
+        var btn = document.getElementById('btnUpgrade');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Gerando PIX...';
+            btn.classList.add('loading');
         }
 
         const validPlanId = planId || 'premium_mensal';
@@ -1064,10 +1121,9 @@
         Logger.debug('payment.js', `Plan ID: ${validPlanId}`);
         
         deps.AppUtils.showNotification('🔄 Gerando QR Code PIX...', 'info');
-        
-        _isCreatingPayment = true;
 
         try {
+            // 🔥 CHAMADA ÚNICA COM RETRY APENAS SE REALMENTE FALHAR
             const response = await RetrySystem.execute(async (attempt) => {
                 Logger.debug('payment.js', `Tentativa ${attempt} de criar pagamento`);
                 
@@ -1082,6 +1138,16 @@
 
                 if (!resp) {
                     throw new Error('Falha na conexão com o servidor');
+                }
+
+                // 🔥 SE FOR 429 (RATE LIMIT), NÃO TENTA NOVAMENTE
+                if (resp.status === 429) {
+                    let errorData = {};
+                    try {
+                        errorData = await resp.json();
+                    } catch (e) {}
+                    const errorMsg = errorData.detail || errorData.message || 'Muitas tentativas. Aguarde alguns minutos.';
+                    throw new Error(errorMsg);
                 }
 
                 if (!resp.ok) {
@@ -1107,6 +1173,11 @@
                 baseDelay: CONFIG.RETRY_BASE_DELAY,
                 maxDelay: CONFIG.RETRY_MAX_DELAY,
                 onRetry: (attempt, error, delay) => {
+                    // 🔥 SÓ RETRY SE FOR ERRO DE CONEXÃO, NÃO RATE LIMIT
+                    if (error.message.includes('429') || error.message.includes('rate')) {
+                        Logger.warn('payment.js', `Rate limit detectado, não tentando novamente`);
+                        throw error;
+                    }
                     Logger.warn('payment.js', `Retry ${attempt}: ${error.message}, aguardando ${delay}ms`);
                     deps.AppUtils.showNotification(`⏳ Tentando novamente (${attempt}/${CONFIG.MAX_RETRY_ATTEMPTS})...`, 'warning');
                 },
@@ -1121,7 +1192,7 @@
             Logger.info('payment.js', `Pagamento criado: ${data.payment_id || 'ID desconhecido'}`);
             Logger.debug('payment.js', 'Dados do pagamento:', data);
 
-            // 🔥 CORREÇÃO V7.4: Validação inteligente do QR Code
+            // 🔥 CORREÇÃO V7.5: Validação inteligente do QR Code
             let qrCodeBase64 = data.qr_code_base64 || data.qr_code || '';
             let pixCode = data.pix_code || data.qr_code || '';
 
@@ -1129,7 +1200,6 @@
             if (!qrCodeBase64 && pixCode) {
                 Logger.info('payment.js', '📱 QR Code base64 vazio, tentando gerar localmente...');
                 
-                // Tenta gerar o QR Code a partir do texto
                 const generatedQr = QrCodeSystem.generateFromText(pixCode);
                 if (generatedQr) {
                     qrCodeBase64 = generatedQr;
@@ -1176,6 +1246,7 @@
 
             showPixModal(data);
             _isCreatingPayment = false;
+            window.resetUpgradeButton();
 
         } catch (error) {
             Logger.error('payment.js', 'Erro ao criar pagamento:', error);
@@ -1194,11 +1265,12 @@
             
             deps.AppUtils.showNotification(`❌ ${userMessage}`, 'error');
             _isCreatingPayment = false;
+            window.resetUpgradeButton();
         }
     }
 
     // ==============================================
-    // 🔥 MODAL PIX (V7.4 - CORRIGIDO)
+    // 🔥 MODAL PIX (V7.5 - CORRIGIDO)
     // ==============================================
 
     let countdownInterval = null;
@@ -1226,7 +1298,7 @@
             document.body.appendChild(pixModal);
         }
 
-        // 🔥 CORREÇÃO V7.4: Extração inteligente do QR Code
+        // 🔥 CORREÇÃO V7.5: Extração inteligente do QR Code
         let qrCodeBase64 = data.qr_code_base64 || data.qr_code || '';
         let pixCode = data.pix_code || data.qr_code || '';
 
@@ -1263,7 +1335,7 @@
             const qrImg = pixModal.querySelector('#pixQrCode');
             const placeholder = pixModal.querySelector('#pixQrPlaceholder');
             
-            // 🔥 CORREÇÃO V7.4: Renderização inteligente do QR Code
+            // 🔥 CORREÇÃO V7.5: Renderização inteligente do QR Code
             if (qrImg && qrCodeBase64) {
                 Logger.info('payment.js', '🖼️ Renderizando QR Code...');
                 qrImg.src = qrCodeBase64;
@@ -1642,7 +1714,7 @@
     // ==============================================
 
     async function init() {
-        Logger.info('payment.js', 'v7.4 Iniciando...');
+        Logger.info('payment.js', 'v7.5 Iniciando...');
 
         const appReady = await Waiter.waitForApp();
         
@@ -1688,14 +1760,15 @@
         window.VagasSystem = VagasSystem;
         window.CpfValidator = CpfValidator;
         window.QrCodeSystem = QrCodeSystem;
+        window.resetUpgradeButton = resetUpgradeButton;
 
         window.paymentReady = true;
-        window.paymentVersion = '7.4';
+        window.paymentVersion = '7.5';
         window._paymentInitialized = true;
 
         window.dispatchEvent(new CustomEvent('paymentReady', {
             detail: {
-                version: '7.4',
+                version: '7.5',
                 integrated: true,
                 appReady: appReady,
                 dependencies: {
@@ -1707,13 +1780,14 @@
             }
         }));
 
-        Logger.info('payment.js', 'v7.4 Carregado com sucesso!');
+        Logger.info('payment.js', 'v7.5 Carregado com sucesso!');
         Logger.debug('payment.js', `EventBus: ${!!deps.EventBus}`);
         Logger.debug('payment.js', `AppUtils: ${!!deps.AppUtils}`);
         Logger.debug('payment.js', `fetchWithAuth: ${!!deps.fetchWithAuth}`);
         Logger.debug('payment.js', `State: ${!!deps.State}`);
         Logger.debug('payment.js', `PIX Expiry: ${CONFIG.PIX_EXPIRY_MINUTES} minutos`);
         Logger.debug('payment.js', `QR Code timeout: ${CONFIG.QR_CODE_TIMEOUT}ms`);
+        Logger.debug('payment.js', `PREVENÇÃO DE MÚLTIPLAS REQUISIÇÕES ATIVA`);
     }
 
     // ==============================================
