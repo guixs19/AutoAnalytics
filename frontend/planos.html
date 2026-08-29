@@ -1601,7 +1601,7 @@
     <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
     <script src="/static/js/auth.js?ver=3.1.0"></script>
     
-    <!-- 4️⃣ PAYMENT - v7.2 (CORREÇÃO 422 + MELHORIAS) -->
+    <!-- 4️⃣ PAYMENT - v7.3 (CORREÇÃO QR CODE + MELHORIAS INTELIGENTES) -->
     <script src="/static/js/payment.js?ver=7.3.0"></script>
 
     <!-- ============================================== -->
@@ -1719,7 +1719,7 @@
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.5 (Sincronizado com payment.js v7.2)');
+            console.log('🚀 AutoAnalytics - Planos v3.6 (Sincronizado com payment.js v7.3)');
 
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
@@ -1942,7 +1942,7 @@
             }
 
             // ==============================================
-            // 🔥 HANDLE UPGRADE - Sincronizado com payment.js v7.2
+            // 🔥 HANDLE UPGRADE - Sincronizado com payment.js v7.3
             // ==============================================
 
             window.handleUpgrade = function() {
@@ -1967,11 +1967,11 @@
                     return;
                 }
 
-                // 🔥 Verifica se o payment.js v7.2 está disponível
+                // 🔥 Verifica se o payment.js v7.3 está disponível
                 if (typeof window.openCpfModal === 'function') {
                     window.openCpfModal('premium_mensal');
                 } else {
-                    console.error('❌ payment.js v7.2 não carregado!');
+                    console.error('❌ payment.js v7.3 não carregado!');
                     if (app && typeof app.showNotification === 'function') {
                         app.showNotification('Sistema de pagamento indisponível. Recarregue a página.', 'error');
                     }
@@ -2024,12 +2024,15 @@
                 updateUserUI(data);
             });
 
-            // 🔥 Evento para quando o payment.js v7.2 estiver pronto
+            // 🔥 Evento para quando o payment.js v7.3 estiver pronto
             document.addEventListener('paymentReady', function(e) {
-                console.log('✅ payment.js v7.2 está pronto!');
+                console.log('✅ payment.js v7.3 está pronto!');
                 var detail = e.detail || {};
                 if (detail.version) {
                     console.log('   📦 Versão:', detail.version);
+                }
+                if (detail.integrated) {
+                    console.log('   🔗 Integrado com app.js');
                 }
             });
 
@@ -2087,11 +2090,12 @@
                     window.VagasSystem.updateVagas();
                 }
 
-                console.log('✅ planos.html v3.5 carregado com sucesso!');
-                console.log('   🔥 Sincronizado com payment.js v7.2');
+                console.log('✅ planos.html v3.6 carregado com sucesso!');
+                console.log('   🔥 Sincronizado com payment.js v7.3');
                 console.log('   🔥 Vagas em tempo real via evento');
                 console.log('   🔥 UI reativa sincronizada');
                 console.log('   🔐 Autenticação unificada via app.js');
+                console.log('   📱 QR Code com prefixo corrigido');
             }
 
             document.addEventListener('DOMContentLoaded', function() {
