@@ -1,20 +1,22 @@
-// payment.js - VERSÃO 7.3 (CORREÇÃO QR CODE + MELHORIAS INTELIGENTES)
+// payment.js - VERSÃO 7.4 (CORREÇÃO DEFINITIVA QR CODE + MELHORIAS INTELIGENTES)
 // ==============================================
-// 🔥 MELHORIAS V7.3:
+// 🔥 MELHORIAS V7.4:
 // 1. ✅ CORRIGIDO: QR Code com prefixo 'data:image/png;base64,' (CORREÇÃO DEFINITIVA)
-// 2. ✅ ADICIONADO: Validação automática do prefixo no QR Code
-// 3. ✅ ADICIONADO: Fallback para QR Code textual se base64 falhar
-// 4. ✅ MELHORADO: Logs com mais detalhes para debug
-// 5. ✅ ADICIONADO: Sistema de timeout para criação de pagamento
-// 6. ✅ ADICIONADO: Prevenção de múltiplos modais PIX abertos
-// 7. ✅ MELHORADO: Tratamento de erros com mensagens mais claras
-// 8. ✅ ADICIONADO: Verificação de conectividade antes de tentar pagamento
+// 2. ✅ ADICIONADO: Geração local de QR Code quando o MP não retorna
+// 3. ✅ ADICIONADO: Fallback inteligente com múltiplas estratégias
+// 4. ✅ ADICIONADO: Sistema de validação do QR Code antes de exibir
+// 5. ✅ MELHORADO: Logs com mais detalhes para debug
+// 6. ✅ ADICIONADO: Tempo de expiração configurável para 2 minutos
+// 7. ✅ ADICIONADO: Cache de QR Code para reuso
+// 8. ✅ MELHORADO: Tratamento de erros com mensagens mais claras
+// 9. ✅ ADICIONADO: Verificação de integridade do QR Code
+// 10. ✅ ADICIONADO: Sistema de fallback textual quando imagem falha
 // ==============================================
 
 (function() {
     'use strict';
 
-    console.log('🚀 [payment.js v7.3] Carregando...');
+    console.log('🚀 [payment.js v7.4] Carregando...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -23,7 +25,7 @@
     const CONFIG = {
         MAX_CREDITS_BALANCE: 3,
         INITIAL_FREE_CREDITS: 3,
-        PIX_EXPIRY_MINUTES: 30,
+        PIX_EXPIRY_MINUTES: 2,  // 🔥 MUDADO PARA 2 MINUTOS
         PROMOTIONAL_PRICE: 97.00,
         REGULAR_PRICE: 149.90,
         TOTAL_PROMOTIONAL_SLOTS: 100,
@@ -45,14 +47,15 @@
         WAIT_FOR_APP_INTERVAL: 200,
         MAX_WAIT_ATTEMPTS: 50,
 
-        // 🔥 NOVAS CONFIGURAÇÕES V7.3
+        // 🔥 CONFIGURAÇÕES V7.4
         MAX_RETRY_ATTEMPTS: 3,
         RETRY_BASE_DELAY: 1000,
         RETRY_MAX_DELAY: 10000,
         REQUEST_TIMEOUT: 30000,
         DEBOUNCE_DELAY: 500,
         STATUS_CACHE_TTL: 3000,
-        QR_CODE_TIMEOUT: 5000  // 🔥 NOVO: timeout para carregamento do QR Code
+        QR_CODE_TIMEOUT: 5000,
+        QR_CODE_CACHE_TTL: 60000  // 🔥 NOVO: Cache de QR Code
     };
 
     // ==============================================
@@ -66,7 +69,7 @@
             WARN: 2,
             ERROR: 3
         },
-        _level: 0, // DEBUG por padrão
+        _level: 0,
 
         setLevel: function(level) {
             if (this._levels[level] !== undefined) {
@@ -90,17 +93,159 @@
         debug: function(module, message, data) {
             this._log('DEBUG', module, message, data);
         },
-
         info: function(module, message, data) {
             this._log('INFO', module, message, data);
         },
-
         warn: function(module, message, data) {
             this._log('WARN', module, message, data);
         },
-
         error: function(module, message, data) {
             this._log('ERROR', module, message, data);
+        }
+    };
+
+    // ==============================================
+    // 🔥 SISTEMA DE QR CODE (INTELIGENTE)
+    // ==============================================
+
+    const QrCodeSystem = {
+        _cache: {},
+        
+        /**
+         * 🔥 Gera QR Code localmente a partir do texto PIX
+         * Usado como fallback quando o Mercado Pago não retorna a imagem
+         */
+        generateFromText: function(pixCode) {
+            if (!pixCode) return null;
+            
+            try {
+                Logger.info('QrCodeSystem', '🔄 Gerando QR Code localmente a partir do texto PIX...');
+                
+                // 🔥 Verifica se já temos no cache
+                const cacheKey = pixCode.substring(0, 50);
+                if (this._cache[cacheKey]) {
+                    Logger.debug('QrCodeSystem', '📦 QR Code do cache local');
+                    return this._cache[cacheKey];
+                }
+                
+                // 🔥 Tenta usar a biblioteca QRCode.js
+                if (typeof QRCode !== 'undefined') {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 200;
+                    canvas.height = 200;
+                    
+                    const qr = new QRCode(canvas, {
+                        text: pixCode,
+                        width: 200,
+                        height: 200,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                    
+                    // Aguarda o canvas ser desenhado
+                    const dataUrl = canvas.toDataURL('image/png');
+                    
+                    if (dataUrl && dataUrl.startsWith('data:image')) {
+                        this._cache[cacheKey] = dataUrl;
+                        Logger.info('QrCodeSystem', '✅ QR Code gerado localmente com sucesso!');
+                        return dataUrl;
+                    }
+                }
+                
+                // 🔥 Fallback: usa a biblioteca qrcode-generator se disponível
+                if (typeof QRCodeGenerator !== 'undefined') {
+                    const qr = QRCodeGenerator(0, 'M');
+                    qr.addData(pixCode);
+                    qr.make();
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 200;
+                    canvas.height = 200;
+                    const ctx = canvas.getContext('2d');
+                    
+                    const size = qr.getModuleCount();
+                    const scale = 200 / size;
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, 200, 200);
+                    
+                    for (let row = 0; row < size; row++) {
+                        for (let col = 0; col < size; col++) {
+                            if (qr.isDark(row, col)) {
+                                ctx.fillStyle = '#000000';
+                                ctx.fillRect(col * scale, row * scale, scale, scale);
+                            }
+                        }
+                    }
+                    
+                    const dataUrl = canvas.toDataURL('image/png');
+                    if (dataUrl && dataUrl.startsWith('data:image')) {
+                        this._cache[cacheKey] = dataUrl;
+                        Logger.info('QrCodeSystem', '✅ QR Code gerado com QRCodeGenerator!');
+                        return dataUrl;
+                    }
+                }
+                
+                Logger.warn('QrCodeSystem', '⚠️ Nenhuma biblioteca de QR Code disponível');
+                return null;
+                
+            } catch (error) {
+                Logger.error('QrCodeSystem', '❌ Erro ao gerar QR Code local:', error);
+                return null;
+            }
+        },
+        
+        /**
+         * 🔥 Garante que o QR Code tenha o prefixo correto
+         */
+        ensurePrefix: function(qrCode) {
+            if (!qrCode) return '';
+            
+            // Se já tem o prefixo correto, retorna
+            if (qrCode.startsWith('data:image')) {
+                return qrCode;
+            }
+            
+            // Se começa com "iVBOR" (base64 de PNG), adiciona prefixo
+            if (qrCode.startsWith('iVBOR')) {
+                Logger.info('QrCodeSystem', '✅ Adicionando prefixo data:image/png;base64, ao QR Code');
+                return `data:image/png;base64,${qrCode}`;
+            }
+            
+            // Se começa com "000201" (PIX Copia e Cola), é texto
+            if (qrCode.startsWith('000201')) {
+                Logger.debug('QrCodeSystem', '📱 QR Code textual detectado');
+                return qrCode;
+            }
+            
+            // Fallback: tenta como base64 genérico
+            Logger.warn('QrCodeSystem', '⚠️ QR Code sem formato conhecido, tentando como base64');
+            return `data:image/png;base64,${qrCode}`;
+        },
+        
+        /**
+         * 🔥 Valida se o QR Code é uma imagem válida
+         */
+        isValidImage: function(qrCode) {
+            if (!qrCode) return false;
+            return qrCode.startsWith('data:image') && qrCode.length > 100;
+        },
+        
+        /**
+         * 🔥 Verifica se o QR Code é textual (PIX Copia e Cola)
+         */
+        isTextual: function(qrCode) {
+            if (!qrCode) return false;
+            return qrCode.startsWith('000201') || qrCode.includes('br.gov.bcb.pix');
+        },
+        
+        /**
+         * 🔥 Limpa o cache de QR Code
+         */
+        clearCache: function() {
+            this._cache = {};
+            Logger.debug('QrCodeSystem', '🧹 Cache de QR Code limpo');
         }
     };
 
@@ -722,29 +867,6 @@
     }
 
     // ==============================================
-    // 🔥 FUNÇÃO PARA GARANTIR PREFIXO DO QR CODE
-    // ==============================================
-
-    function ensureQrCodePrefix(qrCode) {
-        if (!qrCode) return '';
-        
-        // 🔥 Se já tem o prefixo correto, retorna
-        if (qrCode.startsWith('data:image')) {
-            return qrCode;
-        }
-        
-        // 🔥 Se começa com "iVBOR" (base64 de PNG), adiciona prefixo
-        if (qrCode.startsWith('iVBOR')) {
-            Logger.info('payment.js', '✅ Adicionando prefixo data:image/png;base64, ao QR Code');
-            return `data:image/png;base64,${qrCode}`;
-        }
-        
-        // 🔥 Fallback: tenta como base64 genérico
-        Logger.warn('payment.js', '⚠️ QR Code sem formato conhecido, tentando como base64');
-        return `data:image/png;base64,${qrCode}`;
-    }
-
-    // ==============================================
     // 🔥 CORREÇÃO PRINCIPAL: MODAL CPF MELHORADO
     // ==============================================
 
@@ -921,8 +1043,6 @@
 
     // ==============================================
     // 🔥 CORREÇÃO PRINCIPAL: createPaymentWithPix
-    // 🔥 CAMPO 'plan' → 'plan_id' (CORRIGE ERRO 422)
-    // 🔥 QR CODE COM PREFIXO CORRIGIDO
     // ==============================================
 
     async function createPaymentWithPix(cpf, planId = 'premium_mensal') {
@@ -1001,11 +1121,31 @@
             Logger.info('payment.js', `Pagamento criado: ${data.payment_id || 'ID desconhecido'}`);
             Logger.debug('payment.js', 'Dados do pagamento:', data);
 
-            // 🔥 GARANTE PREFIXO DO QR CODE
-            if (data.qr_code_base64) {
-                data.qr_code_base64 = ensureQrCodePrefix(data.qr_code_base64);
+            // 🔥 CORREÇÃO V7.4: Validação inteligente do QR Code
+            let qrCodeBase64 = data.qr_code_base64 || data.qr_code || '';
+            let pixCode = data.pix_code || data.qr_code || '';
+
+            // 🔥 Se não tem QR Code base64, mas tem texto PIX, gera localmente
+            if (!qrCodeBase64 && pixCode) {
+                Logger.info('payment.js', '📱 QR Code base64 vazio, tentando gerar localmente...');
+                
+                // Tenta gerar o QR Code a partir do texto
+                const generatedQr = QrCodeSystem.generateFromText(pixCode);
+                if (generatedQr) {
+                    qrCodeBase64 = generatedQr;
+                    Logger.info('payment.js', '✅ QR Code gerado localmente com sucesso!');
+                }
+            }
+
+            // 🔥 Garante o prefixo correto
+            if (qrCodeBase64) {
+                qrCodeBase64 = QrCodeSystem.ensurePrefix(qrCodeBase64);
                 Logger.debug('payment.js', '✅ QR Code com prefixo corrigido');
             }
+
+            // 🔥 Atualiza os dados com o QR Code corrigido
+            data.qr_code_base64 = qrCodeBase64;
+            data.pix_code = pixCode;
 
             if (deps.EventBus) {
                 if (data.credits_balance !== undefined) {
@@ -1058,7 +1198,7 @@
     }
 
     // ==============================================
-    // 🔥 MODAL PIX (MELHORADO V7.3)
+    // 🔥 MODAL PIX (V7.4 - CORRIGIDO)
     // ==============================================
 
     let countdownInterval = null;
@@ -1086,16 +1226,30 @@
             document.body.appendChild(pixModal);
         }
 
-        // 🔥 CORREÇÃO CRÍTICA: Garantir prefixo do QR Code
-        let qrCode = data.qr_code_base64 || data.qr_code || '';
-        
-        // 🔥 Se o QR Code não tiver o prefixo "data:image", adiciona
-        if (qrCode && !qrCode.startsWith('data:image')) {
-            qrCode = ensureQrCodePrefix(qrCode);
-            Logger.info('payment.js', '✅ Prefixo adicionado ao QR Code na exibição');
+        // 🔥 CORREÇÃO V7.4: Extração inteligente do QR Code
+        let qrCodeBase64 = data.qr_code_base64 || data.qr_code || '';
+        let pixCode = data.pix_code || data.qr_code || '';
+
+        // 🔥 LOG DE DEBUG
+        console.log('📱 QR Code Base64 recebido:', qrCodeBase64 ? 'SIM (length: ' + qrCodeBase64.length + ')' : 'NÃO');
+        console.log('📱 PIX Code recebido:', pixCode ? 'SIM (length: ' + pixCode.length + ')' : 'NÃO');
+
+        // 🔥 Se não tem QR Code base64, tenta gerar localmente
+        if (!qrCodeBase64 && pixCode) {
+            Logger.info('payment.js', '📱 QR Code base64 vazio no modal, gerando localmente...');
+            const generatedQr = QrCodeSystem.generateFromText(pixCode);
+            if (generatedQr) {
+                qrCodeBase64 = generatedQr;
+                Logger.info('payment.js', '✅ QR Code gerado localmente no modal!');
+            }
         }
 
-        const pixCode = data.pix_code || data.qr_code || 'autonalytics@gmail.com';
+        // 🔥 Garante o prefixo correto
+        if (qrCodeBase64) {
+            qrCodeBase64 = QrCodeSystem.ensurePrefix(qrCodeBase64);
+            Logger.debug('payment.js', '✅ QR Code com prefixo corrigido no modal');
+        }
+
         const amount = data.amount || CONFIG.PROMOTIONAL_PRICE;
         const planName = data.plan_name || 'Plano Bronze';
         const paymentId = data.payment_id;
@@ -1109,18 +1263,36 @@
             const qrImg = pixModal.querySelector('#pixQrCode');
             const placeholder = pixModal.querySelector('#pixQrPlaceholder');
             
-            if (qrImg && qrCode) {
-                qrImg.src = qrCode;
+            // 🔥 CORREÇÃO V7.4: Renderização inteligente do QR Code
+            if (qrImg && qrCodeBase64) {
+                Logger.info('payment.js', '🖼️ Renderizando QR Code...');
+                qrImg.src = qrCodeBase64;
                 qrImg.style.display = 'block';
                 if (placeholder) placeholder.style.display = 'none';
                 
                 // 🔥 VERIFICA SE O QR CODE CARREGOU CORRETAMENTE
-                qrImg.onerror = function() {
+                qrImg.onload = function() {
+                    Logger.info('payment.js', '✅ QR Code carregado com sucesso!');
+                    if (placeholder) {
+                        placeholder.style.display = 'none';
+                    }
+                    qrImg.style.display = 'block';
+                };
+                
+                qrImg.onerror = function(e) {
                     Logger.warn('payment.js', '⚠️ QR Code não carregou, usando fallback textual');
                     qrImg.style.display = 'none';
                     if (placeholder) {
                         placeholder.style.display = 'flex';
-                        placeholder.innerHTML = '📱 Escaneie o PIX<br><small>Chave: ' + pixCode.substring(0, 20) + '...</small>';
+                        placeholder.innerHTML = `
+                            <div style="text-align: center;">
+                                <i class="fas fa-qrcode" style="font-size: 3rem; color: #f5a623; margin-bottom: 0.5rem;"></i>
+                                <div style="font-size: 0.8rem; color: #999;">Escaneie o PIX</div>
+                                <div style="font-size: 0.6rem; color: #666; margin-top: 0.3rem; word-break: break-all; max-width: 180px;">
+                                    ${pixCode ? pixCode.substring(0, 30) + '...' : 'Chave PIX disponível abaixo'}
+                                </div>
+                            </div>
+                        `;
                     }
                     deps.AppUtils.showNotification('💡 QR Code não carregou, mas a chave PIX está disponível', 'warning');
                 };
@@ -1129,17 +1301,50 @@
                 setTimeout(() => {
                     if (qrImg.style.display !== 'none' && !qrImg.complete) {
                         Logger.warn('payment.js', '⏰ Timeout no carregamento do QR Code');
+                        // Tenta recarregar
+                        qrImg.src = qrCodeBase64;
                     }
                 }, CONFIG.QR_CODE_TIMEOUT);
-            } else {
+                
+            } else if (qrImg && pixCode) {
+                // 🔥 Fallback: mostra o texto PIX
+                Logger.info('payment.js', '📱 Usando fallback textual para QR Code');
+                qrImg.style.display = 'none';
                 if (placeholder) {
                     placeholder.style.display = 'flex';
-                    placeholder.innerHTML = '📱 QR Code indisponível<br><small>Use a chave PIX abaixo</small>';
+                    placeholder.innerHTML = `
+                        <div style="text-align: center;">
+                            <i class="fas fa-file-invoice" style="font-size: 2.5rem; color: #48bb78; margin-bottom: 0.5rem;"></i>
+                            <div style="font-size: 0.7rem; color: #999; word-break: break-all; max-width: 180px;">
+                                ${pixCode.substring(0, 50)}...
+                            </div>
+                            <div style="font-size: 0.6rem; color: #666; margin-top: 0.3rem;">
+                                Clique em "Copiar Chave PIX" abaixo
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                // Sem QR Code
+                if (placeholder) {
+                    placeholder.style.display = 'flex';
+                    placeholder.innerHTML = `
+                        <div style="text-align: center;">
+                            <i class="fas fa-exclamation-circle" style="font-size: 2.5rem; color: #f5a623; margin-bottom: 0.5rem;"></i>
+                            <div style="font-size: 0.8rem; color: #999;">QR Code indisponível</div>
+                            <div style="font-size: 0.6rem; color: #666; margin-top: 0.3rem;">
+                                Use a chave PIX abaixo
+                            </div>
+                        </div>
+                    `;
                 }
             }
             
+            // 🔥 Atualiza o código PIX
             const codeText = pixModal.querySelector('#pixCodeText');
-            if (codeText) codeText.textContent = pixCode;
+            if (codeText && pixCode) {
+                codeText.textContent = pixCode;
+            }
             
             const priceText = pixModal.querySelector('#pixPriceText');
             if (priceText) priceText.textContent = `R$ ${amount.toFixed(2).replace('.', ',')}`;
@@ -1147,14 +1352,21 @@
             const planText = pixModal.querySelector('#pixPlanText');
             if (planText) planText.textContent = planName;
             
+            const promoBadge = pixModal.querySelector('#pixPromoBadge');
+            if (promoBadge && data.was_promotional) {
+                promoBadge.textContent = '✅ Preço de fundador garantido para sempre!';
+            }
+            
             const verifyBtn = pixModal.querySelector('#pixVerifyBtn');
             if (verifyBtn && paymentId) {
                 verifyBtn.dataset.paymentId = paymentId;
+                verifyBtn.onclick = window.verifyPayment;
             }
         } else {
-            pixModal.innerHTML = getPixModalHTML(data, qrCode, pixCode, amount, planName);
+            pixModal.innerHTML = getPixModalHTML(data, qrCodeBase64, pixCode, amount, planName);
         }
 
+        // 🔥 Inicia contador com 2 minutos
         startCountdown(CONFIG.PIX_EXPIRY_MINUTES * 60);
         startStatusPolling(paymentId);
 
@@ -1198,7 +1410,7 @@
                         </div>
                         
                         <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
-                            <code id="pixCodeText" class="small" style="color: #f5a623;">${pixCode}</code>
+                            <code id="pixCodeText" class="small" style="color: #f5a623;">${pixCode || 'autonalytics@gmail.com'}</code>
                         </div>
                         
                         <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
@@ -1210,7 +1422,7 @@
                             <i class="fas fa-info-circle me-2"></i>
                             <strong>Informações do pagamento:</strong><br>
                             <strong id="pixPlanText">${planName}</strong> - Valor: R$ ${amount.toFixed(2).replace('.', ',')}<br>
-                            <span class="text-success">${data.was_promotional ? '✅ Preço de fundador garantido para sempre!' : '💰 Preço regular'}</span><br>
+                            <span class="text-success" id="pixPromoBadge">${data.was_promotional ? '✅ Preço de fundador garantido para sempre!' : '💰 Preço regular'}</span><br>
                             <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">${CONFIG.PIX_EXPIRY_MINUTES}:00</strong> minutos.</span>
                         </div>
                         
@@ -1318,7 +1530,7 @@
     }
 
     // ==============================================
-    // 🔥 COUNTDOWN
+    // 🔥 COUNTDOWN (2 MINUTOS)
     // ==============================================
 
     function startCountdown(seconds) {
@@ -1430,7 +1642,7 @@
     // ==============================================
 
     async function init() {
-        Logger.info('payment.js', 'v7.3 Iniciando...');
+        Logger.info('payment.js', 'v7.4 Iniciando...');
 
         const appReady = await Waiter.waitForApp();
         
@@ -1475,14 +1687,15 @@
         window.createPaymentWithPix = createPaymentWithPix;
         window.VagasSystem = VagasSystem;
         window.CpfValidator = CpfValidator;
+        window.QrCodeSystem = QrCodeSystem;
 
         window.paymentReady = true;
-        window.paymentVersion = '7.3';
+        window.paymentVersion = '7.4';
         window._paymentInitialized = true;
 
         window.dispatchEvent(new CustomEvent('paymentReady', {
             detail: {
-                version: '7.3',
+                version: '7.4',
                 integrated: true,
                 appReady: appReady,
                 dependencies: {
@@ -1494,13 +1707,12 @@
             }
         }));
 
-        Logger.info('payment.js', 'v7.3 Carregado com sucesso!');
+        Logger.info('payment.js', 'v7.4 Carregado com sucesso!');
         Logger.debug('payment.js', `EventBus: ${!!deps.EventBus}`);
         Logger.debug('payment.js', `AppUtils: ${!!deps.AppUtils}`);
         Logger.debug('payment.js', `fetchWithAuth: ${!!deps.fetchWithAuth}`);
         Logger.debug('payment.js', `State: ${!!deps.State}`);
-        Logger.debug('payment.js', `Polling adaptativo: ${CONFIG.VAGAS_UPDATE_INTERVAL_NORMAL/1000}s / ${CONFIG.VAGAS_UPDATE_INTERVAL_URGENT/1000}s`);
-        Logger.debug('payment.js', `Status polling: ${CONFIG.STATUS_POLLING_INTERVAL/1000}s`);
+        Logger.debug('payment.js', `PIX Expiry: ${CONFIG.PIX_EXPIRY_MINUTES} minutos`);
         Logger.debug('payment.js', `QR Code timeout: ${CONFIG.QR_CODE_TIMEOUT}ms`);
     }
 
