@@ -1,9 +1,9 @@
 # backend/observability/sentinel.py
 """
-SENTINEL - Sistema de Observabilidade e Alertas (v2.1 FINAL)
---------------------------------------------------------------
+SENTINEL - Sistema de Observabilidade e Alertas (v2.2)
+--------------------------------------------------------
 Monitoramento, logs estruturados, alertas e métricas para o AutoAnalytics
-COM SUPORTE A BACKGROUNDTASKS, REFERÊNCIAS SEGURAS E SHUTDOWN ROBUSTO
+COM MONITORAMENTO DE MODELO ML INTEGRADO
 """
 
 import aiohttp
@@ -45,6 +45,7 @@ class AlertLevel(Enum):
     SECURITY = ("🔒", 0x20c997)
     DATABASE = ("🗄️", 0x0dcaf0)
     CACHE = ("⚡", 0xffc107)
+    MODEL = ("🧠", 0x6f42c1)
     
     def __init__(self, emoji: str, color: int):
         self.emoji = emoji
@@ -131,7 +132,6 @@ class BackgroundTaskManager:
                 if not task.done():
                     task.cancel()
             
-            # Aguardar cancelamento com timeout
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*tasks, return_exceptions=True),
@@ -197,15 +197,11 @@ class DiscordWebhook:
         return self._session
     
     async def close(self):
-        """
-        Fecha a sessão HTTP e cancela tasks pendentes
-        Versão ROBUSTA para produção
-        """
+        """Fecha a sessão HTTP e cancela tasks pendentes"""
         self._shutdown = True
         
         logger.info("🔄 Fechando DiscordWebhook...")
         
-        # 1. Fechar sessão HTTP
         if self._session and not self._session.closed:
             try:
                 await self._session.close()
@@ -215,7 +211,6 @@ class DiscordWebhook:
             finally:
                 self._session = None
         
-        # 2. Cancelar tasks pendentes
         if self._background_tasks:
             logger.info(f"⏳ Cancelando {len(self._background_tasks)} tarefas pendentes...")
             
@@ -234,7 +229,6 @@ class DiscordWebhook:
             finally:
                 self._background_tasks.clear()
         
-        # 3. Limpar fila
         if self._queue:
             queue_size = len(self._queue)
             self._queue.clear()
@@ -254,22 +248,16 @@ class DiscordWebhook:
         return True
     
     async def send_alert(self, level: AlertLevel, title: str, **details):
-        """
-        Envia alerta para o Discord (assíncrono com retry)
-        """
+        """Envia alerta para o Discord (assíncrono com retry)"""
         if self._shutdown:
             logger.warning("⚠️ Webhook em shutdown, alerta ignorado")
             return
         
         alert_key = f"{level.name}:{title[:50]}"
         
-        # Mostrar no console
         self._log_to_console(level, title, details)
-        
-        # Incrementar métrica
         self._metrics[f"alerts.{level.name.lower()}"] += 1
         
-        # Verificar cooldown
         if not self._should_send_alert(alert_key):
             logger.debug(f"🔄 Alerta {alert_key} ignorado (cooldown)")
             return
@@ -277,9 +265,7 @@ class DiscordWebhook:
         if not self.webhook_url:
             return
         
-        # Criar embed
         embed = self._create_embed(level, title, details)
-        
         payload = {
             "embeds": [embed],
             "username": f"{self.app_name} Bot",
@@ -288,16 +274,12 @@ class DiscordWebhook:
         
         self._queue.append(payload)
         
-        # Criar task com referência segura
         task = asyncio.create_task(self._process_queue())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
     
     def send_alert_sync(self, level: AlertLevel, title: str, **details):
-        """
-        Versão SÍNCRONA para compatibilidade
-        Dispara o alerta de forma assíncrona sem bloquear
-        """
+        """Versão SÍNCRONA para compatibilidade"""
         if self._shutdown:
             logger.warning("⚠️ Webhook em shutdown, alerta ignorado")
             return
@@ -599,6 +581,165 @@ def monitor(metric_name: str = None):
 
 
 # ==============================================
+# 🔥 MONITORAMENTO DO MODELO ML (NOVO)
+# ==============================================
+
+# Variável global para controlar o monitor
+_model_monitor_task: Optional[asyncio.Task] = None
+
+
+async def alert_model_status():
+    """
+    Envia alerta com status atual do modelo ML
+    """
+    webhook = get_webhook()
+    
+    try:
+        import joblib
+        import os
+        from backend.database import SessionLocal
+        from backend import models
+        from datetime import datetime
+        
+        # 1. Carregar modelo
+        model_path = '/app/backend/ml/models/office_model.pkl'
+        if not os.path.exists(model_path):
+            await webhook.send_alert(
+                AlertLevel.ERROR,
+                '❌ MODELO ML NÃO ENCONTRADO',
+                caminho=model_path,
+                acao='Re-treinar o modelo imediatamente!'
+            )
+            return
+        
+        data = joblib.load(model_path)
+        metrics = data.get('metrics', {})
+        
+        # 2. Estatísticas do banco
+        db = SessionLocal()
+        try:
+            total_analyses = db.query(models.Analysis).count()
+            
+            today = datetime.now().date()
+            today_analyses = db.query(models.Analysis).filter(
+                models.Analysis.uploaded_at >= today
+            ).count()
+            
+            completed = db.query(models.Analysis).filter(
+                models.Analysis.status == 'completed'
+            ).count()
+            failed = db.query(models.Analysis).filter(
+                models.Analysis.status == 'failed'
+            ).count()
+            
+        finally:
+            db.close()
+        
+        # 3. Calcular saúde do modelo
+        accuracy = metrics.get('test_accuracy', 0)
+        samples = metrics.get('n_samples', 0)
+        is_placeholder = metrics.get('is_placeholder', True)
+        
+        if is_placeholder:
+            health = '🔴 USANDO PLACEHOLDER'
+            health_color = AlertLevel.CRITICAL
+        elif accuracy >= 0.90:
+            health = '🟢 EXCELENTE'
+            health_color = AlertLevel.SUCCESS
+        elif accuracy >= 0.80:
+            health = '🟡 BOM'
+            health_color = AlertLevel.INFO
+        elif accuracy >= 0.70:
+            health = '🟠 REGULAR'
+            health_color = AlertLevel.WARNING
+        else:
+            health = '🔴 RUIM - RE-TREINAR URGENTE'
+            health_color = AlertLevel.ERROR
+        
+        # 4. Verificar se precisa re-treinar
+        needs_retrain = False
+        retrain_reason = ''
+        
+        if is_placeholder:
+            needs_retrain = True
+            retrain_reason = 'Modelo placeholder em uso'
+        elif accuracy < 0.80:
+            needs_retrain = True
+            retrain_reason = f'Acurácia baixa: {accuracy:.2%}'
+        elif samples >= 100:
+            needs_retrain = True
+            retrain_reason = f'{samples} amostras disponíveis'
+        
+        # 5. Enviar alerta
+        await webhook.send_alert(
+            health_color,
+            f'🧠 STATUS DO MODELO ML',
+            status=health,
+            acuracia=f'{accuracy:.2%}',
+            amostras=samples,
+            features=len(data.get('features', [])),
+            tipo=data.get('model_type', 'Unknown'),
+            total_analises=total_analyses,
+            analises_hoje=today_analyses,
+            completadas=completed,
+            falhas=failed,
+            precisa_retreinar='✅ Sim' if needs_retrain else '❌ Não',
+            motivo_retreino=retrain_reason if needs_retrain else 'N/A',
+            ultimo_treino=metrics.get('trained_date', 'N/A')
+        )
+        
+    except Exception as e:
+        await webhook.send_alert(
+            AlertLevel.ERROR,
+            '❌ ERRO AO MONITORAR MODELO',
+            erro=str(e),
+            trace=traceback.format_exc()[:500]
+        )
+
+
+async def monitor_model_periodically(interval_hours: int = 24):
+    """
+    Monitora o modelo periodicamente e envia alertas
+    """
+    await alert_model_status()
+    
+    while True:
+        await asyncio.sleep(interval_hours * 3600)
+        await alert_model_status()
+
+
+def start_model_monitoring(interval_hours: int = 24):
+    """
+    Inicia o monitoramento do modelo em background
+    """
+    global _model_monitor_task
+    
+    if _model_monitor_task and not _model_monitor_task.done():
+        logger.info('📊 Monitor do modelo já está rodando')
+        return
+    
+    logger.info(f'📊 Iniciando monitor do modelo (a cada {interval_hours}h)')
+    _model_monitor_task = asyncio.create_task(monitor_model_periodically(interval_hours))
+    logger.info('✅ Monitor do modelo iniciado')
+
+
+async def stop_model_monitoring():
+    """
+    Para o monitoramento do modelo
+    """
+    global _model_monitor_task
+    
+    if _model_monitor_task:
+        _model_monitor_task.cancel()
+        try:
+            await _model_monitor_task
+        except asyncio.CancelledError:
+            pass
+        _model_monitor_task = None
+        logger.info('🛑 Monitor do modelo parado')
+
+
+# ==============================================
 # FUNÇÕES ESPECÍFICAS DE ALERTA
 # ==============================================
 
@@ -810,9 +951,24 @@ async def alert_gemini_api_error(error: str, endpoint: str = None, user_email: s
 # CICLO DE VIDA DA APLICAÇÃO
 # ==============================================
 
+async def startup_webhook():
+    """Função para ser chamada no startup do FastAPI"""
+    logger.info("🚀 Inicializando sistema de observabilidade...")
+    await alert_system_startup()
+    await start_metrics_reporting()
+    
+    # 🔥 INICIAR MONITOR DO MODELO
+    start_model_monitoring(interval_hours=24)
+    
+    logger.info("✅ Sistema de observabilidade pronto!")
+
+
 async def shutdown_webhook():
     """Função para ser chamada no shutdown do FastAPI"""
     global _webhook_instance
+    
+    # 🔥 PARAR MONITOR DO MODELO
+    await stop_model_monitoring()
     
     if _webhook_instance:
         logger.info("🔄 Fechando webhook e cancelando tarefas pendentes...")
@@ -824,14 +980,6 @@ async def shutdown_webhook():
     manager = get_background_manager()
     await manager.cancel_all()
     logger.info(f"✅ {manager.get_active_tasks()} tarefas em background canceladas")
-
-
-async def startup_webhook():
-    """Função para ser chamada no startup do FastAPI"""
-    logger.info("🚀 Inicializando sistema de observabilidade...")
-    await alert_system_startup()
-    await start_metrics_reporting()
-    logger.info("✅ Sistema de observabilidade pronto!")
 
 
 # ==============================================
@@ -945,10 +1093,13 @@ __all__ = [
     'alert_redis_connection_issue',
     'alert_database_connection_issue',
     'alert_gemini_api_error',
+    'alert_model_status',
+    'start_model_monitoring',
+    'stop_model_monitoring',
     'startup_webhook',
     'shutdown_webhook',
     'start_metrics_reporting',
     'stop_metrics_reporting',
 ]
 
-print("✅ sentinel.py v2.1 FINAL carregado - Robusto para produção!")
+print("✅ sentinel.py v2.2 carregado - COM MONITORAMENTO DE MODELO ML!")
