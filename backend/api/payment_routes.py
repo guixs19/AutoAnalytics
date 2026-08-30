@@ -1,16 +1,17 @@
-# backend/api/payment_routes.py - VERSÃO 3.3 (CORRIGIDA E OTIMIZADA)
+# backend/api/payment_routes.py - VERSÃO 3.4 (COM LIMPEZA AUTOMÁTICA - 5 MINUTOS)
 """
 🔥 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 3.3 - CORRIGIDA E OTIMIZADA
+VERSÃO: 3.4 - COM LIMPEZA AUTOMÁTICA DE PAGAMENTOS (5 MINUTOS)
 
-🔥 CORREÇÕES v3.3:
-   1. ✅ CORRIGIDO: DetachedInstanceError - cache agora guarda dict, não objeto SQLAlchemy
-   2. ✅ CORRIGIDO: CreditEligibilityResponse definido ANTES de ser usado
-   3. ✅ CORRIGIDO: alert_payment_pending() com 3 argumentos (method="pix")
-   4. ✅ MELHORADO: Cache com dados serializados
-   5. ✅ MELHORADO: Validação de resposta do Mercado Pago
-   6. ✅ MELHORADO: Logs com mais informações
-   7. ✅ MANTIDO: Todas as funcionalidades existentes
+🔥 CORREÇÕES v3.4:
+   1. ✅ ADICIONADO: Sistema de limpeza automática de pagamentos expirados
+   2. ✅ ADICIONADO: Scheduler que roda a cada 5 minutos
+   3. ✅ ADICIONADO: Cancelamento automático de pagamentos com +5 minutos
+   4. ✅ ADICIONADO: Reset automático do rate limit
+   5. ✅ ADICIONADO: LOGS detalhados do QR Code
+   6. ✅ MELHORADO: Validação de resposta do Mercado Pago
+   7. ✅ ADICIONADO: Rotas admin para reset manual
+   8. ✅ ADICIONADO: Rota para usuário resetar próprias tentativas
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -57,6 +58,13 @@ from backend.crud import (
     manage_credits_after_consumption
 )
 
+# ==============================================
+# 🔥 IMPORTS PARA LIMPEZA AUTOMÁTICA
+# ==============================================
+
+import atexit
+import time as time_module
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -75,7 +83,7 @@ SIMULATION_DELAY_SECONDS = int(os.getenv("SIMULATION_DELAY_SECONDS", "8"))
 # 🔥 CACHE
 PROMOTION_CACHE_TTL = 60  # segundos
 _promotion_cache = {
-    "data": None,  # Agora guarda dict, não objeto SQLAlchemy
+    "data": None,
     "timestamp": 0
 }
 
@@ -95,7 +103,100 @@ REGULAR_PRICE = 149.90
 TOTAL_PROMOTIONAL_SLOTS = 100
 
 # ==============================================
-# 🔥 MODELOS PYDANTIC - TODOS DEFINIDOS NO TOPO
+# 🔥 SISTEMA DE LIMPEZA AUTOMÁTICA DE PAGAMENTOS (5 MINUTOS)
+# ==============================================
+
+_scheduler_started = False
+
+def cleanup_expired_payments():
+    """
+    🔥 Remove pagamentos pendentes com mais de 5 MINUTOS
+    Isso automaticamente reseta o rate limit dos usuários
+    """
+    db = None
+    try:
+        db = SessionLocal()
+        
+        # 🔥 MUDADO: 5 MINUTOS em vez de 30
+        cutoff = _now_brasil() - timedelta(minutes=5)
+        expired_payments = db.query(Payment).filter(
+            Payment.status == "pending",
+            Payment.created_at < cutoff
+        ).all()
+        
+        if expired_payments:
+            count = len(expired_payments)
+            
+            for payment in expired_payments:
+                payment.status = "cancelled"
+                if not payment.payment_metadata:
+                    payment.payment_metadata = {}
+                payment.payment_metadata["auto_cancelled_at"] = _now_brasil().isoformat()
+                payment.payment_metadata["auto_cancelled_reason"] = "expirado_5min"
+            
+            db.commit()
+            logger.info(f"🧹 {count} pagamentos expirados (5min) cancelados automaticamente")
+            
+            try:
+                from backend.observability.sentinel import alert_payment_failed
+                for payment in expired_payments:
+                    alert_payment_failed(payment.user_id, payment.amount, "pix")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao disparar alerta: {e}")
+                
+            invalidate_promotion_cache()
+        else:
+            logger.debug("🧹 Nenhum pagamento expirado encontrado")
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao limpar pagamentos expirados: {e}")
+        if db:
+            db.rollback()
+    finally:
+        if db:
+            db.close()
+
+def start_payment_cleanup_scheduler():
+    """
+    🔥 Inicia o scheduler de limpeza de pagamentos
+    Roda a cada 2 minutos para ser mais rápido
+    """
+    global _scheduler_started
+    
+    if _scheduler_started:
+        logger.debug("🧹 Scheduler já está rodando")
+        return
+    
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(
+            cleanup_expired_payments,
+            'interval',
+            minutes=2,  # 🔥 Executa a cada 2 minutos
+            id='payment_cleanup',
+            replace_existing=True
+        )
+        scheduler.start()
+        _scheduler_started = True
+        logger.info("🧹 Scheduler de limpeza de pagamentos iniciado (intervalo: 2min)")
+        
+        # 🔥 Executa uma vez imediatamente
+        cleanup_expired_payments()
+        
+        atexit.register(lambda: scheduler.shutdown())
+        
+    except ImportError:
+        logger.warning("⚠️ apscheduler não instalado. Instale com: pip install apscheduler")
+    except Exception as e:
+        logger.error(f"❌ Erro ao iniciar scheduler: {e}")
+
+# 🔥 Iniciar scheduler automaticamente
+start_payment_cleanup_scheduler()
+
+# ==============================================
+# 🔥 MODELOS PYDANTIC
 # ==============================================
 
 class CreatePaymentRequest(BaseModel):
@@ -202,18 +303,15 @@ def get_cached_promotion_data(db: Session, force_refresh: bool = False) -> Dict[
     """
     global _promotion_cache
     
-    now = time.time()
+    now = time_module.time()
     
-    # Verifica se tem cache válido
     if not force_refresh and _promotion_cache["data"] is not None:
         if now - _promotion_cache["timestamp"] < PROMOTION_CACHE_TTL:
             logger.debug("📦 Usando promoção em cache")
             return _promotion_cache["data"]
     
-    # Busca no banco
     promo = get_or_create_promotion(db)
     
-    # 🔥 SALVA APENAS OS DADOS, NÃO O OBJETO
     promo_data = {
         "id": promo.id,
         "total_slots": promo.total_slots,
@@ -319,19 +417,11 @@ def get_user_price(user: User, db: Session) -> tuple:
     🔥 DETERMINA O PREÇO CORRETO PARA O USUÁRIO
     
     RETORNA: (price, price_type, was_promotional)
-    
-    Regras:
-    1. Usuário já tem preço vitalício (promotional_price_locked=True) -> usa esse preço
-    2. Ainda tem vagas promocionais -> R$ 97,00 (fundador)
-    3. Acabaram as vagas -> R$ 149,90 (preço cheio)
     """
-    
-    # 🔥 REGRA 1: Usuário já comprou na promoção - preço vitalício garantido
     if user.promotional_price_locked and user.promotional_price:
         logger.info(f"💰 Usuário {user.email} tem preço vitalício: R$ {user.promotional_price}")
         return (user.promotional_price, "locked_promotional", True)
     
-    # 🔥 REGRA 2: Verificar se ainda tem vagas promocionais - USANDO DADOS EM CACHE
     promo_data = get_cached_promotion_data(db)
     
     if promo_data["has_available_slots"]:
@@ -388,17 +478,153 @@ webhook = get_webhook()
 
 
 # ==============================================
-# 🔥 FUNÇÃO DESATIVADA (MANTIDA PARA COMPATIBILIDADE)
+# 🔥 FUNÇÃO DESATIVADA
 # ==============================================
 
 def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
-    """🔥 FUNÇÃO DESATIVADA - Créditos iniciais dados apenas no cadastro"""
-    logger.warning(f"⚠️ [DESATIVADO] initialize_new_user_credits chamado para user_id {user_id} - IGNORADO")
+    """🔥 FUNÇÃO DESATIVADA"""
+    logger.warning(f"⚠️ [DESATIVADO] initialize_new_user_credits chamado para user_id {user_id}")
     return {
         "success": False, 
         "error": "Créditos iniciais são concedidos apenas no cadastro",
         "message": "Usuário já recebeu créditos iniciais ou não é elegível"
     }
+
+
+# ==============================================
+# 🔥 ROTAS ADMIN
+# ==============================================
+
+@router.post("/admin/cleanup-expired")
+async def admin_cleanup_expired(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🔥 ROTA ADMIN: Executa limpeza manual de pagamentos expirados (5min)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores")
+    
+    try:
+        cutoff = _now_brasil() - timedelta(minutes=5)  # 🔥 5 MINUTOS
+        expired_payments = db.query(Payment).filter(
+            Payment.status == "pending",
+            Payment.created_at < cutoff
+        ).all()
+        
+        count = len(expired_payments)
+        for payment in expired_payments:
+            payment.status = "cancelled"
+            if not payment.payment_metadata:
+                payment.payment_metadata = {}
+            payment.payment_metadata["admin_cleaned_at"] = _now_brasil().isoformat()
+            payment.payment_metadata["admin_cleaned_reason"] = "expirado_5min"
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"✅ {count} pagamentos expirados (5min) cancelados",
+            "cancelled_count": count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Erro na limpeza manual: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/reset-rate-limit/{user_id}")
+async def admin_reset_rate_limit(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🔥 ROTA ADMIN: Reseta o rate limit de um usuário específico"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores")
+    
+    try:
+        payments = db.query(Payment).filter(
+            Payment.user_id == user_id,
+            Payment.status == "pending"
+        ).all()
+        
+        count = len(payments)
+        for payment in payments:
+            payment.status = "cancelled"
+            if not payment.payment_metadata:
+                payment.payment_metadata = {}
+            payment.payment_metadata["admin_reset_at"] = _now_brasil().isoformat()
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"✅ {count} pagamentos pendentes cancelados para usuário {user_id}",
+            "user_id": user_id,
+            "cancelled_count": count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Erro ao resetar rate limit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================
+# 🔥 ROTA USUÁRIO: RESETAR PRÓPRIAS TENTATIVAS
+# ==============================================
+
+@router.post("/reset-my-attempts")
+async def reset_my_attempts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🔥 Usuário pode resetar suas próprias tentativas (com cooldown de 24h)"""
+    try:
+        # 🔥 Verifica se já resetou nas últimas 24h
+        last_reset = db.query(Payment).filter(
+            Payment.user_id == current_user.id,
+            Payment.status == "cancelled",
+            Payment.payment_metadata.get("reset_by_user").astext == "true",
+            Payment.updated_at > (_now_brasil() - timedelta(hours=24))
+        ).first()
+        
+        if last_reset:
+            raise HTTPException(
+                status_code=429,
+                detail="Você já resetou suas tentativas nas últimas 24h. Aguarde o reset automático."
+            )
+        
+        payments = db.query(Payment).filter(
+            Payment.user_id == current_user.id,
+            Payment.status == "pending"
+        ).all()
+        
+        count = len(payments)
+        for payment in payments:
+            payment.status = "cancelled"
+            if not payment.payment_metadata:
+                payment.payment_metadata = {}
+            payment.payment_metadata["reset_by_user"] = True
+            payment.payment_metadata["reset_at"] = _now_brasil().isoformat()
+            payment.updated_at = _now_brasil()
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"✅ {count} pagamentos cancelados. Você pode tentar novamente!",
+            "cancelled_count": count,
+            "next_reset_available": (_now_brasil() + timedelta(hours=24)).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Erro ao resetar tentativas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==============================================
@@ -495,7 +721,6 @@ async def claim_bonus(
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    # Verifica se é premium
     is_premium = _is_premium_user(user)
     if not is_premium:
         raise HTTPException(
@@ -503,7 +728,6 @@ async def claim_bonus(
             detail="Bônus exclusivo para usuários Premium. Assine o plano!"
         )
     
-    # Verifica elegibilidade
     eligibility = get_credit_eligibility(db, user)
     if not eligibility.get("can_receive_today", False):
         raise HTTPException(
@@ -511,7 +735,6 @@ async def claim_bonus(
             detail=eligibility.get("reason", "Você não pode receber bônus no momento")
         )
     
-    # 🔥 Concede o bônus usando o gerenciador unificado
     result = manage_credits_after_consumption(
         db=db,
         user=user,
@@ -519,9 +742,7 @@ async def claim_bonus(
         description="Bônus premium por zerar créditos"
     )
     
-    # Se não conseguiu conceder, tenta o método direto
     if not result.get("success"):
-        # Concede 1 crédito diretamente
         user.credits = (user.credits or 0) + 1
         
         log = DailyCreditLog(
@@ -606,7 +827,6 @@ async def get_promotion_status(
     force_refresh: bool = False
 ):
     """🔥 Retorna status da promoção de fundador com cache"""
-    # 🔥 CORRIGIDO: usa dados em cache (dict), não objeto SQLAlchemy
     promo_data = get_cached_promotion_data(db, force_refresh)
     
     user_price = None
@@ -638,7 +858,7 @@ async def get_user_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """🔥 Obtém saldo de créditos do usuário (NUNCA concede créditos automaticamente)"""
+    """🔥 Obtém saldo de créditos do usuário"""
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         return sanitize_response({"success": False, "credits": 0, "error": "Usuário não encontrado"})
@@ -667,6 +887,10 @@ async def get_user_balance(
     })
 
 
+# ==============================================
+# 🔥 ROTA PRINCIPAL: CREATE PIX
+# ==============================================
+
 @router.post("/create-pix")
 async def create_pix_payment(
     background_tasks: BackgroundTasks,
@@ -676,9 +900,9 @@ async def create_pix_payment(
 ):
     """
     🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO
-    V3.3 - COMPLETO E CORRIGIDO
+    V3.4 - COM LOGS DETALHADOS DO QR CODE
     """
-    start_time = time.time()
+    start_time = time_module.time()
     
     # ==========================================
     # 1️⃣ VALIDAÇÕES
@@ -747,26 +971,50 @@ async def create_pix_payment(
             db=db
         )
         
-        # 🔥 VERIFICA SE PRECISA DE CPF
         if result.get("requires_cpf"):
             raise HTTPException(status_code=400, detail=result.get("error"))
         
-        # 🔥 VERIFICA SE DEU ERRO
         if not result.get("success"):
             logger.error(f"❌ Erro no Mercado Pago: {result.get('error')}")
             update_payment_metrics(False, price)
             raise HTTPException(status_code=400, detail=result.get("error", "Erro ao criar pagamento"))
         
-        # 🔥 VALIDA SE O QR CODE FOI GERADO
+        # ==========================================
+        # 6️⃣ 🔥 LOG DETALHADO DO QR CODE
+        # ==========================================
+        
         qr_code = result.get("qr_code")
         qr_code_base64 = result.get("qr_code_base64")
         
+        logger.info("=" * 70)
+        logger.info("📱 [QR CODE RECEBIDO DO MERCADO PAGO]")
+        logger.info(f"   📍 QR Code (textual): {'✅' if qr_code else '❌'}")
+        if qr_code:
+            logger.info(f"   📍 Tamanho: {len(qr_code)} caracteres")
+            logger.info(f"   📍 Preview: {qr_code[:50]}...")
+        logger.info(f"   📍 QR Code Base64: {'✅' if qr_code_base64 else '❌'}")
+        if qr_code_base64:
+            logger.info(f"   📍 Tamanho: {len(qr_code_base64)} caracteres")
+            logger.info(f"   📍 Preview: {qr_code_base64[:50]}...")
+            logger.info(f"   📍 Tem prefixo: {'✅' if qr_code_base64.startswith('data:image') else '❌'}")
+        logger.info("=" * 70)
+        
+        # 🔥 CORRIGE PREFIXO SE NECESSÁRIO
+        if qr_code_base64 and not qr_code_base64.startswith('data:image'):
+            logger.warning("⚠️ QR Code base64 SEM prefixo! Adicionando...")
+            qr_code_base64 = f"data:image/png;base64,{qr_code_base64}"
+            logger.info(f"✅ Prefixo adicionado: {qr_code_base64[:50]}...")
+            result["qr_code_base64"] = qr_code_base64
+        
+        if not qr_code_base64:
+            logger.error("❌ QR Code base64 NÃO FOI GERADO pelo Mercado Pago!")
+            logger.error("   📱 Apenas QR Code textual disponível.")
+        
         if not qr_code and not qr_code_base64:
-            logger.warning(f"⚠️ QR Code não gerado para pagamento {result.get('payment_id')}")
-            # Continua mesmo sem QR Code (pode ser gerado depois)
+            logger.error("❌ NENHUM QR CODE foi gerado pelo Mercado Pago!")
         
         # ==========================================
-        # 6️⃣ SALVA NO BANCO
+        # 7️⃣ SALVA NO BANCO
         # ==========================================
         
         payment = crud.create_payment(
@@ -788,23 +1036,25 @@ async def create_pix_payment(
                 "plan_id": request_data.plan_id,
                 "remaining_slots_at_purchase": remaining_slots,
                 "environment": mp_service.environment if hasattr(mp_service, 'environment') else "production",
-                "qr_code_generated": bool(qr_code or qr_code_base64)
+                "qr_code_generated": bool(qr_code or qr_code_base64),
+                "qr_code_base64_size": len(qr_code_base64) if qr_code_base64 else 0,
+                "qr_code_text_size": len(qr_code) if qr_code else 0,
+                "qr_code_has_prefix": qr_code_base64.startswith('data:image') if qr_code_base64 else False
             }
         )
         
-        # 🔥🔥🔥 CORREÇÃO CRÍTICA: alert_payment_pending com 3 argumentos
         alert_payment_pending(user.email, price, "pix")
         
         if was_promotional and not user.promotional_price_locked:
-            logger.info(f"🎟️ Usuário {user.email} comprou na promoção - aguardando confirmação para travar preço vitalício")
+            logger.info(f"🎟️ Usuário {user.email} comprou na promoção - aguardando confirmação")
         
         # ==========================================
-        # 7️⃣ RETORNA RESPOSTA
+        # 8️⃣ RETORNA RESPOSTA
         # ==========================================
         
         update_payment_metrics(True, price)
         
-        elapsed = (time.time() - start_time) * 1000
+        elapsed = (time_module.time() - start_time) * 1000
         logger.info(f"✅ Pagamento PIX criado em {elapsed:.0f}ms - ID: {payment.id} - MP ID: {result['payment_id']}")
         logger.info(f"   📱 QR Code gerado: {'✅' if (qr_code or qr_code_base64) else '❌'}")
         
@@ -1012,7 +1262,7 @@ async def payment_health_check():
 
 
 # ==============================================
-# 🔥 ROTAS ADMIN
+# 🔥 ROTAS ADMIN (MANUTENÇÃO)
 # ==============================================
 
 @router.post("/admin/fix-initial-credits")
@@ -1191,7 +1441,7 @@ async def process_payment_webhook(payment_id: str):
 
 
 # ==============================================
-# 🔥 OUTRAS ROTAS (MANTIDAS)
+# 🔥 OUTRAS ROTAS
 # ==============================================
 
 @router.get("/check-analysis")
@@ -1359,18 +1609,20 @@ async def get_subscription_status(
 # ==============================================
 
 print("=" * 70)
-print("✅ payment_routes.py v3.3 carregado - CORRIGIDO E OTIMIZADO!")
-print("   🔥 CORREÇÕES v3.3:")
-print("      - ✅ DetachedInstanceError corrigido (cache usa dict)")
-print("      - ✅ CreditEligibilityResponse definido ANTES de ser usado")
-print("      - ✅ alert_payment_pending() com 3 argumentos")
-print("      - ✅ Validação de QR Code gerado")
+print("✅ payment_routes.py v3.4 carregado - COM LIMPEZA AUTOMÁTICA (5 MIN)!")
+print("   🔥 NOVIDADES v3.4:")
+print("      - ✅ Limpeza automática a cada 2 minutos")
+print("      - ✅ Pagamentos com 5 minutos são cancelados")
+print("      - ✅ Rate limit reseta automaticamente")
+print("      - ✅ Logs detalhados do QR Code")
+print("      - ✅ Rota admin: /admin/cleanup-expired")
+print("      - ✅ Rota admin: /admin/reset-rate-limit/{user_id}")
+print("      - ✅ Rota usuário: /reset-my-attempts")
 print("   📊 CONFIGURAÇÕES:")
 print(f"      - Rate limit: {MAX_PAYMENT_ATTEMPTS_PER_DAY} tentativas/dia")
-print(f"      - Cache TTL: {PROMOTION_CACHE_TTL}s")
+print(f"      - Limpeza: 2 em 2 minutos")
+print(f"      - Expiração: 5 minutos")
 print("   💰 PREÇOS:")
 print(f"      - Promocional: R$ {PROMOTIONAL_PRICE}")
 print(f"      - Regular: R$ {REGULAR_PRICE}")
-print(f"      - Vagas totais: {TOTAL_PROMOTIONAL_SLOTS}")
-print("   🔐 MODO: PRODUÇÃO (apenas Mercado Pago real)")
 print("=" * 70)
