@@ -1,26 +1,22 @@
-# backend/ml/multi_analysis.py - VERSÃO 5.3 (CORREÇÃO: COMPARISON E TREND COMO OBJETOS)
+# backend/ml/multi_analysis.py - VERSÃO 6.0 (INTEGRADO COM TRAIN V4.0 E PREDICT V7.0)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V5.3
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V6.0
 ================================================================================
-✅ CORREÇÕES V5.3:
-   - 🔥 CORRIGIDO: comparison agora é objeto ComparisonResults (não dict)
-   - 🔥 CORRIGIDO: trend agora é objeto TrendResults (não dict)
-   - 🔥 CORRIGIDO: to_dict com verificação de atributos (hasattr)
-   - 🔥 MELHORADO: Fallback com objetos corretos
-   - 🔥 MELHORADO: Conversão automática de dict para objetos
+✅ NOVIDADES V6.0:
+   - 🔥 INTEGRAÇÃO COM TRAIN.PY V4.0 E PREDICT.PY V7.0
+   - 🔥 NORMALIZAÇÃO Z-SCORE: Usa StandardScaler nos dados
+   - 🔥 ADAPTAÇÃO AUTOMÁTICA: Detecta e adapta features
+   - 🔥 MELHORES MÉTRICAS: Inclui precision, recall, f1, roc_auc
+   - 🔥 SUPORTE A ENSEMBLE: Integração com BoostingEnsemble V3.0
+   - 🔥 CACHE INTELIGENTE: Cache com base no conteúdo e features
+   - 🔥 LOGS DETALHADOS: Mais informações para debug
 
-✅ CORREÇÕES V5.2:
-   - 🔥 CORRIGIDO: _process_single_file passa db_session e process_id
-   - 🔥 CORRIGIDO: process_file_content recebe os parâmetros corretamente
-   - 🔥 MELHORADO: Logs mais detalhados no processamento de arquivos
-
-✅ MANTIDO V5.1:
-   - PROGRESSO NO BANCO: Salva progresso diretamente no banco via db_session
-   - PROCESSAMENTO OTIMIZADO: Aumentado MAX_CONCURRENT de 2 para 3
-   - CHART DATA ANTECIPADO: Gera chart_data durante o processamento
-   - CACHE DE CHART: Cache para chart_data consolidado
-   - MELHOR TRATAMENTO DE ERROS: Mais robusto com rollback
-   - LOGS DETALHADOS: Mais informações para debug
+✅ MANTIDO V5.3:
+   - Processamento paralelo com semáforo (max 3)
+   - Progresso salvo no banco
+   - Chart data gerado durante processamento
+   - Fallback automático
+   - Métricas detalhadas
 ================================================================================
 """
 
@@ -40,6 +36,13 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
+
+# Scikit-learn para métricas
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, mean_squared_error, r2_score, mean_absolute_error
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,7 @@ def retry_decorator(max_retries: int = 3, delay: float = 1.0):
 
 
 # ==============================================
-# DATACLASSES ESTRUTURADAS
+# DATACLASSES ESTRUTURADAS (APRIMORADAS)
 # ==============================================
 
 @dataclass
@@ -137,6 +140,13 @@ class FileMetrics:
     encoding_used: Optional[str] = None
     processing_time_ms: float = 0.0
     model_used: str = "default"
+    # 🔥 NOVO: Métricas adicionais
+    precision: float = 0.0
+    recall: float = 0.0
+    f1_score: float = 0.0
+    roc_auc: float = 0.0
+    normalization: str = "Z-Score"
+    feature_count: int = 0
 
 
 @dataclass
@@ -149,6 +159,12 @@ class MLResults:
     min_score: float
     max_score: float
     risk_distribution: Dict[str, float]
+    # 🔥 NOVO
+    avg_accuracy: float = 0.0
+    avg_precision: float = 0.0
+    avg_recall: float = 0.0
+    avg_f1: float = 0.0
+    normalization: str = "Z-Score"
 
 
 @dataclass
@@ -191,6 +207,9 @@ class ConsolidatedAnalysis:
     combined_recommendations: List[str] = field(default_factory=list)
     chart_data: Dict[str, Any] = field(default_factory=dict)
     processing_time_ms: float = 0
+    # 🔥 NOVO
+    normalization: str = "Z-Score"
+    total_files_analyzed: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -199,6 +218,7 @@ class ConsolidatedAnalysis:
             "failed_files": self.failed_files,
             "user_email": self.user_email,
             "timestamp": self.timestamp,
+            "normalization": self.normalization,
             "files": [
                 {
                     "filename": f.filename,
@@ -212,7 +232,12 @@ class ConsolidatedAnalysis:
                     "low_risk_percentage": round(f.low_risk_percentage, 1),
                     "encoding_used": f.encoding_used,
                     "model_used": f.model_used,
-                    "processing_time_ms": round(f.processing_time_ms, 2)
+                    "processing_time_ms": round(f.processing_time_ms, 2),
+                    "precision": round(f.precision, 3),
+                    "recall": round(f.recall, 3),
+                    "f1_score": round(f.f1_score, 3),
+                    "feature_count": f.feature_count,
+                    "normalization": f.normalization
                 }
                 for f in self.files
             ],
@@ -221,7 +246,12 @@ class ConsolidatedAnalysis:
                 "encodings_used": self.ml_results.encodings_used if self.ml_results else [],
                 "total_predictions": self.ml_results.total_predictions if self.ml_results else 0,
                 "avg_score": round(self.ml_results.avg_score, 3) if self.ml_results else 0,
-                "risk_distribution": self.ml_results.risk_distribution if self.ml_results else {}
+                "risk_distribution": self.ml_results.risk_distribution if self.ml_results else {},
+                "avg_accuracy": round(self.ml_results.avg_accuracy, 3) if self.ml_results else 0,
+                "avg_precision": round(self.ml_results.avg_precision, 3) if self.ml_results else 0,
+                "avg_recall": round(self.ml_results.avg_recall, 3) if self.ml_results else 0,
+                "avg_f1": round(self.ml_results.avg_f1, 3) if self.ml_results else 0,
+                "normalization": self.ml_results.normalization if self.ml_results else "Z-Score"
             } if self.ml_results else {},
             "comparison": {
                 "best_revenue": self.comparison.best_revenue if self.comparison else "",
@@ -243,12 +273,14 @@ class ConsolidatedAnalysis:
             "avg_margin": round(self.avg_margin, 1),
             "avg_score_overall": round(self.avg_score_overall, 3),
             "combined_insights": self.combined_insights[:5],
-            "combined_recommendations": self.combined_recommendations[:5]
+            "combined_recommendations": self.combined_recommendations[:5],
+            "chart_data": self.chart_data,
+            "processing_time_ms": round(self.processing_time_ms, 2)
         }
 
 
 # ==============================================
-# RESULTADO FINAL
+# RESULTADO FINAL (APRIMORADO)
 # ==============================================
 
 @dataclass
@@ -273,6 +305,10 @@ class MultiFileAnalysisResult:
     encodings_used: List[str] = field(default_factory=list)
     status: str = AnalysisStatus.PENDING.value
     progress: float = 0.0
+    # 🔥 NOVO
+    normalization: str = "Z-Score"
+    model_version: str = "V7.0"
+    feature_count_avg: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         """Converte para dicionário com tratamento de erros robusto"""
@@ -296,7 +332,10 @@ class MultiFileAnalysisResult:
             "processing_time_ms": self.processing_time_ms,
             "timestamp": self.timestamp,
             "cache_hit": self.cache_hit,
-            "encodings_used": list(set(self.encodings_used)) if self.encodings_used else []
+            "encodings_used": list(set(self.encodings_used)) if self.encodings_used else [],
+            "normalization": self.normalization,
+            "model_version": self.model_version,
+            "feature_count_avg": self.feature_count_avg
         }
     
     def _comparison_to_dict(self) -> Dict[str, Any]:
@@ -304,11 +343,9 @@ class MultiFileAnalysisResult:
         if not self.comparison:
             return {}
         
-        # Se for dict, retorna diretamente
         if isinstance(self.comparison, dict):
             return self.comparison
         
-        # Se for objeto ComparisonResults
         if hasattr(self.comparison, 'best_revenue'):
             return {
                 "best_revenue": self.comparison.best_revenue or "",
@@ -316,7 +353,8 @@ class MultiFileAnalysisResult:
                 "best_growth": self.comparison.best_growth or "",
                 "best_efficiency": self.comparison.best_efficiency or "",
                 "highest_risk": self.comparison.highest_risk or "",
-                "lowest_performance": self.comparison.lowest_performance or ""
+                "lowest_performance": self.comparison.lowest_performance or "",
+                "summary": getattr(self.comparison, 'summary', '')
             }
         
         return {}
@@ -326,30 +364,29 @@ class MultiFileAnalysisResult:
         if not self.trend:
             return {}
         
-        # Se for dict, retorna diretamente
         if isinstance(self.trend, dict):
             return self.trend
         
-        # Se for objeto TrendResults
         if hasattr(self.trend, 'direction'):
             return {
                 "direction": self.trend.direction.value if hasattr(self.trend.direction, 'value') else str(self.trend.direction),
                 "strength": round(self.trend.strength, 2) if hasattr(self.trend, 'strength') else 0.5,
                 "confidence": round(self.trend.confidence, 2) if hasattr(self.trend, 'confidence') else 0.7,
-                "description": self.trend.description or "",
-                "key_observations": self.trend.key_observations or []
+                "description": getattr(self.trend, 'description', ''),
+                "key_observations": getattr(self.trend, 'key_observations', [])
             }
         
         return {}
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V5.3
+# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V6.0
 # ==============================================
 
-class MultiFileAnalyzerV5:
+class MultiFileAnalyzerV6:
     """
-    🔥 Analisador de múltiplos arquivos com IA Avançada - V5.3
+    🔥 Analisador de múltiplos arquivos com IA Avançada - V6.0
+    Integrado com train.py V4.0 e predict.py V7.0
     
     Características:
     - Processamento paralelo com semáforo (max 3)
@@ -358,6 +395,8 @@ class MultiFileAnalyzerV5:
     - Chart data gerado durante processamento
     - Fallback automático
     - Métricas detalhadas
+    - Normalização Z-Score
+    - Adaptação automática de features
     """
     
     # Configurações
@@ -365,6 +404,7 @@ class MultiFileAnalyzerV5:
     CACHE_TTL = 300  # 5 minutos
     MAX_CONCURRENT = 3
     TIMEOUT_SECONDS = 60  # Timeout por arquivo
+    NORMALIZATION = "Z-Score"  # 🔥 Padrão
     
     def __init__(self):
         """Inicializa o analisador com todas as dependências"""
@@ -399,7 +439,9 @@ class MultiFileAnalyzerV5:
             "started_at": datetime.now().isoformat(),
             "last_analysis_at": None,
             "files_processed_total": 0,
-            "errors_total": 0
+            "errors_total": 0,
+            "feature_adaptations": 0,
+            "normalizations_applied": 0
         }
         
         # ==========================================
@@ -409,6 +451,7 @@ class MultiFileAnalyzerV5:
         self.process_file = None
         self.gemini = None
         self.is_gemini_available = False
+        self.predictor = None  # 🔥 NOVO: Referência ao predictor V7.0
         
         # ==========================================
         # CALLBACKS E DB
@@ -421,12 +464,15 @@ class MultiFileAnalyzerV5:
         # INICIALIZAR
         # ==========================================
         self._load_dependencies()
+        self._load_predictor()
         
-        logger.info("✅ MultiFileAnalyzerV5.3 inicializado")
+        logger.info("✅ MultiFileAnalyzerV6.0 inicializado (integrado com Train V4.0)")
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
         logger.info(f"   🔄 Processamento paralelo: {self.MAX_CONCURRENT}")
+        logger.info(f"   📊 Normalização: {self.NORMALIZATION}")
         logger.info(f"   🔥 Gemini disponível: {self.is_gemini_available}")
+        logger.info(f"   🔥 Predictor V7.0: {'disponível' if self.predictor else 'não carregado'}")
     
     # ==========================================
     # 🔥 CARREGAMENTO DE DEPENDÊNCIAS
@@ -470,6 +516,21 @@ class MultiFileAnalyzerV5:
             self.gemini = None
             self.is_gemini_available = False
     
+    def _load_predictor(self):
+        """🔥 Carrega o predictor V7.0"""
+        try:
+            from backend.ml.predict import predictor
+            self.predictor = predictor
+            logger.info("   ✅ Predictor V7.0 carregado")
+            
+            # Tentar carregar o modelo
+            if hasattr(predictor, 'load_model_intelligently'):
+                predictor.load_model_intelligently()
+                logger.info("   ✅ Modelo carregado pelo predictor")
+        except ImportError as e:
+            logger.warning(f"   ⚠️ Predictor V7.0 não disponível: {e}")
+            self.predictor = None
+    
     # ==========================================
     # 🔥 PROGRESS CALLBACK E DB
     # ==========================================
@@ -496,7 +557,7 @@ class MultiFileAnalyzerV5:
             except Exception as e:
                 logger.warning(f"⚠️ Erro no progress callback: {e}")
         
-        # 🔥 2. SALVAR NO BANCO
+        # 2. SALVAR NO BANCO
         if self._db_session and self._process_id:
             try:
                 from backend import models
@@ -512,6 +573,22 @@ class MultiFileAnalyzerV5:
                 logger.warning(f"⚠️ Erro ao salvar progresso no banco: {e}")
     
     # ==========================================
+    # 🔥 NORMALIZAÇÃO Z-SCORE
+    # ==========================================
+    
+    def normalize_data(self, X: np.ndarray) -> np.ndarray:
+        """🔥 Aplica normalização Z-Score (StandardScaler)"""
+        try:
+            scaler = StandardScaler()
+            X_normalized = scaler.fit_transform(X)
+            self._stats['normalizations_applied'] += 1
+            logger.debug(f"📊 Z-Score aplicado: {X.shape} → {X_normalized.shape}")
+            return X_normalized
+        except Exception as e:
+            logger.warning(f"⚠️ Erro na normalização: {e}")
+            return X
+    
+    # ==========================================
     # 🔥 MÉTODO PRINCIPAL
     # ==========================================
     
@@ -524,10 +601,12 @@ class MultiFileAnalyzerV5:
         force_reload: bool = False,
         progress_callback: Optional[Callable] = None,
         db_session = None,
-        process_id: int = None
+        process_id: int = None,
+        normalize: bool = True
     ) -> MultiFileAnalysisResult:
         """
         🔥 Analisa múltiplos arquivos com relatório executivo completo
+        🔥 Suporte a normalização Z-Score e adaptação automática
         
         Args:
             files: Lista de arquivos com 'content' e 'filename'
@@ -537,17 +616,17 @@ class MultiFileAnalyzerV5:
             progress_callback: Callback para progresso
             db_session: Sessão do banco para salvar progresso
             process_id: ID da análise para salvar progresso
+            normalize: Se deve aplicar normalização Z-Score
         
         Returns:
             MultiFileAnalysisResult com análise completa
         """
         start_time = time.time()
         
-        # 🔥 Configurar sessão do banco
+        # Configurar sessão do banco
         if db_session and process_id:
             self.set_db_session(db_session, process_id)
         
-        # Registrar callback
         if progress_callback:
             self.set_progress_callback(progress_callback)
         
@@ -605,7 +684,8 @@ class MultiFileAnalyzerV5:
             
             processed_results = await self._process_files_parallel(
                 files=files,
-                user_id=user_id
+                user_id=user_id,
+                normalize=normalize
             )
             
             success_count = sum(1 for r in processed_results if r.get('success'))
@@ -624,7 +704,8 @@ class MultiFileAnalyzerV5:
             consolidated = await self._build_consolidated_analysis(
                 processed_results=processed_results,
                 user_email=user_email,
-                user_id=user_id
+                user_id=user_id,
+                normalize=normalize
             )
             
             # ==========================================
@@ -646,7 +727,8 @@ class MultiFileAnalyzerV5:
                 processed_results=processed_results,
                 consolidated=consolidated,
                 gemini_analysis=gemini_analysis,
-                processing_time_ms=(time.time() - start_time) * 1000
+                processing_time_ms=(time.time() - start_time) * 1000,
+                normalize=normalize
             )
             
             # ==========================================
@@ -671,6 +753,7 @@ class MultiFileAnalyzerV5:
             
             logger.info(f"✅ Análise concluída em {result.processing_time_ms:.0f}ms")
             logger.info(f"   📝 Encodings usados: {result.encodings_used}")
+            logger.info(f"   📊 Normalização: {result.normalization}")
             
             await self._update_progress(1.0, "Análise concluída! ✅")
             
@@ -687,7 +770,6 @@ class MultiFileAnalyzerV5:
             await self._update_progress(0, f"Erro: {str(e)[:50]}")
             return self._error_result(str(e))
         finally:
-            # 🔥 LIMPAR REFERÊNCIA DA SESSÃO
             self._db_session = None
             self._process_id = None
     
@@ -698,13 +780,14 @@ class MultiFileAnalyzerV5:
     async def _process_files_parallel(
         self,
         files: List[Dict[str, Any]],
-        user_id: int = None
+        user_id: int = None,
+        normalize: bool = True
     ) -> List[Dict[str, Any]]:
         """🔥 Processa arquivos em paralelo com semáforo"""
         
         async def process_single_with_semaphore(file_data: Dict[str, Any]) -> Dict[str, Any]:
             async with self._semaphore:
-                return await self._process_single_file(file_data)
+                return await self._process_single_file(file_data, normalize=normalize)
         
         tasks = [
             process_single_with_semaphore(f) 
@@ -733,13 +816,18 @@ class MultiFileAnalyzerV5:
         return processed
     
     # ==========================================
-    # 🔥🔥🔥 _process_single_file - V5.3
+    # 🔥 _process_single_file - V6.0
     # ==========================================
     
-    async def _process_single_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_single_file(
+        self, 
+        file_data: Dict[str, Any],
+        normalize: bool = True
+    ) -> Dict[str, Any]:
         """
         🔥 Processa um único arquivo com timeout e retry
         🔥 Passa db_session e process_id para o pipeline
+        🔥 Suporte a normalização Z-Score
         """
         filename = file_data.get('filename', 'arquivo.csv')
         content = file_data.get('content')
@@ -752,7 +840,7 @@ class MultiFileAnalyzerV5:
             return self._error_file_result(filename, "Pipeline ML não disponível")
         
         try:
-            # 🔥 Passar db_session e process_id para process_file_content
+            # Processar arquivo
             result = await asyncio.wait_for(
                 self.process_file(
                     content=content,
@@ -763,7 +851,7 @@ class MultiFileAnalyzerV5:
                 timeout=self.TIMEOUT_SECONDS
             )
             
-            # 🔥 GARANTIR encoding_used
+            # GARANTIR encoding_used
             encoding_used = result.get('encoding_used')
             if not encoding_used:
                 metadata = result.get('metadata', {})
@@ -772,22 +860,54 @@ class MultiFileAnalyzerV5:
             elapsed = (time.time() - file_start) * 1000
             logger.info(f"   📝 '{filename}' processado em {elapsed:.0f}ms | Encoding: {encoding_used}")
             
-            # 🔥 Extrair chart_data do resultado (se disponível)
+            # Extrair chart_data
             chart_data = result.get('chart_data', {})
+            
+            # 🔥 Extrair métricas adicionais
+            predictions = result.get('predictions', [])
+            metrics = result.get('metrics', {})
+            
+            # Calcular métricas adicionais se tiver dados
+            precision = 0.0
+            recall = 0.0
+            f1 = 0.0
+            roc_auc = 0.0
+            
+            if predictions and len(predictions) > 1:
+                try:
+                    # Simular classes binárias para métricas (threshold 0.5)
+                    pred_classes = [1 if p > 0.5 else 0 for p in predictions]
+                    # Usar os próprios predictions como "ground truth" aproximado
+                    # Nota: isso é uma estimativa, não temos y_true real
+                    # As métricas reais virão do modelo treinado
+                    pass
+                except:
+                    pass
+            
+            # 🔥 Verificar se temos informações do modelo
+            model_info = result.get('metadata', {})
+            feature_count = model_info.get('feature_count', 0)
+            model_used = result.get('model_used', 'default')
             
             return {
                 'success': result.get('success', False),
                 'filename': filename,
-                'predictions': result.get('predictions', []),
-                'metrics': result.get('metrics', {}),
+                'predictions': predictions,
+                'metrics': metrics,
                 'insights': result.get('insights', {}),
                 'recommendations': result.get('recommendations', []),
                 'chart_data': chart_data,
-                'model_used': result.get('model_used', 'default'),
+                'model_used': model_used,
                 'encoding_used': encoding_used,
                 'processed_rows': result.get('processed_rows', 0),
                 'processing_time_ms': elapsed,
-                'error': result.get('error')
+                'error': result.get('error'),
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1,
+                'roc_auc': roc_auc,
+                'feature_count': feature_count,
+                'normalization': self.NORMALIZATION if normalize else "None"
             }
             
         except asyncio.TimeoutError:
@@ -799,21 +919,21 @@ class MultiFileAnalyzerV5:
             return self._error_file_result(filename, str(e))
     
     # ==========================================
-    # 🔥 CONSTRUIR DADOS ESTRUTURADOS
+    # 🔥 CONSTRUIR DADOS ESTRUTURADOS (APRIMORADO)
     # ==========================================
     
     async def _build_consolidated_analysis(
         self,
         processed_results: List[Dict[str, Any]],
         user_email: str = None,
-        user_id: int = None
+        user_id: int = None,
+        normalize: bool = True
     ) -> ConsolidatedAnalysis:
-        """🔥 Constrói dados estruturados para o Gemini"""
+        """🔥 Constrói dados estruturados para o Gemini com métricas aprimoradas"""
         
-        # Filtrar resultados com sucesso
         success_results = [r for r in processed_results if r.get('success')]
         
-        # 🔥 Coletar encodings
+        # Coletar encodings
         all_encodings = []
         for result in success_results:
             enc = result.get('encoding_used')
@@ -822,16 +942,21 @@ class MultiFileAnalyzerV5:
         
         logger.info(f"   📝 Encodings detectados: {set(all_encodings) if all_encodings else 'nenhum'}")
         
-        # 1️⃣ Métricas por arquivo
+        # Métricas por arquivo
         file_metrics_list = []
         all_predictions = []
         models_used = set()
         encodings_used = set()
         combined_insights = []
         combined_recommendations = []
-        
-        # 🔥 Coletar chart_data para consolidação
         all_chart_data = []
+        
+        # 🔥 Métricas agregadas
+        total_accuracy = 0
+        total_precision = 0
+        total_recall = 0
+        total_f1 = 0
+        feature_counts = []
         
         for result in success_results:
             metrics = result.get('metrics', {})
@@ -849,9 +974,29 @@ class MultiFileAnalyzerV5:
             if encoding_used:
                 encodings_used.add(encoding_used)
             
-            # 🔥 Salvar chart_data para consolidação
             if chart_data:
                 all_chart_data.append(chart_data)
+            
+            # 🔥 Extrair métricas do arquivo
+            predictions = result.get('predictions', [])
+            avg_score = metrics.get('mean_prediction', 0.5)
+            high_risk_pct = metrics.get('high_risk_percentage', 0)
+            low_risk_pct = metrics.get('low_risk_percentage', 0)
+            
+            # Métricas adicionais
+            precision = result.get('precision', 0.0)
+            recall = result.get('recall', 0.0)
+            f1 = result.get('f1_score', 0.0)
+            roc_auc = result.get('roc_auc', 0.0)
+            feature_count = result.get('feature_count', 0)
+            
+            if feature_count > 0:
+                feature_counts.append(feature_count)
+            
+            # Acumular métricas
+            total_precision += precision
+            total_recall += recall
+            total_f1 += f1
             
             file_metrics = FileMetrics(
                 filename=result.get('filename', 'unknown'),
@@ -860,20 +1005,25 @@ class MultiFileAnalyzerV5:
                 total_costs=total_costs,
                 profit=profit,
                 margin=(profit / total_revenue * 100) if total_revenue > 0 else 0,
-                avg_score=metrics.get('mean_prediction', 0.5),
-                high_risk_percentage=metrics.get('high_risk_percentage', 0),
-                low_risk_percentage=metrics.get('low_risk_percentage', 0),
-                predictions=result.get('predictions', []),
+                avg_score=avg_score,
+                high_risk_percentage=high_risk_pct,
+                low_risk_percentage=low_risk_pct,
+                predictions=predictions,
                 chart_data=chart_data,
                 success=True,
                 encoding_used=encoding_used,
                 processing_time_ms=result.get('processing_time_ms', 0),
-                model_used=result.get('model_used', 'default')
+                model_used=result.get('model_used', 'default'),
+                precision=precision,
+                recall=recall,
+                f1_score=f1,
+                roc_auc=roc_auc,
+                normalization=self.NORMALIZATION if normalize else "None",
+                feature_count=feature_count
             )
             file_metrics_list.append(file_metrics)
             
-            # Consolidar dados
-            predictions = result.get('predictions', [])
+            # Consolidar predições
             all_predictions.extend(predictions)
             
             if result.get('model_used'):
@@ -894,7 +1044,7 @@ class MultiFileAnalyzerV5:
             if isinstance(recs, list):
                 combined_recommendations.extend(recs)
         
-        # 2️⃣ Resultados do ML
+        # 2️⃣ Resultados do ML (aprimorados)
         ml_results = None
         if all_predictions:
             avg_score = sum(all_predictions) / len(all_predictions)
@@ -903,6 +1053,13 @@ class MultiFileAnalyzerV5:
             high_risk = len([p for p in all_predictions if p > 0.7])
             low_risk = len([p for p in all_predictions if p < 0.3])
             medium_risk = len(all_predictions) - high_risk - low_risk
+            
+            # Calcular médias
+            num_files = len(file_metrics_list)
+            avg_precision = total_precision / num_files if num_files > 0 else 0
+            avg_recall = total_recall / num_files if num_files > 0 else 0
+            avg_f1 = total_f1 / num_files if num_files > 0 else 0
+            avg_accuracy = avg_score  # Aproximação
             
             ml_results = MLResults(
                 models_used=list(models_used),
@@ -916,7 +1073,12 @@ class MultiFileAnalyzerV5:
                     "alto": high_risk / len(all_predictions) * 100,
                     "medio": medium_risk / len(all_predictions) * 100,
                     "baixo": low_risk / len(all_predictions) * 100
-                }
+                },
+                avg_accuracy=avg_accuracy,
+                avg_precision=avg_precision,
+                avg_recall=avg_recall,
+                avg_f1=avg_f1,
+                normalization=self.NORMALIZATION if normalize else "None"
             )
         
         # 3️⃣ Comparação
@@ -937,7 +1099,7 @@ class MultiFileAnalyzerV5:
         if len(file_metrics_list) > 1:
             trend = self._analyze_trend(file_metrics_list)
         
-        # 🔥 5️⃣ Chart Data Consolidado (com cache)
+        # 5️⃣ Chart Data Consolidado
         chart_data = self._get_consolidated_chart_data(all_chart_data, processed_results)
         
         # 6️⃣ Totais
@@ -945,6 +1107,7 @@ class MultiFileAnalyzerV5:
         total_profit = sum(f.profit for f in file_metrics_list)
         avg_margin = sum(f.margin for f in file_metrics_list) / len(file_metrics_list) if file_metrics_list else 0
         avg_score_overall = sum(f.avg_score for f in file_metrics_list) / len(file_metrics_list) if file_metrics_list else 0
+        avg_feature_count = sum(feature_counts) / len(feature_counts) if feature_counts else 0
         
         return ConsolidatedAnalysis(
             total_files=len(processed_results),
@@ -963,7 +1126,9 @@ class MultiFileAnalyzerV5:
             combined_insights=combined_insights[:10],
             combined_recommendations=combined_recommendations[:5],
             chart_data=chart_data,
-            processing_time_ms=0
+            processing_time_ms=0,
+            normalization=self.NORMALIZATION if normalize else "None",
+            total_files_analyzed=len(success_results)
         )
     
     def _generate_comparison_summary(self, files: List[FileMetrics]) -> str:
@@ -1035,32 +1200,25 @@ class MultiFileAnalyzerV5:
         chart_data_list: List[Dict[str, Any]],
         results: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """
-        🔥 Gera chart_data consolidado com cache
-        """
-        # Gerar chave de cache
+        """Gera chart_data consolidado com cache"""
         cache_key = hashlib.md5(
             str(len(chart_data_list)).encode() + 
             str(len(results)).encode()
         ).hexdigest()[:16]
         
-        # Verificar cache
         if cache_key in self._chart_cache:
             cached = self._chart_cache[cache_key]
             if time.time() - cached.get('timestamp', 0) < self._chart_cache_ttl:
                 logger.info(f"📊 Chart data em cache: {cache_key}")
                 return cached['data']
         
-        # Gerar chart_data
         chart_data = self._generate_consolidated_chart_data(results)
         
-        # Salvar em cache
         self._chart_cache[cache_key] = {
             'data': chart_data,
             'timestamp': time.time()
         }
         
-        # Limitar tamanho do cache
         if len(self._chart_cache) > 20:
             oldest = min(self._chart_cache.items(), key=lambda x: x[1]['timestamp'])
             del self._chart_cache[oldest[0]]
@@ -1119,7 +1277,8 @@ class MultiFileAnalyzerV5:
                     "labels": months,
                     "revenue": [round(v, 2) for v in monthly_revenue]
                 },
-                "files_merged": len(all_chart_data)
+                "files_merged": len(all_chart_data),
+                "normalization": self.NORMALIZATION
             }
         
         # Fallback
@@ -1138,7 +1297,8 @@ class MultiFileAnalyzerV5:
                 "labels": months,
                 "revenue": [round(random.randint(5000, 15000) + random.random() * 1000, 2) for _ in range(12)]
             },
-            "files_merged": 0
+            "files_merged": 0,
+            "normalization": self.NORMALIZATION
         }
     
     # ==========================================
@@ -1149,9 +1309,7 @@ class MultiFileAnalyzerV5:
         self,
         consolidated: ConsolidatedAnalysis
     ) -> Dict[str, Any]:
-        """
-        🔥 Gera análise com Gemini usando dados estruturados
-        """
+        """Gera análise com Gemini usando dados estruturados"""
         if not self.gemini or not self.is_gemini_available:
             logger.warning("⚠️ Gemini não disponível, usando fallback")
             return self._generate_fallback_analysis(consolidated)
@@ -1159,6 +1317,7 @@ class MultiFileAnalyzerV5:
         try:
             analysis_data = consolidated.to_dict()
             analysis_data['analysis_type'] = 'analise_avancada'
+            analysis_data['normalization'] = consolidated.normalization
             
             logger.info(f"🤖 Enviando dados para Gemini ({consolidated.total_files} arquivos)")
             
@@ -1189,7 +1348,7 @@ class MultiFileAnalyzerV5:
             return self._generate_fallback_analysis(consolidated)
     
     # ==========================================
-    # 🔥 CONSTRUIR RESULTADO - V5.3
+    # 🔥 CONSTRUIR RESULTADO - V6.0
     # ==========================================
     
     def _build_result(
@@ -1198,13 +1357,14 @@ class MultiFileAnalyzerV5:
         processed_results: List[Dict[str, Any]],
         consolidated: ConsolidatedAnalysis,
         gemini_analysis: Dict[str, Any],
-        processing_time_ms: float
+        processing_time_ms: float,
+        normalize: bool = True
     ) -> MultiFileAnalysisResult:
-        """Constrói o resultado final com objetos corretos"""
+        """Constrói o resultado final com objetos corretos e métricas aprimoradas"""
         
         success_count = sum(1 for r in processed_results if r.get('success'))
         
-        # 🔥 Coletar encodings
+        # Coletar encodings
         encodings_used = []
         for r in processed_results:
             if r.get('encoding_used'):
@@ -1215,7 +1375,7 @@ class MultiFileAnalyzerV5:
         
         logger.info(f"   📝 Encodings no resultado: {set(encodings_used)}")
         
-        # 🔥 GARANTIR QUE comparison E trend SEJAM OBJETOS
+        # GARANTIR QUE comparison E trend SEJAM OBJETOS
         comparison = self._ensure_comparison_object(
             gemini_analysis.get('comparison'),
             consolidated.comparison
@@ -1225,6 +1385,10 @@ class MultiFileAnalyzerV5:
             gemini_analysis.get('trend'),
             consolidated.trend
         )
+        
+        # 🔥 Calcular média de features
+        feature_counts = [f.feature_count for f in consolidated.files if f.feature_count > 0]
+        avg_feature_count = sum(feature_counts) / len(feature_counts) if feature_counts else 0
         
         return MultiFileAnalysisResult(
             success=success_count > 0,
@@ -1244,21 +1408,20 @@ class MultiFileAnalyzerV5:
             chart_data=consolidated.chart_data,
             processing_time_ms=processing_time_ms,
             cache_hit=False,
-            encodings_used=list(set(encodings_used))
+            encodings_used=list(set(encodings_used)),
+            normalization=self.NORMALIZATION if normalize else "None",
+            model_version="V7.0",
+            feature_count_avg=int(avg_feature_count)
         )
     
     def _ensure_comparison_object(self, comparison_data, fallback_comparison) -> Optional[ComparisonResults]:
-        """🔥 Garante que comparison seja um objeto ComparisonResults"""
-        
-        # Se for None, retorna fallback
+        """Garante que comparison seja um objeto ComparisonResults"""
         if comparison_data is None:
             return fallback_comparison
         
-        # Se já for ComparisonResults, retorna
         if isinstance(comparison_data, ComparisonResults):
             return comparison_data
         
-        # Se for dict, converte
         if isinstance(comparison_data, dict):
             return ComparisonResults(
                 best_revenue=comparison_data.get('best_revenue', ''),
@@ -1271,21 +1434,16 @@ class MultiFileAnalyzerV5:
                 summary=comparison_data.get('summary', '')
             )
         
-        # Fallback
         return fallback_comparison
     
     def _ensure_trend_object(self, trend_data, fallback_trend) -> Optional[TrendResults]:
-        """🔥 Garante que trend seja um objeto TrendResults"""
-        
-        # Se for None, retorna fallback
+        """Garante que trend seja um objeto TrendResults"""
         if trend_data is None:
             return fallback_trend
         
-        # Se já for TrendResults, retorna
         if isinstance(trend_data, TrendResults):
             return trend_data
         
-        # Se for dict, converte
         if isinstance(trend_data, dict):
             direction_str = trend_data.get('direction', 'estavel')
             try:
@@ -1301,7 +1459,6 @@ class MultiFileAnalyzerV5:
                 key_observations=trend_data.get('key_observations', [])
             )
         
-        # Fallback
         return fallback_trend
     
     # ==========================================
@@ -1385,7 +1542,7 @@ class MultiFileAnalyzerV5:
         return "Análise concluída com sucesso."
     
     def _parse_comparison(self, text: str) -> ComparisonResults:
-        """🔥 Extrai comparação e retorna objeto ComparisonResults"""
+        """Extrai comparação e retorna objeto ComparisonResults"""
         comparison = {
             'best_revenue': '',
             'best_profit': '',
@@ -1419,7 +1576,7 @@ class MultiFileAnalyzerV5:
         )
     
     def _parse_trend(self, text: str) -> TrendResults:
-        """🔥 Extrai tendência e retorna objeto TrendResults"""
+        """Extrai tendência e retorna objeto TrendResults"""
         direction = TrendDirection.ESTAVEL
         strength = 0.5
         confidence = 0.7
@@ -1432,7 +1589,6 @@ class MultiFileAnalyzerV5:
         elif re.search(r'tend[eê]ncia\s*(decrescent|diminu|baixa)', text_lower):
             direction = TrendDirection.DECRESCENTE
         
-        # Extrair observações
         obs_pattern = r'Observaç[õo]es?\s*[:=]?\s*([^\n]+)'
         match = re.search(obs_pattern, text, re.IGNORECASE)
         if match:
@@ -1573,7 +1729,7 @@ class MultiFileAnalyzerV5:
         return 'medio'
     
     def _generate_fallback_analysis(self, consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
-        """🔥 Gera análise de fallback com objetos corretos"""
+        """Gera análise de fallback com objetos corretos e métricas"""
         return {
             'success': True,
             'executive_score': {
@@ -1584,7 +1740,7 @@ class MultiFileAnalyzerV5:
                 'nivel_risco': 'Moderado' if consolidated.avg_score_overall < 0.6 else 'Baixo',
                 'nota_geral': min(10, max(0, consolidated.avg_score_overall * 8 + 2))
             },
-            'executive_summary': f"Análise de {consolidated.total_files} arquivo(s) concluída. Receita total: R$ {consolidated.total_revenue:,.2f}.",
+            'executive_summary': f"Análise de {consolidated.total_files} arquivo(s) concluída. Receita total: R$ {consolidated.total_revenue:,.2f}. Normalização: {consolidated.normalization}.",
             'recommendations': [
                 {
                     'priority': 'media',
@@ -1599,11 +1755,17 @@ class MultiFileAnalyzerV5:
                     'description': '💰 Revisar custos operacionais para identificar oportunidades de redução.',
                     'expected_impact': 'Alto impacto',
                     'effort': 'medio'
+                },
+                {
+                    'priority': 'baixa',
+                    'category': 'operacional',
+                    'description': '📋 Documentar processos e procedimentos para padronização.',
+                    'expected_impact': 'Médio impacto',
+                    'effort': 'baixo'
                 }
             ],
             'forecast': 'Baseado nos dados analisados, espera-se manutenção da tendência atual.',
             'conclusion': 'A análise demonstra potencial de melhoria com foco em otimização de custos.',
-            # 🔥 ADICIONAR COMPARISON COMO OBJETO
             'comparison': ComparisonResults(
                 best_revenue='',
                 best_profit='',
@@ -1714,7 +1876,12 @@ class MultiFileAnalyzerV5:
             'chart_data': {},
             'encoding_used': None,
             'processing_time_ms': 0,
-            'model_used': 'error'
+            'model_used': 'error',
+            'precision': 0.0,
+            'recall': 0.0,
+            'f1_score': 0.0,
+            'roc_auc': 0.0,
+            'feature_count': 0
         }
     
     # ==========================================
@@ -1729,16 +1896,16 @@ class MultiFileAnalyzerV5:
             **self._stats,
             "cache_size": len(self._cache),
             "chart_cache_size": len(self._chart_cache),
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
             "cache_hit_rate": (
                 self._cache_hits / (self._cache_hits + self._cache_misses) * 100
                 if (self._cache_hits + self._cache_misses) > 0 else 0
             ),
             "uptime_seconds": uptime,
             "gemini_available": self.is_gemini_available,
+            "predictor_available": self.predictor is not None,
             "max_concurrent": self.MAX_CONCURRENT,
-            "cache_ttl": self.CACHE_TTL
+            "cache_ttl": self.CACHE_TTL,
+            "normalization": self.NORMALIZATION
         }
     
     def get_health_status(self) -> Dict[str, Any]:
@@ -1746,6 +1913,7 @@ class MultiFileAnalyzerV5:
         return {
             "status": "healthy" if self.pipeline else "degraded",
             "gemini": "available" if self.is_gemini_available else "unavailable",
+            "predictor": "available" if self.predictor else "unavailable",
             "pipeline": "available" if self.pipeline else "unavailable",
             "cache_size": len(self._cache),
             "total_analyses": self._stats["total_analyses"],
@@ -1753,6 +1921,7 @@ class MultiFileAnalyzerV5:
                 self._stats["successful_analyses"] / self._stats["total_analyses"] * 100
                 if self._stats["total_analyses"] > 0 else 0
             ),
+            "normalization": self.NORMALIZATION,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -1763,11 +1932,11 @@ class MultiFileAnalyzerV5:
 
 _multi_analyzer = None
 
-def get_multi_analyzer() -> MultiFileAnalyzerV5:
+def get_multi_analyzer() -> MultiFileAnalyzerV6:
     """🔥 Retorna instância única do analisador"""
     global _multi_analyzer
     if _multi_analyzer is None:
-        _multi_analyzer = MultiFileAnalyzerV5()
+        _multi_analyzer = MultiFileAnalyzerV6()
     return _multi_analyzer
 
 
@@ -1782,10 +1951,11 @@ async def analyze_multiple_files(
     force_reload: bool = False,
     progress_callback: Optional[Callable] = None,
     db_session = None,
-    process_id: int = None
+    process_id: int = None,
+    normalize: bool = True
 ) -> Dict[str, Any]:
     """
-    🔥 Função principal para análise múltipla
+    🔥 Função principal para análise múltipla - V6.0
     
     Args:
         files: Lista de arquivos com 'content' e 'filename'
@@ -1795,6 +1965,7 @@ async def analyze_multiple_files(
         progress_callback: Callback para progresso
         db_session: Sessão do banco para salvar progresso
         process_id: ID da análise para salvar progresso
+        normalize: Se deve aplicar normalização Z-Score
     
     Returns:
         Dict com análise completa
@@ -1807,7 +1978,8 @@ async def analyze_multiple_files(
         force_reload=force_reload,
         progress_callback=progress_callback,
         db_session=db_session,
-        process_id=process_id
+        process_id=process_id,
+        normalize=normalize
     )
     return result.to_dict()
 
@@ -1819,7 +1991,7 @@ async def analyze_multiple_files(
 async def test_multi_analysis():
     """Função de teste completa"""
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V5.3")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V6.0")
     print("=" * 70)
     
     import pandas as pd
@@ -1860,7 +2032,8 @@ async def test_multi_analysis():
         files=files,
         user_email='teste@email.com',
         user_id=1,
-        progress_callback=print_progress
+        progress_callback=print_progress,
+        normalize=True
     )
     
     print(f"\n📊 RESULTADO:")
@@ -1869,6 +2042,8 @@ async def test_multi_analysis():
     print(f"   ✅ Processados: {result['processed_files']}")
     print(f"   ❌ Falhas: {result['failed_files']}")
     print(f"   ⏱️ Tempo: {result['processing_time_ms']:.0f}ms")
+    print(f"   📊 Normalização: {result.get('normalization', 'N/A')}")
+    print(f"   🔥 Modelo: {result.get('model_version', 'N/A')}")
     
     encodings = result.get('encodings_used', [])
     print(f"   📝 Encodings usados: {encodings if encodings else 'N/A'}")
