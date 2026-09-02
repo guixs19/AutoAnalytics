@@ -37,6 +37,7 @@ services:
       - ./autoanalytics.db:/app/autoanalytics.db
       - ./backend/temp:/app/backend/temp
       - ./backend/outputs:/app/backend/outputs
+      - ./models:/app/backend/ml/models
     environment:
       - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       - REDIS_HOST=redis
