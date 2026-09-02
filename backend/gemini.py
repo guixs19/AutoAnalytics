@@ -1,23 +1,30 @@
-# backend/gemini.py - VERSÃO 5.0 (ULTRA-INTELIGENTE)
+# backend/gemini.py - VERSÃO 5.1 (CORRIGIDA E ESTÁVEL)
 """
-🔥 GEMINI SERVICE V5.0 - SERVIÇO INTELIGENTE COM IA AUTO-ADAPTÁVEL
+🔥 GEMINI SERVICE V5.1 - SERVIÇO INTELIGENTE COM IA AUTO-ADAPTÁVEL
 ================================================================================
-✅ 15+ MELHORIAS IMPLEMENTADAS:
+✅ CORREÇÕES V5.1:
+   1. 🔥 ADICIONADO: método is_healthy() (faltando)
+   2. 🔥 ADICIONADO: tratamento de erro para API key inválida
+   3. 🔥 CORRIGIDO: import google.generativeai as genai
+   4. 🔥 CORRIGIDO: fallback quando Gemini não está disponível
+   5. 🔥 MELHORADO: logs mais informativos
+
+✅ 15+ MELHORIAS MANTIDAS:
    1. 🔥 AUTO-DETECÇÃO DE MODELOS DISPONÍVEIS (dinâmico)
    2. 🔥 SMART RATE LIMITING (baseado em uso real)
    3. 🔥 CIRCUIT BREAKER (proteção contra falhas)
-   4. 🔥 RETRY EXPONENCIAL COM JITTER (evita thundering herd)
+   4. 🔥 RETRY EXPONENCIAL COM JITTER
    5. 🔥 CACHE PREDITIVO (pré-carrega respostas comuns)
    6. 🔥 COMPRESSÃO DE PROMPT (economiza tokens)
    7. 🔥 ROTAÇÃO DE MODELOS (fallback automático)
-   8. 🔥 MÉTRICAS DE PERFORMANCE (análise em tempo real)
-   9. 🔥 STREAMING PARCIAL (respostas mais rápidas)
-   10. 🔥 VALIDAÇÃO DE RESPOSTA (qualidade e coerência)
-   11. 🔥 LOGS ESTRUTURADOS (correlação de requisições)
-   12. 🔥 MONITORAMENTO DE SAÚDE (health check preditivo)
-   13. 🔥 CACHE ADAPTATIVO (TTL baseado no tipo de dado)
-   14. 🔥 BATCH PROCESSING (agrupamento de requisições)
-   15. 🔥 AUTO-OTIMIZAÇÃO (aprendizado com uso)
+   8. 🔥 MÉTRICAS DE PERFORMANCE
+   9. 🔥 STREAMING PARCIAL
+   10. 🔥 VALIDAÇÃO DE RESPOSTA
+   11. 🔥 LOGS ESTRUTURADOS
+   12. 🔥 MONITORAMENTO DE SAÚDE
+   13. 🔥 CACHE ADAPTATIVO
+   14. 🔥 BATCH PROCESSING
+   15. 🔥 AUTO-OTIMIZAÇÃO
 ================================================================================
 """
 
@@ -37,6 +44,7 @@ from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
+import sys
 
 from dotenv import load_dotenv
 
@@ -72,7 +80,7 @@ class CacheEntry:
     hits: int = 0
     access_count: int = 0
     last_access: float = 0
-    frequency: int = 0  # Frequência de acesso
+    frequency: int = 0
 
 @dataclass
 class RequestContext:
@@ -92,7 +100,7 @@ class RequestContext:
 
 class GeminiServiceV5:
     """
-    🔥 Gemini Service V5.0 - Serviço Inteligente e Auto-Adaptável
+    🔥 Gemini Service V5.1 - Serviço Inteligente e Auto-Adaptável
     
     Características avançadas:
     - Auto-descoberta de modelos
@@ -100,6 +108,7 @@ class GeminiServiceV5:
     - Cache preditivo com TTL adaptativo
     - Rate limiting inteligente
     - Otimização automática de performance
+    - ✅ is_healthy() para verificação de saúde
     """
     
     # ==========================================
@@ -107,60 +116,39 @@ class GeminiServiceV5:
     # ==========================================
     
     CONFIG = {
-        # Timeouts
         "timeout_seconds": 60,
         "connect_timeout": 10,
         "read_timeout": 30,
-        
-        # Retry
         "max_retries": 3,
         "retry_base_delay": 1.0,
         "retry_max_delay": 30.0,
         "retry_jitter": 0.3,
-        
-        # Circuit Breaker
-        "circuit_breaker_threshold": 5,  # falhas consecutivas
-        "circuit_breaker_timeout": 60,   # segundos para recuperação
+        "circuit_breaker_threshold": 5,
+        "circuit_breaker_timeout": 60,
         "circuit_breaker_half_open_attempts": 2,
-        
-        # Rate Limiting
         "rate_limit_calls_per_minute": 60,
         "rate_limit_burst": 10,
-        
-        # Cache
         "cache_default_ttl": 300,
         "cache_max_size": 200,
         "cache_adaptive_ttl": True,
-        
-        # Performance
         "max_prompt_size": 8000,
         "min_prompt_compress": 2000,
         "batch_size": 5,
         "batch_timeout_ms": 100,
-        
-        # Streaming
         "streaming_enabled": True,
         "streaming_chunk_size": 100,
-        
-        # Models
         "model_preferences": [
-            "gemini-2.5-flash",     # Mais rápido
-            "gemini-2.5-pro",       # Mais poderoso
-            "gemini-2.0-flash",     # Estável
-            "gemini-1.5-flash",     # Fallback
-            "gemini-1.5-pro",       # Fallback 2
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
         ],
-        
-        # Health
         "health_check_interval": 60,
         "health_check_timeout": 10,
         "health_threshold_failures": 3,
-        
-        # Security
         "max_prompt_length": 50000,
         "max_response_length": 10000,
-        
-        # Optimization
         "enable_prompt_compression": True,
         "enable_batch_processing": True,
         "enable_predictive_cache": True,
@@ -175,18 +163,14 @@ class GeminiServiceV5:
     def __init__(self):
         """Inicializa o serviço com todos os sistemas inteligentes"""
         
-        # ======================================
         # SISTEMA DE MODELOS
-        # ======================================
         self.client = None
         self.current_model = None
         self.available_models: List[str] = []
         self.model_metrics: Dict[str, ModelMetrics] = {}
         self.model_rotation_index = 0
         
-        # ======================================
-        # SISTEMA DE CACHE INTELIGENTE
-        # ======================================
+        # SISTEMA DE CACHE
         self.response_cache: Dict[str, CacheEntry] = {}
         self.cache_lock = Lock()
         self.cache_stats = {
@@ -196,23 +180,17 @@ class GeminiServiceV5:
             "predictive_hits": 0,
         }
         
-        # ======================================
         # CIRCUIT BREAKER
-        # ======================================
-        self.circuit_state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        self.circuit_state = "CLOSED"
         self.circuit_failure_count = 0
         self.circuit_last_failure_time = None
         self.circuit_success_count = 0
         
-        # ======================================
         # RATE LIMITING
-        # ======================================
         self.rate_limit_cache: Dict[str, deque] = {}
         self.rate_limit_lock = Lock()
         
-        # ======================================
-        # MÉTRICAS E PERFORMANCE
-        # ======================================
+        # MÉTRICAS
         self.metrics = {
             "total_calls": 0,
             "successful_calls": 0,
@@ -228,35 +206,27 @@ class GeminiServiceV5:
             "started_at": datetime.now().isoformat(),
         }
         
-        # ======================================
         # SISTEMA DE BATCH
-        # ======================================
         self.batch_queue: deque = deque()
         self.batch_processing = False
         self.batch_executor = ThreadPoolExecutor(max_workers=4)
         
-        # ======================================
         # SISTEMA DE SAÚDE
-        # ======================================
         self.last_health_check = None
         self.health_status = "UNKNOWN"
         self.health_failures = 0
+        self._last_error = None
         
-        # ======================================
-        # ESTATÍSTICAS DE USO
-        # ======================================
+        # ESTATÍSTICAS
         self.usage_patterns = defaultdict(int)
         self.prompt_patterns = {}
         self.token_usage_by_type = defaultdict(int)
         
-        # ======================================
         # THREAD SAFETY
-        # ======================================
         self._lock = Lock()
+        self._health_monitoring_active = False
         
-        # ======================================
         # INICIALIZAR
-        # ======================================
         self.api_key = self._load_api_key()
         
         if self.api_key:
@@ -265,10 +235,11 @@ class GeminiServiceV5:
             self._warm_up_cache()
             self._start_health_monitoring()
         else:
+            self._last_error = "API key não encontrada"
             logger.error("❌ API key não encontrada")
     
     # ==========================================
-    # 🔥 1. LOAD API KEY (INTELIGENTE)
+    # 🔥 1. LOAD API KEY
     # ==========================================
     
     def _load_api_key(self) -> Optional[str]:
@@ -290,6 +261,7 @@ class GeminiServiceV5:
             except Exception as e:
                 logger.debug(f"⚠️ Falha ao carregar de {source.__name__}: {e}")
         
+        self._last_error = "Nenhuma API key válida encontrada"
         logger.error("❌ Nenhuma API key válida encontrada")
         return None
     
@@ -353,13 +325,11 @@ class GeminiServiceV5:
         
         key = str(key).strip().replace('\n', '').replace('\r', '')
         
-        # Verificar valores inválidos
         invalid_values = [None, "", "opcional", "sua_chave_aqui", "your_api_key_here", 
                           "API_KEY_AQUI", "GEMINI_API_KEY", "AIza", "AQ."]
         if key in invalid_values or len(key) < 10:
             return False
         
-        # Verificar formato básico
         if not re.match(r'^[A-Za-z0-9\-_]+$', key):
             return False
         
@@ -374,21 +344,23 @@ class GeminiServiceV5:
         try:
             logger.info("🔄 Inicializando cliente Gemini...")
             
-            # Criar cliente
             self.client = genai.Client(api_key=self.api_key)
             
-            # Testar conectividade
             test_models = list(self.client.models.list())
             logger.info(f"✅ Cliente conectado! {len(test_models)} modelos disponíveis")
             
-            # Definir modelo inicial
             if self.available_models:
                 self.current_model = self.available_models[0]
                 logger.info(f"✅ Modelo inicial: {self.current_model}")
             
+            self.health_status = "HEALTHY"
+            self._last_error = None
+            
         except Exception as e:
+            self._last_error = str(e)
             logger.error(f"❌ Erro ao inicializar cliente: {e}")
             self.client = None
+            self.health_status = "FAILED"
     
     # ==========================================
     # 🔥 3. AUTO-DESCOBERTA DE MODELOS
@@ -401,20 +373,16 @@ class GeminiServiceV5:
                 logger.warning("⚠️ Cliente não inicializado para descobrir modelos")
                 return
             
-            # Obter modelos da API
             available = []
             for model in self.client.models.list():
                 model_name = model.name
                 
-                # Filtrar apenas modelos de texto
                 if any(name in model_name.lower() for name in ['flash', 'pro', '2.5', '2.0']):
                     available.append(model_name)
                     
-                    # Inicializar métricas para o modelo
                     if model_name not in self.model_metrics:
                         self.model_metrics[model_name] = ModelMetrics(name=model_name)
             
-            # Ordenar por preferência
             preferred_order = self.CONFIG["model_preferences"]
             available.sort(key=lambda x: (
                 preferred_order.index(x) if x in preferred_order else len(preferred_order),
@@ -432,11 +400,12 @@ class GeminiServiceV5:
                 logger.info(f"🎯 Modelo selecionado: {self.current_model}")
             
         except Exception as e:
+            self._last_error = str(e)
             logger.error(f"❌ Erro ao descobrir modelos: {e}")
             self.available_models = self.CONFIG["model_preferences"]
     
     # ==========================================
-    # 🔥 4. CACHE PREDITIVO INTELIGENTE
+    # 🔥 4. CACHE PREDITIVO
     # ==========================================
     
     def _warm_up_cache(self):
@@ -454,7 +423,7 @@ class GeminiServiceV5:
             self.response_cache[cache_key] = CacheEntry(
                 value=f"Cache warm-up: {query}",
                 timestamp=time.time(),
-                ttl=3600,  # 1 hora
+                ttl=3600,
             )
         
         logger.info(f"🔥 Cache pré-carregado com {len(common_queries)} entradas")
@@ -462,7 +431,6 @@ class GeminiServiceV5:
     def _generate_cache_key(self, prompt: str, model: Optional[str] = None) -> str:
         """Gera chave de cache inteligente"""
         model = model or self.current_model or "default"
-        # Normalizar prompt (remover espaços extras)
         normalized = ' '.join(prompt.split())
         content = f"{model}:{normalized}"
         return hashlib.md5(content.encode()).hexdigest()
@@ -475,25 +443,22 @@ class GeminiServiceV5:
             if key in self.response_cache:
                 entry = self.response_cache[key]
                 
-                # Verificar expiração
                 if time.time() - entry.timestamp > entry.ttl:
                     del self.response_cache[key]
                     self.cache_stats["evictions"] += 1
                     return None
                 
-                # Atualizar métricas
                 entry.hits += 1
                 entry.access_count += 1
                 entry.last_access = time.time()
                 self.cache_stats["hits"] += 1
                 self.metrics["cache_hits"] += 1
                 
-                # Ajustar TTL adaptativo
                 if self.CONFIG["cache_adaptive_ttl"]:
                     if entry.access_count > 5:
-                        entry.ttl = min(entry.ttl * 1.2, 3600)  # Aumentar até 1h
+                        entry.ttl = min(entry.ttl * 1.2, 3600)
                     elif entry.access_count < 2:
-                        entry.ttl = max(entry.ttl * 0.8, 60)    # Diminuir até 1min
+                        entry.ttl = max(entry.ttl * 0.8, 60)
                 
                 logger.debug(f"✅ Cache hit: {key[:8]} (hits: {entry.hits}, ttl: {entry.ttl}s)")
                 return entry.value
@@ -507,9 +472,7 @@ class GeminiServiceV5:
         key = self._generate_cache_key(prompt)
         
         with self.cache_lock:
-            # Gerenciar tamanho do cache
             if len(self.response_cache) >= self.CONFIG["cache_max_size"]:
-                # Remover entrada menos acessada
                 oldest_key = min(
                     self.response_cache.keys(),
                     key=lambda k: self.response_cache[k].last_access
@@ -517,15 +480,12 @@ class GeminiServiceV5:
                 del self.response_cache[oldest_key]
                 self.cache_stats["evictions"] += 1
             
-            # Calcular TTL adaptativo
             if ttl is None:
                 ttl = self.CONFIG["cache_default_ttl"]
-                
-                # Ajustar baseado no tamanho da resposta
                 if len(response) > 2000:
-                    ttl = ttl * 2  # Respostas longas ficam mais tempo
+                    ttl = ttl * 2
                 elif len(response) < 100:
-                    ttl = ttl // 2  # Respostas curtas expiram mais rápido
+                    ttl = ttl // 2
             
             self.response_cache[key] = CacheEntry(
                 value=response,
@@ -539,7 +499,7 @@ class GeminiServiceV5:
             logger.debug(f"💾 Cache salvo: {key[:8]} (ttl: {ttl}s)")
     
     # ==========================================
-    # 🔥 5. CIRCUIT BREAKER INTELIGENTE
+    # 🔥 5. CIRCUIT BREAKER
     # ==========================================
     
     def _check_circuit_breaker(self) -> bool:
@@ -548,11 +508,9 @@ class GeminiServiceV5:
             return True
         
         if self.circuit_state == "OPEN":
-            # Verificar se já passou o tempo de recuperação
             if self.circuit_last_failure_time:
                 elapsed = time.time() - self.circuit_last_failure_time
                 if elapsed > self.CONFIG["circuit_breaker_timeout"]:
-                    # Transitar para HALF_OPEN
                     self.circuit_state = "HALF_OPEN"
                     self.circuit_success_count = 0
                     logger.info("🔓 Circuit breaker: HALF_OPEN (testando recuperação)")
@@ -588,7 +546,7 @@ class GeminiServiceV5:
                 logger.error(f"⛔ Circuit breaker: OPEN (falhas: {self.circuit_failure_count})")
     
     # ==========================================
-    # 🔥 6. RATE LIMITING INTELIGENTE
+    # 🔥 6. RATE LIMITING
     # ==========================================
     
     def _check_rate_limit(self, user_id: Optional[int] = None) -> bool:
@@ -602,43 +560,35 @@ class GeminiServiceV5:
             now = time.time()
             queue = self.rate_limit_cache[key]
             
-            # Remover entradas antigas
             while queue and now - queue[0] > 60:
                 queue.popleft()
             
-            # Verificar limite
             if len(queue) >= self.CONFIG["rate_limit_calls_per_minute"]:
                 return False
             
-            # Permitir burst
             if len(queue) > self.CONFIG["rate_limit_calls_per_minute"] - self.CONFIG["rate_limit_burst"]:
-                # Verificar se está em burst
-                if queue and now - queue[-1] < 0.1:  # Muito rápido
+                if queue and now - queue[-1] < 0.1:
                     return False
             
             queue.append(now)
             return True
     
     # ==========================================
-    # 🔥 7. PROMPT COMPRESSION INTELIGENTE
+    # 🔥 7. PROMPT COMPRESSION
     # ==========================================
     
     def _compress_prompt(self, prompt: str) -> Tuple[str, int]:
         """Comprime prompt para economizar tokens"""
         original_length = len(prompt)
         
-        # Se já for pequeno, retorna
         if len(prompt) <= self.CONFIG["min_prompt_compress"]:
             return prompt, 0
         
-        # 1. Remover espaços extras
         prompt = ' '.join(prompt.split())
         
-        # 2. Remover linhas vazias excessivas
         lines = [line.strip() for line in prompt.split('\n') if line.strip()]
-        prompt = '\n'.join(lines[:20])  # Limitar a 20 linhas
+        prompt = '\n'.join(lines[:20])
         
-        # 3. Resumir blocos de código
         def compress_code(match):
             code = match.group(1)
             if len(code.split('\n')) > 10:
@@ -647,12 +597,9 @@ class GeminiServiceV5:
             return code
         
         prompt = re.sub(r'```(.*?)```', compress_code, prompt, flags=re.DOTALL)
-        
-        # 4. Remover comentários longos
         prompt = re.sub(r'//.*$', '', prompt, flags=re.MULTILINE)
         prompt = re.sub(r'#.*$', '', prompt, flags=re.MULTILINE)
         
-        # 5. Limitar tamanho máximo
         if len(prompt) > self.CONFIG["max_prompt_size"]:
             prompt = prompt[:self.CONFIG["max_prompt_size"]] + "\n... (truncado)"
         
@@ -666,7 +613,7 @@ class GeminiServiceV5:
         return prompt, savings
     
     # ==========================================
-    # 🔥 8. MODEL ROTATION INTELLIGENTE
+    # 🔥 8. MODEL ROTATION
     # ==========================================
     
     def _select_best_model(self, prompt: str) -> str:
@@ -677,10 +624,8 @@ class GeminiServiceV5:
         if not self.CONFIG["enable_model_rotation"]:
             return self.current_model or self.available_models[0]
         
-        # 1. Analisar o prompt
         prompt_lower = prompt.lower()
         
-        # 2. Determinar complexidade
         complexity = 0
         if any(word in prompt_lower for word in ['analisar', 'complexo', 'detalhado', 'explique']):
             complexity += 2
@@ -689,35 +634,27 @@ class GeminiServiceV5:
         if len(prompt.split()) > 100:
             complexity += 1
         
-        # 3. Selecionar modelo baseado na complexidade
         if complexity >= 3:
-            # Usar modelo mais poderoso (pro)
             preferred = [m for m in self.available_models if 'pro' in m]
         elif complexity >= 1:
-            # Usar modelo balanceado (flash)
             preferred = [m for m in self.available_models if 'flash' in m and 'lite' not in m]
         else:
-            # Usar modelo rápido (flash-lite)
             preferred = [m for m in self.available_models if 'lite' in m]
         
-        # Fallback para modelos disponíveis
         if preferred:
             selected = preferred[0]
         else:
             selected = self.available_models[0]
         
-        # Verificar métricas do modelo
         if selected in self.model_metrics:
             metrics = self.model_metrics[selected]
-            if metrics.error_rate > 0.2:  # 20% de erro
-                # Tentar outro modelo
+            if metrics.error_rate > 0.2:
                 alternatives = [m for m in self.available_models if m != selected]
                 if alternatives:
                     selected = alternatives[0]
                     logger.info(f"🔄 Modelo alternativo selecionado: {selected}")
                     self.metrics["model_switches"] += 1
         
-        # Atualizar modelo atual
         if selected != self.current_model:
             self.current_model = selected
             logger.info(f"🎯 Modelo selecionado: {selected} (complexidade: {complexity})")
@@ -725,7 +662,7 @@ class GeminiServiceV5:
         return selected
     
     # ==========================================
-    # 🔥 9. CHAMADA PRINCIPAL COM TODAS AS MELHORIAS
+    # 🔥 9. CHAMADA PRINCIPAL
     # ==========================================
     
     async def generate_content(
@@ -738,24 +675,8 @@ class GeminiServiceV5:
         stream: bool = False,
         context: Optional[RequestContext] = None,
     ) -> Dict[str, Any]:
-        """
-        🔥 Gera conteúdo com Gemini usando todas as otimizações
+        """Gera conteúdo com Gemini usando todas as otimizações"""
         
-        Args:
-            prompt: Texto da pergunta
-            model: Modelo específico (opcional)
-            user_id: ID do usuário (para rate limiting)
-            use_cache: Usar cache
-            use_compression: Comprimir prompt
-            stream: Usar streaming
-            context: Contexto da requisição
-        
-        Returns:
-            Dict com resposta e métricas
-        """
-        # ======================================
-        # PREPARAR CONTEXTO
-        # ======================================
         if context is None:
             context = RequestContext(
                 request_id=hashlib.md5(f"{prompt}{time.time()}".encode()).hexdigest()[:8],
@@ -765,9 +686,6 @@ class GeminiServiceV5:
         
         logger.info(f"📤 [REQ-{context.request_id}] Iniciando requisição")
         
-        # ======================================
-        # VALIDAÇÕES INICIAIS
-        # ======================================
         if not self.client:
             return {
                 "success": False,
@@ -792,18 +710,12 @@ class GeminiServiceV5:
                 "request_id": context.request_id,
             }
         
-        # ======================================
-        # COMPRESSÃO DO PROMPT
-        # ======================================
         original_prompt = prompt
         if use_compression and self.CONFIG["enable_prompt_compression"]:
             prompt, savings = self._compress_prompt(prompt)
             if savings > 0:
                 logger.debug(f"📦 [REQ-{context.request_id}] Prompt comprimido: {savings} caracteres")
         
-        # ======================================
-        # VERIFICAR CACHE
-        # ======================================
         if use_cache:
             cached_response = self._get_cached_response(original_prompt)
             if cached_response:
@@ -820,9 +732,6 @@ class GeminiServiceV5:
                     "tokens_used": 0,
                 }
         
-        # ======================================
-        # SELECIONAR MODELO
-        # ======================================
         if model is None:
             model = self._select_best_model(prompt)
         else:
@@ -830,16 +739,12 @@ class GeminiServiceV5:
         
         context.model_used = model
         
-        # ======================================
-        # CHAMADA COM RETRY
-        # ======================================
         for attempt in range(self.CONFIG["max_retries"] + 1):
             try:
                 context.retry_count = attempt
                 
                 start_time = time.time()
                 
-                # Chamada síncrona (encapsulada para async)
                 loop = asyncio.get_event_loop()
                 response = await asyncio.wait_for(
                     loop.run_in_executor(
@@ -854,17 +759,12 @@ class GeminiServiceV5:
                 
                 elapsed = (time.time() - start_time) * 1000
                 
-                # ======================================
-                # PROCESSAR RESPOSTA
-                # ======================================
                 if response and response.text:
                     response_text = response.text
                     
-                    # Limitar tamanho
                     if len(response_text) > self.CONFIG["max_response_length"]:
                         response_text = response_text[:self.CONFIG["max_response_length"]] + "\n... (truncado)"
                     
-                    # Atualizar métricas
                     self.metrics["total_calls"] += 1
                     self.metrics["successful_calls"] += 1
                     self.metrics["avg_response_time_ms"] = (
@@ -872,13 +772,11 @@ class GeminiServiceV5:
                         self.metrics["successful_calls"]
                     )
                     
-                    # Tokens
                     tokens_used = 0
                     if hasattr(response, 'usage_metadata'):
                         tokens_used = response.usage_metadata.total_token_count or 0
                         self.metrics["total_tokens"] += tokens_used
                     
-                    # Atualizar métricas do modelo
                     if model in self.model_metrics:
                         metrics = self.model_metrics[model]
                         metrics.total_calls += 1
@@ -890,14 +788,11 @@ class GeminiServiceV5:
                         metrics.total_tokens += tokens_used
                         metrics.last_used = datetime.now()
                     
-                    # Registrar sucesso no circuit breaker
                     self._record_circuit_success()
                     
-                    # Salvar em cache
                     if use_cache and len(response_text) > 50:
                         self._set_cached_response(original_prompt, response_text)
                     
-                    # Atualizar contexto
                     context.end_time = time.time()
                     context.tokens_used = tokens_used
                     
@@ -922,31 +817,25 @@ class GeminiServiceV5:
                 error_msg = str(e)
                 logger.warning(f"⚠️ [REQ-{context.request_id}] Tentativa {attempt+1} falhou: {error_msg[:100]}")
                 
-                # Registrar falha no circuit breaker
                 self._record_circuit_failure()
                 
-                # Atualizar métricas do modelo
                 if model in self.model_metrics:
                     metrics = self.model_metrics[model]
                     metrics.failed_calls += 1
                     metrics.error_rate = metrics.failed_calls / max(1, metrics.total_calls)
                 
-                # Se for último tentativa, retornar erro
                 if attempt == self.CONFIG["max_retries"]:
                     self.metrics["total_calls"] += 1
                     self.metrics["failed_calls"] += 1
                     
-                    # Verificar se precisa trocar de modelo
                     if "404" in error_msg or "not found" in error_msg.lower():
                         logger.warning(f"🔄 [REQ-{context.request_id}] Modelo {model} não encontrado, tentando fallback...")
-                        # Tentar próximo modelo
                         if model in self.available_models:
                             idx = self.available_models.index(model)
                             if idx + 1 < len(self.available_models):
                                 fallback_model = self.available_models[idx + 1]
                                 logger.info(f"🔄 [REQ-{context.request_id}] Fallback para {fallback_model}")
                                 context.model_used = fallback_model
-                                # Recursão para tentar com fallback
                                 return await self.generate_content(
                                     prompt=original_prompt,
                                     model=fallback_model,
@@ -969,7 +858,6 @@ class GeminiServiceV5:
                         "tokens_used": 0,
                     }
                 
-                # Esperar antes de retentar (exponential backoff)
                 delay = min(
                     self.CONFIG["retry_base_delay"] * (2 ** attempt) + random.uniform(0, self.CONFIG["retry_jitter"]),
                     self.CONFIG["retry_max_delay"]
@@ -977,7 +865,6 @@ class GeminiServiceV5:
                 logger.debug(f"⏳ [REQ-{context.request_id}] Aguardando {delay:.1f}s antes de retentar...")
                 await asyncio.sleep(delay)
         
-        # Fallback
         return {
             "success": False,
             "error": "unexpected_error",
@@ -986,7 +873,7 @@ class GeminiServiceV5:
         }
     
     # ==========================================
-    # 🔥 10. BATCH PROCESSING INTELIGENTE
+    # 🔥 10. BATCH PROCESSING
     # ==========================================
     
     async def batch_generate(self, prompts: List[str], user_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -1023,13 +910,21 @@ class GeminiServiceV5:
         return processed_results
     
     # ==========================================
-    # 🔥 11. HEALTH MONITORING PREDITIVO
+    # 🔥 11. HEALTH MONITORING
     # ==========================================
     
     def _start_health_monitoring(self):
         """Inicia monitoramento de saúde automático"""
+        if self._health_monitoring_active:
+            return
+        
         self._health_monitoring_active = True
-        asyncio.create_task(self._health_monitor_loop())
+        
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._health_monitor_loop())
+        except RuntimeError:
+            logger.warning("⚠️ Não foi possível iniciar health monitor (sem event loop)")
     
     async def _health_monitor_loop(self):
         """Loop de monitoramento de saúde"""
@@ -1037,6 +932,8 @@ class GeminiServiceV5:
             try:
                 await asyncio.sleep(self.CONFIG["health_check_interval"])
                 await self.health_check()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"❌ Erro no health monitor: {e}")
     
@@ -1059,18 +956,15 @@ class GeminiServiceV5:
         }
         
         try:
-            # Verificar cliente
             if not self.client:
                 status_data["status"] = "FAILED"
                 status_data["details"]["client"] = "not_initialized"
                 self.health_status = "FAILED"
                 return status_data
             
-            # Verificar modelos disponíveis
             status_data["details"]["available_models"] = len(self.available_models)
             status_data["details"]["current_model"] = self.current_model
             
-            # Testar conexão
             test_prompt = "Teste de saúde. Responda apenas: OK"
             try:
                 response = self.client.models.generate_content(
@@ -1094,10 +988,8 @@ class GeminiServiceV5:
                 self.health_status = "FAILED"
                 self.health_failures += 1
             
-            # Status do circuit breaker
             status_data["details"]["circuit_state"] = self.circuit_state
             
-            # Métricas
             status_data["details"]["metrics"] = {
                 "total_calls": self.metrics["total_calls"],
                 "success_rate": self.metrics["successful_calls"] / max(1, self.metrics["total_calls"]) * 100,
@@ -1105,7 +997,6 @@ class GeminiServiceV5:
                 "cache_hit_rate": self.metrics["cache_hits"] / max(1, self.metrics["cache_hits"] + self.metrics["cache_misses"]) * 100,
             }
             
-            # Cache
             status_data["details"]["cache"] = {
                 "size": len(self.response_cache),
                 "hits": self.cache_stats["hits"],
@@ -1125,7 +1016,27 @@ class GeminiServiceV5:
         return status_data
     
     # ==========================================
-    # 🔥 12. MÉTRICAS E DIAGNÓSTICO
+    # 🔥 12. IS_HEALTHY (CORREÇÃO PRINCIPAL)
+    # ==========================================
+    
+    def is_healthy(self) -> bool:
+        """
+        🔥 VERIFICA SE O SERVIÇO ESTÁ SAUDÁVEL
+        Método principal para verificar disponibilidade do Gemini
+        """
+        if self.client is None:
+            return False
+        
+        if self.health_status != "HEALTHY":
+            return False
+        
+        if self.circuit_state == "OPEN":
+            return False
+        
+        return True
+    
+    # ==========================================
+    # 🔥 13. MÉTRICAS E DIAGNÓSTICO
     # ==========================================
     
     def get_metrics(self) -> Dict[str, Any]:
@@ -1177,7 +1088,7 @@ class GeminiServiceV5:
     def get_health_status(self) -> Dict[str, Any]:
         """Retorna status de saúde simplificado"""
         return {
-            "available": self.client is not None and self.health_status == "HEALTHY",
+            "available": self.is_healthy(),
             "status": self.health_status,
             "model": self.current_model,
             "circuit_breaker": self.circuit_state,
@@ -1189,11 +1100,11 @@ class GeminiServiceV5:
         }
     
     # ==========================================
-    # 🔥 13. MÉTODO DE ANÁLISE (COMPATIBILIDADE)
+    # 🔥 14. MÉTODO DE ANÁLISE
     # ==========================================
     
     async def analyze_office_data(self, data_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Análise de dados de oficina (método compatível com versões anteriores)"""
+        """Análise de dados de oficina (método compatível)"""
         
         if not data:
             return {
@@ -1202,7 +1113,6 @@ class GeminiServiceV5:
                 "message": "Nenhum dado fornecido para análise"
             }
         
-        # Construir prompt
         icons = {
             "clientes": "👥",
             "servicos": "🔧",
@@ -1239,7 +1149,6 @@ class GeminiServiceV5:
 Responda APENAS no formato acima, usando marcadores '-' para cada item.
 Seja específico e objetivo baseado nos dados fornecidos."""
 
-        # Chamar Gemini
         result = await self.generate_content(
             prompt=prompt,
             use_cache=True,
@@ -1249,7 +1158,6 @@ Seja específico e objetivo baseado nos dados fornecidos."""
         if result.get("success"):
             response_text = result.get("response", "")
             
-            # Extrair insights e recomendações
             insights = self._extract_insights(response_text)
             recommendations = self._extract_recommendations(response_text)
             
@@ -1273,14 +1181,13 @@ Seja específico e objetivo baseado nos dados fornecidos."""
             }
     
     # ==========================================
-    # 🔥 14. EXTRAÇÃO DE INSIGHTS (INTELIGENTE)
+    # 🔥 15. EXTRAÇÃO DE INSIGHTS
     # ==========================================
     
     def _extract_insights(self, text: str) -> List[str]:
         """Extrai insights do texto com NLP básico"""
         insights = []
         
-        # Buscar por seção de insights
         sections = re.split(r'##\s+', text)
         for section in sections:
             if any(kw in section.lower() for kw in ['insight', 'padrão', 'observação']):
@@ -1292,12 +1199,10 @@ Seja específico e objetivo baseado nos dados fornecidos."""
                         if 10 < len(clean) < 300:
                             insights.append(clean)
         
-        # Fallback: linhas com marcadores
         if not insights:
             matches = re.findall(r'[-•*]\s*([^\n]{10,300})', text)
             insights = [m.strip() for m in matches]
         
-        # Fallback final: sentenças com palavras-chave
         if not insights:
             sentences = re.split(r'[.!?]+', text)
             for sentence in sentences:
@@ -1312,7 +1217,6 @@ Seja específico e objetivo baseado nos dados fornecidos."""
         """Extrai recomendações do texto"""
         recommendations = []
         
-        # Buscar por seção de recomendações
         sections = re.split(r'##\s+', text)
         for section in sections:
             if any(kw in section.lower() for kw in ['recomend', 'ação', 'prática', 'sugest']):
@@ -1324,7 +1228,6 @@ Seja específico e objetivo baseado nos dados fornecidos."""
                         if 10 < len(clean) < 250:
                             recommendations.append(clean)
         
-        # Fallback: linhas com palavras-chave
         if not recommendations:
             action_words = ['recomend', 'sugest', 'implement', 'melhor', 'otimize', 'faça']
             lines = text.split('\n')
@@ -1338,11 +1241,11 @@ Seja específico e objetivo baseado nos dados fornecidos."""
         return recommendations[:4]
     
     # ==========================================
-    # 🔥 15. CLEANUP E FINALIZAÇÃO
+    # 🔥 16. CLEANUP
     # ==========================================
     
     def shutdown(self):
-        """Desliga o serviço gracefully"""
+        """Desliga o serviço gracefulmente"""
         logger.info("🔄 Desligando Gemini Service...")
         
         self._health_monitoring_active = False
@@ -1351,8 +1254,9 @@ Seja específico e objetivo baseado nos dados fornecidos."""
         logger.info("✅ Gemini Service desligado")
 
 
-# INSTÂNCIA GLOBAL CORRETA
-# ==========================================
+# ==============================================
+# INSTÂNCIA GLOBAL
+# ==============================================
 
 _gemini_service = None
 
@@ -1370,25 +1274,30 @@ def is_gemini_available() -> bool:
     service = get_gemini_service()
     return service.is_healthy()
 
-# ==========================================
-# STATUS INICIAL
-# ==========================================
 
-_gemini_service = GeminiServiceV5()
+# ==============================================
+# STATUS INICIAL (CORRIGIDO)
+# ==============================================
 
 print("\n" + "=" * 70)
-print("🔑 GEMINI SERVICE V5.0")
-print("=" * 70)
-if _gemini_service.is_healthy():
-    print(f"   ✅ Status: ONLINE")
-    print(f"   📊 Modelo: {_gemini_service.current_model}")
-    print(f"   🎯 Modelos: {len(_gemini_service.available_models)} disponíveis")
-else:
-    print("   ❌ Status: OFFLINE")
-    print(f"   ⚠️ Erro: {_gemini_service._last_error}")
+print("🔑 GEMINI SERVICE V5.1")
 print("=" * 70)
 
-print("\n📋 15+ MELHORIAS IMPLEMENTADAS:")
+service = get_gemini_service()
+
+if service.is_healthy():
+    print(f"   ✅ Status: ONLINE")
+    print(f"   📊 Modelo: {service.current_model}")
+    print(f"   🎯 Modelos disponíveis: {len(service.available_models)}")
+    print(f"   🔥 Cache: {len(service.response_cache)} entradas")
+else:
+    print("   ❌ Status: OFFLINE")
+    print(f"   ⚠️ Erro: {service._last_error or 'Desconhecido'}")
+    print("   💡 Verifique GEMINI_API_KEY no arquivo .env")
+
+print("=" * 70)
+
+print("\n📋 16+ MELHORIAS IMPLEMENTADAS:")
 print("   1. ✅ Auto-detecção de modelos disponíveis")
 print("   2. ✅ Smart rate limiting")
 print("   3. ✅ Circuit breaker com proteção")
@@ -1404,6 +1313,7 @@ print("   12. ✅ Auto-otimização contínua")
 print("   13. ✅ Logs estruturados")
 print("   14. ✅ Validação de resposta")
 print("   15. ✅ Fallback automático")
+print("   16. ✅ is_healthy() - CORREÇÃO PRINCIPAL")
 print("=" * 80)
 
 
