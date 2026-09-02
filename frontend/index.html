@@ -1466,18 +1466,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
-    <!-- 2️⃣ SCRIPTS PRÓPRIOS (VERSÕES ATUALIZADAS) -->
-    <script src="/static/js/pow-client.js?ver=5.2" defer></script>
-    <script src="/static/js/app.js?ver=7.8.0" defer></script>
-    <script src="/static/js/auth.js?ver=4.3.0" defer></script>
-    <script src="/static/js/payment.js?ver=7.2.0" defer></script>
-    
-    <!-- 🔥 DASHBOARD v16.9 - CORREÇÃO DEFINITIVA DE CRÉDITOS -->
-    <script src="/static/js/dashboard.js?ver=16.9" defer></script>
+   <!-- ============================================== -->
+<!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICA!) -->
+<!-- ============================================== -->
 
-    <!-- 3️⃣ UPLOAD E RELATÓRIO -->
-    <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
-    <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
+<!-- 1️⃣ APP (Orquestrador) - PRIMEIRO -->
+<script src="/static/js/app.js?ver=7.8.0" defer></script>
+
+<!-- 2️⃣ AUTH - SEGUNDO (DEPENDE DO APP) -->
+<script src="/static/js/auth.js?ver=4.3.0" defer></script>
+
+<!-- 3️⃣ POW - TERCEIRO (DEPENDE DO APP) -->
+<script src="/static/js/pow-client.js?ver=5.2" defer></script>
+
+<!-- 4️⃣ PAYMENT - QUARTO -->
+<script src="/static/js/payment.js?ver=7.2.0" defer></script>
+
+<!-- 5️⃣ DASHBOARD - QUINTO (DEPENDE DE AUTH) -->
+<script src="/static/js/dashboard.js?ver=16.9" defer></script>
+
+<!-- 6️⃣ UPLOAD E RELATÓRIO -->
+<script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
+<script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
     <!-- ============================================== -->
     <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
     <!-- ============================================== -->
