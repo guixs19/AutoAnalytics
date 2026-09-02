@@ -21,7 +21,7 @@
 ================================================================================
 """
 
-from google import genai
+import google.generativeai as genai
 import json
 import logging
 import os
