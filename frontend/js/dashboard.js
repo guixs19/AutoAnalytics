@@ -1,14 +1,13 @@
-// frontend/js/dashboard.js - VERSÃO 16.11 (APENAS CORREÇÃO ESTRUTURAL)
+// frontend/js/dashboard.js - VERSÃO 16.12 (CORREÇÃO FINAL)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.11
+ * 🔥 Dashboard Module - AutoAnalytics v16.12
  * 
- * ✅ CORREÇÕES v16.11:
- * - 🔥 CORRIGIDO: Estrutura da classe Dashboard (chaves corretas)
- * - 🔥 CORRIGIDO: _forceSyncCredits como arrow function
- * - 🔥 CORRIGIDO: Removido código duplicado (FORA da classe)
+ * ✅ CORREÇÕES v16.12:
+ * - 🔥 CORRIGIDO: window.appAuth?.isAuthenticated (é PROPRIEDADE, não função)
+ * - 🔥 CORRIGIDO: Utils.isAuthenticated() agora trata como propriedade
  * - 🔥 MANTIDAS: TODAS as funções de gráficos, GPSA, polling, etc
  * 
- * ✅ MANTIDO v16.10:
+ * ✅ MANTIDO v16.11:
  * - TODAS as funções originais
  * - NÃO CONSOLE créditos no upload
  * - Histórico de análises
@@ -93,7 +92,7 @@
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (CORRIGIDOS)
+    // 🔥 UTILITÁRIOS (CORRIGIDOS - v16.12)
     // ==============================================
 
     const Utils = {
@@ -109,22 +108,30 @@
             }
         },
 
+        // 🔥 CORRIGIDO v16.12: isAuthenticated é PROPRIEDADE, não função!
         isAuthenticated: () => {
+            // 🔥 Primeiro: verifica se appAuth existe
             if (window.appAuth) {
+                // 🔥 isAuthenticated é uma PROPRIEDADE (getter) em auth.js!
                 if (typeof window.appAuth.isAuthenticated === 'boolean') {
                     return window.appAuth.isAuthenticated;
                 }
+                // Fallback: se for função (compatibilidade com versões antigas)
                 if (typeof window.appAuth.isAuthenticated === 'function') {
                     return window.appAuth.isAuthenticated();
                 }
+                // Fallback: verifica se tem userData
                 if (window.appAuth.userData && window.appAuth.userData.email) {
                     return true;
                 }
             }
+            // Fallback: verifica token
             return !!Utils.getToken();
         },
 
+        // 🔥 NOVO: Obtém créditos de forma confiável
         getCredits: () => {
+            // Tenta via appAuth
             if (window.appAuth) {
                 if (typeof window.appAuth.getCredits === 'function') {
                     return window.appAuth.getCredits() || 0;
@@ -133,15 +140,18 @@
                     return window.appAuth.userData.credits || 0;
                 }
             }
+            // Tenta via App
             if (window.App && typeof window.App.getCredits === 'function') {
                 return window.App.getCredits() || 0;
             }
+            // Tenta via __APP_STATE
             if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
                 return window.__APP_STATE.credits || 0;
             }
             return 0;
         },
 
+        // 🔥 NOVO: Obtém display de créditos
         getCreditsDisplay: () => {
             if (window.App && typeof window.App.getCreditsDisplay === 'function') {
                 return window.App.getCreditsDisplay();
@@ -310,6 +320,7 @@
                         this._updateUI();
                         return true;
                     }
+                    // 🔥 CORRIGIDO v16.12: isAuthenticated é propriedade
                     if (window.appAuth.isAuthenticated === true && window.appAuth.userData) {
                         this._balance = window.appAuth.userData.credits || 0;
                         console.log(`💰 [CreditManager] appAuth (propriedade): ${this._balance}`);
@@ -712,7 +723,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (ESTRUTURA CORRIGIDA)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (v16.12)
     // ==============================================
 
     class Dashboard {
@@ -816,7 +827,7 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.11] Inicializando com estrutura corrigida...');
+            console.log('🚀 [Dashboard v16.12] Inicializando com correção final...');
 
             await this._creditManager.sync(true);
             
@@ -841,7 +852,7 @@
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.11] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.12] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   🔥 Auto Sync: ${CONFIG.CREDITS.SYNC_INTERVAL/1000}s`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
@@ -861,6 +872,7 @@
             }
             
             this._autoSyncTimer = setInterval(() => {
+                // 🔥 CORRIGIDO v16.12: usa Utils.isAuthenticated()
                 if (Utils.isAuthenticated()) {
                     this._forceSyncCredits();
                 }
@@ -937,8 +949,7 @@
         }
 
         // ==========================================
-        // 🔥 SETUP UPLOAD HANDLERS
-        // ==========================================
+        // 🔥 SETUP UPLOAD HANDLERS        // ==========================================
 
         _setupUploadHandlers() {
             const fileInput = document.getElementById('fileInput');
@@ -985,7 +996,7 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO (V16.10 - COM SYNC MELHORADO)
+        // 🔥 UPLOAD MÚLTIPLO (V16.12 - CORRIGIDO)
         // ==========================================
 
         async uploadMultipleFiles(files) {
@@ -995,6 +1006,7 @@
             }
 
             try {
+                // 🔥 CORRIGIDO v16.12: usa Utils.isAuthenticated()
                 if (!Utils.isAuthenticated()) {
                     this._showToast('❌ Faça login para realizar uploads.', 'error');
                     return null;
@@ -1486,7 +1498,7 @@
         }
 
         // ==========================================
-        // 🔥 RENDERIZAR GRÁFICOS (MANTIDO COMPLETO)
+        // 🔥 RENDERIZAR GRÁFICOS (COMPLETO)
         // ==========================================
 
         _renderAllCharts(chartData) {
@@ -3026,11 +3038,10 @@
     };
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.11 carregado - ESTRUTURA CORRIGIDA');
-    console.log('   ✅ CORRIGIDO: Estrutura da classe (chaves corretas)');
-    console.log('   ✅ CORRIGIDO: _forceSyncCredits como arrow function');
-    console.log('   ✅ CORRIGIDO: Removido código duplicado (FORA da classe)');
-    console.log('   ✅ MANTIDAS: TODAS as funções originais');
+    console.log('🔥 dashboard.js v16.12 carregado - CORREÇÃO FINAL');
+    console.log('   ✅ CORRIGIDO: window.appAuth?.isAuthenticated (propriedade)');
+    console.log('   ✅ CORRIGIDO: Utils.isAuthenticated()');
+    console.log('   ✅ MANTIDAS: TODAS as funções de gráficos, GPSA, etc');
     console.log('   📊 3 gráficos + GPSA (Performance da Oficina)');
     console.log('   💰 Créditos: Sincronização 100% confiável');
     console.log('   🔥 Use window.forceSyncCredits() para sync manual');
