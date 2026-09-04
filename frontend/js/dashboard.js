@@ -1,12 +1,13 @@
-// frontend/js/dashboard.js - VERSÃO 16.15 (DADOS REAIS DO ML)
+// frontend/js/dashboard.js - VERSÃO 16.16 (BUSCA INTELIGENTE DE DADOS)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.15
+ * 🔥 Dashboard Module - AutoAnalytics v16.16
  * 
- * ✅ CORREÇÕES v16.15:
- * - 🔥 RECEBE predições do ML e renderiza gráficos REAIS
+ * ✅ CORREÇÕES v16.16:
+ * - 🔥 BUSCA INTELIGENTE: chart_data em MULTIPLAS fontes
+ * - 🔥 CORRIGIDO: extração de dados do ML em todos os cenários
+ * - 🔥 CORRIGIDO: _processUploadResult busca do backend se necessário
+ * - 🔥 MELHORADO: logs para debug
  * - 🔥 REMOVIDO fallback de dados para gráficos
- * - 🔥 CORRIGIDO fluxo de dados do ML para o frontend
- * - 🔥 MELHORADAS mensagens para guiar o usuário
  * - 🔥 GRÁFICOS DE LINHA com dados reais
  * - 🔥 GPSA com dados reais do ML
  */
@@ -138,49 +139,117 @@
             return (Number(value) * 100).toFixed(0) + '%';
         },
 
+        // 🔥 CORRIGIDO v16.16: BUSCA INTELIGENTE EM MULTIPLAS FONTES
         extractRealChartData: (data) => {
             if (!data) {
                 console.warn('⚠️ [extractRealChartData] Dados vazios');
                 return null;
             }
 
-            console.log('🔍 [extractRealChartData] Extraindo dados do ML:', Object.keys(data));
+            console.log('🔍 [extractRealChartData] Buscando chart_data em:', Object.keys(data));
 
-            // 🔥 PRIORIDADE 1: chart_data do ML
-            let chartData = data.chart_data || 
-                           data.result?.chart_data || 
-                           data.analysis?.chart_data || 
-                           data.data?.chart_data || 
-                           null;
+            let chartData = null;
+            let sourceFound = 'nenhum';
 
-            // 🔥 PRIORIDADE 2: extrair do resultado
-            if (!chartData && data.result) {
-                chartData = {
-                    weekly: data.result.chart_data?.weekly || data.result.weekly || null,
-                    performance: data.result.performance || null,
-                    monthly: data.result.monthly || null
-                };
+            // 🔥 TENTA TODAS AS FONTES POSSÍVEIS
+
+            // 1. Direto no objeto
+            if (data.chart_data) {
+                chartData = data.chart_data;
+                sourceFound = 'data.chart_data';
+                console.log('   ✅ Encontrado em data.chart_data');
             }
-
-            // 🔥 VERIFICAR SE TEM DADOS REAIS
-            if (chartData && chartData.weekly) {
-                const hasRevenue = chartData.weekly.revenue && chartData.weekly.revenue.some(v => v > 0);
-                const hasCosts = chartData.weekly.costs && chartData.weekly.costs.some(v => v > 0);
-                
-                if (!hasRevenue && !hasCosts) {
-                    console.warn('⚠️ [extractRealChartData] Dados vazios do ML');
-                    return null;
+            // 2. Dentro de result
+            else if (data.result && data.result.chart_data) {
+                chartData = data.result.chart_data;
+                sourceFound = 'result.chart_data';
+                console.log('   ✅ Encontrado em result.chart_data');
+            }
+            // 3. Dentro de analysis
+            else if (data.analysis && data.analysis.chart_data) {
+                chartData = data.analysis.chart_data;
+                sourceFound = 'analysis.chart_data';
+                console.log('   ✅ Encontrado em analysis.chart_data');
+            }
+            // 4. Dentro de data.data
+            else if (data.data && data.data.chart_data) {
+                chartData = data.data.chart_data;
+                sourceFound = 'data.data.chart_data';
+                console.log('   ✅ Encontrado em data.data.chart_data');
+            }
+            // 5. Dentro de result.analysis
+            else if (data.result && data.result.analysis && data.result.analysis.chart_data) {
+                chartData = data.result.analysis.chart_data;
+                sourceFound = 'result.analysis.chart_data';
+                console.log('   ✅ Encontrado em result.analysis.chart_data');
+            }
+            // 6. Se o próprio objeto tem weekly
+            else if (data.weekly) {
+                chartData = data;
+                sourceFound = 'data.weekly';
+                console.log('   ✅ Encontrado diretamente (tem weekly)');
+            }
+            // 7. Dentro de result se tem weekly
+            else if (data.result && data.result.weekly) {
+                chartData = data.result;
+                sourceFound = 'result.weekly';
+                console.log('   ✅ Encontrado em result (tem weekly)');
+            }
+            // 8. Dentro de analysis se tem weekly
+            else if (data.analysis && data.analysis.weekly) {
+                chartData = data.analysis;
+                sourceFound = 'analysis.weekly';
+                console.log('   ✅ Encontrado em analysis (tem weekly)');
+            }
+            // 9. Tentar extrair de files
+            else if (data.files && Array.isArray(data.files)) {
+                for (const file of data.files) {
+                    if (file.chart_data) {
+                        chartData = file.chart_data;
+                        sourceFound = 'files[].chart_data';
+                        console.log('   ✅ Encontrado em files');
+                        break;
+                    }
+                    if (file.weekly) {
+                        chartData = file;
+                        sourceFound = 'files[].weekly';
+                        console.log('   ✅ Encontrado em files (weekly)');
+                        break;
+                    }
                 }
-                
-                console.log('✅ [extractRealChartData] Dados reais encontrados:');
-                console.log(`   Revenue: ${chartData.weekly.revenue?.length || 0} valores`);
-                console.log(`   Costs: ${chartData.weekly.costs?.length || 0} valores`);
-                console.log(`   Services: ${chartData.performance?.services?.length || 0} valores`);
-                
-                return chartData;
             }
 
-            console.warn('⚠️ [extractRealChartData] Nenhum dado válido encontrado');
+            if (!chartData) {
+                console.warn('⚠️ [extractRealChartData] Nenhum chart_data encontrado');
+                console.log('   📦 Estrutura do data:', JSON.stringify(data, null, 2).slice(0, 500));
+                return null;
+            }
+
+            // 🔥 VERIFICA SE TEM DADOS REAIS
+            if (chartData.weekly) {
+                const revenue = chartData.weekly.revenue || [];
+                const costs = chartData.weekly.costs || [];
+                const services = chartData.performance?.services || [];
+
+                const hasRevenue = revenue.some(v => v > 0);
+                const hasCosts = costs.some(v => v > 0);
+                const hasServices = services.some(v => v > 0);
+
+                console.log(`📊 [extractRealChartData] Dados encontrados (fonte: ${sourceFound}):`);
+                console.log(`   Revenue: ${revenue.length} valores, ${hasRevenue ? '✅ com dados' : '⚠️ vazio'}`);
+                console.log(`   Costs: ${costs.length} valores, ${hasCosts ? '✅ com dados' : '⚠️ vazio'}`);
+                console.log(`   Services: ${services.length} valores, ${hasServices ? '✅ com dados' : '⚠️ vazio'}`);
+
+                // 🔥 SE PELO MENOS UM TIPO DE DADO EXISTE, RETORNA
+                if (hasRevenue || hasCosts || hasServices) {
+                    return chartData;
+                }
+
+                console.warn('⚠️ [extractRealChartData] Dados vazios (todos os arrays vazios ou com zeros)');
+                return null;
+            }
+
+            console.warn('⚠️ [extractRealChartData] Formato inválido - sem weekly');
             return null;
         },
 
@@ -285,7 +354,6 @@
         }
 
         renderAnalysisGuide() {
-            // 🔥 GUIAS APÓS ANÁLISE
             this._showMessage({
                 id: 'analysis_done_guide',
                 title: '✅ Análise concluída!',
@@ -311,7 +379,6 @@
             const isExternal = action_url && (action_url.startsWith('http') || action_url.startsWith('//'));
             const targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
 
-            // FECHAR MENSAGENS ANTERIORES
             this.container.innerHTML = '';
 
             const banner = document.createElement('div');
@@ -340,12 +407,10 @@
             this.container.appendChild(banner);
             this.container.style.display = 'block';
 
-            // ANIMAÇÃO DE ENTRADA
             requestAnimationFrame(() => {
                 banner.classList.add('message-visible');
             });
 
-            // FECHAR
             const dismissBtn = banner.querySelector('.message-dismiss');
             if (dismissBtn) {
                 dismissBtn.addEventListener('click', () => {
@@ -355,7 +420,6 @@
                 });
             }
 
-            // AUTO DISMISS
             if (auto_dismiss) {
                 setTimeout(() => {
                     this._dismissedMessages.add(id);
@@ -380,7 +444,7 @@
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (v16.15)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (v16.16)
     // ==============================================
 
     class Dashboard {
@@ -421,23 +485,20 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.15] Inicializando com dados reais do ML...');
+            console.log('🚀 [Dashboard v16.16] Inicializando com busca inteligente de dados...');
 
-            // Inicializar CreditManager
             this._creditManager = new CreditManager();
             await this._creditManager.sync(true);
             
-            // Inicializar MessageGuide
             this._messageGuide = new MessageGuide();
             
-            // Configurar listeners
             this._setupChartListener();
             this._setupUploadHandlers();
             this._setupPolling();
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.15] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.16] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
             
@@ -462,13 +523,13 @@
             console.log('📊 [Dashboard] Chart listeners configurados');
         }
 
+        // 🔥 CORRIGIDO v16.16: HANDLER COM EXTRAÇÃO MELHORADA
         _handleChartDataReady(e) {
             const detail = e.detail || {};
             const chartData = detail.chart_data || detail;
             
             console.log('📊 [Dashboard] Evento chart:data_ready recebido');
             
-            // 🔥 EXTRAIR DADOS REAIS
             const realData = Utils.extractRealChartData(chartData);
             
             if (realData) {
@@ -476,7 +537,6 @@
                 this._renderAllCharts(realData);
                 this._renderGPSA(realData);
                 
-                // Mostrar resultado
                 const resultContainer = document.getElementById('resultContainer');
                 if (resultContainer) {
                     resultContainer.classList.add('show');
@@ -488,7 +548,6 @@
                     placeholder.style.display = 'none';
                 }
                 
-                // 🔥 Mostrar guia pós-análise
                 if (this._messageGuide) {
                     this._messageGuide.renderAnalysisGuide();
                 }
@@ -518,7 +577,6 @@
                 fileInput.addEventListener('change', (e) => {
                     const files = Array.from(e.target.files);
                     if (files.length > 0) {
-                        // 🔥 GUIA: Mostrar mensagem de upload iniciado
                         if (this._messageGuide) {
                             this._messageGuide._showMessage({
                                 id: 'upload_started_guide',
@@ -658,7 +716,6 @@
                 if (result.success && result.process_id) {
                     console.log(`📡 [Dashboard] Process ID: ${result.process_id}`);
                     
-                    // 🔥 POLLING PARA RESULTADO
                     const pollingResult = await this._pollProgress(result.process_id);
                     
                     if (pollingResult.success && pollingResult.result) {
@@ -698,7 +755,7 @@
         }
 
         // ==========================================
-        // 🔥 PROCESSAR RESULTADO DO UPLOAD
+        // 🔥 PROCESSAR RESULTADO DO UPLOAD (CORRIGIDO v16.16)
         // ==========================================
 
         async _processUploadResult(result, files) {
@@ -708,20 +765,68 @@
             }
 
             console.log('📊 [ProcessResult] Processando resultado do ML...');
+            console.log('   📦 Dados recebidos:', Object.keys(result));
 
             const analysis = result.analysis || {};
-            const chartData = Utils.extractRealChartData(result);
             
-            // 🔥 MOSTRAR DADOS DO ML NO CONSOLE
-            console.log('📊 [ProcessResult] Dados do ML:');
-            console.log(`   ✅ Sucesso: ${result.success}`);
-            console.log(`   📁 Arquivos: ${analysis.files?.length || 0}`);
-            console.log(`   📊 ChartData: ${chartData ? '✅' : '❌'}`);
+            // 🔥 EXTRAIR CHART_DATA - TENTA TODAS AS FONTES
+            let chartData = null;
             
+            // Tenta várias fontes
+            if (result.chart_data) {
+                chartData = result.chart_data;
+                console.log('   ✅ chart_data encontrado em result');
+            } else if (result.result && result.result.chart_data) {
+                chartData = result.result.chart_data;
+                console.log('   ✅ chart_data encontrado em result.result');
+            } else if (analysis.chart_data) {
+                chartData = analysis.chart_data;
+                console.log('   ✅ chart_data encontrado em analysis');
+            } else if (result.data && result.data.chart_data) {
+                chartData = result.data.chart_data;
+                console.log('   ✅ chart_data encontrado em result.data');
+            } else if (result.weekly) {
+                chartData = result;
+                console.log('   ✅ chart_data encontrado diretamente (tem weekly)');
+            } else if (result.result && result.result.weekly) {
+                chartData = result.result;
+                console.log('   ✅ chart_data encontrado em result (weekly)');
+            }
+            
+            // 🔥 SE NÃO ENCONTROU, BUSCAR DO BACKEND DIRETAMENTE
+            if (!chartData && result.process_id) {
+                console.log('🔄 [ProcessResult] Buscando chart_data do backend...');
+                try {
+                    const token = Utils.getToken();
+                    const response = await fetch(`/api/analysis/result/${result.process_id}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const fullResult = await response.json();
+                        chartData = fullResult.chart_data || 
+                                   fullResult.analysis?.chart_data || 
+                                   fullResult.result?.chart_data || 
+                                   null;
+                        console.log('📊 [ProcessResult] Chart_data do backend:', chartData ? '✅' : '❌');
+                        if (chartData) {
+                            console.log('   📈 Revenue:', chartData.weekly?.revenue?.length || 0, 'valores');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ [ProcessResult] Erro ao buscar do backend:', e);
+                }
+            }
+
+            // 🔥 MOSTRAR DADOS ENCONTRADOS
             if (chartData) {
+                console.log('📊 [ProcessResult] ChartData encontrado!');
                 console.log('   📈 Revenue:', chartData.weekly?.revenue?.length || 0, 'valores');
                 console.log('   📊 Services:', chartData.performance?.services?.length || 0, 'valores');
                 console.log('   📅 Monthly:', chartData.monthly?.revenue?.length || 0, 'valores');
+            } else {
+                console.warn('⚠️ [ProcessResult] Nenhum chartData encontrado');
+                this._showToast('⚠️ Dados da análise não disponíveis.', 'warning');
+                return;
             }
 
             // 🔥 SALVAR NO HISTÓRICO
@@ -744,14 +849,9 @@
             this._currentAnalysisId = analysisEntry.id;
 
             // 🔥 RENDERIZAR GRÁFICOS
-            if (chartData) {
-                this._lastChartData = chartData;
-                this._renderAllCharts(chartData);
-                this._renderGPSA(chartData);
-            } else {
-                console.warn('⚠️ [ProcessResult] Sem dados para renderizar');
-                this._showToast('⚠️ Dados insuficientes para gerar gráficos.', 'warning');
-            }
+            this._lastChartData = chartData;
+            this._renderAllCharts(chartData);
+            this._renderGPSA(chartData);
 
             // 🔥 ATUALIZAR UI
             await this._updateMetrics({
@@ -831,17 +931,48 @@
                             console.log('✅ [Polling] Análise concluída!');
                             this._showUploadStatus('✅', 'Análise concluída!', '100%', 100);
                             
-                            // 🔥 EXTRAIR CHART DATA
-                            const chartData = Utils.extractRealChartData(data);
+                            // 🔥 EXTRAIR CHART DATA - TENTA TODAS AS FONTES
+                            let chartData = null;
+                            
+                            if (data.result && data.result.chart_data) {
+                                chartData = data.result.chart_data;
+                                console.log('📊 [Polling] chart_data em result');
+                            } else if (data.chart_data) {
+                                chartData = data.chart_data;
+                                console.log('📊 [Polling] chart_data em data');
+                            } else if (data.analysis && data.analysis.chart_data) {
+                                chartData = data.analysis.chart_data;
+                                console.log('📊 [Polling] chart_data em analysis');
+                            } else if (data.result && data.result.weekly) {
+                                chartData = data.result;
+                                console.log('📊 [Polling] chart_data em result (weekly)');
+                            } else if (data.weekly) {
+                                chartData = data;
+                                console.log('📊 [Polling] chart_data em data (weekly)');
+                            }
+                            
                             if (chartData) {
+                                console.log('📊 [Polling] ChartData encontrado!');
+                                console.log(`   Revenue: ${chartData.weekly?.revenue?.length || 0} valores`);
                                 this._lastChartData = chartData;
                                 this._renderAllCharts(chartData);
                                 this._renderGPSA(chartData);
+                            } else {
+                                console.warn('⚠️ [Polling] Nenhum chartData encontrado');
+                                console.log('   📦 Estrutura do data:', Object.keys(data));
+                                if (data.result) {
+                                    console.log('   📦 Estrutura do result:', Object.keys(data.result));
+                                }
+                            }
+                            
+                            const resultData = data.result || data;
+                            if (chartData) {
+                                resultData.chart_data = chartData;
                             }
                             
                             resolve({
                                 success: true,
-                                result: data.result || data
+                                result: resultData
                             });
                             return;
                             
@@ -856,7 +987,6 @@
                                 progress
                             );
                             
-                            // 🔥 TENTAR RENDERIZAR DADOS PARCIAIS
                             const partialChartData = Utils.extractRealChartData(data);
                             if (partialChartData && partialChartData.weekly) {
                                 this._renderAllCharts(partialChartData);
@@ -916,7 +1046,7 @@
         }
 
         // ==========================================
-        // 🔥 GRÁFICO 1: RECEITA VS CUSTOS (BARRAS/LINHA)
+        // 🔥 GRÁFICO 1: RECEITA VS CUSTOS (BARRAS)
         // ==========================================
 
         _renderRevenueChart(chartData) {
@@ -931,7 +1061,6 @@
             const revenue = weekly.revenue || [];
             const costs = weekly.costs || [];
 
-            // 🔥 VERIFICAR DADOS REAIS
             const hasRevenue = revenue.some(v => v > 0);
             const hasCosts = costs.some(v => v > 0);
 
@@ -1057,7 +1186,6 @@
             const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const services = performance.services || weekly.services || [];
 
-            // 🔥 VERIFICAR DADOS REAIS
             if (!services.length || services.every(v => v === 0)) {
                 console.warn('⚠️ [Chart] Dados de serviços vazios - NÃO RENDERIZANDO');
                 return;
@@ -1147,7 +1275,6 @@
             const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const revenue = monthly.revenue || [];
 
-            // 🔥 VERIFICAR DADOS REAIS
             if (!revenue.length || revenue.every(v => v === 0)) {
                 console.warn('⚠️ [Chart] Dados mensais vazios - NÃO RENDERIZANDO');
                 return;
@@ -2073,7 +2200,8 @@
     };
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.15 carregado');
+    console.log('🔥 dashboard.js v16.16 carregado');
+    console.log('   ✅ BUSCA INTELIGENTE: chart_data em múltiplas fontes');
     console.log('   ✅ RECEBE dados reais do ML');
     console.log('   ✅ GRÁFICOS com dados reais (SEM FALLBACK)');
     console.log('   ✅ MENSAGENS para guiar o usuário');
