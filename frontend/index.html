@@ -1488,6 +1488,7 @@
 <!-- 6️⃣ UPLOAD E RELATÓRIO -->
 <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
 <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
+
     <!-- ============================================== -->
     <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
     <!-- ============================================== -->
@@ -1751,75 +1752,177 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO MELHORADO -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO CORRIGIDO (v3) -->
     <!-- ============================================== -->
     <script>
-        (function() {
-            'use strict';
-            console.log('🔐 Inicializando fallback de autenticação v2...');
-            
-            function getApp() { return window.App || window.app || window.autoAnalytics; }
-            
-            function isAppReady() {
+    (function() {
+        'use strict';
+        console.log('🔐 Inicializando fallback de autenticação v3 (CORRIGIDO)...');
+        
+        function getApp() { return window.App || window.app || window.autoAnalytics; }
+        
+        function isAppReady() {
+            var app = getApp();
+            if (app && typeof app.isReady === 'function') { return app.isReady(); }
+            return !!window._appReadyFired;
+        }
+        
+        function redirectToLogin() {
+            console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
+            window.location.replace('/login');
+        }
+        
+        // 🔥 FUNÇÃO CORRIGIDA - TRATA isAuthenticated COMO PROPRIEDADE
+        function isAuthenticated() {
+            try {
+                // 1. Via appAuth (propriedade)
+                if (window.appAuth) {
+                    if (typeof window.appAuth.isAuthenticated === 'boolean') {
+                        return window.appAuth.isAuthenticated;
+                    }
+                    if (typeof window.appAuth.isAuthenticated === 'function') {
+                        return window.appAuth.isAuthenticated();
+                    }
+                    if (window.appAuth.userData && window.appAuth.userData.email) {
+                        return true;
+                    }
+                }
+                
+                // 2. Via App
                 var app = getApp();
-                if (app && typeof app.isReady === 'function') { return app.isReady(); }
-                return !!window._appReadyFired;
-            }
-            
-            function redirectToLogin() {
-                console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
-                window.location.replace('/login');
-            }
-            
-            function checkAuth() {
-                if (isAppReady()) {
-                    console.log('🔐 App pronto - verificando autenticação...');
-                    var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
-                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    if (!isAuth) { redirectToLogin(); return false; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
+                if (app) {
+                    if (typeof app.isAuthenticated === 'boolean') {
+                        return app.isAuthenticated;
+                    }
+                    if (typeof app.isAuthenticated === 'function') {
+                        return app.isAuthenticated();
+                    }
+                }
+                
+                // 3. Via __APP_STATE
+                if (window.__APP_STATE && window.__APP_STATE.tokenValid === true) {
                     return true;
                 }
-                console.log('🔐 Aguardando app:ready...');
-                document.addEventListener('app:ready', function handler(e) {
-                    document.removeEventListener('app:ready', handler);
-                    console.log('🔐 app:ready recebido - verificando autenticação...');
-                    var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
-                        : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    if (!isAuth) { redirectToLogin(); return; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
-                });
                 
-                var timeoutId = setTimeout(function() {
-                    document.removeEventListener('app:ready', function() {});
-                    console.warn('🔐 Timeout: app não respondeu, verificando token...');
-                    var token = localStorage.getItem('access_token');
-                    if (!token || token.length <= 10) { redirectToLogin(); return; }
-                    document.body.classList.add('app-ready');
-                    document.body.classList.remove('loading-state');
-                    console.log('🔐 Acesso liberado por fallback (token presente)');
-                }, 5000);
-                document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
-                return null;
+                // 4. Via localStorage
+                var token = localStorage.getItem('access_token');
+                return token && token.length > 10;
+            } catch (e) {
+                console.warn('⚠️ Erro ao verificar autenticação:', e);
+                return false;
+            }
+        }
+        
+        function checkAuth() {
+            if (isAppReady()) {
+                console.log('🔐 App pronto - verificando autenticação...');
+                if (!isAuthenticated()) { redirectToLogin(); return false; }
+                document.body.classList.add('app-ready');
+                document.body.classList.remove('loading-state');
+                console.log('🔐 Autenticação verificada com sucesso!');
+                return true;
             }
             
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
-            } else {
-                setTimeout(checkAuth, 100);
+            console.log('🔐 Aguardando app:ready...');
+            document.addEventListener('app:ready', function handler(e) {
+                document.removeEventListener('app:ready', handler);
+                console.log('🔐 app:ready recebido - verificando autenticação...');
+                if (!isAuthenticated()) { redirectToLogin(); return; }
+                document.body.classList.add('app-ready');
+                document.body.classList.remove('loading-state');
+                console.log('🔐 Autenticação verificada com sucesso!');
+            });
+            
+            var timeoutId = setTimeout(function() {
+                document.removeEventListener('app:ready', function() {});
+                console.warn('🔐 Timeout: app não respondeu, verificando token...');
+                if (!isAuthenticated()) { redirectToLogin(); return; }
+                document.body.classList.add('app-ready');
+                document.body.classList.remove('loading-state');
+                console.log('🔐 Acesso liberado por fallback (token presente)');
+            }, 5000);
+            document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
+            return null;
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
+        } else {
+            setTimeout(checkAuth, 100);
+        }
+        
+        window._authFallback = { 
+            check: checkAuth, 
+            redirectToLogin: redirectToLogin, 
+            isAppReady: isAppReady,
+            isAuthenticated: isAuthenticated
+        };
+        console.log('✅ Fallback de autenticação v3 carregado!');
+    })();
+    </script>
+
+    <!-- ============================================== -->
+    <!-- 🔥 CORREÇÃO DE EMERGÊNCIA - isAuthenticated -->
+    <!-- ============================================== -->
+    <script>
+    (function() {
+        'use strict';
+        console.log('🔧 [Emergency Fix] Aplicando correção para appAuth.isAuthenticated...');
+        
+        function fixAppAuth() {
+            if (!window.appAuth) {
+                return false;
             }
             
-            window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady };
-            console.log('✅ Fallback de autenticação v2 carregado!');
-        })();
+            // Se for função, converte para getter
+            if (typeof window.appAuth.isAuthenticated === 'function') {
+                try {
+                    var currentValue = window.appAuth.isAuthenticated();
+                    Object.defineProperty(window.appAuth, 'isAuthenticated', {
+                        get: function() { return this._isAuthenticated || false; },
+                        set: function(value) { this._isAuthenticated = value; },
+                        configurable: true,
+                        enumerable: true
+                    });
+                    window.appAuth._isAuthenticated = currentValue;
+                    console.log('✅ [Fix] appAuth.isAuthenticated convertido para getter (valor: ' + currentValue + ')');
+                    return true;
+                } catch (e) {
+                    console.warn('⚠️ [Fix] Erro ao converter:', e);
+                    return false;
+                }
+            }
+            
+            if (typeof window.appAuth.isAuthenticated === 'boolean') {
+                console.log('✅ [Fix] appAuth.isAuthenticated já é uma propriedade booleana');
+                return true;
+            }
+            
+            return false;
+        }
+        
+        // Tenta corrigir imediatamente
+        if (fixAppAuth()) return;
+        
+        // Aguarda eventos
+        document.addEventListener('authReady', function() { fixAppAuth(); });
+        document.addEventListener('app:ready', function() { fixAppAuth(); });
+        
+        // Fallback: tenta a cada 500ms até 10 segundos
+        var attempts = 0;
+        var maxAttempts = 20;
+        var interval = setInterval(function() {
+            attempts++;
+            if (fixAppAuth() || attempts >= maxAttempts) {
+                clearInterval(interval);
+                if (attempts >= maxAttempts) {
+                    console.warn('⚠️ [Fix] Não foi possível corrigir appAuth.isAuthenticated');
+                }
+            }
+        }, 500);
+        
+        console.log('🔧 [Fix] Correção de emergência instalada!');
+    })();
     </script>
 
     <!-- ============================================== -->
@@ -2146,45 +2249,46 @@
             console.log('✅ welcome-notification.js v2 carregado!');
         })();
     </script>
- <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS (v3) -->
+    
+    <!-- ============================================== -->
+    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS (v4 - CORRIGIDO) -->
     <!-- ============================================== -->
     <script>
     (function() {
         'use strict';
-        console.log('🔄 [Sync] Inicializando sistema de sincronização v3...');
+        console.log('🔄 [Sync] Inicializando sistema de sincronização v4 (CORRIGIDO)...');
 
-        // 🔥 Função principal de sincronização
+        // 🔥 Função principal de sincronização - CORRIGIDA
         async function forceSyncCredits() {
             console.log('🔄 [Sync] Forçando sincronização de créditos...');
             
             try {
                 // 1. Via appAuth
-                if (window.appAuth?.loadUserCredits) {
+                if (window.appAuth && typeof window.appAuth.loadUserCredits === 'function') {
                     await window.appAuth.loadUserCredits();
                     console.log('✅ [Sync] appAuth sincronizado');
                 }
                 
                 // 2. Via dashboard
-                if (window.__dashboard?.syncCredits) {
+                if (window.__dashboard && typeof window.__dashboard.syncCredits === 'function') {
                     await window.__dashboard.syncCredits();
                     console.log('✅ [Sync] dashboard sincronizado');
                 }
                 
                 // 3. Via App
-                if (window.App?.syncCredits) {
+                if (window.App && typeof window.App.syncCredits === 'function') {
                     await window.App.syncCredits();
                     console.log('✅ [Sync] App sincronizado');
                 }
                 
                 // 4. Atualizar UI
-                if (window.App?.updateCredits) {
+                if (window.App && typeof window.App.updateCredits === 'function') {
                     window.App.updateCredits();
                 }
-                if (window.updateCreditsDisplay) {
+                if (typeof window.updateCreditsDisplay === 'function') {
                     window.updateCreditsDisplay();
                 }
-                if (window.App?.updateNavbar) {
+                if (window.App && typeof window.App.updateNavbar === 'function') {
                     window.App.updateNavbar();
                 }
                 
@@ -2238,7 +2342,16 @@
 
         // 🔥 Sincronização periódica (a cada 15 segundos)
         let syncInterval = setInterval(function() {
-            if (window.appAuth?.isAuthenticated?.()) {
+            // 🔥 CORRIGIDO: verifica isAuthenticated como propriedade
+            var isAuth = false;
+            if (window.appAuth) {
+                if (typeof window.appAuth.isAuthenticated === 'boolean') {
+                    isAuth = window.appAuth.isAuthenticated;
+                } else if (typeof window.appAuth.isAuthenticated === 'function') {
+                    isAuth = window.appAuth.isAuthenticated();
+                }
+            }
+            if (isAuth) {
                 forceSyncCredits();
             }
         }, 15000);
@@ -2254,7 +2367,7 @@
         // 🔥 Expor função global
         window.forceSyncCredits = forceSyncCredits;
 
-        console.log('✅ [Sync] Sistema de sincronização v3 carregado!');
+        console.log('✅ [Sync] Sistema de sincronização v4 carregado!');
         console.log('   🔄 Use window.forceSyncCredits() para sincronizar manualmente');
         console.log('   ⏰ Sincronização automática a cada 15 segundos');
     })();
@@ -2303,7 +2416,5 @@
     <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos">
         <i class="fas fa-sync"></i> Sync
     </button>
-</body>
-</html>
 </body>
 </html>
