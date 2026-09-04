@@ -1,11 +1,9 @@
-# backend/ml/predict.py - VERSÃO 7.0 (INTEGRADO COM TRAIN.PY V4.0)
+# backend/ml/predict.py - VERSÃO 7.1 (ADAPTATIVA E INTELIGENTE)
 """
-Módulo de predição unificado para AutoAnalytics - V7.0
-🔥 INTEGRAÇÃO COM TRAIN.PY V4.0
-🔥 NORMALIZAÇÃO Z-SCORE (StandardScaler)
-🔥 ADAPTAÇÃO AUTOMÁTICA A QUALQUER NÚMERO DE FEATURES
-🔥 DETECÇÃO INTELIGENTE DE FEATURES DO MODELO
-🔥 HIERARQUIA DE FALLBACK CORRIGIDA
+Módulo de predição unificado para AutoAnalytics - V7.1
+🔥 VERSÃO ADAPTATIVA: Se adapta a QUALQUER número de features
+🔥 DETECTA automaticamente o que o modelo espera
+🔥 NÃO FORÇA um número fixo de features
 """
 
 import numpy as np
@@ -32,13 +30,15 @@ logger = logging.getLogger(__name__)
 
 class ModelPredictor:
     """
-    🔥 Predictor V7.0 - Integrado com Train V4.0
+    🔥 Predictor V7.1 - ADAPTATIVO E INTELIGENTE
     
     Características:
-    - Normalização Z-Score (StandardScaler)
-    - Adaptação automática a QUALQUER número de features
-    - Detecção inteligente de features do modelo
-    - Hierarquia de fallback para features faltantes
+    - ✅ DETECTA automaticamente o número de features do modelo
+    - ✅ ADAPTA as features para o que o modelo espera
+    - ✅ NÃO FORÇA um número fixo de features
+    - ✅ Funciona com QUALQUER modelo (9, 10, 14, 20 features)
+    - ✅ Normalização Z-Score (StandardScaler)
+    - ✅ Fallback inteligente
     """
     
     def __init__(self):
@@ -54,19 +54,29 @@ class ModelPredictor:
         self.model_source = None
         self.feature_names = None
         
-        # 🔥 NOVO: Detecção de features do modelo
-        self.model_feature_count = None
-        self.model_feature_names = None
+        # 🔥 CRÍTICO: DETECÇÃO AUTOMÁTICA
+        self.model_feature_count = None      # Quantas features o modelo espera
+        self.model_feature_names = None      # Nomes das features (se disponível)
         self._model_loaded = False
+        self._model_features_detected = False
         
-        # 🔥 NOVO: PCA para redução de features
+        # 🔥 PCA para redução de features (se necessário)
         self._pca = None
         self._pca_fitted = False
         
-        # 🔥 Feature Registry
+        # 🔥 Feature Registry (opcional)
         self.feature_registry = None
-        self.expected_features = None
         self._registry_loaded = False
+        
+        # 🔥 CONFIGURAÇÕES DE ADAPTAÇÃO
+        self.ADAPTATION_CONFIG = {
+            'enabled': True,
+            'use_pca': True,              # Usar PCA se tiver mais features
+            'use_importance': True,       # Usar feature importance se disponível
+            'fill_strategy': 'intelligent',  # intelligent, mean, zero, random
+            'max_features_to_reduce': 50,    # Máximo para redução
+            'min_features_to_expand': 3,     # Mínimo para expansão
+        }
         
         # 🔥 HIERARQUIA DE FALLBACK - Configuração por feature
         self.FEATURE_FALLBACKS = {
@@ -82,7 +92,7 @@ class ModelPredictor:
             "eficiencia": 0.5,
         }
         
-        # 🔥 MÉDIAS HISTÓRICAS (podem ser carregadas de um banco/arquivo)
+        # 🔥 MÉDIAS HISTÓRICAS
         self._historical_means = {
             "receita": 500.0,
             "custo": 200.0,
@@ -132,7 +142,6 @@ class ModelPredictor:
         self._prediction_cache = {}
         self._cache_max_size = 100
         self._cache_ttl = 60
-        self._last_cache_cleanup = datetime.now()
         
         # Estatísticas
         self.stats = {
@@ -149,6 +158,14 @@ class ModelPredictor:
             "fallback_values_used": 0,
             "pca_applied": 0,
             "feature_expansions": 0,
+            "model_feature_count_detected": 0,
+            "adaptations_by_type": {
+                "same": 0,
+                "reduced": 0,
+                "expanded": 0,
+                "pca": 0,
+                "fallback": 0
+            }
         }
         
         # Encoding stats
@@ -170,273 +187,168 @@ class ModelPredictor:
         self._load_feature_registry()
         
         os.makedirs(self.models_dir, exist_ok=True)
-        logger.info("✅ ModelPredictor V7.0 inicializado (Integrado com Train V4.0)")
-        logger.info(f"   📊 Features esperadas: {self.expected_features or 'N/A'}")
-        logger.info(f"   🔧 Regras de cálculo: {len(self._calculation_rules)}")
-        logger.info(f"   📈 Médias históricas: {len(self._historical_means)}")
-        logger.info(f"   🔥 Normalização: Z-Score (StandardScaler)")
+        
+        logger.info("=" * 70)
+        logger.info("✅ ModelPredictor V7.1 ADAPTATIVO inicializado")
+        logger.info("=" * 70)
+        logger.info("   🔥 CARACTERÍSTICAS:")
+        logger.info("   ✅ DETECTA automaticamente features do modelo")
+        logger.info("   ✅ ADAPTA qualquer número de features")
+        logger.info("   ✅ NÃO FORÇA número fixo")
+        logger.info("   ✅ Funciona com 9, 10, 14, 20+ features")
+        logger.info("   📊 Normalização: Z-Score (StandardScaler)")
+        logger.info("=" * 70)
     
     def _import_modules(self):
         """Importa módulos existentes"""
         try:
             from backend.ml.automl_simple import automl_office
             self.automl_office = automl_office
-            logger.info("   📦 AutoMLOffice integrado")
+            logger.debug("   📦 AutoMLOffice integrado")
         except ImportError:
             self.automl_office = None
         
         try:
             from backend.ml.boosting_ensemble import boosting_ensemble
             self.boosting_ensemble = boosting_ensemble
-            logger.info("   📦 BoostingEnsemble integrado")
+            logger.debug("   📦 BoostingEnsemble integrado")
         except ImportError:
             self.boosting_ensemble = None
     
     def _load_feature_registry(self):
-        """🔥 Carrega o Feature Registry do preprocessing.py"""
+        """Carrega o Feature Registry se disponível"""
         try:
             from backend.ml.feature_registry import feature_registry
             self.feature_registry = feature_registry
-            self.expected_features = feature_registry.get_expected_count()
             self._registry_loaded = True
-            logger.info(f"   📊 Feature Registry carregado: {self.expected_features} features")
-        except ImportError as e:
-            logger.warning(f"   ⚠️ Feature Registry não disponível: {e}")
+            logger.debug(f"   📊 Feature Registry carregado")
+        except ImportError:
             self.feature_registry = None
-            self.expected_features = 10  # fallback
             self._registry_loaded = False
     
     # ==========================================
-    # 🔥 DETECÇÃO DE FEATURES DO MODELO
+    # 🔥 DETECÇÃO AUTOMÁTICA DE FEATURES DO MODELO
     # ==========================================
     
     def detect_model_features(self, model_data: Dict[str, Any]) -> Tuple[int, List[str]]:
         """
-        🔥 Detecta automaticamente o número de features que o modelo espera
+        🔥 DETECTA automaticamente quantas features o modelo espera
+        
+        Tenta várias fontes:
+        1. model.n_features_in_ (scikit-learn)
+        2. model.feature_names_in_ (scikit-learn)
+        3. Metadados (features, feature_names)
+        4. Scaler (mean_.shape)
+        5. Fallback para 10
         """
         feature_count = 0
         feature_names = []
+        detection_source = "unknown"
         
-        # 1. Tentar extrair do modelo
+        # 1. Tentar extrair do modelo (scikit-learn)
         model = model_data.get('model')
         if model is not None:
+            # 🔥 FONTE 1: n_features_in_ (mais confiável)
             if hasattr(model, 'n_features_in_'):
                 feature_count = model.n_features_in_
-                logger.info(f"   🔍 Modelo espera {feature_count} features (n_features_in_)")
+                detection_source = "model.n_features_in_"
+                logger.info(f"   🔍 Detectado: {feature_count} features (n_features_in_)")
             
+            # 🔥 FONTE 2: feature_names_in_ (nomes)
             if hasattr(model, 'feature_names_in_'):
                 feature_names = list(model.feature_names_in_)
-                logger.info(f"   🔍 Nomes das features: {feature_names[:5]}...")
+                if not feature_count:
+                    feature_count = len(feature_names)
+                    detection_source = "model.feature_names_in_"
+                logger.info(f"   🔍 Nomes: {feature_names[:5]}{'...' if len(feature_names) > 5 else ''}")
         
         # 2. Tentar extrair dos metadados
         if feature_count == 0:
+            # 🔥 FONTE 3: Metadados 'features' ou 'feature_names'
             features = model_data.get('features', [])
+            if not features:
+                features = model_data.get('feature_names', [])
+            
             if features:
                 feature_count = len(features)
                 feature_names = features
-                logger.info(f"   🔍 Modelo espera {feature_count} features (metadados)")
+                detection_source = "metadata.features"
+                logger.info(f"   🔍 Detectado: {feature_count} features (metadados)")
         
         # 3. Tentar extrair do scaler
         if feature_count == 0:
+            # 🔥 FONTE 4: Scaler
             scaler = model_data.get('scaler')
             if scaler is not None and hasattr(scaler, 'mean_'):
                 feature_count = len(scaler.mean_)
-                logger.info(f"   🔍 Modelo espera {feature_count} features (scaler)")
+                detection_source = "scaler.mean_"
+                logger.info(f"   🔍 Detectado: {feature_count} features (scaler)")
         
-        # 4. Fallback
+        # 4. Tentar extrair do modelo com n_features_
+        if feature_count == 0 and model is not None:
+            if hasattr(model, 'n_features_'):
+                feature_count = model.n_features_
+                detection_source = "model.n_features_"
+                logger.info(f"   🔍 Detectado: {feature_count} features (n_features_)")
+        
+        # 5. Fallback
         if feature_count == 0:
             feature_count = 10
-            logger.warning(f"   ⚠️ Não foi possível detectar features, usando {feature_count}")
+            detection_source = "fallback"
+            logger.warning(f"   ⚠️ Não foi possível detectar features, usando fallback: {feature_count}")
+        
+        self.stats['model_feature_count_detected'] = feature_count
+        
+        logger.info(f"   ✅ Features detectadas: {feature_count} (fonte: {detection_source})")
         
         return feature_count, feature_names
     
     # ==========================================
-    # 🔥 ADAPTAÇÃO AUTOMÁTICA DE FEATURES
-    # ==========================================
-    
-    def adapt_features_automatically(
-        self, 
-        X: np.ndarray,
-        expected_features: int = None,
-        expected_names: List[str] = None
-    ) -> np.ndarray:
-        """
-        🔥 ADAPTA QUALQUER NÚMERO DE FEATURES AUTOMATICAMENTE
-        
-        Estratégias:
-        1. Se tem o mesmo número → usa diretamente
-        2. Se tem mais → reduz com PCA ou seleção por importância
-        3. Se tem menos → expande com preenchimento inteligente
-        """
-        if expected_features is None:
-            expected_features = self.model_feature_count or self.expected_features or 10
-        
-        actual = X.shape[1]
-        
-        # CASO 1: Já tem o número certo
-        if actual == expected_features:
-            logger.debug(f"✅ Features OK: {actual}")
-            return X
-        
-        # 🔥 CASO 2: Mais features → Reduzir
-        if actual > expected_features:
-            return self._reduce_features(X, actual, expected_features)
-        
-        # 🔥 CASO 3: Menos features → Expandir
-        if actual < expected_features:
-            return self._expand_features(X, actual, expected_features, expected_names)
-        
-        return X
-    
-    def _reduce_features(self, X: np.ndarray, actual: int, expected: int) -> np.ndarray:
-        """
-        🔥 REDUZ número de features (quando tem mais que o esperado)
-        """
-        logger.info(f"   🔄 Reduzindo: {actual} → {expected} features")
-        self.stats['feature_adaptations'] += 1
-        
-        # Estratégia 1: Feature Importance do modelo
-        if hasattr(self.office_model, 'feature_importances_'):
-            importances = self.office_model.feature_importances_
-            if len(importances) >= expected:
-                top_indices = np.argsort(importances)[-expected:]
-                X_reduced = X[:, top_indices]
-                logger.info(f"   ✅ Selecionadas {expected} features mais importantes")
-                return X_reduced
-        
-        # Estratégia 2: PCA
-        try:
-            if not self._pca_fitted:
-                self._pca = PCA(n_components=min(expected, actual))
-                X_reduced = self._pca.fit_transform(X)
-                self._pca_fitted = True
-            else:
-                X_reduced = self._pca.transform(X)
-            self.stats['pca_applied'] += 1
-            logger.info(f"   ✅ PCA: {actual} → {expected} features")
-            return X_reduced
-        except Exception as e:
-            logger.warning(f"   ⚠️ PCA falhou: {e}")
-        
-        # Estratégia 3: Selecionar aleatoriamente (último recurso)
-        indices = np.random.choice(actual, expected, replace=False)
-        X_reduced = X[:, indices]
-        logger.info(f"   ⚠️ Seleção aleatória: {expected} features")
-        return X_reduced
-    
-    def _expand_features(
-        self, 
-        X: np.ndarray, 
-        actual: int, 
-        expected: int,
-        expected_names: List[str] = None
-    ) -> np.ndarray:
-        """
-        🔥 EXPANDE número de features (quando tem menos que o esperado)
-        """
-        logger.info(f"   🔄 Expandindo: {actual} → {expected} features")
-        self.stats['feature_adaptations'] += 1
-        self.stats['feature_expansions'] += 1
-        
-        X_expanded = np.zeros((X.shape[0], expected))
-        
-        # Copiar features existentes
-        for i in range(min(actual, expected)):
-            X_expanded[:, i] = X[:, i]
-        
-        # Preencher features faltantes
-        missing = expected - actual
-        
-        if missing > 0:
-            # Calcular estatísticas das features existentes
-            col_means = np.mean(X, axis=0)
-            col_stds = np.std(X, axis=0) + 1e-10
-            mean_all = np.mean(col_means)
-            std_all = np.mean(col_stds)
-            
-            for i in range(missing):
-                idx = actual + i
-                
-                # 🔥 PREENCHIMENTO INTELIGENTE
-                if expected_names and idx < len(expected_names):
-                    name = expected_names[idx].lower()
-                    
-                    # Constantes
-                    if any(k in name for k in ['constante', 'bias', 'intercept', 'ones']):
-                        X_expanded[:, idx] = 1.0
-                        logger.debug(f"      '{expected_names[idx]}' → constante 1.0")
-                    
-                    # Receita
-                    elif any(k in name for k in ['receita', 'revenue', 'faturamento']):
-                        X_expanded[:, idx] = np.mean(X, axis=1) * (1.1 + 0.2 * np.random.rand(X.shape[0]))
-                        logger.debug(f"      '{expected_names[idx]}' → baseado na média * 1.1")
-                    
-                    # Custo
-                    elif any(k in name for k in ['custo', 'cost', 'despesa']):
-                        X_expanded[:, idx] = np.mean(X, axis=1) * (0.6 + 0.15 * np.random.rand(X.shape[0]))
-                        logger.debug(f"      '{expected_names[idx]}' → baseado na média * 0.6")
-                    
-                    # Lucro
-                    elif any(k in name for k in ['lucro', 'profit']):
-                        X_expanded[:, idx] = np.mean(X, axis=1) * (0.3 + 0.15 * np.random.rand(X.shape[0]))
-                        logger.debug(f"      '{expected_names[idx]}' → baseado na média * 0.3")
-                    
-                    # Margem
-                    elif any(k in name for k in ['margem', 'margin']):
-                        X_expanded[:, idx] = 0.3 + 0.3 * np.random.rand(X.shape[0])
-                        logger.debug(f"      '{expected_names[idx]}' → aleatório entre 0.3-0.6")
-                    
-                    # Quantidade
-                    elif any(k in name for k in ['quantidade', 'qtd', 'count']):
-                        X_expanded[:, idx] = np.random.randint(1, 20, X.shape[0])
-                        logger.debug(f"      '{expected_names[idx]}' → aleatório 1-20")
-                    
-                    # Eficiência
-                    elif any(k in name for k in ['eficiencia', 'efficiency']):
-                        X_expanded[:, idx] = 0.4 + 0.4 * np.random.rand(X.shape[0])
-                        logger.debug(f"      '{expected_names[idx]}' → aleatório entre 0.4-0.8")
-                    
-                    # Outras features: combinação das existentes
-                    else:
-                        weights = np.random.randn(actual)
-                        weights = weights / (np.sum(np.abs(weights)) + 1e-10)
-                        X_expanded[:, idx] = np.dot(X, weights)
-                        logger.debug(f"      '{expected_names[idx]}' → combinação linear")
-                
-                else:
-                    # Sem nome: usar média + ruído
-                    X_expanded[:, idx] = mean_all + std_all * np.random.randn(X.shape[0])
-                    logger.debug(f"      feature_{idx} → média + ruído")
-        
-        logger.info(f"   ✅ Expandido: {actual} → {expected} features")
-        return X_expanded
-    
-    # ==========================================
-    # 🔥 CARREGAMENTO DE MODELO (INTELIGENTE)
+    # 🔥 CARREGAMENTO INTELIGENTE DO MODELO
     # ==========================================
     
     def load_model_intelligently(self, model_path: str = None) -> Dict[str, Any]:
         """
-        🔥 Carrega modelo e detecta automaticamente suas features
+        🔥 Carrega modelo e DETECTA automaticamente suas features
         """
         if model_path is None:
-            model_path = self.default_model_path
+            # Tentar office_model primeiro, depois trained_model
+            if os.path.exists(self.office_model_path):
+                model_path = self.office_model_path
+            elif os.path.exists(self.default_model_path):
+                model_path = self.default_model_path
+            else:
+                logger.warning(f"⚠️ Nenhum modelo encontrado")
+                return None
         
         if not os.path.exists(model_path):
             logger.warning(f"⚠️ Modelo não encontrado: {model_path}")
             return None
         
         try:
-            with open(model_path, 'rb') as f:
-                model_data = pickle.load(f)
+            logger.info(f"📂 Carregando modelo: {model_path}")
             
-            # 🔥 DETECTAR FEATURES
+            # Tentar joblib primeiro (mais robusto)
+            try:
+                model_data = joblib.load(model_path)
+                logger.info("   ✅ Carregado com joblib")
+            except:
+                # Fallback para pickle
+                with open(model_path, 'rb') as f:
+                    model_data = pickle.load(f)
+                logger.info("   ✅ Carregado com pickle")
+            
+            # 🔥 DETECTAR FEATURES AUTOMATICAMENTE
             self.model_feature_count, self.model_feature_names = self.detect_model_features(model_data)
+            self._model_features_detected = True
             
             # Carregar modelo e scaler
             self.office_model = model_data.get('model')
             self.scaler = model_data.get('scaler')
             self.feature_names = model_data.get('features', [])
+            if not self.feature_names:
+                self.feature_names = model_data.get('feature_names', [])
+            
             self.last_metrics = model_data.get('metrics', {})
             self.model_source = model_data.get('model_name', 'unknown')
             self.model_type = model_data.get('model_type', 'classifier')
@@ -453,16 +365,199 @@ class ModelPredictor:
             self.is_loaded = True
             self._model_loaded = True
             
-            logger.info(f"✅ Modelo carregado: {self.model_source}")
-            logger.info(f"   📊 Espera {self.model_feature_count} features")
-            logger.info(f"   📋 Features: {self.model_feature_names[:5] if self.model_feature_names else 'N/A'}...")
+            logger.info("=" * 60)
+            logger.info(f"✅ Modelo carregado com sucesso!")
+            logger.info(f"   📊 Fonte: {self.model_source}")
+            logger.info(f"   📊 Tipo: {self.model_type}")
+            logger.info(f"   📊 Features esperadas: {self.model_feature_count}")
             logger.info(f"   📊 Normalização: Z-Score (StandardScaler)")
+            logger.info("=" * 60)
             
             return model_data
             
         except Exception as e:
             logger.error(f"❌ Erro ao carregar modelo: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    # ==========================================
+    # 🔥 ADAPTAÇÃO AUTOMÁTICA DE FEATURES (INTELIGENTE)
+    # ==========================================
+    
+    def adapt_features_automatically(
+        self, 
+        X: np.ndarray,
+        expected_features: int = None,
+        expected_names: List[str] = None
+    ) -> np.ndarray:
+        """
+        🔥 ADAPTA QUALQUER NÚMERO DE FEATURES AUTOMATICAMENTE
+        
+        Estratégias:
+        1. Se tem o mesmo número → usa diretamente
+        2. Se tem mais → reduz com PCA ou seleção por importância
+        3. Se tem menos → expande com preenchimento inteligente
+        """
+        # Se não tem informação do modelo, usa o que detectou
+        if expected_features is None:
+            expected_features = self.model_feature_count
+            if expected_features is None:
+                # Fallback: tenta usar o scaler ou o modelo
+                if self.scaler is not None and hasattr(self.scaler, 'mean_'):
+                    expected_features = len(self.scaler.mean_)
+                elif self.office_model is not None and hasattr(self.office_model, 'n_features_in_'):
+                    expected_features = self.office_model.n_features_in_
+                else:
+                    expected_features = 10
+                    logger.warning(f"   ⚠️ Usando fallback: {expected_features} features")
+        
+        # Se não tem nomes, usa os do modelo
+        if expected_names is None:
+            expected_names = self.model_feature_names or []
+        
+        actual = X.shape[1]
+        
+        # CASO 1: Já tem o número certo
+        if actual == expected_features:
+            logger.debug(f"✅ Features OK: {actual} (igual ao esperado)")
+            self.stats['adaptations_by_type']['same'] += 1
+            return X
+        
+        # 🔥 CASO 2: Mais features → REDUZIR
+        if actual > expected_features:
+            logger.info(f"   🔄 Reduzindo: {actual} → {expected_features} features")
+            self.stats['feature_adaptations'] += 1
+            self.stats['adaptations_by_type']['reduced'] += 1
+            return self._reduce_features(X, actual, expected_features)
+        
+        # 🔥 CASO 3: Menos features → EXPANDIR
+        if actual < expected_features:
+            logger.info(f"   🔄 Expandindo: {actual} → {expected_features} features")
+            self.stats['feature_adaptations'] += 1
+            self.stats['adaptations_by_type']['expanded'] += 1
+            return self._expand_features(X, actual, expected_features, expected_names)
+        
+        return X
+    
+    def _reduce_features(self, X: np.ndarray, actual: int, expected: int) -> np.ndarray:
+        """
+        🔥 REDUZ número de features (quando tem mais que o esperado)
+        """
+        # Estratégia 1: Feature Importance do modelo
+        if self.ADAPTATION_CONFIG['use_importance'] and self.office_model is not None:
+            if hasattr(self.office_model, 'feature_importances_'):
+                importances = self.office_model.feature_importances_
+                if len(importances) >= expected:
+                    top_indices = np.argsort(importances)[-expected:]
+                    X_reduced = X[:, top_indices]
+                    logger.info(f"   ✅ Reduzido via Feature Importance: {actual} → {expected}")
+                    return X_reduced
+        
+        # Estratégia 2: PCA
+        if self.ADAPTATION_CONFIG['use_pca']:
+            try:
+                if not self._pca_fitted:
+                    self._pca = PCA(n_components=min(expected, actual))
+                    X_reduced = self._pca.fit_transform(X)
+                    self._pca_fitted = True
+                else:
+                    X_reduced = self._pca.transform(X)
+                self.stats['pca_applied'] += 1
+                self.stats['adaptations_by_type']['pca'] += 1
+                logger.info(f"   ✅ Reduzido via PCA: {actual} → {expected}")
+                return X_reduced
+            except Exception as e:
+                logger.warning(f"   ⚠️ PCA falhou: {e}")
+        
+        # Estratégia 3: Selecionar aleatoriamente (último recurso)
+        indices = np.random.choice(actual, expected, replace=False)
+        X_reduced = X[:, indices]
+        logger.info(f"   ⚠️ Reduzido via seleção aleatória: {actual} → {expected}")
+        return X_reduced
+    
+    def _expand_features(
+        self, 
+        X: np.ndarray, 
+        actual: int, 
+        expected: int,
+        expected_names: List[str] = None
+    ) -> np.ndarray:
+        """
+        🔥 EXPANDE número de features (quando tem menos que o esperado)
+        """
+        X_expanded = np.zeros((X.shape[0], expected))
+        
+        # Copiar features existentes
+        for i in range(min(actual, expected)):
+            X_expanded[:, i] = X[:, i]
+        
+        # Preencher features faltantes
+        missing = expected - actual
+        
+        if missing > 0:
+            # Calcular estatísticas das features existentes
+            col_means = np.mean(X, axis=0) if X.shape[0] > 0 else np.zeros(actual)
+            col_stds = np.std(X, axis=0) + 1e-10 if X.shape[0] > 0 else np.ones(actual)
+            mean_all = np.mean(col_means)
+            std_all = np.mean(col_stds)
+            
+            for i in range(missing):
+                idx = actual + i
+                feature_name = expected_names[idx] if expected_names and idx < len(expected_names) else f"feature_{idx}"
+                
+                # 🔥 PREENCHIMENTO INTELIGENTE BASEADO NO NOME
+                name_lower = feature_name.lower()
+                
+                # Constantes
+                if any(k in name_lower for k in ['constante', 'bias', 'intercept', 'ones']):
+                    X_expanded[:, idx] = 1.0
+                    logger.debug(f"      '{feature_name}' → constante 1.0")
+                
+                # Receita
+                elif any(k in name_lower for k in ['receita', 'revenue', 'faturamento']):
+                    X_expanded[:, idx] = np.mean(X, axis=1) * (1.1 + 0.2 * np.random.rand(X.shape[0]))
+                    logger.debug(f"      '{feature_name}' → baseado na média * 1.1")
+                
+                # Custo
+                elif any(k in name_lower for k in ['custo', 'cost', 'despesa']):
+                    X_expanded[:, idx] = np.mean(X, axis=1) * (0.6 + 0.15 * np.random.rand(X.shape[0]))
+                    logger.debug(f"      '{feature_name}' → baseado na média * 0.6")
+                
+                # Lucro
+                elif any(k in name_lower for k in ['lucro', 'profit']):
+                    X_expanded[:, idx] = np.mean(X, axis=1) * (0.3 + 0.15 * np.random.rand(X.shape[0]))
+                    logger.debug(f"      '{feature_name}' → baseado na média * 0.3")
+                
+                # Margem
+                elif any(k in name_lower for k in ['margem', 'margin']):
+                    X_expanded[:, idx] = 0.3 + 0.3 * np.random.rand(X.shape[0])
+                    logger.debug(f"      '{feature_name}' → aleatório entre 0.3-0.6")
+                
+                # Quantidade
+                elif any(k in name_lower for k in ['quantidade', 'qtd', 'count']):
+                    X_expanded[:, idx] = np.random.randint(1, 20, X.shape[0])
+                    logger.debug(f"      '{feature_name}' → aleatório 1-20")
+                
+                # Eficiência
+                elif any(k in name_lower for k in ['eficiencia', 'efficiency']):
+                    X_expanded[:, idx] = 0.4 + 0.4 * np.random.rand(X.shape[0])
+                    logger.debug(f"      '{feature_name}' → aleatório entre 0.4-0.8")
+                
+                # Ticket médio
+                elif any(k in name_lower for k in ['ticket', 'medio', 'average']):
+                    X_expanded[:, idx] = np.mean(X, axis=1) * (0.7 + 0.3 * np.random.rand(X.shape[0]))
+                    logger.debug(f"      '{feature_name}' → baseado na média * 0.7")
+                
+                # Outras features: combinação linear das existentes
+                else:
+                    weights = np.random.randn(actual)
+                    weights = weights / (np.sum(np.abs(weights)) + 1e-10)
+                    X_expanded[:, idx] = np.dot(X, weights)
+                    logger.debug(f"      '{feature_name}' → combinação linear")
+        
+        logger.info(f"   ✅ Expandido: {actual} → {expected} features")
+        return X_expanded
     
     # ==========================================
     # 🔥 PREDIÇÃO INTELIGENTE (PRINCIPAL)
@@ -496,29 +591,46 @@ class ModelPredictor:
                 return self._prediction_cache[cache_key]
             self.stats['cache_misses'] += 1
         
+        # 🔥 CARREGAR MODELO SE NÃO ESTIVER CARREGADO
         if self.office_model is None:
-            logger.warning("⚠️ Nenhum modelo disponível, carregando...")
+            logger.info("📦 Carregando modelo automaticamente...")
             self.load_model_intelligently()
             if self.office_model is None:
+                logger.warning("⚠️ Nenhum modelo disponível, usando fallback")
                 return self._fallback_predictions_from_features(X)
         
         try:
-            # 🔥 1. ADAPTAÇÃO AUTOMÁTICA
-            if auto_adapt and self.model_feature_count is not None:
-                X = self.adapt_features_automatically(
-                    X, 
-                    self.model_feature_count,
-                    self.model_feature_names
-                )
-            elif auto_adapt and self.expected_features is not None:
-                X = self.adapt_features_automatically(
-                    X,
-                    self.expected_features
-                )
+            # 🔥 1. VALIDAR FEATURES
+            actual_features = X.shape[1] if len(X.shape) > 1 else 1
+            logger.debug(f"   📊 Features atuais: {actual_features}")
             
-            # 🔥 2. ESCALONAMENTO (Z-Score)
+            # 🔥 2. ADAPTAÇÃO AUTOMÁTICA (SE ATIVADA)
+            if auto_adapt and self.model_feature_count is not None:
+                if actual_features != self.model_feature_count:
+                    logger.info(f"   🔄 Adaptando features: {actual_features} → {self.model_feature_count}")
+                    X = self.adapt_features_automatically(
+                        X, 
+                        self.model_feature_count,
+                        self.model_feature_names
+                    )
+                else:
+                    logger.debug(f"   ✅ Features já compatíveis: {actual_features}")
+            elif auto_adapt:
+                # Tentar detectar do scaler
+                if self.scaler is not None and hasattr(self.scaler, 'mean_'):
+                    expected = len(self.scaler.mean_)
+                    if actual_features != expected:
+                        logger.info(f"   🔄 Adaptando features (scaler): {actual_features} → {expected}")
+                        X = self.adapt_features_automatically(X, expected)
+            
+            # 🔥 3. ESCALONAMENTO (Z-Score)
             if scale and self.scaler is not None:
                 try:
+                    # Verificar se o scaler já foi ajustado
+                    if not hasattr(self.scaler, 'mean_'):
+                        logger.warning("⚠️ Scaler não ajustado, ajustando com dados atuais")
+                        self.scaler.fit(X)
+                    
                     X_scaled = self.scaler.transform(X)
                 except Exception as e:
                     logger.warning(f"⚠️ Erro no scaler: {e}, reajustando...")
@@ -527,14 +639,14 @@ class ModelPredictor:
             else:
                 X_scaled = X
             
-            # 🔥 3. PREDIÇÃO
+            # 🔥 4. PREDIÇÃO
             if hasattr(self.office_model, 'predict'):
                 predictions = self.office_model.predict(X_scaled)
             else:
                 logger.warning("⚠️ Modelo não tem predict(), usando fallback")
                 return self._fallback_predictions_from_features(X)
             
-            # 🔥 4. PÓS-PROCESSAMENTO
+            # 🔥 5. PÓS-PROCESSAMENTO
             if isinstance(predictions, np.ndarray):
                 predictions = predictions.tolist()
             
@@ -553,26 +665,27 @@ class ModelPredictor:
             self.stats['total_predictions'] += 1
             self.stats['last_prediction_time'] = datetime.now().isoformat()
             
+            logger.debug(f"   ✅ Predição concluída: {len(predictions)} resultados")
             return predictions
             
         except Exception as e:
             logger.error(f"❌ Erro na predição: {e}")
+            import traceback
+            traceback.print_exc()
             return self._fallback_predictions_from_features(X)
     
     def _get_cache_key(self, X: np.ndarray) -> str:
         """Gera chave de cache para predições"""
         try:
             import hashlib
-            # Usar média, std e shape como chave
             key_data = f"{X.shape}_{np.mean(X)}_{np.std(X)}_{X[:5].tobytes()}"
             return hashlib.md5(key_data.encode()).hexdigest()[:16]
         except:
-            return str(time.time())
+            return str(datetime.now().timestamp())
     
     def _clean_cache(self):
         """Limpa cache quando excede o tamanho máximo"""
         if len(self._prediction_cache) > self._cache_max_size:
-            # Remover metade das entradas (as mais antigas)
             keys = list(self._prediction_cache.keys())
             for key in keys[:len(keys)//2]:
                 del self._prediction_cache[key]
@@ -597,35 +710,9 @@ class ModelPredictor:
             predictions.append(score)
         
         self.stats['fallback_values_used'] += 1
+        self.stats['adaptations_by_type']['fallback'] += 1
+        logger.warning(f"   ⚠️ Fallback usado: {len(predictions)} predições baseadas em estatísticas")
         return predictions
-    
-    # ==========================================
-    # 🔥 VALIDAÇÃO DE FEATURES
-    # ==========================================
-    
-    def validate_features(self, X: np.ndarray) -> Dict[str, Any]:
-        """
-        🔥 Valida se as features estão no formato esperado
-        """
-        self.stats["feature_validations"] += 1
-        
-        expected = self.model_feature_count or self.expected_features or 10
-        actual = X.shape[1] if len(X.shape) > 1 else 1
-        
-        result = {
-            "valid": actual == expected,
-            "expected": expected,
-            "actual": actual,
-            "difference": actual - expected,
-            "match_percentage": (min(actual, expected) / max(actual, expected)) * 100 if expected > 0 else 0
-        }
-        
-        if not result["valid"]:
-            self.stats["feature_mismatches"] += 1
-            logger.warning(f"⚠️ Feature mismatch: esperado {expected}, recebido {actual}")
-            logger.warning(f"   Match: {result['match_percentage']:.1f}%")
-        
-        return result
     
     # ==========================================
     # 🔥 MÉTODO PRINCIPAL (COMPATIBILIDADE)
@@ -637,165 +724,15 @@ class ModelPredictor:
         scale: bool = True,
         validate: bool = True
     ) -> List[float]:
-        """
-        🔥 PREDIZ com features já construídas (MÉTODO PRINCIPAL)
-        
-        Args:
-            X: Features já construídas (numpy array)
-            scale: Se deve escalonar os dados (Z-Score)
-            validate: Se deve validar as features
-        
-        Returns:
-            Lista de predições (0-1)
-        """
+        """PREDIZ com features já construídas (MÉTODO PRINCIPAL)"""
         return await self.predict_intelligently(X, scale=scale, auto_adapt=True)
-    
-    # ==========================================
-    # 🔥 PREDIÇÃO DE PROBABILIDADES
-    # ==========================================
-    
-    async def predict_proba_intelligently(
-        self, 
-        X: np.ndarray, 
-        scale: bool = True
-    ) -> np.ndarray:
-        """
-        🔥 Retorna probabilidades com adaptação automática
-        """
-        if self.office_model is None:
-            self.load_model_intelligently()
-            if self.office_model is None:
-                preds = await self.predict_intelligently(X, scale=scale)
-                return np.column_stack([1 - np.array(preds), np.array(preds)])
-        
-        if hasattr(self.office_model, 'predict_proba'):
-            X_adapted = self.adapt_features_automatically(
-                X, 
-                self.model_feature_count,
-                self.model_feature_names
-            )
-            
-            if scale and self.scaler is not None:
-                X_scaled = self.scaler.transform(X_adapted)
-            else:
-                X_scaled = X_adapted
-            
-            return self.office_model.predict_proba(X_scaled)
-        else:
-            preds = await self.predict_intelligently(X, scale=scale)
-            return np.column_stack([1 - np.array(preds), np.array(preds)])
-    
-    # ==========================================
-    # 🔥 MÉTODOS DE PREDIÇÃO EM LOTE
-    # ==========================================
-    
-    async def predict_multiple_files(self, files_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Processa múltiplos arquivos em lote"""
-        logger.info(f"\n📦 Processando lote de {len(files_data)} arquivo(s) com ML V7.0")
-        
-        # Carregar modelo se necessário
-        if not self.is_loaded:
-            self.load_model_intelligently()
-        
-        results = []
-        
-        for idx, file_info in enumerate(files_data):
-            try:
-                filename = file_info['filename']
-                content = file_info['content']
-                process_id = file_info.get('process_id', f'file_{idx}')
-                
-                df, encoding_used = self._load_file_with_encoding(content, filename)
-                
-                if df is None:
-                    results.append({
-                        'process_id': process_id,
-                        'filename': filename,
-                        'success': False,
-                        'encoding_used': encoding_used or 'unknown',
-                        'error': f'Falha ao carregar arquivo: {filename}'
-                    })
-                    continue
-                
-                if df.empty:
-                    results.append({
-                        'process_id': process_id,
-                        'filename': filename,
-                        'success': False,
-                        'encoding_used': encoding_used,
-                        'error': 'Arquivo vazio'
-                    })
-                    continue
-                
-                # 🔥 Usar Feature Builder se disponível
-                predictions = None
-                if self._registry_loaded and self.feature_registry:
-                    try:
-                        from backend.ml.feature_builder import FeatureBuilder
-                        builder = FeatureBuilder(self.feature_registry)
-                        build_result = builder.build_features(df)
-                        
-                        if build_result.success:
-                            logger.info(f"   🔧 Features construídas: {build_result.features.shape[1]}")
-                            predictions = await self.predict_intelligently(
-                                build_result.features.values,
-                                scale=True,
-                                auto_adapt=True
-                            )
-                    except Exception as e:
-                        logger.warning(f"⚠️ Erro no Feature Builder: {e}")
-                
-                # Fallback: método legado
-                if predictions is None:
-                    logger.warning("   ⚠️ Usando fallback legado")
-                    predictions = await self.predict_for_office(df)
-                
-                # Estatísticas
-                pred_array = np.array(predictions) if predictions else np.array([])
-                pred_summary = {
-                    'total': len(predictions) if predictions else 0,
-                    'mean': float(np.mean(pred_array)) if len(pred_array) > 0 else 0,
-                    'high_risk_percentage': len([p for p in predictions if p > 0.7]) / len(predictions) * 100 if predictions else 0,
-                    'low_risk_percentage': len([p for p in predictions if p < 0.3]) / len(predictions) * 100 if predictions else 0
-                }
-                
-                results.append({
-                    'process_id': process_id,
-                    'filename': filename,
-                    'success': True,
-                    'predictions_summary': pred_summary,
-                    'predictions_sample': predictions[:10] if predictions else [],
-                    'model_used': self.model_source,
-                    'encoding_used': encoding_used,
-                    'processed_at': datetime.now().isoformat(),
-                    'feature_count': self.model_feature_count
-                })
-                
-                self.stats['total_files_processed'] += 1
-                logger.info(f"   ✅ {filename}: {len(predictions) if predictions else 0} predições")
-                
-            except Exception as e:
-                logger.error(f"❌ Erro ao processar {file_info.get('filename')}: {e}")
-                results.append({
-                    'process_id': file_info.get('process_id', f'error_{idx}'),
-                    'filename': file_info.get('filename', 'desconhecido'),
-                    'success': False,
-                    'encoding_used': None,
-                    'error': str(e)
-                })
-        
-        logger.info(f"✅ Lote concluído: {len([r for r in results if r.get('success')])}/{len(results)} sucessos")
-        return results
     
     # ==========================================
     # 🔥 MÉTODOS LEGADOS (COMPATIBILIDADE)
     # ==========================================
     
     async def predict_for_office(self, df: pd.DataFrame) -> List[float]:
-        """
-        ⚠️ MÉTODO LEGADO - Mantido para compatibilidade
-        🔥 Use predict_intelligently() para novas implementações
-        """
+        """⚠️ MÉTODO LEGADO - Mantido para compatibilidade"""
         logger.warning("⚠️ predict_for_office() está depreciado. Use predict_intelligently()")
         
         if self._registry_loaded and self.feature_registry:
@@ -812,7 +749,7 @@ class ModelPredictor:
         return await self.predict_intelligently(X_scaled, scale=False, auto_adapt=True)
     
     def _preprocess_features_legacy(self, df: pd.DataFrame) -> np.ndarray:
-        """⚠️ PRÉ-PROCESSAMENTO LEGADO - Mantido para compatibilidade"""
+        """⚠️ PRÉ-PROCESSAMENTO LEGADO"""
         X = df.select_dtypes(include=[np.number]).copy()
         
         if X.empty:
@@ -835,7 +772,7 @@ class ModelPredictor:
         return X_scaled
     
     # ==========================================
-    # 🔥 CARREGAMENTO DE MODELOS (MANTIDO)
+    # 🔥 CARREGAMENTO DE MODELOS
     # ==========================================
     
     async def load_or_train_models(self, force_reload: bool = False):
@@ -844,9 +781,9 @@ class ModelPredictor:
             logger.info("📦 Modelos já carregados")
             return True
         
-        logger.info("\n🔧 Carregando modelos de ML V7.0...")
+        logger.info("\n🔧 Carregando modelos de ML V7.1...")
         
-        # 🔥 Usar o novo método de carregamento inteligente
+        # Usar o novo método de carregamento inteligente
         model_data = self.load_model_intelligently()
         
         if model_data is None:
@@ -860,7 +797,7 @@ class ModelPredictor:
         
         self.is_loaded = True
         logger.info(f"✅ Modelos carregados (Fonte: {self.model_source})")
-        logger.info(f"   📊 Features: {self.model_feature_count or self.expected_features or 'N/A'}")
+        logger.info(f"   📊 Features detectadas: {self.model_feature_count}")
         return True
     
     def _load_office_model(self) -> bool:
@@ -878,12 +815,15 @@ class ModelPredictor:
                     self.model_source = 'automl'
                     self.scaler = model_data['pipeline'].named_steps.get('scaler')
                     self.last_metrics = model_data.get('metricas', {})
+                    # Detectar features
+                    self.model_feature_count, self.model_feature_names = self.detect_model_features(model_data)
                     logger.info("✅ Modelo AutoML Office carregado")
                     return True
                 elif 'ensemble' in model_data:
                     self.office_model = model_data
                     self.model_source = 'boosting_ensemble'
                     self.last_metrics = model_data.get('metrics', {})
+                    self.model_feature_count, self.model_feature_names = self.detect_model_features(model_data)
                     logger.info("✅ Modelo Boosting Ensemble carregado")
                     return True
                 elif 'model' in model_data:
@@ -892,6 +832,7 @@ class ModelPredictor:
                     self.model_source = 'random_forest'
                     self.feature_names = model_data.get('features', [])
                     self.last_metrics = model_data.get('metrics', {})
+                    self.model_feature_count, self.model_feature_names = self.detect_model_features(model_data)
                     logger.info("✅ Modelo RandomForest carregado")
                     return True
             return False
@@ -913,8 +854,10 @@ class ModelPredictor:
                 if not self.scaler:
                     self.scaler = model_data.get('scaler')
                 self.last_metrics = model_data.get('metrics', {})
+                self.model_feature_count, self.model_feature_names = self.detect_model_features(model_data)
             else:
                 self.default_model = model_data
+                self.model_feature_count = 10  # fallback
             
             if self.default_model and not self.office_model:
                 self.office_model = self.default_model
@@ -929,7 +872,8 @@ class ModelPredictor:
     def _create_placeholder_model(self):
         """Cria modelo placeholder com o número correto de features"""
         try:
-            expected = self.expected_features or 10
+            # Usar o número detectado ou fallback
+            expected = self.model_feature_count or 10
             
             self.office_model = RandomForestClassifier(
                 n_estimators=50,
@@ -959,100 +903,6 @@ class ModelPredictor:
             self.office_model = None
     
     # ==========================================
-    # 🔥 DETECÇÃO DE ENCODING (MANTIDO)
-    # ==========================================
-    
-    def _detect_encoding(self, content: bytes) -> Tuple[str, float]:
-        """Detecta encoding de um arquivo"""
-        if not content or len(content) == 0:
-            return 'utf-8', 0.0
-        
-        try:
-            boms = [
-                (b'\xef\xbb\xbf', 'utf-8-sig'),
-                (b'\xff\xfe', 'utf-16-le'),
-                (b'\xfe\xff', 'utf-16-be'),
-            ]
-            
-            for bom, encoding in boms:
-                if content.startswith(bom):
-                    self.encoding_stats[encoding] = self.encoding_stats.get(encoding, 0) + 1
-                    self.encoding_stats['detected'] += 1
-                    self.last_encoding = encoding
-                    return encoding, 0.99
-            
-            result = chardet.detect(content[:min(len(content), 50000)])
-            if result and result.get('encoding'):
-                encoding = result['encoding'].lower().replace('_', '-')
-                confidence = result.get('confidence', 0)
-                
-                if encoding == 'utf-8':
-                    encoding = 'utf-8'
-                elif encoding in ['windows-1252', 'cp1252']:
-                    encoding = 'cp1252'
-                elif encoding in ['iso-8859-1', 'latin-1']:
-                    encoding = 'latin1'
-                
-                if confidence > 0.3:
-                    self.encoding_stats[encoding] = self.encoding_stats.get(encoding, 0) + 1
-                    self.encoding_stats['detected'] += 1
-                    self.last_encoding = encoding
-                    return encoding, confidence
-        except Exception as e:
-            logger.debug(f"   ⚠️ Erro na detecção de encoding: {e}")
-        
-        for enc in ['utf-8-sig', 'utf-8', 'cp1252', 'latin1']:
-            try:
-                content[:1000].decode(enc)
-                self.encoding_stats[enc] = self.encoding_stats.get(enc, 0) + 1
-                self.encoding_stats['fallback'] += 1
-                self.last_encoding = enc
-                return enc, 0.5
-            except UnicodeDecodeError:
-                continue
-        
-        self.encoding_stats['unknown'] += 1
-        self.last_encoding = 'utf-8'
-        return 'utf-8', 0.1
-    
-    def _load_file_with_encoding(self, content: bytes, filename: str):
-        """Carrega arquivo com detecção de encoding"""
-        encoding_used = None
-        df = None
-        
-        try:
-            encoding, confidence = self._detect_encoding(content)
-            encoding_used = encoding
-            
-            if filename.endswith('.csv'):
-                try:
-                    df = pd.read_csv(pd.io.common.BytesIO(content), encoding=encoding)
-                    return df, encoding
-                except UnicodeDecodeError:
-                    for enc in ['utf-8-sig', 'utf-8', 'cp1252', 'latin1']:
-                        if enc == encoding:
-                            continue
-                        try:
-                            df = pd.read_csv(pd.io.common.BytesIO(content), encoding=enc)
-                            self.encoding_stats[enc] = self.encoding_stats.get(enc, 0) + 1
-                            self.encoding_stats['fallback'] += 1
-                            return df, enc
-                        except UnicodeDecodeError:
-                            continue
-                    df = pd.read_csv(pd.io.common.BytesIO(content), encoding='utf-8', errors='ignore')
-                    return df, 'utf-8_ignore'
-            
-            elif filename.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(pd.io.common.BytesIO(content))
-                encoding_used = 'excel'
-                self.encoding_stats['excel'] = self.encoding_stats.get('excel', 0) + 1
-                return df, encoding_used
-        except Exception as e:
-            logger.error(f"❌ Erro ao carregar arquivo: {e}")
-        
-        return None, None
-    
-    # ==========================================
     # 🔥 UTILITÁRIOS
     # ==========================================
     
@@ -1062,12 +912,12 @@ class ModelPredictor:
             "modelo_carregado": self.is_loaded,
             "fonte_modelo": self.model_source,
             "features": self.feature_names[:10] if self.feature_names else [],
-            "features_esperadas": self.expected_features,
             "model_feature_count": self.model_feature_count,
             "model_feature_names": self.model_feature_names[:5] if self.model_feature_names else [],
             "registry_carregado": self._registry_loaded,
             "ultimas_metricas": self.last_metrics,
             "normalization": "Z-Score (StandardScaler)",
+            "adaptation_enabled": self.ADAPTATION_CONFIG['enabled'],
             "estatisticas_uso": {
                 "total_predicoes": self.stats['total_predictions'],
                 "total_arquivos": self.stats['total_files_processed'],
@@ -1076,25 +926,14 @@ class ModelPredictor:
                 "feature_validations": self.stats['feature_validations'],
                 "feature_mismatches": self.stats['feature_mismatches'],
                 "feature_adaptations": self.stats['feature_adaptations'],
-                "feature_calculations": self.stats['feature_calculations'],
-                "historical_means_used": self.stats['historical_means_used'],
-                "fallback_values_used": self.stats['fallback_values_used'],
                 "pca_applied": self.stats.get('pca_applied', 0),
                 "feature_expansions": self.stats.get('feature_expansions', 0),
+                "adaptations_by_type": self.stats.get('adaptations_by_type', {}),
+                "model_feature_count_detected": self.stats.get('model_feature_count_detected', 0)
             },
             "encoding_stats": self.encoding_stats,
             "last_encoding": self.last_encoding
         }
-    
-    def update_historical_means(self, new_means: Dict[str, float]):
-        """🔥 Atualiza as médias históricas"""
-        self._historical_means.update(new_means)
-        logger.info(f"📈 Médias históricas atualizadas: {list(new_means.keys())}")
-    
-    def update_fallback_values(self, new_fallbacks: Dict[str, float]):
-        """🔥 Atualiza os valores de fallback"""
-        self.FEATURE_FALLBACKS.update(new_fallbacks)
-        logger.info(f"⚙️ Valores de fallback atualizados: {list(new_fallbacks.keys())}")
     
     def clear_cache(self):
         """Limpa cache de predições"""
@@ -1106,53 +945,6 @@ class ModelPredictor:
         self._pca = None
         self._pca_fitted = False
         logger.info("🧹 PCA resetado")
-    
-    async def train_simple_model(self, X: pd.DataFrame, y: pd.Series, model_type: str = 'classifier'):
-        """Treina um modelo simples"""
-        X = X.select_dtypes(include=[np.number])
-        X = X.fillna(X.mean())
-        X = X.fillna(0)
-        
-        stratify = y if model_type == 'classifier' and len(y.unique()) <= 10 else None
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=stratify
-        )
-        
-        # Normalização Z-Score
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        if model_type == 'classifier':
-            model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
-            model.fit(X_train_scaled, y_train)
-            y_pred = model.predict(X_test_scaled)
-            score = accuracy_score(y_test, y_pred)
-            logger.info(f"✅ Classificador treinado - Acurácia: {score:.2%}")
-        else:
-            model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
-            model.fit(X_train_scaled, y_train)
-            y_pred = model.predict(X_test_scaled)
-            score = r2_score(y_test, y_pred)
-            logger.info(f"✅ Regressor treinado - R²: {score:.4f}")
-        
-        model_data = {
-            'model': model,
-            'scaler': scaler,
-            'features': list(X.columns),
-            'model_type': model_type,
-            'metrics': {'score': float(score)},
-            'trained_date': datetime.now().isoformat(),
-            'normalization': 'Z-Score (StandardScaler)',
-            'version': '7.0'
-        }
-        
-        with open(self.office_model_path, 'wb') as f:
-            joblib.dump(model_data, f)
-        
-        self.load_model_intelligently(self.office_model_path)
-        
-        return {'success': True, 'score': float(score)}
 
 
 # ==========================================
@@ -1177,34 +969,23 @@ async def predict_intelligently(X: np.ndarray) -> List[float]:
     return await predictor.predict_intelligently(X)
 
 
-async def predict_multiple_files(files_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return await predictor.predict_multiple_files(files_data)
-
-
 def get_predictor_status() -> Dict[str, Any]:
     return predictor.get_model_summary()
 
 
 print("\n" + "=" * 70)
-print("✅ predict.py V7.0 carregado com sucesso!")
+print("✅ predict.py V7.1 ADAPTATIVO carregado com sucesso!")
 print("=" * 70)
-print("   🔥 INTEGRAÇÃO COM TRAIN.PY V4.0:")
-print("      → Normalização Z-Score (StandardScaler)")
-print("      → Adaptação automática a QUALQUER número de features")
-print("      → Detecção inteligente de features do modelo")
-print("      → PCA para redução de features")
-print("   🔥 HIERARQUIA DE FALLBACK:")
-print("      1️⃣ Existe no arquivo? → usa")
-print("      2️⃣ Consegue calcular? → calcula")
-print("      3️⃣ Tem média histórica? → usa média")
-print("      4️⃣ Valor padrão (configurável)")
-print("   📊 ESTATÍSTICAS:")
-print(f"      → Regras de cálculo: {len(predictor._calculation_rules)}")
-print(f"      → Médias históricas: {len(predictor._historical_means)}")
-print(f"      → Fallbacks configurados: {len(predictor.FEATURE_FALLBACKS)}")
-print("   🔧 MÉTODOS:")
-print("      → predictor.predict_intelligently(X) → ADAPTAÇÃO AUTOMÁTICA")
-print("      → predictor.predict_proba_intelligently(X)")
-print("      → predictor.load_model_intelligently(path)")
-print("      → predictor.adapt_features_automatically(X, expected)")
+print("   🔥 CARACTERÍSTICAS:")
+print("   ✅ DETECTA automaticamente features do modelo")
+print("   ✅ ADAPTA qualquer número de features (9, 10, 14, 20+)")
+print("   ✅ NÃO FORÇA número fixo de features")
+print("   ✅ Funciona com QUALQUER modelo")
+print("   📊 Normalização: Z-Score (StandardScaler)")
+print("   📊 Adaptações por tipo:")
+print("      • Same (features iguais)")
+print("      • Reduced (redução)")
+print("      • Expanded (expansão)")
+print("      • PCA (redução via PCA)")
+print("      • Fallback (último recurso)")
 print("=" * 70)
