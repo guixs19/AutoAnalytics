@@ -40,18 +40,17 @@
         }
         body.app-ready { opacity: 1; }
 
-       
         .navbar-modern {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(20px);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-    padding: 0.6rem 0;
-    position: fixed;
-    width: 100%;
-    top: 0;
-    z-index: 1000;
-    border-bottom: 3px solid rgba(255, 107, 53, 0.3);
-}
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            padding: 0.6rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+        }
         .navbar-modern .container {
             display: flex;
             justify-content: space-between;
@@ -717,7 +716,7 @@
         .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.6rem; margin-top: 0.3rem; }
 
         /* ==============================================
-                   MENSAGENS
+                   MENSAGENS (Container vazio - apenas para o MessageGuide do dashboard)
                 ============================================== */
         #messageContainer {
             position: fixed;
@@ -773,120 +772,6 @@
         .message-dismiss:hover { opacity: 1; }
 
         /* ==============================================
-                   WELCOME
-                ============================================== */
-        .welcome-notification {
-            position: fixed;
-            top: 75px;
-            right: 15px;
-            max-width: 350px;
-            width: 100%;
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
-            border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 14px;
-            padding: 0.8rem 1rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-            z-index: 9998;
-            transform: translateX(120%);
-            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            backdrop-filter: blur(20px);
-        }
-        .welcome-notification.show { transform: translateX(0); }
-        .welcome-notification .notif-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-            color: white;
-            flex-shrink: 0;
-        }
-        .welcome-notification .notif-content { flex: 1; }
-        .welcome-notification .notif-title {
-            font-size: 0.85rem;
-            font-weight: 800;
-            color: #ff6b35;
-            margin-bottom: 0.05rem;
-        }
-        .welcome-notification .notif-subtitle {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.6);
-            margin-bottom: 0.2rem;
-        }
-        .welcome-notification .notif-credits {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            background: rgba(255, 107, 53, 0.12);
-            border: 1px solid rgba(255, 107, 53, 0.2);
-            border-radius: 50px;
-            padding: 0.1rem 0.6rem;
-            font-size: 0.9rem;
-            font-weight: 800;
-            color: #f5a623;
-        }
-        .welcome-notification .notif-credits i { color: #ff6b35; font-size: 0.8rem; }
-        .welcome-notification .notif-actions {
-            display: flex;
-            gap: 0.3rem;
-            margin-top: 0.3rem;
-            flex-wrap: wrap;
-        }
-        .welcome-notification .notif-btn {
-            padding: 0.2rem 0.7rem;
-            border-radius: 50px;
-            border: none;
-            font-weight: 600;
-            font-size: 0.65rem;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-        .welcome-notification .notif-btn-primary {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-        }
-        .welcome-notification .notif-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,0.4); }
-        .welcome-notification .notif-btn-secondary {
-            background: rgba(255, 255, 255, 0.06);
-            color: rgba(255, 255, 255, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .welcome-notification .notif-btn-secondary:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
-        .welcome-notification .notif-close {
-            position: absolute;
-            top: 4px;
-            right: 6px;
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 0.8rem;
-            cursor: pointer;
-            padding: 0.1rem 0.2rem;
-            border-radius: 4px;
-        }
-        .welcome-notification .notif-close:hover { color: white; background: rgba(255,255,255,0.05); }
-        .welcome-notification .notif-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 0 0 14px 14px;
-            overflow: hidden;
-        }
-        .welcome-notification .notif-progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            border-radius: 0 0 14px 14px;
-            transition: width 6s linear;
-            width: 100%;
-        }
-
-        /* ==============================================
                    MODAIS
                 ============================================== */
         .modal-content-custom {
@@ -912,7 +797,6 @@
             .result-stat .stat-value { font-size: 1.1rem; }
             .chart-container canvas { max-height: 70px; }
             #messageContainer { top: 95px; right: 10px; left: 10px; max-width: none; }
-            .welcome-notification { top: 95px; right: 10px; left: 10px; max-width: none; padding: 0.6rem 0.8rem; }
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
             .ai-report-card { max-height: 150px; }
@@ -984,36 +868,9 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 MENSAGENS -->
+    <!-- 🔥 MENSAGENS (Container para o MessageGuide do dashboard) -->
     <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
-
-    <!-- ============================================== -->
-    <!-- 🔥 NOTIFICAÇÃO DE BOAS-VINDAS -->
-    <!-- ============================================== -->
-    <div class="welcome-notification" id="welcomeNotification" role="alert">
-        <button class="notif-close" id="notifClose"><i class="fas fa-times"></i></button>
-        <div class="d-flex align-items-start gap-2">
-            <div class="notif-icon"><i class="fas fa-gift"></i></div>
-            <div class="notif-content">
-                <div class="notif-title" id="notifTitle">🎉 Bem-vindo!</div>
-                <div class="notif-subtitle" id="notifSubtitle">
-                    Você ganhou <strong id="notifCreditsHighlight">3</strong> créditos grátis
-                </div>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="notif-credits">
-                        <i class="fas fa-coins"></i>
-                        <span id="notifCreditsCount">3</span>
-                    </span>
-                </div>
-                <div class="notif-actions">
-                    <button class="notif-btn notif-btn-primary" id="notifGoDashboard"><i class="fas fa-chart-line me-1"></i> Dashboard</button>
-                    <button class="notif-btn notif-btn-secondary" id="notifDismiss">Entendi</button>
-                </div>
-            </div>
-        </div>
-        <div class="notif-progress"><div class="notif-progress-bar" id="notifProgressBar"></div></div>
-    </div>
 
     <!-- ============================================== -->
     <!-- 🔥 LOADING -->
@@ -1445,14 +1302,10 @@
     </template>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - VERSÕES ATUALIZADAS -->
+    <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
     
-        <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS - VERSÕES ATUALIZADAS (v9.1) -->
-    <!-- ============================================== -->
-    
-    <!-- 1️⃣ BIBLIOTECAS (Carregamento otimizado) -->
+    <!-- 1️⃣ BIBLIOTECAS -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
@@ -1466,290 +1319,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
-   <!-- ============================================== -->
-<!-- 🔥 SCRIPTS - ORDEM CORRETA (CRÍTICA!) -->
-<!-- ============================================== -->
-
-<!-- 1️⃣ APP (Orquestrador) - PRIMEIRO -->
-<script src="/static/js/app.js?ver=7.8.0" defer></script>
-
-<!-- 2️⃣ AUTH - SEGUNDO (DEPENDE DO APP) -->
-<script src="/static/js/auth.js?ver=4.3.0" defer></script>
-
-<!-- 3️⃣ POW - TERCEIRO (DEPENDE DO APP) -->
-<script src="/static/js/pow-client.js?ver=5.2" defer></script>
-
-<!-- 4️⃣ PAYMENT - QUARTO -->
-<script src="/static/js/payment.js?ver=7.2.0" defer></script>
-
-<!-- 5️⃣ DASHBOARD - QUINTO (DEPENDE DE AUTH) -->
-<script src="/static/js/dashboard.js?ver=16.9" defer></script>
-
-<!-- 6️⃣ UPLOAD E RELATÓRIO -->
-<script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
-<script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 PDF GENERATOR - RELATÓRIO EM LINGUAGEM NATURAL -->
-    <!-- ============================================== -->
-    <script>
-    (function() {
-        'use strict';
-
-        window.generateFinancePDF = function(analysisData) {
-            console.log('📄 Gerando PDF com relatório em linguagem natural...');
-            
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('p', 'mm', 'a4');
-            
-            // Cores
-            const primaryColor = [255, 107, 53];
-            const secondaryColor = [72, 187, 120];
-            
-            // ==============================================
-            // 1. CABEÇALHO
-            // ==============================================
-            doc.setFillColor(15, 12, 41);
-            doc.rect(0, 0, 210, 40, 'F');
-            
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(22);
-            doc.setFont('helvetica', 'bold');
-            doc.text('📊 AutoAnalytics', 20, 25);
-            
-            doc.setFontSize(12);
-            doc.setFont('helvetica', 'normal');
-            doc.text('Relatório de Análise Financeira', 20, 33);
-            
-            doc.setFontSize(8);
-            doc.setTextColor(200, 200, 200);
-            doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR'), 20, 39);
-            
-            // ==============================================
-            // 2. MÉTRICAS PRINCIPAIS
-            // ==============================================
-            let yPos = 55;
-            
-            doc.setTextColor(50, 50, 50);
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text('📈 Métricas da Análise', 20, yPos);
-            yPos += 8;
-            
-            const metrics = analysisData?.metrics || {};
-            const predictions = analysisData?.predictions || [];
-            const recommendations = analysisData?.recommendations || [];
-            const aiReport = analysisData?.ai_report || '';
-            
-            const totalRegistros = metrics.dataset_rows || predictions.length || 0;
-            const scoreMedio = metrics.mean_prediction || 0.65;
-            const highRisk = metrics.high_risk_percentage || 0;
-            const lowRisk = metrics.low_risk_percentage || 0;
-            
-            const metricsData = [
-                { label: 'Total Registros', value: totalRegistros.toLocaleString(), icon: '📋' },
-                { label: 'Score Médio', value: (scoreMedio * 100).toFixed(0) + '%', icon: '📈' },
-                { label: 'Alto Risco', value: highRisk.toFixed(0) + '%', icon: '🔴' },
-                { label: 'Baixo Risco', value: lowRisk.toFixed(0) + '%', icon: '🟢' }
-            ];
-            
-            const colWidth = 42;
-            const startX = 20;
-            
-            metricsData.forEach((item, index) => {
-                const x = startX + (index * colWidth);
-                
-                doc.setFillColor(245, 245, 245);
-                doc.roundedRect(x, yPos, colWidth - 2, 28, 3, 3, 'F');
-                
-                doc.setTextColor(100, 100, 100);
-                doc.setFontSize(7);
-                doc.setFont('helvetica', 'normal');
-                doc.text(item.icon + ' ' + item.label, x + 3, yPos + 6);
-                
-                doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text(item.value, x + 3, yPos + 22);
-            });
-            
-            yPos += 38;
-            
-            // ==============================================
-            // 3. RELATÓRIO DA IA (LINGUAGEM NATURAL)
-            // ==============================================
-            doc.setTextColor(50, 50, 50);
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text('🤖 Relatório da IA', 20, yPos);
-            yPos += 8;
-            
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            
-            let reportText = aiReport || '';
-            
-            if (!reportText) {
-                reportText = `📊 Análise concluída com sucesso!\n\n` +
-                           `📈 Foram analisados ${totalRegistros} registros, com um score médio de ${(scoreMedio * 100).toFixed(0)}%.\n\n` +
-                           `🔴 ${highRisk.toFixed(0)}% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n` +
-                           `🟢 ${lowRisk.toFixed(0)}% dos casos são de baixo risco, demonstrando boa performance.\n\n` +
-                           `💡 Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.`;
-            }
-            
-            const reportLines = doc.splitTextToSize(reportText, 170);
-            doc.text(reportLines, 20, yPos);
-            yPos += (reportLines.length * 6) + 10;
-            
-            // ==============================================
-            // 4. RECOMENDAÇÕES
-            // ==============================================
-            doc.setTextColor(50, 50, 50);
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text('🎯 Recomendações', 20, yPos);
-            yPos += 8;
-            
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            
-            const recs = recommendations.length > 0 ? recommendations : [
-                '📊 Monitorar KPIs mensalmente para acompanhar evolução',
-                '🔄 Revisar dados periodicamente para identificar tendências',
-                '📈 Comparar resultados com metas estabelecidas',
-                '💡 Utilizar insights para otimização operacional'
-            ];
-            
-            recs.slice(0, 4).forEach(rec => {
-                const maxWidth = 160;
-                const lines = doc.splitTextToSize('• ' + rec, maxWidth);
-                doc.text(lines, 22, yPos);
-                yPos += (lines.length * 6) + 2;
-            });
-            
-            yPos += 5;
-            
-            // ==============================================
-            // 5. DADOS DO GRÁFICO (TABELA RESUMO)
-            // ==============================================
-            const chartData = analysisData?.chart_data?.weekly || {};
-            const labels = chartData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-            const revenue = chartData.revenue || [];
-            const costs = chartData.costs || [];
-            
-            if (revenue.length > 0) {
-                doc.setTextColor(50, 50, 50);
-                doc.setFontSize(12);
-                doc.setFont('helvetica', 'bold');
-                doc.text('📊 Dados Semanais', 20, yPos);
-                yPos += 7;
-                
-                doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-                doc.rect(20, yPos, 170, 6, 'F');
-                doc.setTextColor(255, 255, 255);
-                doc.setFontSize(6);
-                doc.setFont('helvetica', 'bold');
-                
-                const colWidths = [22, 22, 22, 22, 22, 22, 22];
-                let xPos = 22;
-                
-                labels.forEach((label, i) => {
-                    doc.text(label, xPos, yPos + 4.5);
-                    xPos += colWidths[i] || 22;
-                });
-                
-                yPos += 8;
-                
-                doc.setTextColor(50, 50, 50);
-                doc.setFontSize(6);
-                doc.setFont('helvetica', 'normal');
-                
-                xPos = 22;
-                revenue.forEach((val, i) => {
-                    const formatted = 'R$ ' + (val || 0).toFixed(0);
-                    doc.text(formatted, xPos, yPos + 4);
-                    xPos += colWidths[i] || 22;
-                });
-                
-                yPos += 6;
-                
-                xPos = 22;
-                costs.forEach((val, i) => {
-                    const formatted = 'R$ ' + (val || 0).toFixed(0);
-                    doc.text(formatted, xPos, yPos + 4);
-                    xPos += colWidths[i] || 22;
-                });
-                
-                yPos += 10;
-            }
-            
-            // ==============================================
-            // 6. RODAPÉ
-            // ==============================================
-            doc.setFillColor(15, 12, 41);
-            doc.rect(0, 280, 210, 17, 'F');
-            
-            doc.setTextColor(200, 200, 200);
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'normal');
-            doc.text('AutoAnalytics v9.0 - Relatório gerado automaticamente por IA', 20, 290);
-            doc.text('Página 1/1', 170, 290);
-            
-            // ==============================================
-            // 7. SALVAR PDF
-            // ==============================================
-            doc.save('Relatorio_AutoAnalytics.pdf');
-            console.log('✅ PDF gerado com sucesso!');
-        };
-
-        // Event listener para o botão de PDF
-        document.addEventListener('DOMContentLoaded', function() {
-            const pdfBtn = document.getElementById('downloadPdfBtn');
-            if (pdfBtn) {
-                pdfBtn.addEventListener('click', function() {
-                    // 🔥 Buscar dados do UploadSystem ou _lastResult
-                    let analysisData = null;
-                    
-                    if (window.UploadSystem && typeof window.UploadSystem.getResult === 'function') {
-                        analysisData = window.UploadSystem.getResult();
-                    }
-                    
-                    if (!analysisData && window._lastResult) {
-                        analysisData = window._lastResult;
-                    }
-                    
-                    if (!analysisData) {
-                        toastr.warning('Aguardando dados da análise...');
-                        return;
-                    }
-                    
-                    // 🔥 Extrair dados no formato esperado pelo PDF
-                    const metrics = analysisData.metrics || {};
-                    const chartData = analysisData.chart_data || {};
-                    const recommendations = analysisData.recommendations || [];
-                    const aiReport = analysisData.ai_report || analysisData.executive_summary || '';
-                    
-                    const pdfData = {
-                        metrics: {
-                            dataset_rows: metrics.total_predictions || analysisData.rows_processed || 0,
-                            mean_prediction: metrics.mean || analysisData.confidence_score || 0.65,
-                            high_risk_percentage: metrics.high_risk_percentage || 0,
-                            low_risk_percentage: metrics.low_risk_percentage || 0
-                        },
-                        predictions: [],
-                        recommendations: recommendations,
-                        chart_data: chartData,
-                        ai_report: aiReport
-                    };
-                    
-                    window.generateFinancePDF(pdfData);
-                });
-            }
-        });
-
-        console.log('✅ PDF Generator carregado!');
-    })();
-    </script>
+    <!-- 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRETA -->
+    <script src="/static/js/app.js?ver=7.8.0" defer></script>
+    <script src="/static/js/auth.js?ver=4.3.0" defer></script>
+    <script src="/static/js/pow-client.js?ver=5.2" defer></script>
+    <script src="/static/js/payment.js?ver=7.2.0" defer></script>
+    <script src="/static/js/dashboard.js?ver=16.16" defer></script>
+    <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
+    <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO CORRIGIDO (v3) -->
@@ -1757,7 +1334,7 @@
     <script>
     (function() {
         'use strict';
-        console.log('🔐 Inicializando fallback de autenticação v3 (CORRIGIDO)...');
+        console.log('🔐 Inicializando fallback de autenticação v3...');
         
         function getApp() { return window.App || window.app || window.autoAnalytics; }
         
@@ -1772,10 +1349,8 @@
             window.location.replace('/login');
         }
         
-        // 🔥 FUNÇÃO CORRIGIDA - TRATA isAuthenticated COMO PROPRIEDADE
         function isAuthenticated() {
             try {
-                // 1. Via appAuth (propriedade)
                 if (window.appAuth) {
                     if (typeof window.appAuth.isAuthenticated === 'boolean') {
                         return window.appAuth.isAuthenticated;
@@ -1787,8 +1362,6 @@
                         return true;
                     }
                 }
-                
-                // 2. Via App
                 var app = getApp();
                 if (app) {
                     if (typeof app.isAuthenticated === 'boolean') {
@@ -1798,13 +1371,9 @@
                         return app.isAuthenticated();
                     }
                 }
-                
-                // 3. Via __APP_STATE
                 if (window.__APP_STATE && window.__APP_STATE.tokenValid === true) {
                     return true;
                 }
-                
-                // 4. Via localStorage
                 var token = localStorage.getItem('access_token');
                 return token && token.length > 10;
             } catch (e) {
@@ -1870,11 +1439,8 @@
         console.log('🔧 [Emergency Fix] Aplicando correção para appAuth.isAuthenticated...');
         
         function fixAppAuth() {
-            if (!window.appAuth) {
-                return false;
-            }
+            if (!window.appAuth) { return false; }
             
-            // Se for função, converte para getter
             if (typeof window.appAuth.isAuthenticated === 'function') {
                 try {
                     var currentValue = window.appAuth.isAuthenticated();
@@ -1901,14 +1467,11 @@
             return false;
         }
         
-        // Tenta corrigir imediatamente
         if (fixAppAuth()) return;
         
-        // Aguarda eventos
         document.addEventListener('authReady', function() { fixAppAuth(); });
         document.addEventListener('app:ready', function() { fixAppAuth(); });
         
-        // Fallback: tenta a cada 500ms até 10 segundos
         var attempts = 0;
         var maxAttempts = 20;
         var interval = setInterval(function() {
@@ -1926,362 +1489,32 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE MENSAGENS INTELIGENTES -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            console.log('📢 Inicializando MessageRenderer v2...');
-            
-            class MessageRenderer {
-                constructor() {
-                    this.container = document.getElementById('messageContainer');
-                    this._dismissedMessages = new Set();
-                    this._autoDismissTimer = null;
-                    this._lastRendered = null;
-                    if (!this.container) { console.warn('⚠️ messageContainer não encontrado'); return; }
-                    this._loadDismissedState();
-                    this._setupListeners();
-                    setTimeout(() => this.render(), 400);
-                    console.log('✅ MessageRenderer v2 inicializado');
-                }
-                
-                _loadDismissedState() {
-                    try {
-                        var saved = localStorage.getItem('_dismissed_messages');
-                        if (saved) {
-                            var parsed = JSON.parse(saved);
-                            if (Array.isArray(parsed)) { this._dismissedMessages = new Set(parsed); }
-                        }
-                    } catch (e) {}
-                }
-                
-                _saveDismissedState() {
-                    try {
-                        var arr = Array.from(this._dismissedMessages);
-                        localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
-                    } catch (e) {}
-                }
-                
-                _setupListeners() {
-                    window.addEventListener('app:state_changed', (e) => {
-                        var detail = e.detail || {};
-                        if (detail.key === 'currentMessage' || detail.key === 'userSegment' || detail.key === 'credits') {
-                            setTimeout(() => this.render(), 100);
-                        }
-                    });
-                    window.addEventListener('message:context_updated', (e) => { setTimeout(() => this.render(), 150); });
-                    document.addEventListener('creditsUpdated', (e) => { setTimeout(() => this.render(), 200); });
-                    window.addEventListener('app:ready', (e) => { setTimeout(() => this.render(), 300); });
-                    window.addEventListener('authReady', (e) => { setTimeout(() => this.render(), 500); });
-                    window.addEventListener('authLoginSuccess', (e) => { setTimeout(() => this.render(), 600); });
-                }
-                
-                render() {
-                    var state = window.__APP_STATE || window.App?.State;
-                    if (!state) return;
-                    var message = state.currentMessage;
-                    var segment = state.userSegment;
-                    var credits = state.credits;
-                    if (!message) { this._hideContainer(); return; }
-                    var messageId = message.message_id || segment + '_' + credits;
-                    if (this._dismissedMessages.has(messageId)) { this._hideContainer(); return; }
-                    this._renderMessage(message, segment, credits);
-                    this._lastRendered = messageId;
-                }
-                
-                _renderMessage(message, segment, credits) {
-                    if (!this.container) return;
-                    var title = message.title || 'Mensagem';
-                    var icon = message.icon || 'fa-info-circle';
-                    var color = message.color || 'info';
-                    var msgText = message.message || '';
-                    var show_action = message.show_action || false;
-                    var action_text = message.action_text || 'Ver mais';
-                    var action_url = message.action_url || '#';
-                    var dismissible = message.dismissible !== undefined ? message.dismissible : true;
-                    var priority = message.priority || 0;
-                    var message_id = message.message_id || '';
-                    var colorClass = this._getColorClass(color);
-                    var iconClass = icon;
-                    var segmentClass = segment === 'new' ? 'new-user-message' : segment === 'premium' ? 'premium-message' : '';
-                    var isExternal = action_url.startsWith('http') || action_url.startsWith('//');
-                    var targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
-                    
-                    this.container.innerHTML = `
-                        <div class="message-banner message-${colorClass} ${segmentClass}" data-message-id="${message_id}" data-priority="${priority}">
-                            <div class="message-content">
-                                <div class="message-icon"><i class="fas ${iconClass}"></i></div>
-                                <div class="message-text">
-                                    <div class="message-title">${title}</div>
-                                    <div class="message-body">${msgText}</div>
-                                    ${show_action ? `<div class="message-action"><a href="${action_url}" class="btn btn-${colorClass}" ${targetAttr}>${action_text} <i class="fas fa-arrow-right ms-1"></i></a></div>` : ''}
-                                </div>
-                                ${dismissible ? `<button class="message-dismiss btn-close" aria-label="Fechar"></button>` : ''}
-                            </div>
-                        </div>
-                    `;
-                    this.container.style.display = 'block';
-                    
-                    var dismissBtn = this.container.querySelector('.message-dismiss');
-                    if (dismissBtn) {
-                        dismissBtn.addEventListener('click', () => {
-                            var id = this.container.dataset.messageId || message_id;
-                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
-                            this._hideContainer();
-                            window.dispatchEvent(new CustomEvent('message:dismissed', { detail: { messageId: id, segment: segment, credits: credits } }));
-                        });
-                    }
-                    
-                    requestAnimationFrame(() => {
-                        var banner = this.container.querySelector('.message-banner');
-                        if (banner) { banner.classList.add('message-visible'); }
-                    });
-                    
-                    if (priority <= 1 && dismissible) {
-                        clearTimeout(this._autoDismissTimer);
-                        this._autoDismissTimer = setTimeout(() => {
-                            var id = this.container.dataset.messageId || message_id;
-                            if (id) { this._dismissedMessages.add(id); this._saveDismissedState(); }
-                            this._hideContainer();
-                        }, 8000);
-                    }
-                }
-                
-                _getColorClass(color) {
-                    var map = { 'success': 'success', 'warning': 'warning', 'info': 'info', 'danger': 'danger', 'primary': 'primary', 'premium': 'premium', 'dark': 'dark' };
-                    return map[color] || 'info';
-                }
-                
-                _hideContainer() {
-                    if (this.container) { this.container.style.display = 'none'; this.container.innerHTML = ''; }
-                    clearTimeout(this._autoDismissTimer);
-                }
-                
-                refresh() { this._dismissedMessages.clear(); this._saveDismissedState(); this.render(); }
-            }
-            
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => { window.messageRenderer = new MessageRenderer(); });
-            } else {
-                setTimeout(() => { window.messageRenderer = new MessageRenderer(); }, 300);
-            }
-            console.log('✅ MessageRenderer v2 carregado');
-        })();
-    </script>
-
-    <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE NOTIFICAÇÃO DE NOVOS USUÁRIOS -->
-    <!-- ============================================== -->
-    <script>
-        (function() {
-            'use strict';
-            console.log('🔔 Inicializando sistema de notificação de boas-vindas v2...');
-            
-            var NOTIF_CONFIG = { AUTO_CLOSE_DELAY: 6000, STORAGE_KEY: '_aa_welcome_shown', WELCOME_PERMANENT_KEY: '_aa_welcome_permanent', INITIAL_CREDITS: 3 };
-            var notification = document.getElementById('welcomeNotification');
-            var notifClose = document.getElementById('notifClose');
-            var notifDismiss = document.getElementById('notifDismiss');
-            var notifGoDashboard = document.getElementById('notifGoDashboard');
-            var notifCreditsCount = document.getElementById('notifCreditsCount');
-            var notifCreditsHighlight = document.getElementById('notifCreditsHighlight');
-            var notifTitle = document.getElementById('notifTitle');
-            var notifSubtitle = document.getElementById('notifSubtitle');
-            var progressBar = document.getElementById('notifProgressBar');
-            
-            function getUserData() {
-                try { var userData = localStorage.getItem('user_data'); if (userData) { return JSON.parse(userData); } } catch (e) {}
-                return null;
-            }
-            
-            function getCreditsFromState() {
-                try { if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) { return window.__APP_STATE.credits; } if (window.App && typeof window.App.getCredits === 'function') { return window.App.getCredits(); } } catch (e) {}
-                return null;
-            }
-            
-            function shouldShowWelcome() {
-                try {
-                    if (sessionStorage.getItem(NOTIF_CONFIG.STORAGE_KEY) === 'true') { return false; }
-                    if (localStorage.getItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY) === 'true') { return false; }
-                    var user = getUserData();
-                    if (user && user.is_admin === true) { localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true'); return false; }
-                    var credits = getCreditsFromState() || (user ? user.credits : 0);
-                    if (credits < NOTIF_CONFIG.INITIAL_CREDITS && credits > 0) { return false; }
-                    if (user && user.created_at) {
-                        var createdAt = new Date(user.created_at);
-                        var now = new Date();
-                        var diffMinutes = (now - createdAt) / (1000 * 60);
-                        if (diffMinutes < 5) { return true; }
-                    }
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        var totalAnalyses = user ? user.total_analyses || 0 : 0;
-                        if (totalAnalyses === 0) { return true; }
-                    }
-                    return false;
-                } catch (e) { return false; }
-            }
-            
-            function setupNotificationContent() {
-                var user = getUserData();
-                var credits = getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS;
-                var userName = user && user.name ? user.name.split(' ')[0] : 'Usuário';
-                if (notifCreditsCount) notifCreditsCount.textContent = credits;
-                if (notifCreditsHighlight) notifCreditsHighlight.textContent = credits;
-                if (notifTitle) notifTitle.textContent = '🎉 Bem-vindo(a), ' + userName + '!';
-                if (notifSubtitle) {
-                    if (credits > 0) {
-                        notifSubtitle.innerHTML = 'Você ganhou <strong>' + credits + ' créditos grátis</strong> para começar suas análises.';
-                    } else {
-                        notifSubtitle.textContent = 'Comece agora mesmo suas análises com inteligência artificial.';
-                    }
-                }
-            }
-            
-            function showWelcomeNotification() {
-                if (!notification) return;
-                setupNotificationContent();
-                notification.classList.add('show');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-                startAutoClose();
-                window.dispatchEvent(new CustomEvent('welcome:shown', { detail: { credits: getCreditsFromState() || NOTIF_CONFIG.INITIAL_CREDITS, timestamp: Date.now() } }));
-                console.log('🔔 Notificação de boas-vindas exibida!');
-            }
-            
-            function startAutoClose() {
-                if (!progressBar) return;
-                progressBar.style.width = '100%';
-                progressBar.style.transition = 'none';
-                void progressBar.offsetWidth;
-                progressBar.style.transition = 'width ' + NOTIF_CONFIG.AUTO_CLOSE_DELAY + 'ms linear';
-                setTimeout(function() { progressBar.style.width = '0%'; }, 50);
-                clearTimeout(window._notifTimer);
-                window._notifTimer = setTimeout(function() { dismissNotification(); }, NOTIF_CONFIG.AUTO_CLOSE_DELAY + 500);
-            }
-            
-            function dismissNotification() {
-                if (!notification) return;
-                notification.classList.remove('show');
-                clearTimeout(window._notifTimer);
-                localStorage.setItem(NOTIF_CONFIG.WELCOME_PERMANENT_KEY, 'true');
-                sessionStorage.setItem(NOTIF_CONFIG.STORAGE_KEY, 'true');
-                window.dispatchEvent(new CustomEvent('welcome:dismissed', { detail: { timestamp: Date.now() } }));
-                console.log('🔔 Notificação fechada');
-            }
-            
-            function goToDashboard() {
-                dismissNotification();
-                window.location.href = '/dashboard';
-            }
-            
-            function setupEvents() {
-                if (notifClose) notifClose.addEventListener('click', dismissNotification);
-                if (notifDismiss) notifDismiss.addEventListener('click', dismissNotification);
-                if (notifGoDashboard) notifGoDashboard.addEventListener('click', goToDashboard);
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape' && notification && notification.classList.contains('show')) {
-                        dismissNotification();
-                    }
-                });
-                if (notification) {
-                    notification.addEventListener('mouseenter', function() {
-                        clearTimeout(window._notifTimer);
-                        if (progressBar) {
-                            progressBar.style.transition = 'none';
-                            progressBar.style.width = progressBar.style.width || '100%';
-                        }
-                    });
-                    notification.addEventListener('mouseleave', function() {
-                        var remaining = progressBar ? progressBar.style.width || '100%' : '100%';
-                        var percent = parseFloat(remaining) || 100;
-                        var remainingTime = (percent / 100) * NOTIF_CONFIG.AUTO_CLOSE_DELAY;
-                        if (remainingTime > 500) {
-                            clearTimeout(window._notifTimer);
-                            if (progressBar) {
-                                progressBar.style.transition = 'width ' + remainingTime + 'ms linear';
-                                progressBar.style.width = '0%';
-                            }
-                            window._notifTimer = setTimeout(dismissNotification, remainingTime + 500);
-                        }
-                    });
-                }
-            }
-            
-            function listenAppEvents() {
-                document.addEventListener('authLoginSuccess', function(e) {
-                    var data = e.detail || {};
-                    if (data.credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 800);
-                    }
-                });
-                document.addEventListener('app:ready', function(e) {
-                    var detail = e.detail || {};
-                    setTimeout(function() { if (detail.credits === NOTIF_CONFIG.INITIAL_CREDITS && shouldShowWelcome()) { showWelcomeNotification(); } }, 500);
-                });
-                document.addEventListener('authReady', function(e) {
-                    if (e.detail && e.detail.isAuthenticated) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
-                    }
-                });
-            }
-            
-            function init() {
-                setupEvents();
-                listenAppEvents();
-                if (window._appReadyFired || (window.App && window.App.isReady && window.App.isReady())) {
-                    setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 400);
-                }
-                if (window.appAuth && window.appAuth.isAuthenticated && window.appAuth.isAuthenticated()) {
-                    var credits = getCreditsFromState();
-                    if (credits === NOTIF_CONFIG.INITIAL_CREDITS) {
-                        setTimeout(function() { if (shouldShowWelcome()) showWelcomeNotification(); }, 600);
-                    }
-                }
-                console.log('✅ Sistema de notificação v2 inicializado!');
-            }
-            
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                setTimeout(init, 300);
-            }
-            
-            window.WelcomeNotif = { show: showWelcomeNotification, dismiss: dismissNotification, shouldShow: shouldShowWelcome };
-            console.log('✅ welcome-notification.js v2 carregado!');
-        })();
-    </script>
-    
-    <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS (v4 - CORRIGIDO) -->
+    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS -->
     <!-- ============================================== -->
     <script>
     (function() {
         'use strict';
-        console.log('🔄 [Sync] Inicializando sistema de sincronização v4 (CORRIGIDO)...');
+        console.log('🔄 [Sync] Inicializando sistema de sincronização v4...');
 
-        // 🔥 Função principal de sincronização - CORRIGIDA
         async function forceSyncCredits() {
             console.log('🔄 [Sync] Forçando sincronização de créditos...');
             
             try {
-                // 1. Via appAuth
                 if (window.appAuth && typeof window.appAuth.loadUserCredits === 'function') {
                     await window.appAuth.loadUserCredits();
                     console.log('✅ [Sync] appAuth sincronizado');
                 }
                 
-                // 2. Via dashboard
                 if (window.__dashboard && typeof window.__dashboard.syncCredits === 'function') {
                     await window.__dashboard.syncCredits();
                     console.log('✅ [Sync] dashboard sincronizado');
                 }
                 
-                // 3. Via App
                 if (window.App && typeof window.App.syncCredits === 'function') {
                     await window.App.syncCredits();
                     console.log('✅ [Sync] App sincronizado');
                 }
                 
-                // 4. Atualizar UI
                 if (window.App && typeof window.App.updateCredits === 'function') {
                     window.App.updateCredits();
                 }
@@ -2292,35 +1525,23 @@
                     window.App.updateNavbar();
                 }
                 
-                // 5. Recarregar elegibilidade
                 if (window.checkEligibility) {
                     await window.checkEligibility(true);
                 }
                 
                 console.log('✅ [Sync] Sincronização concluída!');
-                
-                if (window.toastr) {
-                    toastr.success('✅ Créditos sincronizados!');
-                }
-                
                 return true;
             } catch (e) {
                 console.error('❌ [Sync] Erro na sincronização:', e);
-                if (window.toastr) {
-                    toastr.error('Erro ao sincronizar créditos');
-                }
                 return false;
             }
         }
 
-        // 🔥 Sincronizar após eventos importantes
         document.addEventListener('analysis:success', function() {
-            console.log('📊 [Sync] Análise concluída, sincronizando em 500ms...');
             setTimeout(forceSyncCredits, 500);
         });
 
         document.addEventListener('upload:completed', function() {
-            console.log('📤 [Sync] Upload concluído, sincronizando em 500ms...');
             setTimeout(forceSyncCredits, 500);
         });
 
@@ -2331,18 +1552,10 @@
         });
 
         document.addEventListener('authLoginSuccess', function() {
-            console.log('🔐 [Sync] Login realizado, sincronizando em 300ms...');
             setTimeout(forceSyncCredits, 300);
         });
 
-        document.addEventListener('credits:synced', function(e) {
-            const data = e.detail || {};
-            console.log(`🔄 [Sync] Evento credits:synced recebido: ${data.credits || 'N/A'}`);
-        });
-
-        // 🔥 Sincronização periódica (a cada 15 segundos)
         let syncInterval = setInterval(function() {
-            // 🔥 CORRIGIDO: verifica isAuthenticated como propriedade
             var isAuth = false;
             if (window.appAuth) {
                 if (typeof window.appAuth.isAuthenticated === 'boolean') {
@@ -2356,7 +1569,6 @@
             }
         }, 15000);
 
-        // 🔥 Parar quando a página for descarregada
         window.addEventListener('beforeunload', function() {
             if (syncInterval) {
                 clearInterval(syncInterval);
@@ -2364,7 +1576,6 @@
             }
         });
 
-        // 🔥 Expor função global
         window.forceSyncCredits = forceSyncCredits;
 
         console.log('✅ [Sync] Sistema de sincronização v4 carregado!');
@@ -2401,9 +1612,7 @@
             background: rgba(255,107,53,0.25);
             transform: scale(1.05);
         }
-        #syncDebugBtn i {
-            margin-right: 4px;
-        }
+        #syncDebugBtn i { margin-right: 4px; }
         @media (max-width: 768px) {
             #syncDebugBtn {
                 bottom: 15px;
@@ -2416,5 +1625,6 @@
     <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos">
         <i class="fas fa-sync"></i> Sync
     </button>
+
 </body>
 </html>
