@@ -1,42 +1,23 @@
-// frontend/js/dashboard.js - VERSÃO 16.13 (CORREÇÃO COMPLETA)
+// frontend/js/dashboard.js - VERSÃO 16.15 (DADOS REAIS DO ML)
 /**
- * 🔥 Dashboard Module - AutoAnalytics v16.13
+ * 🔥 Dashboard Module - AutoAnalytics v16.15
  * 
- * ✅ CORREÇÕES v16.13:
- * - 🔥 CORRIGIDO: window.appAuth?.isAuthenticated (é PROPRIEDADE, não função)
- * - 🔥 CORRIGIDO: Utils.isAuthenticated() agora trata como propriedade
- * - 🔥 CORRIGIDO: Erro de bind no construtor (this._handleCreditsUpdated)
- * - 🔥 CORRIGIDO: Verificação de autenticação em todos os lugares
- * - 🔥 CORRIGIDO: Sync de créditos com backend via /auth/me
- * - 🔥 MELHORADO: Tratamento de erros e fallbacks
- * - 🔥 MELHORADO: Performance com debounce e throttle
- * - 🔥 MANTIDAS: TODAS as funções de gráficos, GPSA, polling, etc
- * 
- * ✅ MANTIDO v16.11:
- * - TODAS as funções originais
- * - NÃO CONSOLE créditos no upload
- * - Histórico de análises
- * - Alternância entre análises
- * - GPSA - Performance da Oficina
- * - 3 gráficos
+ * ✅ CORREÇÕES v16.15:
+ * - 🔥 RECEBE predições do ML e renderiza gráficos REAIS
+ * - 🔥 REMOVIDO fallback de dados para gráficos
+ * - 🔥 CORRIGIDO fluxo de dados do ML para o frontend
+ * - 🔥 MELHORADAS mensagens para guiar o usuário
+ * - 🔥 GRÁFICOS DE LINHA com dados reais
+ * - 🔥 GPSA com dados reais do ML
  */
 
 (function() {
     'use strict';
 
-    // ==============================================
-    // 🔥 CONFIGURAÇÕES (MANTIDAS)
-    // ==============================================
-
     const CONFIG = {
         MAX_FILES_PER_BATCH: 3,
         MAX_FILE_SIZE_KB: 200,
         API_BASE: '/api',
-        POLLING_INTERVAL: 30000,
-        CACHE_TTL: 300000,
-        MAX_RETRIES: 3,
-        RETRY_DELAY: 1000,
-        POW_MAX_ATTEMPTS: 3,
         
         POLLING: {
             INTERVAL: 2000,
@@ -48,12 +29,7 @@
         CREDITS: {
             COST_PER_UPLOAD: 1,
             MAX_CREDITS_PREMIUM: 3,
-            INITIAL_FREE_CREDITS: 3,
-            SYNC_INTERVAL: 15000,
-            UI_THROTTLE: 200,
-            SYNC_DEBOUNCE: 300,
-            AUTO_SYNC_DELAY: 500,
-            FORCE_SYNC_DELAY: 300,
+            SYNC_INTERVAL: 30000,
         },
         
         COLORS: {
@@ -61,25 +37,19 @@
             primaryLight: 'rgba(255,107,53,0.3)',
             primaryDark: '#e55a2b',
             success: '#48bb78',
-            successLight: 'rgba(72,187,120,0.3)',
             warning: '#f5a623',
-            warningLight: 'rgba(245,166,35,0.3)',
             danger: '#f56565',
-            dangerLight: 'rgba(245,101,101,0.3)',
             secondary: '#4a9eff',
             secondaryLight: 'rgba(74,158,255,0.3)',
             tertiary: '#9b59b6',
             tertiaryLight: 'rgba(155,89,182,0.3)',
-            background: 'rgba(255,255,255,0.05)',
             text: 'rgba(255,255,255,0.8)',
             textMuted: 'rgba(255,255,255,0.4)',
             grid: 'rgba(255,255,255,0.06)',
-            border: 'rgba(255,255,255,0.08)',
         },
         
         CHART: {
-            ANIMATION_DURATION: 800,
-            ANIMATION_EASING: 'easeOutQuart',
+            ANIMATION_DURATION: 600,
             BAR_THICKNESS: 28,
             BAR_PERCENTAGE: 0.7,
             CATEGORY_PERCENTAGE: 0.8,
@@ -87,17 +57,11 @@
             LEGEND_PADDING: 12,
             LINE_TENSION: 0.4,
             POINT_RADIUS: 4,
-        },
-        
-        TIMEOUTS: {
-            UPLOAD: 120000,
-            SYNC: 5000,
-            TOAST: 5000,
         }
     };
 
     // ==============================================
-    // 🔥 UTILITÁRIOS (CORRIGIDOS - v16.13)
+    // 🔥 UTILITÁRIOS (OTIMIZADOS)
     // ==============================================
 
     const Utils = {
@@ -108,39 +72,28 @@
                 const token = localStorage.getItem('access_token');
                 if (token && token.length > 10) return token;
                 return null;
-            } catch (e) {
-                return null;
-            }
+            } catch (e) { return null; }
         },
 
-        // 🔥 CORRIGIDO v16.13: isAuthenticated é PROPRIEDADE, não função!
         isAuthenticated: () => {
-            // 🔥 Primeiro: verifica se appAuth existe
             if (window.appAuth) {
-                // 🔥 isAuthenticated é uma PROPRIEDADE (getter) em auth.js!
                 if (typeof window.appAuth.isAuthenticated === 'boolean') {
                     return window.appAuth.isAuthenticated;
                 }
-                // Fallback: se for função (compatibilidade com versões antigas)
                 if (typeof window.appAuth.isAuthenticated === 'function') {
                     return window.appAuth.isAuthenticated();
                 }
-                // Fallback: verifica se tem userData
                 if (window.appAuth.userData && window.appAuth.userData.email) {
                     return true;
                 }
-                // Fallback: verifica via __APP_STATE
                 if (window.__APP_STATE && window.__APP_STATE.tokenValid === true) {
                     return true;
                 }
             }
-            // Fallback: verifica token
             return !!Utils.getToken();
         },
 
-        // 🔥 NOVO: Obtém créditos de forma confiável
         getCredits: () => {
-            // Tenta via appAuth
             if (window.appAuth) {
                 if (typeof window.appAuth.getCredits === 'function') {
                     return window.appAuth.getCredits() || 0;
@@ -149,26 +102,17 @@
                     return window.appAuth.userData.credits || 0;
                 }
             }
-            // Tenta via App
-            if (window.App && typeof window.App.getCredits === 'function') {
-                return window.App.getCredits() || 0;
-            }
-            // Tenta via __APP_STATE
             if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
                 return window.__APP_STATE.credits || 0;
             }
             return 0;
         },
 
-        // 🔥 NOVO: Obtém display de créditos
         getCreditsDisplay: () => {
-            if (window.App && typeof window.App.getCreditsDisplay === 'function') {
-                return window.App.getCreditsDisplay();
-            }
             if (window.appAuth && window.appAuth.userData) {
                 const credits = Utils.getCredits();
                 const isAdmin = window.appAuth.userData.is_admin || false;
-                const isPremium = window.appAuth.userData.is_premium || window.appAuth.userData.plan === 'premium_mensal' || false;
+                const isPremium = window.appAuth.userData.is_premium || false;
                 if (isAdmin) return '∞';
                 if (isPremium) return `${Math.min(credits, CONFIG.CREDITS.MAX_CREDITS_PREMIUM)}/${CONFIG.CREDITS.MAX_CREDITS_PREMIUM}`;
                 return String(credits);
@@ -178,19 +122,66 @@
 
         formatCurrency: (value) => {
             if (value === undefined || value === null || isNaN(value)) return 'R$ 0,00';
-            return 'R$ ' + value.toFixed(2).replace('.', ',');
+            return 'R$ ' + Number(value).toFixed(2).replace('.', ',');
         },
 
         formatCompactCurrency: (value) => {
             if (value === undefined || value === null || isNaN(value)) return 'R$ 0';
-            if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(1) + 'M';
-            if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(1) + 'k';
-            return 'R$ ' + value.toFixed(0);
+            const num = Number(value);
+            if (num >= 1000000) return 'R$ ' + (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return 'R$ ' + (num / 1000).toFixed(1) + 'k';
+            return 'R$ ' + num.toFixed(0);
         },
 
         formatPercentage: (value) => {
             if (value === undefined || value === null || isNaN(value)) return '0%';
-            return (value * 100).toFixed(0) + '%';
+            return (Number(value) * 100).toFixed(0) + '%';
+        },
+
+        extractRealChartData: (data) => {
+            if (!data) {
+                console.warn('⚠️ [extractRealChartData] Dados vazios');
+                return null;
+            }
+
+            console.log('🔍 [extractRealChartData] Extraindo dados do ML:', Object.keys(data));
+
+            // 🔥 PRIORIDADE 1: chart_data do ML
+            let chartData = data.chart_data || 
+                           data.result?.chart_data || 
+                           data.analysis?.chart_data || 
+                           data.data?.chart_data || 
+                           null;
+
+            // 🔥 PRIORIDADE 2: extrair do resultado
+            if (!chartData && data.result) {
+                chartData = {
+                    weekly: data.result.chart_data?.weekly || data.result.weekly || null,
+                    performance: data.result.performance || null,
+                    monthly: data.result.monthly || null
+                };
+            }
+
+            // 🔥 VERIFICAR SE TEM DADOS REAIS
+            if (chartData && chartData.weekly) {
+                const hasRevenue = chartData.weekly.revenue && chartData.weekly.revenue.some(v => v > 0);
+                const hasCosts = chartData.weekly.costs && chartData.weekly.costs.some(v => v > 0);
+                
+                if (!hasRevenue && !hasCosts) {
+                    console.warn('⚠️ [extractRealChartData] Dados vazios do ML');
+                    return null;
+                }
+                
+                console.log('✅ [extractRealChartData] Dados reais encontrados:');
+                console.log(`   Revenue: ${chartData.weekly.revenue?.length || 0} valores`);
+                console.log(`   Costs: ${chartData.weekly.costs?.length || 0} valores`);
+                console.log(`   Services: ${chartData.performance?.services?.length || 0} valores`);
+                
+                return chartData;
+            }
+
+            console.warn('⚠️ [extractRealChartData] Nenhum dado válido encontrado');
+            return null;
         },
 
         getHealthStatus: (score) => {
@@ -202,548 +193,194 @@
 
         debounce: (func, wait) => {
             let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
-                clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
-            };
-        },
-
-        throttle: (func, limit) => {
-            let inThrottle;
             return function(...args) {
-                if (!inThrottle) {
-                    func.apply(this, args);
-                    inThrottle = true;
-                    setTimeout(() => inThrottle = false, limit);
-                }
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
             };
-        },
-
-        extractChartData: (data) => {
-            if (!data) {
-                console.warn('⚠️ [extractChartData] Dados vazios');
-                return null;
-            }
-            
-            console.log('🔍 [extractChartData] Extraindo chart_data de:', Object.keys(data));
-            
-            let chartData = data.chart_data || 
-                           data.result?.chart_data || 
-                           data.analysis?.chart_data || 
-                           data.data?.chart_data || 
-                           null;
-            
-            if (chartData && !chartData.weekly && chartData.revenue) {
-                console.log('📊 [extractChartData] Convertendo formato antigo para weekly');
-                chartData = {
-                    weekly: {
-                        labels: chartData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
-                        revenue: chartData.revenue || [],
-                        costs: chartData.costs || []
-                    },
-                    performance: chartData.performance || {},
-                    monthly: chartData.monthly || {}
-                };
-            }
-            
-            if (chartData && chartData.weekly) {
-                const hasData = chartData.weekly.revenue?.some(v => v > 0) || 
-                               chartData.weekly.costs?.some(v => v > 0);
-                
-                if (!hasData) {
-                    console.warn('⚠️ [extractChartData] Dados vazios - SEM FALLBACK');
-                    return null;
-                }
-            }
-            
-            console.log('📊 [extractChartData] Resultado:', chartData ? '✅' : '❌');
-            if (chartData) {
-                console.log('   Weekly:', chartData.weekly ? '✅' : '❌');
-                console.log('   Revenue:', chartData.weekly?.revenue?.length || 0, 'valores');
-            }
-            
-            return chartData;
-        },
+        }
     };
 
     // ==============================================
-    // 🔥 CREDIT MANAGER (V16.13 - CORRIGIDO)
+    // 🔥 MESSAGE GUIDE - GUIAS PARA O USUÁRIO
     // ==============================================
 
-    class CreditManager {
+    class MessageGuide {
         constructor() {
-            this._balance = 0;
-            this._isPremium = false;
-            this._isAdmin = false;
-            this._lastSync = 0;
-            this._pendingRefund = 0;
-            this._syncInProgress = false;
-            this._initialized = false;
-            
-            this._updatingUI = false;
-            this._lastUpdate = 0;
-            this._uiThrottle = CONFIG.CREDITS.UI_THROTTLE;
-            this._updateQueue = [];
-            this._isProcessingQueue = false;
-            this._cachedDisplay = null;
-            this._cachedBalance = null;
-            
-            this._loadFromAppState();
-            this._setupEventListeners();
-            
-            setTimeout(() => {
-                this.sync(true).catch(() => {});
-            }, CONFIG.CREDITS.AUTO_SYNC_DELAY);
-            
-            console.log('💰 [CreditManager] Inicializado (v16.13)');
+            this.container = document.getElementById('messageContainer');
+            this._dismissedMessages = new Set();
+            this._loadDismissedState();
+            this._setupListeners();
         }
 
-        _loadFromAppState() {
-            console.log('🔄 [CreditManager] Carregando créditos...');
-            
+        _loadDismissedState() {
             try {
-                if (window.__APP_STATE) {
-                    const appCredits = window.__APP_STATE.credits;
-                    if (appCredits !== undefined && appCredits !== null) {
-                        this._balance = appCredits;
-                        this._isPremium = window.__APP_STATE.isPremium || false;
-                        this._isAdmin = window.__APP_STATE.isAdmin || false;
-                        console.log(`💰 [CreditManager] App State: ${this._balance}`);
-                        this._updateUI();
-                        return true;
+                const saved = localStorage.getItem('_dismissed_messages');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        this._dismissedMessages = new Set(parsed);
                     }
                 }
             } catch (e) {}
-            
+        }
+
+        _saveDismissedState() {
             try {
-                if (window.appAuth) {
-                    if (typeof window.appAuth.getCredits === 'function') {
-                        const authCredits = window.appAuth.getCredits();
-                        if (authCredits !== undefined && authCredits !== null) {
-                            this._balance = authCredits;
-                            this._isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
-                            this._isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
-                            console.log(`💰 [CreditManager] appAuth.getCredits(): ${this._balance}`);
-                            this._updateUI();
-                            return true;
-                        }
-                    }
-                    if (window.appAuth.userData && window.appAuth.userData.credits !== undefined) {
-                        this._balance = window.appAuth.userData.credits;
-                        this._isPremium = window.appAuth.userData.is_premium || false;
-                        this._isAdmin = window.appAuth.userData.is_admin || false;
-                        console.log(`💰 [CreditManager] appAuth.userData: ${this._balance}`);
-                        this._updateUI();
-                        return true;
-                    }
-                    // 🔥 CORRIGIDO v16.13: isAuthenticated é propriedade
-                    if (window.appAuth.isAuthenticated === true && window.appAuth.userData) {
-                        this._balance = window.appAuth.userData.credits || 0;
-                        console.log(`💰 [CreditManager] appAuth (propriedade): ${this._balance}`);
-                        this._updateUI();
-                        return true;
-                    }
-                }
+                const arr = Array.from(this._dismissedMessages);
+                localStorage.setItem('_dismissed_messages', JSON.stringify(arr));
             } catch (e) {}
-            
-            try {
-                if (window.App && typeof window.App.getCredits === 'function') {
-                    const appCredits = window.App.getCredits();
-                    if (appCredits !== undefined && appCredits !== null) {
-                        this._balance = appCredits;
-                        this._isPremium = window.App.isPremium ? window.App.isPremium() : false;
-                        this._isAdmin = window.App.isAdmin ? window.App.isAdmin() : false;
-                        console.log(`💰 [CreditManager] App: ${this._balance}`);
-                        this._updateUI();
-                        return true;
-                    }
-                }
-            } catch (e) {}
-            
-            try {
-                const userData = localStorage.getItem('user_data');
-                if (userData) {
-                    const parsed = JSON.parse(userData);
-                    if (parsed.credits !== undefined) {
-                        this._balance = parsed.credits;
-                        this._isPremium = parsed.is_premium || false;
-                        this._isAdmin = parsed.is_admin || false;
-                        console.log(`💰 [CreditManager] localStorage: ${this._balance}`);
-                        this._updateUI();
-                        return true;
-                    }
-                }
-            } catch (e) {}
-            
-            console.log('⚠️ [CreditManager] Nenhuma fonte encontrada');
-            return false;
         }
 
-        _setupEventListeners() {
-            document.addEventListener('creditsUpdated', (e) => {
-                const data = e.detail || {};
-                if (data._silent) return;
-                
-                if (data._source === 'backend' || data._source === 'loadUserCredits' || data._source === 'force') {
-                    if (data.credits !== undefined) {
-                        this._balance = data.credits;
-                        this._isPremium = data.isPremium || false;
-                        this._isAdmin = data.isAdmin || false;
-                        this._updateUI();
-                        console.log(`💰 [CreditManager] Atualizado via evento: ${this._balance}`);
-                    }
-                }
+        _setupListeners() {
+            document.addEventListener('app:state_changed', () => {
+                setTimeout(() => this.render(), 100);
             });
-
-            document.addEventListener('app:state_changed', (e) => {
-                const data = e.detail || {};
-                if (data.key === 'credits' || data.key === 'isPremium' || data.key === 'isAdmin') {
-                    this._loadFromAppState();
-                }
-            });
-            
-            document.addEventListener('authLoginSuccess', (e) => {
-                const data = e.detail || {};
-                if (data.credits !== undefined) {
-                    this._balance = data.credits;
-                    this._isPremium = data.isPremium || false;
-                    this._isAdmin = data.isAdmin || false;
-                    this._updateUI();
-                }
-                setTimeout(() => this.sync(true), 500);
-            });
-            
-            document.addEventListener('analysis:success', (e) => {
-                console.log('📊 [CreditManager] Análise concluída, sincronizando créditos...');
-                this._forceSyncCredits();
-            });
-            
-            document.addEventListener('eligibility:updated', (e) => {
-                const data = e.detail || {};
-                if (data.credits_balance !== undefined) {
-                    this._balance = data.credits_balance;
-                    this._isPremium = data.is_premium || false;
-                    this._isAdmin = data.is_admin || false;
-                    this._updateUI();
-                }
-            });
-            
-            document.addEventListener('upload:completed', (e) => {
-                console.log('📤 [CreditManager] Upload concluído, sincronizando créditos...');
-                setTimeout(() => this._forceSyncCredits(), 300);
-            });
-
-            document.addEventListener('credits:consumed', (e) => {
-                const data = e.detail || {};
-                console.log(`💰 [CreditManager] Créditos consumidos pelo backend: ${data.amount}`);
-                if (data.balance !== undefined) {
-                    this._balance = data.balance;
-                    this._updateUI();
-                }
-                setTimeout(() => this._forceSyncCredits(), 200);
-            });
-
-            document.addEventListener('credits:sync_required', (e) => {
-                console.log('🔄 [CreditManager] Sync required, forçando...');
-                this._forceSyncCredits();
-            });
-            
-            document.addEventListener('credits:synced', (e) => {
-                const data = e.detail || {};
-                if (data.credits !== undefined) {
-                    this._balance = data.credits;
-                    this._isPremium = data.isPremium || false;
-                    this._isAdmin = data.isAdmin || false;
-                    this._updateUI();
-                    console.log(`💰 [CreditManager] Synced via evento: ${this._balance}`);
-                }
+            document.addEventListener('analysis:success', () => {
+                setTimeout(() => this.renderAnalysisGuide(), 500);
             });
         }
 
-        async _forceSyncCredits() {
-            console.log('🔄 [CreditManager] Forçando sincronização...');
-            try {
-                const result = await this.sync(true);
-                this._updateUI();
-                
-                window.dispatchEvent(new CustomEvent('credits:synced', {
-                    detail: {
-                        credits: this._balance,
-                        display: this.display,
-                        isPremium: this.isPremium,
-                        isAdmin: this.isAdmin,
-                        timestamp: Date.now()
-                    }
-                }));
-                
-                return result;
-            } catch (e) {
-                console.error('❌ [CreditManager] Erro na sync forçada:', e);
-                return this._balance;
-            }
-        }
+        render() {
+            const state = window.__APP_STATE || {};
+            const credits = state.credits || 0;
+            const isPremium = state.isPremium || false;
+            const totalAnalyses = state.totalAnalyses || 0;
 
-        get balance() { 
-            if (window.__APP_STATE && window.__APP_STATE.credits !== undefined) {
-                this._balance = window.__APP_STATE.credits;
-            }
-            return this._balance; 
-        }
-        
-        get isPremium() { 
-            if (window.__APP_STATE && window.__APP_STATE.isPremium !== undefined) {
-                this._isPremium = window.__APP_STATE.isPremium;
-            }
-            return this._isPremium; 
-        }
-        
-        get isAdmin() { 
-            if (window.__APP_STATE && window.__APP_STATE.isAdmin !== undefined) {
-                this._isAdmin = window.__APP_STATE.isAdmin;
-            }
-            return this._isAdmin; 
-        }
-        
-        get display() {
-            const balance = this.balance;
-            const isAdmin = this.isAdmin;
-            const isPremium = this.isPremium;
-            
-            if (isAdmin) return '∞';
-            if (isPremium) {
-                const maxCredits = CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
-                return `${Math.min(balance, maxCredits)}/${maxCredits}`;
-            }
-            return String(Math.max(0, balance));
-        }
-
-        async sync(force = false) {
-            if (!force) {
-                const loaded = this._loadFromAppState();
-                if (loaded && this._balance > 0) {
-                    console.log(`💰 [CreditManager] Cache: ${this._balance}`);
-                    return this._balance;
-                }
-            }
-
-            if (this._syncInProgress && !force) {
-                console.log('⏳ [CreditManager] Sync em andamento');
-                return this._balance;
-            }
-            
-            this._syncInProgress = true;
-            
-            try {
-                if (window.appAuth && typeof window.appAuth.getCredits === 'function') {
-                    const credits = window.appAuth.getCredits();
-                    if (credits !== undefined && credits !== null) {
-                        this._balance = credits;
-                        this._isPremium = window.appAuth.isPremium ? window.appAuth.isPremium() : false;
-                        this._isAdmin = window.appAuth.isAdmin ? window.appAuth.isAdmin() : false;
-                        console.log(`💰 [CreditManager] Sync Auth: ${this._balance}`);
-                        this._updateUI();
-                        this._syncInProgress = false;
-                        return this._balance;
-                    }
-                }
-                
-                const token = Utils.getToken();
-                if (!token) {
-                    console.log('⏳ [CreditManager] Sem token');
-                    this._syncInProgress = false;
-                    return this._balance;
-                }
-
-                const response = await fetch('/api/auth/me', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+            // 🔥 GUIA BASEADO NO ESTADO DO USUÁRIO
+            if (totalAnalyses === 0 && credits > 0) {
+                this._showMessage({
+                    id: 'welcome_guide',
+                    title: '🚀 Comece sua primeira análise!',
+                    message: 'Faça upload de um arquivo CSV ou Excel para começar. Você tem <strong>' + credits + ' créditos</strong> disponíveis.',
+                    icon: 'fa-rocket',
+                    color: 'primary',
+                    show_action: true,
+                    action_text: 'Enviar arquivo',
+                    action_url: '#upload',
+                    priority: 10
                 });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const newBalance = data.credits || 0;
-                    const newIsPremium = data.is_premium || false;
-                    const newIsAdmin = data.is_admin || false;
-                    
-                    const changed = (
-                        newBalance !== this._balance ||
-                        newIsPremium !== this._isPremium ||
-                        newIsAdmin !== this._isAdmin
-                    );
-                    
-                    if (changed) {
-                        this._balance = newBalance;
-                        this._isPremium = newIsPremium;
-                        this._isAdmin = newIsAdmin;
-                        this._lastSync = Date.now();
-                        this._updateUI();
-                        console.log(`💰 [CreditManager] Sync API: ${this._balance}`);
-                    }
-                    
-                    this._syncInProgress = false;
-                    return this._balance;
-                } else if (response.status === 401) {
-                    console.warn('⚠️ [CreditManager] Token expirado');
-                    this._loadFromAppState();
-                    this._updateUI();
-                }
-            } catch (e) {
-                console.warn('⚠️ [CreditManager] Erro sync:', e);
-                this._loadFromAppState();
-                this._updateUI();
-            } finally {
-                this._syncInProgress = false;
-            }
-            return this._balance;
-        }
-
-        syncDebounced = Utils.debounce(() => {
-            this.sync().catch(() => {});
-        }, CONFIG.CREDITS.SYNC_DEBOUNCE);
-
-        hasCredits(required = CONFIG.CREDITS.COST_PER_UPLOAD) {
-            this._loadFromAppState();
-            
-            if (this.isAdmin) {
-                console.log('👑 [CreditManager] Admin - ilimitado');
-                return true;
-            }
-            
-            const balance = this.balance;
-            const hasEnough = balance >= required;
-            
-            console.log(`💰 [CreditManager] Verificando: ${balance} >= ${required} = ${hasEnough}`);
-            
-            return hasEnough;
-        }
-
-        canReceiveDaily() {
-            if (this.isAdmin) return false;
-            if (!this.isPremium) return false;
-            
-            if (window.__APP_STATE && window.__APP_STATE.canReceiveDailyCredit !== undefined) {
-                return window.__APP_STATE.canReceiveDailyCredit;
-            }
-            
-            return this.balance < CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
-        }
-
-        _updateAllCreditDisplays() {
-            const display = this.display;
-            const balance = this.balance;
-            
-            console.log(`🔄 [CreditManager] Atualizando TODOS os displays: ${display} (${balance})`);
-            
-            const selectors = [
-                '#creditsCount',
-                '#uploadCredits',
-                '#creditsDisplay',
-                '.credits-display',
-                '#modalCreditsCount',
-                '.credits-badge-nav span',
-                '.user-credits',
-                '#creditsCountDisplay',
-                '.navbar .credits-display',
-                '#navbarCredits span',
-                '.credit-balance',
-                '.balance-text'
-            ];
-            
-            let updated = false;
-            
-            selectors.forEach(selector => {
-                document.querySelectorAll(selector).forEach(el => {
-                    if (el && el.textContent !== display) {
-                        el.textContent = display;
-                        updated = true;
-                    }
+            } else if (credits === 0 && !isPremium) {
+                this._showMessage({
+                    id: 'no_credits_guide',
+                    title: '💡 Seus créditos acabaram!',
+                    message: 'Assine o plano Premium para receber <strong>1 crédito por dia</strong> e continuar analisando.',
+                    icon: 'fa-coins',
+                    color: 'warning',
+                    show_action: true,
+                    action_text: 'Ver planos Premium',
+                    action_url: '/planos',
+                    priority: 8
                 });
+            } else if (isPremium && credits < CONFIG.CREDITS.MAX_CREDITS_PREMIUM) {
+                this._showMessage({
+                    id: 'premium_credits_guide',
+                    title: '⭐ Você tem créditos Premium!',
+                    message: 'Você tem <strong>' + credits + ' créditos</strong> disponíveis. Clique no botão "Receber Crédito" para ganhar mais 1 crédito hoje.',
+                    icon: 'fa-star',
+                    color: 'success',
+                    show_action: false,
+                    priority: 5
+                });
+            }
+        }
+
+        renderAnalysisGuide() {
+            // 🔥 GUIAS APÓS ANÁLISE
+            this._showMessage({
+                id: 'analysis_done_guide',
+                title: '✅ Análise concluída!',
+                message: 'Os gráficos abaixo mostram os insights gerados pela IA. Passe o mouse para ver detalhes.',
+                icon: 'fa-check-circle',
+                color: 'success',
+                show_action: false,
+                priority: 7,
+                auto_dismiss: 8000
             });
+        }
+
+        _showMessage(config) {
+            if (!this.container) return;
             
-            const navbarCredits = document.getElementById('navbarCredits');
-            if (navbarCredits) {
-                const span = navbarCredits.querySelector('span');
-                if (span && span.textContent !== display) {
-                    span.textContent = display;
-                    updated = true;
-                }
-            }
+            const id = config.id || 'msg_' + Date.now();
+            if (this._dismissedMessages.has(id)) return;
+
+            const { title, message, icon, color, show_action, action_text, action_url, priority, auto_dismiss } = config;
+
+            const colorClass = color || 'info';
+            const iconClass = icon || 'fa-info-circle';
+            const isExternal = action_url && (action_url.startsWith('http') || action_url.startsWith('//'));
+            const targetAttr = isExternal ? 'target="_blank" rel="noopener noreferrer"' : '';
+
+            // FECHAR MENSAGENS ANTERIORES
+            this.container.innerHTML = '';
+
+            const banner = document.createElement('div');
+            banner.className = `message-banner message-${colorClass}`;
+            banner.dataset.messageId = id;
+            banner.dataset.priority = priority || 0;
             
-            if (updated) {
-                this._cachedDisplay = display;
-                this._cachedBalance = balance;
-                this._lastUpdate = Date.now();
-                
-                const event = new CustomEvent('creditsUpdated', {
-                    detail: {
-                        credits: balance,
-                        display: display,
-                        isPremium: this.isPremium,
-                        isAdmin: this.isAdmin,
-                        _silent: true,
-                        _source: 'dashboard'
-                    }
+            banner.innerHTML = `
+                <div class="message-content">
+                    <div class="message-icon"><i class="fas ${iconClass}"></i></div>
+                    <div class="message-text">
+                        <div class="message-title">${title}</div>
+                        <div class="message-body">${message}</div>
+                        ${show_action ? `
+                            <div class="message-action">
+                                <a href="${action_url || '#'}" class="btn btn-${colorClass}" ${targetAttr}>
+                                    ${action_text || 'Ver mais'} <i class="fas fa-arrow-right ms-1"></i>
+                                </a>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <button class="message-dismiss btn-close" aria-label="Fechar"></button>
+                </div>
+            `;
+
+            this.container.appendChild(banner);
+            this.container.style.display = 'block';
+
+            // ANIMAÇÃO DE ENTRADA
+            requestAnimationFrame(() => {
+                banner.classList.add('message-visible');
+            });
+
+            // FECHAR
+            const dismissBtn = banner.querySelector('.message-dismiss');
+            if (dismissBtn) {
+                dismissBtn.addEventListener('click', () => {
+                    this._dismissedMessages.add(id);
+                    this._saveDismissedState();
+                    this._hideContainer();
                 });
-                document.dispatchEvent(event);
-                
-                if (window.__APP_STATE_MANAGER) {
-                    window.__APP_STATE_MANAGER.updateCredits(balance, this.isPremium);
-                }
-                
-                if (window.App && typeof window.App.updateCredits === 'function') {
-                    window.App.updateCredits();
-                }
+            }
+
+            // AUTO DISMISS
+            if (auto_dismiss) {
+                setTimeout(() => {
+                    this._dismissedMessages.add(id);
+                    this._saveDismissedState();
+                    this._hideContainer();
+                }, auto_dismiss);
             }
         }
 
-        _updateUI() {
-            const now = Date.now();
-            
-            if (now - this._lastUpdate < this._uiThrottle) {
-                if (!this._updateQueue.includes('update')) {
-                    this._updateQueue.push('update');
-                    setTimeout(() => this._processQueue(), this._uiThrottle);
-                }
-                return;
-            }
-            
-            if (this._updatingUI) return;
-            this._updatingUI = true;
-
-            try {
-                this._updateAllCreditDisplays();
-            } catch (e) {
-                console.warn('⚠️ Erro ao atualizar UI de créditos:', e);
-            } finally {
-                this._updatingUI = false;
-                this._lastUpdate = Date.now();
+        _hideContainer() {
+            if (this.container) {
+                this.container.style.display = 'none';
+                this.container.innerHTML = '';
             }
         }
 
-        _processQueue() {
-            if (this._isProcessingQueue) return;
-            this._isProcessingQueue = true;
-            
-            try {
-                while (this._updateQueue.length > 0) {
-                    this._updateQueue.shift();
-                    this._updateUI();
-                }
-            } finally {
-                this._isProcessingQueue = false;
-            }
-        }
-
-        async syncCredits() {
-            return await this._forceSyncCredits();
+        refresh() {
+            this._dismissedMessages.clear();
+            this._saveDismissedState();
+            this.render();
         }
     }
 
     // ==============================================
-    // 🔥 DASHBOARD - CLASSE PRINCIPAL (v16.13)
+    // 🔥 DASHBOARD - CLASSE PRINCIPAL (v16.15)
     // ==============================================
 
     class Dashboard {
@@ -751,11 +388,7 @@
             this._initialized = false;
             this._uploadInProgress = false;
             this._pollingInterval = null;
-            this._creditManager = new CreditManager();
-            this._fileCache = new Map();
-            this._analysisCache = new Map();
-            
-            this._autoSyncTimer = null;
+            this._creditManager = null;
             
             this._chartInstances = {
                 revenue: null,
@@ -763,80 +396,19 @@
                 monthly: null
             };
             
-            this._pendingChartData = null;
-            
-            this._pollingState = {
-                active: false,
-                processId: null,
-                attempts: 0,
-                startTime: null,
-                timeoutId: null,
-            };
-            
             this._analysisHistory = [];
             this._currentAnalysisId = null;
-            this._isMultiFile = false;
+            this._lastChartData = null;
             
-            // 🔥 BINDS - APENAS MÉTODOS QUE EXISTEM
+            // 🔥 BINDS
             this.uploadMultipleFiles = this.uploadMultipleFiles.bind(this);
-            this._processUploadResult = this._processUploadResult.bind(this);
-            this._syncCredits = this._syncCredits.bind(this);
-            // 🔥 CORRIGIDO v16.13: NÃO bind do _handleCreditsUpdated se não existir
-            // this._handleCreditsUpdated = this._handleCreditsUpdated.bind(this);
-            this._pollProgress = this._pollProgress.bind(this);
-            this._stopPolling = this._stopPolling.bind(this);
-            this._renderAllCharts = this._renderAllCharts.bind(this);
             this._handleChartDataReady = this._handleChartDataReady.bind(this);
+            this._renderAllCharts = this._renderAllCharts.bind(this);
+            this._renderRevenueChart = this._renderRevenueChart.bind(this);
+            this._renderPerformanceChart = this._renderPerformanceChart.bind(this);
+            this._renderMonthlyChart = this._renderMonthlyChart.bind(this);
             this._renderGPSA = this._renderGPSA.bind(this);
             this._switchAnalysis = this._switchAnalysis.bind(this);
-            this._updateFileSelector = this._updateFileSelector.bind(this);
-            this._createFileSelector = this._createFileSelector.bind(this);
-            this._showAllFiles = this._showAllFiles.bind(this);
-            
-            // 🔥 CORRIGIDO v16.13: _forceSyncCredits é arrow function
-        }
-
-        // ==========================================
-        // 🔥 FORÇAR SINCRONIZAÇÃO (ARROW FUNCTION)
-        // ==========================================
-
-        _forceSyncCredits = async () => {
-            console.log('🔄 [Dashboard] Forçando sincronização de créditos...');
-            
-            try {
-                await this._creditManager._forceSyncCredits();
-                
-                if (window.appAuth && typeof window.appAuth.loadUserCredits === 'function') {
-                    await window.appAuth.loadUserCredits();
-                    console.log('✅ [Dashboard] appAuth sincronizado');
-                }
-                
-                if (window.App && typeof window.App.updateCredits === 'function') {
-                    window.App.updateCredits();
-                }
-                if (window.App && typeof window.App.updateNavbar === 'function') {
-                    window.App.updateNavbar();
-                }
-                
-                this._creditManager._updateAllCreditDisplays();
-                
-                window.dispatchEvent(new CustomEvent('credits:synced', {
-                    detail: {
-                        credits: this._creditManager.balance,
-                        display: this._creditManager.display,
-                        isPremium: this._creditManager.isPremium,
-                        isAdmin: this._creditManager.isAdmin,
-                        source: 'dashboard',
-                        timestamp: Date.now()
-                    }
-                }));
-                
-                console.log(`✅ [Dashboard] Sincronização concluída: ${this._creditManager.display}`);
-                return true;
-            } catch (e) {
-                console.error('❌ [Dashboard] Erro na sincronização:', e);
-                return false;
-            }
         }
 
         // ==========================================
@@ -849,79 +421,28 @@
                 return this;
             }
 
-            console.log('🚀 [Dashboard v16.13] Inicializando com correção final...');
+            console.log('🚀 [Dashboard v16.15] Inicializando com dados reais do ML...');
 
+            // Inicializar CreditManager
+            this._creditManager = new CreditManager();
             await this._creditManager.sync(true);
             
-            this._setupEvents();
+            // Inicializar MessageGuide
+            this._messageGuide = new MessageGuide();
+            
+            // Configurar listeners
+            this._setupChartListener();
             this._setupUploadHandlers();
             this._setupPolling();
-            this._setupChartListener();
-            this._createFileSelector();
-            
-            this._startAutoSync();
-            
-            const canvases = {
-                revenue: document.getElementById('revenueChart'),
-                performance: document.getElementById('performanceChart'),
-                monthly: document.getElementById('monthlyChart')
-            };
-            
-            console.log('📊 [Dashboard] Canvases:');
-            console.log(`   revenueChart: ${canvases.revenue ? '✅' : '❌'}`);
-            console.log(`   performanceChart: ${canvases.performance ? '✅' : '❌'}`);
-            console.log(`   monthlyChart: ${canvases.monthly ? '✅' : '❌'}`);
             
             this._initialized = true;
             
-            console.log('✅ [Dashboard v16.13] Inicializado com sucesso!');
+            console.log('✅ [Dashboard v16.15] Inicializado com sucesso!');
             console.log(`   💰 Saldo: ${this._creditManager.display}`);
-            console.log(`   🔥 Auto Sync: ${CONFIG.CREDITS.SYNC_INTERVAL/1000}s`);
             console.log(`   📊 3 gráficos + GPSA (Performance da Oficina)`);
-            console.log(`   📁 Histórico de análises: ${this._analysisHistory.length} arquivos`);
             
             return this;
         }
-
-        // ==========================================
-        // 🔥 AUTO SYNC
-        // ==========================================
-
-        _startAutoSync() {
-            if (this._autoSyncTimer) {
-                clearInterval(this._autoSyncTimer);
-                this._autoSyncTimer = null;
-            }
-            
-            this._autoSyncTimer = setInterval(() => {
-                // 🔥 CORRIGIDO v16.13: usa Utils.isAuthenticated()
-                if (Utils.isAuthenticated()) {
-                    this._forceSyncCredits();
-                }
-            }, CONFIG.CREDITS.SYNC_INTERVAL);
-            
-            console.log(`⏰ [Dashboard] Auto sync iniciado (${CONFIG.CREDITS.SYNC_INTERVAL/1000}s)`);
-        }
-
-        _stopAutoSync() {
-            if (this._autoSyncTimer) {
-                clearInterval(this._autoSyncTimer);
-                this._autoSyncTimer = null;
-                console.log('⏹️ [Dashboard] Auto sync parado');
-            }
-        }
-
-        // ==========================================
-        // 🔥 MÉTODOS DE CRÉDITOS (PÚBLICOS)
-        // ==========================================
-
-        getCredits() { return this._creditManager.balance; }
-        getCreditsDisplay() { return this._creditManager.display; }
-        isPremium() { return this._creditManager.isPremium; }
-        isAdmin() { return this._creditManager.isAdmin; }
-        hasCredits(amount = 1) { return this._creditManager.hasCredits(amount); }
-        async refreshCredits() { return await this._creditManager.sync(true); }
-        async syncCredits() { return await this._creditManager.syncCredits(); }
 
         // ==========================================
         // 🔥 SETUP CHART LISTENER
@@ -933,12 +454,10 @@
             document.removeEventListener('chart:data_ready', this._handleChartDataReady);
             document.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
             window.removeEventListener('chart:data_ready', this._handleChartDataReady);
-            window.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
             
             document.addEventListener('chart:data_ready', this._handleChartDataReady);
             document.addEventListener('dashboard:render_chart', this._handleChartDataReady);
             window.addEventListener('chart:data_ready', this._handleChartDataReady);
-            window.addEventListener('dashboard:render_chart', this._handleChartDataReady);
             
             console.log('📊 [Dashboard] Chart listeners configurados');
         }
@@ -948,13 +467,16 @@
             const chartData = detail.chart_data || detail;
             
             console.log('📊 [Dashboard] Evento chart:data_ready recebido');
-            console.log('   ChartData:', chartData ? '✅' : '❌');
-            console.log('   Weekly:', chartData?.weekly ? '✅' : '❌');
             
-            if (chartData) {
-                this._renderAllCharts(chartData);
-                this._renderGPSA(chartData);
+            // 🔥 EXTRAIR DADOS REAIS
+            const realData = Utils.extractRealChartData(chartData);
+            
+            if (realData) {
+                this._lastChartData = realData;
+                this._renderAllCharts(realData);
+                this._renderGPSA(realData);
                 
+                // Mostrar resultado
                 const resultContainer = document.getElementById('resultContainer');
                 if (resultContainer) {
                     resultContainer.classList.add('show');
@@ -965,47 +487,15 @@
                 if (placeholder) {
                     placeholder.style.display = 'none';
                 }
-            } else {
-                console.warn('⚠️ [Dashboard] chart_data inválido ou vazio - SEM FALLBACK');
-            }
-        }
-
-        // ==========================================
-        // 🔥 SETUP EVENTS (CORRIGIDO)
-        // ==========================================
-
-        _setupEvents() {
-            // 🔥 CORRIGIDO v16.13: Verifica se o método existe antes de fazer bind
-            if (typeof this._handleCreditsUpdated === 'function') {
-                document.addEventListener('creditsUpdated', this._handleCreditsUpdated);
-            } else {
-                // Fallback: usa o event listener do CreditManager
-                console.log('ℹ️ [Dashboard] _handleCreditsUpdated não definido, usando fallback');
-            }
-
-            document.addEventListener('analysis:success', () => {
-                this._invalidateCache();
-                this._forceSyncCredits();
-            });
-
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) {
-                    this._creditManager.syncDebounced();
+                
+                // 🔥 Mostrar guia pós-análise
+                if (this._messageGuide) {
+                    this._messageGuide.renderAnalysisGuide();
                 }
-            });
-            
-            document.addEventListener('app:state_changed', (e) => {
-                const data = e.detail || {};
-                if (data.key === 'credits' || data.key === 'isPremium') {
-                    this._creditManager._loadFromAppState();
-                }
-            });
-            
-            window.addEventListener('beforeunload', () => {
-                this._stopPolling();
-                this._destroyAllCharts();
-                this._stopAutoSync();
-            });
+            } else {
+                console.warn('⚠️ [Dashboard] Nenhum dado real recebido do ML');
+                this._showToast('⚠️ Aguardando dados da análise...', 'info');
+            }
         }
 
         // ==========================================
@@ -1028,6 +518,19 @@
                 fileInput.addEventListener('change', (e) => {
                     const files = Array.from(e.target.files);
                     if (files.length > 0) {
+                        // 🔥 GUIA: Mostrar mensagem de upload iniciado
+                        if (this._messageGuide) {
+                            this._messageGuide._showMessage({
+                                id: 'upload_started_guide',
+                                title: '📤 Upload iniciado!',
+                                message: 'A IA está processando seu arquivo. Aguarde alguns segundos...',
+                                icon: 'fa-spinner fa-spin',
+                                color: 'info',
+                                show_action: false,
+                                priority: 9,
+                                auto_dismiss: 5000
+                            });
+                        }
                         this.uploadMultipleFiles(files);
                     }
                     e.target.value = '';
@@ -1050,6 +553,18 @@
                     dropArea.classList.remove('dragover');
                     const files = Array.from(e.dataTransfer.files);
                     if (files.length > 0) {
+                        if (this._messageGuide) {
+                            this._messageGuide._showMessage({
+                                id: 'upload_started_guide',
+                                title: '📤 Upload iniciado!',
+                                message: 'A IA está processando seu arquivo. Aguarde alguns segundos...',
+                                icon: 'fa-spinner fa-spin',
+                                color: 'info',
+                                show_action: false,
+                                priority: 9,
+                                auto_dismiss: 5000
+                            });
+                        }
                         this.uploadMultipleFiles(files);
                     }
                 });
@@ -1057,17 +572,16 @@
         }
 
         // ==========================================
-        // 🔥 UPLOAD MÚLTIPLO (V16.13 - CORRIGIDO)
+        // 🔥 UPLOAD MÚLTIPLO
         // ==========================================
 
         async uploadMultipleFiles(files) {
             if (this._uploadInProgress) {
-                this._showToast('⏳ Um upload já está em andamento. Aguarde.', 'warning');
+                this._showToast('⏳ Um upload já está em andamento.', 'warning');
                 return null;
             }
 
             try {
-                // 🔥 CORRIGIDO v16.13: usa Utils.isAuthenticated()
                 if (!Utils.isAuthenticated()) {
                     this._showToast('❌ Faça login para realizar uploads.', 'error');
                     return null;
@@ -1079,33 +593,27 @@
                 }
 
                 if (files.length > CONFIG.MAX_FILES_PER_BATCH) {
-                    this._showToast(`⚠️ Máximo de ${CONFIG.MAX_FILES_PER_BATCH} arquivos por vez.`, 'warning');
+                    this._showToast(`⚠️ Máximo de ${CONFIG.MAX_FILES_PER_BATCH} arquivos.`, 'warning');
                     return null;
                 }
 
                 for (const file of files) {
                     if (file.size > CONFIG.MAX_FILE_SIZE_KB * 1024) {
-                        this._showToast(`⚠️ Arquivo ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB.`, 'warning');
+                        this._showToast(`⚠️ ${file.name} excede ${CONFIG.MAX_FILE_SIZE_KB}KB.`, 'warning');
                         return null;
                     }
                 }
 
                 await this._creditManager.sync(true);
                 
-                const hasCredits = this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD);
-                console.log(`💰 [Dashboard] Verificação de créditos: ${hasCredits} (saldo: ${this._creditManager.balance})`);
-                
-                if (!hasCredits) {
-                    this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
+                if (!this._creditManager.hasCredits(CONFIG.CREDITS.COST_PER_UPLOAD)) {
+                    this._showToast('❌ Créditos insuficientes.', 'error');
                     this._showUpgradePrompt();
                     return null;
                 }
 
                 this._showUploadStatus('⏳', 'Preparando upload...', 'Verificando créditos', 5);
                 this._uploadInProgress = true;
-
-                const balanceBefore = this._creditManager.balance;
-                console.log(`💰 Saldo antes: ${balanceBefore}`);
 
                 const formData = new FormData();
                 for (const file of files) {
@@ -1115,19 +623,16 @@
                 formData.append('report_format', 'html');
 
                 const token = Utils.getToken();
-                let powHeaders = await this._getPowHeaders();
+                const powHeaders = await this._getPowHeaders();
 
                 this._showUploadStatus('⏳', 'Enviando arquivos...', `Processando ${files.length} arquivo(s)`, 30);
 
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'X-Files-Count': String(files.length),
-                    ...powHeaders
-                };
-
                 const response = await fetch('/api/upload-multi-analyze', {
                     method: 'POST',
-                    headers: headers,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        ...powHeaders
+                    },
                     body: formData
                 });
 
@@ -1138,19 +643,11 @@
                         errorDetail = errorData.detail?.message || errorData.message || errorDetail;
                     } catch (e) {}
 
-                    if (response.status === 428) {
+                    if (response.status === 428 || response.status === 400) {
                         this._showUploadStatus('🔄', 'Renovando segurança...', 'Tentando novamente', 20);
                         await this._renewPow();
-                        this._showToast('🔄 Tentando novamente com nova prova de trabalho...', 'info');
+                        this._showToast('🔄 Tentando novamente...', 'info');
                         return this.uploadMultipleFiles(files);
-                    }
-
-                    if (response.status === 402) {
-                        this._showUploadStatus('❌', 'Créditos insuficientes', 'Adquira o plano Premium', 0);
-                        this._showToast('❌ Créditos insuficientes. Adquira o plano Premium.', 'error');
-                        this._showUpgradePrompt();
-                        await this._forceSyncCredits();
-                        return null;
                     }
 
                     throw new Error(errorDetail);
@@ -1161,6 +658,7 @@
                 if (result.success && result.process_id) {
                     console.log(`📡 [Dashboard] Process ID: ${result.process_id}`);
                     
+                    // 🔥 POLLING PARA RESULTADO
                     const pollingResult = await this._pollProgress(result.process_id);
                     
                     if (pollingResult.success && pollingResult.result) {
@@ -1185,32 +683,16 @@
                         this._showResult();
                         await this._forceSyncCredits();
                     }
-                } else {
-                    await this._processUploadResult(result, files);
-                    this._showUploadStatus('✅', 'Análise concluída!', 'Veja o relatório abaixo', 100);
-                    this._showToast('✅ Upload concluído com sucesso!', 'success');
-                    this._showResult();
-                    await this._forceSyncCredits();
                 }
-
-                await this._invalidateCache();
-                this._fileCache.clear();
 
                 this._uploadInProgress = false;
                 return result;
 
             } catch (error) {
                 console.error('❌ Erro no upload:', error);
-                
                 this._showUploadStatus('❌', 'Erro', error.message || 'Falha no processamento', 0);
                 this._showToast(`❌ ${error.message || 'Erro ao processar'}`, 'error');
-                
-                try {
-                    await this._forceSyncCredits();
-                } catch (e) {}
-
                 this._uploadInProgress = false;
-                this._stopPolling();
                 return null;
             }
         }
@@ -1225,71 +707,62 @@
                 return;
             }
 
+            console.log('📊 [ProcessResult] Processando resultado do ML...');
+
             const analysis = result.analysis || {};
-            const chartData = Utils.extractChartData(result);
-            const recommendations = analysis.recommendations || result.recommendations || [];
-            const executiveScore = analysis.executive_score || result.executive_score || {};
-            const executiveSummary = analysis.executive_summary || result.executive_summary || '';
-
-            console.log('📊 [ProcessResult] chartData:', chartData ? '✅' : '❌');
-
-            const filesList = result.data?.files || [];
-            const isMultiFile = filesList.length > 1;
-
-            console.log(`📁 [ProcessResult] ${filesList.length} arquivo(s) encontrado(s)`);
-
-            if (isMultiFile && chartData) {
-                this._isMultiFile = true;
-                this._analysisHistory = filesList.map((file, index) => ({
-                    id: file.process_id || file.id || `file-${index}`,
-                    filename: file.filename || `Arquivo ${index + 1}`,
-                    rows: file.rows || 0,
-                    chart_data: file.chart_data || chartData,
-                    metrics: file.metrics || {},
-                    recommendations: file.recommendations || recommendations,
-                    insights: file.insights || {},
-                    executive_score: file.executive_score || executiveScore,
-                    executive_summary: file.executive_summary || executiveSummary,
-                    isActive: index === 0,
-                    success: file.success || false
-                }));
-
-                this._currentAnalysisId = this._analysisHistory[0].id;
-                
-                console.log(`📁 [ProcessResult] ${this._analysisHistory.length} arquivos no histórico`);
-            } else {
-                this._isMultiFile = false;
-                this._analysisHistory = [{
-                    id: result.process_id || Date.now(),
-                    filename: files[0]?.name || 'Análise',
-                    rows: result.rows_processed || 0,
-                    chart_data: chartData,
-                    metrics: result.metrics || {},
-                    recommendations: recommendations,
-                    insights: analysis.insights || {},
-                    executive_score: executiveScore,
-                    executive_summary: executiveSummary,
-                    isActive: true,
-                    success: true
-                }];
-                this._currentAnalysisId = this._analysisHistory[0].id;
+            const chartData = Utils.extractRealChartData(result);
+            
+            // 🔥 MOSTRAR DADOS DO ML NO CONSOLE
+            console.log('📊 [ProcessResult] Dados do ML:');
+            console.log(`   ✅ Sucesso: ${result.success}`);
+            console.log(`   📁 Arquivos: ${analysis.files?.length || 0}`);
+            console.log(`   📊 ChartData: ${chartData ? '✅' : '❌'}`);
+            
+            if (chartData) {
+                console.log('   📈 Revenue:', chartData.weekly?.revenue?.length || 0, 'valores');
+                console.log('   📊 Services:', chartData.performance?.services?.length || 0, 'valores');
+                console.log('   📅 Monthly:', chartData.monthly?.revenue?.length || 0, 'valores');
             }
 
-            const currentAnalysis = this._getCurrentAnalysis();
-            if (currentAnalysis && currentAnalysis.chart_data) {
-                console.log('📊 [ProcessResult] Renderizando gráficos da análise atual');
-                this._renderAllCharts(currentAnalysis.chart_data);
-                this._renderGPSA(currentAnalysis.chart_data);
+            // 🔥 SALVAR NO HISTÓRICO
+            const analysisEntry = {
+                id: result.process_id || Date.now(),
+                filename: files[0]?.name || 'Análise',
+                rows: analysis.rows_processed || 0,
+                chart_data: chartData,
+                metrics: analysis.metrics || {},
+                recommendations: analysis.recommendations || [],
+                insights: analysis.insights || {},
+                executive_score: analysis.executive_score || {},
+                executive_summary: analysis.executive_summary || '',
+                isActive: true,
+                success: true,
+                predictions: analysis.predictions || []
+            };
+
+            this._analysisHistory.unshift(analysisEntry);
+            this._currentAnalysisId = analysisEntry.id;
+
+            // 🔥 RENDERIZAR GRÁFICOS
+            if (chartData) {
+                this._lastChartData = chartData;
+                this._renderAllCharts(chartData);
+                this._renderGPSA(chartData);
             } else {
                 console.warn('⚠️ [ProcessResult] Sem dados para renderizar');
+                this._showToast('⚠️ Dados insuficientes para gerar gráficos.', 'warning');
             }
 
-            this._updateFileSelector();
+            // 🔥 ATUALIZAR UI
+            await this._updateMetrics({
+                executive_score: analysis.executive_score || {},
+                chart_data: chartData || {}
+            });
 
             await this._updateAIReport({
-                executive_score: executiveScore,
-                executive_summary: executiveSummary,
-                recommendations: recommendations,
+                executive_score: analysis.executive_score || {},
+                executive_summary: analysis.executive_summary || '',
+                recommendations: analysis.recommendations || [],
                 chart_data: chartData || {},
                 forecast: analysis.forecast || '',
                 general_conclusion: analysis.general_conclusion || '',
@@ -1297,84 +770,11 @@
                 trend: analysis.trend || {}
             });
 
-            await this._updateMetrics({
-                executive_score: executiveScore,
-                chart_data: chartData || {}
-            });
-
-            if (result.data?.files && result.data.files.length > 0) {
-                const analyses = result.data.files.map((file, index) => ({
-                    filename: file.filename || `Arquivo ${index + 1}`,
-                    success: file.success || false,
-                    rows_processed: file.rows || 0,
-                    metrics: {
-                        mean_prediction: file.metrics?.mean_prediction || 0.5,
-                        high_risk_percentage: file.metrics?.high_risk_percentage || 0,
-                        low_risk_percentage: file.metrics?.low_risk_percentage || 0
-                    },
-                    chart_data: file.chart_data || chartData,
-                    insights: {
-                        summary: { mean: file.metrics?.mean_prediction || 0.5 },
-                        risk_distribution: {
-                            high_percentage: file.metrics?.high_risk_percentage || 0,
-                            low_percentage: file.metrics?.low_risk_percentage || 0
-                        }
-                    },
-                    recommendations: file.recommendations || recommendations,
-                    predictions: file.predictions || [],
-                    model_used: file.model_used || 'AutoML'
-                }));
-
-                const tabManager = this._getTabManager();
-                if (tabManager) {
-                    tabManager.renderTabs(analyses);
-                }
-            }
-
-            try {
-                const recent = JSON.parse(localStorage.getItem('recentAnalyses') || '[]');
-                recent.unshift({
-                    filename: files.map(f => f.name).join(', '),
-                    timestamp: Date.now(),
-                    result: result,
-                    isMultiFile: isMultiFile,
-                    files: this._analysisHistory.map(a => ({
-                        filename: a.filename,
-                        rows: a.rows
-                    }))
-                });
-                if (recent.length > 10) recent.pop();
-                localStorage.setItem('recentAnalyses', JSON.stringify(recent));
-            } catch (e) {}
-
             document.dispatchEvent(new CustomEvent('analysis:success', {
                 detail: { result: result }
             }));
 
-            console.log('✅ Upload processado com sucesso!');
-        }
-
-        // ==========================================
-        // 🔥 HANDLER DE CRÉDITOS ATUALIZADOS (CORRIGIDO)
-        // ==========================================
-
-        _handleCreditsUpdated = (e) => {
-            const data = e.detail || {};
-            
-            if (data._silent) return;
-            
-            if (data._source === 'backend' || data._source === 'loadUserCredits' || data._source === 'force') {
-                if (data.credits !== undefined && data.credits !== this._creditManager._balance) {
-                    this._creditManager._balance = data.credits;
-                    this._creditManager._isPremium = data.isPremium || false;
-                    this._creditManager._isAdmin = data.isAdmin || false;
-                    
-                    this._creditManager._updateAllCreditDisplays();
-                    
-                    this._creditManager._cachedDisplay = this._creditManager.display;
-                    this._creditManager._lastUpdate = Date.now();
-                }
-            }
+            console.log('✅ [ProcessResult] Upload processado com sucesso!');
         }
 
         // ==========================================
@@ -1384,38 +784,20 @@
         async _pollProgress(processId) {
             console.log(`📡 [Polling] Iniciando para process_id: ${processId}`);
             
-            this._stopPolling();
-            this._pollingState = {
-                active: true,
-                processId: processId,
-                attempts: 0,
-                startTime: Date.now(),
-                timeoutId: null,
-            };
-            
             let attempts = 0;
             const maxAttempts = CONFIG.POLLING.MAX_ATTEMPTS;
             const interval = CONFIG.POLLING.INTERVAL;
+            const startTime = Date.now();
             
             this._showUploadStatus('🔄', 'Processando...', 'Iniciando análise', 10);
             
             return new Promise((resolve) => {
                 const poll = async () => {
-                    if (!this._pollingState.active) {
-                        console.log('⏹️ [Polling] Interrompido pelo usuário');
-                        resolve({ success: false, error: 'Interrompido' });
-                        return;
-                    }
-                    
                     attempts++;
-                    this._pollingState.attempts = attempts;
                     
-                    const elapsed = Date.now() - this._pollingState.startTime;
-                    if (elapsed > CONFIG.POLLING.TIMEOUT_MS) {
+                    if (Date.now() - startTime > CONFIG.POLLING.TIMEOUT_MS) {
                         console.warn('⏰ [Polling] Timeout excedido');
-                        this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando mais que o esperado', 95);
-                        this._showToast('⏳ A análise está demorando. Verifique o histórico.', 'warning');
-                        this._stopPolling();
+                        this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando', 95);
                         resolve({ success: false, error: 'Timeout' });
                         return;
                     }
@@ -1423,8 +805,6 @@
                     try {
                         const token = Utils.getToken();
                         if (!token) {
-                            console.warn('⚠️ [Polling] Token expirado');
-                            this._stopPolling();
                             resolve({ success: false, error: 'Token expirado' });
                             return;
                         }
@@ -1438,8 +818,6 @@
                         
                         if (!response.ok) {
                             if (response.status === 404) {
-                                console.warn('⚠️ [Polling] Process ID não encontrado');
-                                this._stopPolling();
                                 resolve({ success: false, error: 'Processo não encontrado' });
                                 return;
                             }
@@ -1451,16 +829,14 @@
                         
                         if (data.status === 'completed') {
                             console.log('✅ [Polling] Análise concluída!');
-                            this._stopPolling();
                             this._showUploadStatus('✅', 'Análise concluída!', '100%', 100);
                             
-                            const chartData = Utils.extractChartData(data);
+                            // 🔥 EXTRAIR CHART DATA
+                            const chartData = Utils.extractRealChartData(data);
                             if (chartData) {
-                                console.log('📊 [Polling] ChartData extraído, renderizando...');
+                                this._lastChartData = chartData;
                                 this._renderAllCharts(chartData);
                                 this._renderGPSA(chartData);
-                            } else {
-                                console.warn('⚠️ [Polling] Nenhum chartData encontrado nos dados');
                             }
                             
                             resolve({
@@ -1480,9 +856,9 @@
                                 progress
                             );
                             
-                            const partialChartData = Utils.extractChartData(data);
+                            // 🔥 TENTAR RENDERIZAR DADOS PARCIAIS
+                            const partialChartData = Utils.extractRealChartData(data);
                             if (partialChartData && partialChartData.weekly) {
-                                console.log('📊 [Polling] Renderizando dados parciais');
                                 this._renderAllCharts(partialChartData);
                                 this._renderGPSA(partialChartData);
                             }
@@ -1490,66 +866,28 @@
                             setTimeout(poll, interval);
                             return;
                             
-                        } else if (data.status === 'error') {
-                            console.error('❌ [Polling] Erro no processamento:', data.message);
-                            this._stopPolling();
-                            this._showUploadStatus('❌', 'Erro', data.message || 'Falha no processamento', 0);
-                            this._showToast(`❌ ${data.message || 'Erro no processamento'}`, 'error');
-                            
-                            resolve({
-                                success: false,
-                                error: data.message || 'Erro no processamento'
-                            });
-                            return;
-                            
                         } else if (data.status === 'pending_credit') {
-                            console.log('💳 [Polling] Análise aguardando crédito');
-                            this._showUploadStatus('💳', 'Aguardando crédito', 'Assine Premium para liberar os resultados', 95);
-                            
-                            // Verifica se o usuário pode receber crédito
-                            if (data.can_receive_credit) {
-                                this._showToast('💳 Você pode receber crédito diário! Clique no botão "Receber Crédito" na interface.', 'info');
-                            }
-                            
-                            // Continua polling para verificar se o status muda
+                            this._showUploadStatus('💳', 'Aguardando crédito', 'Assine Premium para liberar', 95);
                             setTimeout(poll, interval * 2);
                             return;
                             
                         } else {
-                            console.warn(`⚠️ [Polling] Status desconhecido: ${data.status}`);
-                            
                             if (attempts >= maxAttempts) {
-                                this._stopPolling();
-                                this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando mais que o esperado', 95);
-                                this._showToast('⏳ A análise está demorando. Verifique o histórico.', 'warning');
-                                
-                                resolve({
-                                    success: false,
-                                    error: 'Timeout - análise demorou muito'
-                                });
+                                this._showUploadStatus('⏳', 'Tempo limite', 'A análise está demorando', 95);
+                                resolve({ success: false, error: 'Timeout' });
                                 return;
                             }
-                            
                             setTimeout(poll, interval);
                             return;
                         }
                         
                     } catch (error) {
                         console.error('❌ [Polling] Erro:', error);
-                        
                         if (attempts < maxAttempts) {
-                            console.log(`🔄 [Polling] Tentando novamente em ${CONFIG.POLLING.RETRY_DELAY}ms...`);
                             await Utils.sleep(CONFIG.POLLING.RETRY_DELAY);
                             poll();
                         } else {
-                            this._stopPolling();
-                            this._showUploadStatus('⚠️', 'Erro de comunicação', 'Tentando reconectar...', 50);
-                            this._showToast('⚠️ Erro ao acompanhar progresso. Verifique o histórico.', 'warning');
-                            
-                            resolve({
-                                success: false,
-                                error: error.message || 'Erro de comunicação'
-                            });
+                            resolve({ success: false, error: error.message });
                         }
                     }
                 };
@@ -1559,20 +897,7 @@
         }
 
         // ==========================================
-        // 🔥 PARAR POLLING
-        // ==========================================
-
-        _stopPolling() {
-            if (this._pollingState.timeoutId) {
-                clearTimeout(this._pollingState.timeoutId);
-                this._pollingState.timeoutId = null;
-            }
-            this._pollingState.active = false;
-            console.log('⏹️ [Polling] Parado');
-        }
-
-        // ==========================================
-        // 🔥 RENDERIZAR GRÁFICOS (COMPLETO)
+        // 🔥 RENDERIZAR GRÁFICOS (DADOS REAIS)
         // ==========================================
 
         _renderAllCharts(chartData) {
@@ -1581,24 +906,17 @@
                 return;
             }
 
-            console.log('📊 [Charts] Renderizando 3 gráficos...');
+            console.log('📊 [Charts] Renderizando 3 gráficos com dados reais...');
 
             this._renderRevenueChart(chartData);
             this._renderPerformanceChart(chartData);
             this._renderMonthlyChart(chartData);
 
             console.log('✅ [Charts] Todos os gráficos renderizados!');
-            
-            window.dispatchEvent(new CustomEvent('dashboard:all_charts_rendered', {
-                detail: {
-                    charts: ['revenue', 'performance', 'monthly'],
-                    timestamp: Date.now()
-                }
-            }));
         }
 
         // ==========================================
-        // 🔥 GRÁFICO 1: RECEITA VS CUSTOS (BARRAS)
+        // 🔥 GRÁFICO 1: RECEITA VS CUSTOS (BARRAS/LINHA)
         // ==========================================
 
         _renderRevenueChart(chartData) {
@@ -1610,15 +928,20 @@
 
             const weekly = chartData.weekly || chartData;
             const labels = weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-            const revenue = weekly.revenue || [0, 0, 0, 0, 0, 0, 0];
-            const costs = weekly.costs || [0, 0, 0, 0, 0, 0, 0];
+            const revenue = weekly.revenue || [];
+            const costs = weekly.costs || [];
 
-            const hasData = revenue.some(v => v > 0) || costs.some(v => v > 0);
-            
-            if (!hasData) {
-                console.warn('⚠️ [Chart] Dados vazios - SEM FALLBACK, não renderizando');
+            // 🔥 VERIFICAR DADOS REAIS
+            const hasRevenue = revenue.some(v => v > 0);
+            const hasCosts = costs.some(v => v > 0);
+
+            if (!hasRevenue && !hasCosts) {
+                console.warn('⚠️ [Chart] Dados vazios - NÃO RENDERIZANDO');
+                this._showToast('⚠️ Dados financeiros não disponíveis.', 'warning');
                 return;
             }
+
+            console.log(`📊 [RevenueChart] Renderizando: ${revenue.length} valores de receita, ${costs.length} de custos`);
 
             const ctx = canvas.getContext('2d');
 
@@ -1634,7 +957,7 @@
                     datasets: [
                         {
                             label: '📊 Receita',
-                            data: revenue,
+                            data: revenue.length ? revenue : [0, 0, 0, 0, 0, 0, 0],
                             backgroundColor: CONFIG.COLORS.primaryLight,
                             borderColor: CONFIG.COLORS.primary,
                             borderWidth: 2,
@@ -1648,7 +971,7 @@
                         },
                         {
                             label: '📉 Custos',
-                            data: costs,
+                            data: costs.length ? costs : [0, 0, 0, 0, 0, 0, 0],
                             backgroundColor: CONFIG.COLORS.secondaryLight,
                             borderColor: CONFIG.COLORS.secondary,
                             borderWidth: 2,
@@ -1665,7 +988,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: 'easeOutQuart' },
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: {
@@ -1715,7 +1038,7 @@
                 }
             });
 
-            console.log('✅ [Chart] Gráfico de barras renderizado');
+            console.log('✅ [Chart] Gráfico de receita renderizado');
         }
 
         // ==========================================
@@ -1734,10 +1057,13 @@
             const labels = performance.labels || weekly.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const services = performance.services || weekly.services || [];
 
+            // 🔥 VERIFICAR DADOS REAIS
             if (!services.length || services.every(v => v === 0)) {
-                console.warn('⚠️ [Chart] Dados de serviços vazios - SEM FALLBACK');
+                console.warn('⚠️ [Chart] Dados de serviços vazios - NÃO RENDERIZANDO');
                 return;
             }
+
+            console.log(`📊 [PerformanceChart] Renderizando: ${services.length} valores de serviços`);
 
             const ctx = canvas.getContext('2d');
 
@@ -1767,7 +1093,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: 'easeOutQuart' },
                     plugins: {
                         legend: {
                             position: 'top',
@@ -1821,10 +1147,13 @@
             const labels = monthly.labels || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             const revenue = monthly.revenue || [];
 
+            // 🔥 VERIFICAR DADOS REAIS
             if (!revenue.length || revenue.every(v => v === 0)) {
-                console.warn('⚠️ [Chart] Dados mensais vazios - SEM FALLBACK');
+                console.warn('⚠️ [Chart] Dados mensais vazios - NÃO RENDERIZANDO');
                 return;
             }
+
+            console.log(`📊 [MonthlyChart] Renderizando: ${revenue.length} valores mensais`);
 
             const ctx = canvas.getContext('2d');
 
@@ -1854,7 +1183,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: CONFIG.CHART.ANIMATION_EASING },
+                    animation: { duration: CONFIG.CHART.ANIMATION_DURATION, easing: 'easeOutQuart' },
                     plugins: {
                         legend: {
                             position: 'top',
@@ -1899,7 +1228,7 @@
         }
 
         // ==========================================
-        // 🔥 GPSA (COMPLETO)
+        // 🔥 GPSA (COM DADOS REAIS)
         // ==========================================
 
         _renderGPSA(chartData) {
@@ -2008,67 +1337,6 @@
                     ${tab.content}
                 </div>
             `).join('');
-            
-            const styleEl = document.getElementById('gpsa-tab-style');
-            if (!styleEl) {
-                const style = document.createElement('style');
-                style.id = 'gpsa-tab-style';
-                style.textContent = `
-                    #gpsaTabs .nav-link.active {
-                        color: #ff6b35 !important;
-                        background: rgba(255,107,53,0.08) !important;
-                        border-radius: 8px !important;
-                    }
-                    #gpsaTabs .nav-link {
-                        border-radius: 8px !important;
-                    }
-                    #gpsaTabs .nav-link:hover {
-                        color: #ff6b35 !important;
-                        background: rgba(255,107,53,0.04) !important;
-                    }
-                    .gpsa-stat-card {
-                        background: rgba(0,0,0,0.15);
-                        border-radius: 10px;
-                        padding: 0.6rem;
-                        text-align: center;
-                        border: 1px solid rgba(255,255,255,0.04);
-                        transition: all 0.3s;
-                    }
-                    .gpsa-stat-card:hover {
-                        background: rgba(255,107,53,0.06);
-                        border-color: rgba(255,107,53,0.1);
-                        transform: translateY(-2px);
-                    }
-                    .gpsa-stat-value {
-                        font-size: 1.2rem;
-                        font-weight: 800;
-                        color: #ff6b35;
-                        line-height: 1.2;
-                    }
-                    .gpsa-stat-label {
-                        font-size: 0.55rem;
-                        color: rgba(255,255,255,0.4);
-                        text-transform: uppercase;
-                        letter-spacing: 0.3px;
-                        margin-top: 2px;
-                    }
-                    .gpsa-stat-value.success { color: #48bb78; }
-                    .gpsa-stat-value.danger { color: #f56565; }
-                    .gpsa-stat-value.warning { color: #f5a623; }
-                    .gpsa-insight {
-                        padding: 0.4rem 0.6rem;
-                        background: rgba(0,0,0,0.1);
-                        border-radius: 6px;
-                        border-left: 3px solid #ff6b35;
-                        font-size: 0.75rem;
-                        color: rgba(255,255,255,0.7);
-                        margin-bottom: 0.3rem;
-                    }
-                    .gpsa-insight:last-child { margin-bottom: 0; }
-                    .gpsa-insight .icon { margin-right: 0.4rem; }
-                `;
-                document.head.appendChild(style);
-            }
             
             console.log('✅ [GPSA] Renderizado com sucesso!');
         }
@@ -2285,10 +1553,6 @@
             `;
         }
 
-        // ==========================================
-        // 🔥 GPSA - STATUS DE SAÚDE
-        // ==========================================
-
         _getGPSAStatus(score) {
             if (score >= 80) {
                 return {
@@ -2330,252 +1594,14 @@
         }
 
         // ==========================================
-        // 🔥 MÉTODOS AUXILIARES (MANTIDOS)
-        // ==========================================
-
-        _getCurrentAnalysis() {
-            return this._analysisHistory.find(a => a.id === this._currentAnalysisId) || this._analysisHistory[0];
-        }
-
-        _switchAnalysis(analysisId) {
-            if (analysisId === this._currentAnalysisId) return;
-
-            console.log(`🔄 [Dashboard] Alternando para análise: ${analysisId}`);
-
-            this._analysisHistory.forEach(a => {
-                a.isActive = a.id === analysisId;
-            });
-            this._currentAnalysisId = analysisId;
-
-            const analysis = this._getCurrentAnalysis();
-            if (!analysis) return;
-
-            console.log(`📊 [Dashboard] Carregando análise: ${analysis.filename}`);
-
-            this._updateFileSelector();
-
-            if (analysis.chart_data) {
-                this._renderAllCharts(analysis.chart_data);
-                this._renderGPSA(analysis.chart_data);
-            } else {
-                console.warn('⚠️ [Dashboard] Análise sem chart_data');
-            }
-
-            this._updateAIReport({
-                executive_score: analysis.executive_score || {},
-                executive_summary: analysis.executive_summary || '',
-                recommendations: analysis.recommendations || [],
-                chart_data: analysis.chart_data || {},
-                forecast: '',
-                general_conclusion: '',
-                comparison: {},
-                trend: {}
-            });
-
-            this._updateMetrics({
-                executive_score: analysis.executive_score || {},
-                chart_data: analysis.chart_data || {}
-            });
-
-            const filenameEl = document.getElementById('resultFilename');
-            if (filenameEl) {
-                filenameEl.textContent = analysis.filename || 'Análise';
-            }
-
-            console.log(`✅ [Dashboard] Alternado para: ${analysis.filename}`);
-        }
-
-        _updateFileSelector() {
-            const container = document.getElementById('analysisSelector');
-            if (!container) {
-                this._createFileSelector();
-                return;
-            }
-
-            if (this._analysisHistory.length <= 1) {
-                container.style.display = 'none';
-                return;
-            }
-
-            container.style.display = 'block';
-
-            let html = `
-                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.2rem 0;">
-                    <span style="font-size: 0.6rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;">
-                        📁 Arquivos:
-                    </span>
-            `;
-
-            this._analysisHistory.forEach((analysis) => {
-                const isActive = analysis.isActive;
-                const status = analysis.success ? '✅' : '❌';
-                const filename = analysis.filename.length > 28 
-                    ? analysis.filename.substring(0, 25) + '...' 
-                    : analysis.filename;
-
-                html += `
-                    <button class="analysis-selector-btn ${isActive ? 'active' : ''}" 
-                            data-analysis-id="${analysis.id}"
-                            style="
-                                padding: 0.2rem 0.8rem;
-                                border-radius: 20px;
-                                border: 1px solid ${isActive ? '#ff6b35' : 'rgba(255,255,255,0.08)'};
-                                background: ${isActive ? 'rgba(255,107,53,0.15)' : 'rgba(255,255,255,0.03)'};
-                                color: ${isActive ? '#ff6b35' : 'rgba(255,255,255,0.5)'};
-                                font-size: 0.65rem;
-                                font-weight: ${isActive ? '700' : '400'};
-                                cursor: pointer;
-                                transition: all 0.3s;
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 0.3rem;
-                                font-family: inherit;
-                            "
-                            onmouseover="this.style.borderColor='#ff6b35'; this.style.background='rgba(255,107,53,0.08)'"
-                            onmouseout="this.style.borderColor='${isActive ? '#ff6b35' : 'rgba(255,255,255,0.08)'}'; this.style.background='${isActive ? 'rgba(255,107,53,0.15)' : 'rgba(255,255,255,0.03)'}'"
-                            onclick="window.__dashboard?._switchAnalysis('${analysis.id}')">
-                        ${status} ${filename}
-                        <span style="font-size: 0.5rem; color: rgba(255,255,255,0.2);">
-                            ${analysis.rows} registros
-                        </span>
-                    </button>
-                `;
-            });
-
-            html += `
-                    <button class="analysis-selector-btn" 
-                            style="
-                                padding: 0.2rem 0.6rem;
-                                border-radius: 20px;
-                                border: none;
-                                background: rgba(255,255,255,0.03);
-                                color: rgba(255,255,255,0.2);
-                                font-size: 0.6rem;
-                                cursor: pointer;
-                                transition: all 0.3s;
-                                font-family: inherit;
-                            "
-                            onmouseover="this.style.color='rgba(255,255,255,0.5)'"
-                            onmouseout="this.style.color='rgba(255,255,255,0.2)'"
-                            onclick="window.__dashboard?._showAllFiles()"
-                            title="Ver todos os arquivos">
-                        <i class="fas fa-expand"></i>
-                    </button>
-                </div>
-            `;
-
-            container.innerHTML = html;
-        }
-
-        _createFileSelector() {
-            if (document.getElementById('analysisSelector')) return;
-
-            const resultCard = document.getElementById('resultCard');
-            if (!resultCard) return;
-
-            const container = document.createElement('div');
-            container.id = 'analysisSelector';
-            container.style.cssText = `
-                display: none;
-                padding: 0.2rem 0.5rem;
-                margin-bottom: 0.3rem;
-                background: rgba(255,255,255,0.02);
-                border-radius: 10px;
-                border: 1px solid rgba(255,255,255,0.04);
-            `;
-
-            const resultContainer = document.getElementById('resultContainer');
-            if (resultContainer) {
-                resultCard.insertBefore(container, resultContainer);
-            } else {
-                resultCard.appendChild(container);
-            }
-        }
-
-        _showAllFiles() {
-            if (this._analysisHistory.length <= 1) return;
-
-            let html = `
-                <div style="padding: 0.5rem;">
-                    <h6 style="color: #ff6b35; font-size: 0.9rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>📁 ${this._analysisHistory.length} arquivos analisados</span>
-                        <span style="font-size: 0.6rem; color: rgba(255,255,255,0.2); font-weight: 400;">
-                            clique para alternar
-                        </span>
-                    </h6>
-                    <div style="display: grid; gap: 0.3rem;">
-            `;
-
-            this._analysisHistory.forEach((analysis) => {
-                const status = analysis.success ? '✅' : '❌';
-                const isActive = analysis.isActive;
-                html += `
-                    <div style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                        padding: 0.3rem 0.6rem;
-                        background: ${isActive ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)'};
-                        border-radius: 6px;
-                        border-left: 3px solid ${isActive ? '#ff6b35' : 'transparent'};
-                        cursor: pointer;
-                        transition: all 0.3s;
-                    "
-                    onclick="window.__dashboard?._switchAnalysis('${analysis.id}')"
-                    onmouseover="this.style.background='rgba(255,255,255,0.05)'"
-                    onmouseout="this.style.background='${isActive ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)'}'">
-                        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); display: flex; align-items: center; gap: 0.4rem;">
-                            ${status} 
-                            <span style="font-weight: ${isActive ? '600' : '400'};">${analysis.filename}</span>
-                        </span>
-                        <span style="font-size: 0.6rem; color: rgba(255,255,255,0.2); display: flex; align-items: center; gap: 0.5rem;">
-                            ${analysis.rows} registros
-                            ${isActive ? '<span style="color: #ff6b35; font-size: 0.5rem; font-weight: 600;">👈 ATUAL</span>' : ''}
-                        </span>
-                    </div>
-                `;
-            });
-
-            html += `
-                    </div>
-                    <div style="margin-top: 0.5rem; text-align: center; font-size: 0.55rem; color: rgba(255,255,255,0.15);">
-                        Clique em qualquer arquivo para ver seus gráficos
-                    </div>
-                </div>
-            `;
-
-            if (window.toastr) {
-                toastr.info(html, '📁 Arquivos Analisados', {
-                    timeOut: 0,
-                    closeButton: true,
-                    extendedTimeOut: 0,
-                    enableHtml: true,
-                    positionClass: 'toast-top-center',
-                    progressBar: false,
-                    tapToDismiss: false,
-                    newestOnTop: false
-                });
-            } else {
-                alert(html.replace(/<[^>]*>/g, ''));
-            }
-        }
-
-        // ==========================================
-        // 🔥 ATUALIZAR RELATÓRIO DA IA (MANTIDO)
+        // 🔥 ATUALIZAR RELATÓRIO DA IA
         // ==========================================
 
         async _updateAIReport(data) {
             const reportContainer = document.getElementById('aiReportContent');
             if (!reportContainer) return;
 
-            const {
-                executive_score,
-                executive_summary,
-                recommendations,
-                forecast,
-                general_conclusion,
-                trend
-            } = data;
+            const { executive_score, executive_summary, recommendations, forecast, general_conclusion, trend } = data;
 
             let html = '';
 
@@ -2666,33 +1692,11 @@
                 `;
             }
 
-            if (forecast) {
-                html += `
-                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(74,158,255,0.05); border-radius: 6px; border-left: 3px solid #4a9eff;">
-                        <strong style="color: #4a9eff;">🔮 Previsão</strong>
-                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.2rem;">
-                            ${forecast}
-                        </div>
-                    </div>
-                `;
-            }
-
-            if (general_conclusion) {
-                html += `
-                    <div style="padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
-                        <strong style="color: #ff6b35;">📌 Conclusão</strong>
-                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-top: 0.2rem; line-height: 1.5;">
-                            ${general_conclusion}
-                        </div>
-                    </div>
-                `;
-            }
-
             reportContainer.innerHTML = html || '<div style="color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 1rem;">Análise concluída</div>';
         }
 
         // ==========================================
-        // 🔥 ATUALIZAR MÉTRICAS (MANTIDO)
+        // 🔥 ATUALIZAR MÉTRICAS
         // ==========================================
 
         async _updateMetrics(data) {
@@ -2724,83 +1728,70 @@
         }
 
         // ==========================================
-        // 🔥 OBTER HEADERS PoW (MANTIDO)
+        // 🔥 MÉTODOS AUXILIARES
         // ==========================================
 
-        async _getPowHeaders() {
-            let powHeaders = {};
-            let attempts = 0;
-            const maxAttempts = CONFIG.POW_MAX_ATTEMPTS;
+        _switchAnalysis(analysisId) {
+            if (analysisId === this._currentAnalysisId) return;
 
-            while (attempts < maxAttempts) {
-                attempts++;
-                try {
-                    if (window.powClient) {
-                        if (typeof window.powClient.getSolutionForUpload === 'function') {
-                            const solution = await window.powClient.getSolutionForUpload();
-                            if (solution && solution.nonce) {
-                                return {
-                                    'X-PoW-Nonce': solution.nonce,
-                                    'X-PoW-Challenge': solution.prefix || solution.challenge || '',
-                                    'X-PoW-Difficulty': String(solution.complexity || solution.difficulty || 4),
-                                    'X-PoW-Solution': solution.solution || solution.hash || '',
-                                    'X-PoW-Timestamp': String(solution.solvedAt || solution.timestamp || Date.now())
-                                };
-                            }
-                        }
+            console.log(`🔄 [Dashboard] Alternando para análise: ${analysisId}`);
 
-                        if (typeof window.powClient.prepareForUpload === 'function') {
-                            await window.powClient.prepareForUpload();
-                            const stats = window.powClient.getStats?.();
-                            if (stats?.cache?.hasSolution && stats.cache.solution) {
-                                const s = stats.cache.solution;
-                                return {
-                                    'X-PoW-Nonce': s.nonce,
-                                    'X-PoW-Challenge': s.prefix || s.challenge || '',
-                                    'X-PoW-Difficulty': String(s.complexity || s.difficulty || 4),
-                                    'X-PoW-Solution': s.solution || s.hash || '',
-                                    'X-PoW-Timestamp': String(s.solvedAt || s.timestamp || Date.now())
-                                };
-                            }
-                        }
-                    }
+            this._analysisHistory.forEach(a => {
+                a.isActive = a.id === analysisId;
+            });
+            this._currentAnalysisId = analysisId;
 
-                    const nonce = localStorage.getItem('pow_nonce');
-                    const challenge = localStorage.getItem('pow_challenge');
-                    const solution = localStorage.getItem('pow_solution');
-                    if (nonce && challenge && solution) {
+            const analysis = this._analysisHistory.find(a => a.id === analysisId);
+            if (!analysis || !analysis.chart_data) {
+                console.warn('⚠️ [Dashboard] Análise sem dados');
+                return;
+            }
+
+            this._renderAllCharts(analysis.chart_data);
+            this._renderGPSA(analysis.chart_data);
+        }
+
+        _forceSyncCredits = async () => {
+            console.log('🔄 [Dashboard] Sincronizando créditos...');
+            try {
+                await this._creditManager.sync(true);
+                if (window.App && typeof window.App.updateCredits === 'function') {
+                    window.App.updateCredits();
+                }
+                console.log(`✅ [Dashboard] Sincronizado: ${this._creditManager.display}`);
+                return true;
+            } catch (e) {
+                console.error('❌ [Dashboard] Erro na sincronização:', e);
+                return false;
+            }
+        }
+
+        _getPowHeaders = async () => {
+            try {
+                if (window.powClient && typeof window.powClient.getSolutionForUpload === 'function') {
+                    const solution = await window.powClient.getSolutionForUpload();
+                    if (solution && solution.nonce) {
                         return {
-                            'X-PoW-Nonce': nonce,
-                            'X-PoW-Challenge': challenge,
-                            'X-PoW-Difficulty': '4',
-                            'X-PoW-Solution': solution,
+                            'X-PoW-Nonce': solution.nonce,
+                            'X-PoW-Challenge': solution.prefix || '',
+                            'X-PoW-Difficulty': String(solution.difficulty || 4),
+                            'X-PoW-Solution': solution.solution || '',
                             'X-PoW-Timestamp': String(Date.now())
                         };
                     }
-
-                    if (attempts < maxAttempts) {
-                        await Utils.sleep(1000 * attempts);
-                    }
-                } catch (e) {
-                    console.warn(`⚠️ Tentativa ${attempts} de PoW falhou:`, e.message);
                 }
+                return {};
+            } catch (e) {
+                console.warn('⚠️ Erro ao obter PoW:', e);
+                return {};
             }
-
-            return powHeaders;
         }
 
-        // ==========================================
-        // 🔥 RENOVAR PoW (MANTIDO)
-        // ==========================================
-
-        async _renewPow() {
+        _renewPow = async () => {
             try {
                 if (window.powClient) {
                     if (typeof window.powClient.clearCache === 'function') {
                         window.powClient.clearCache();
-                    }
-                    if (typeof window.powClient.reset === 'function') {
-                        window.powClient.reset();
                     }
                     if (typeof window.powClient.prepareForUpload === 'function') {
                         await window.powClient.prepareForUpload();
@@ -2814,39 +1805,13 @@
             }
         }
 
-        // ==========================================
-        // 🔥 SETUP POLLING
-        // ==========================================
-
         _setupPolling() {
-            if (this._pollingInterval) {
-                clearInterval(this._pollingInterval);
-            }
-
-            this._pollingInterval = setInterval(() => {
-                this._creditManager.syncDebounced();
+            setInterval(() => {
+                if (this._creditManager) {
+                    this._creditManager.syncDebounced();
+                }
             }, CONFIG.CREDITS.SYNC_INTERVAL);
         }
-
-        // ==========================================
-        // 🔥 DESTRUIR TODOS OS GRÁFICOS
-        // ==========================================
-
-        _destroyAllCharts() {
-            Object.keys(this._chartInstances).forEach(key => {
-                if (this._chartInstances[key]) {
-                    try {
-                        this._chartInstances[key].destroy();
-                    } catch (e) {}
-                    this._chartInstances[key] = null;
-                }
-            });
-            console.log('🧹 [Charts] Todos os gráficos destruídos');
-        }
-
-        // ==========================================
-        // 🔥 UI HELPERS (MANTIDOS)
-        // ==========================================
 
         _showUploadStatus(icon, title, subtitle, progress) {
             const statusEl = document.getElementById('analysisStatus');
@@ -2888,135 +1853,164 @@
                     'info': toastr.info
                 };
                 const method = methods[type] || toastr.info;
-                method(message, '', { 
-                    timeOut: CONFIG.TIMEOUTS.TOAST, 
-                    closeButton: true,
-                    progressBar: true
-                });
+                method(message, '', { timeOut: 5000, closeButton: true, progressBar: true });
             } else {
                 console.log(`[${type}] ${message}`);
             }
         }
 
         _showUpgradePrompt() {
-            const modal = document.getElementById('upgradeModal');
-            if (modal) {
-                const instance = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
-                instance.show();
-            } else {
-                setTimeout(() => {
-                    if (confirm('💎 Créditos insuficientes! Deseja ver os planos Premium?')) {
-                        window.location.href = '/planos';
+            setTimeout(() => {
+                if (confirm('💎 Créditos insuficientes! Deseja ver os planos Premium?')) {
+                    window.location.href = '/planos';
+                }
+            }, 500);
+        }
+
+        // ==========================================
+        // 🔥 EXPORTAÇÃO
+        // ==========================================
+
+        getCredits() { return this._creditManager?.balance || 0; }
+        getCreditsDisplay() { return this._creditManager?.display || '0'; }
+        isPremium() { return this._creditManager?.isPremium || false; }
+        isAdmin() { return this._creditManager?.isAdmin || false; }
+        async refreshCredits() { return await this._creditManager?.sync(true); }
+        async syncCredits() { return await this._creditManager?.syncCredits(); }
+        async forceSyncCredits() { return await this._forceSyncCredits(); }
+    }
+
+    // ==============================================
+    // 🔥 CREDIT MANAGER
+    // ==============================================
+
+    class CreditManager {
+        constructor() {
+            this._balance = 0;
+            this._isPremium = false;
+            this._isAdmin = false;
+            this._lastSync = 0;
+            this._syncInProgress = false;
+            this._loadFromAppState();
+            this._setupEventListeners();
+            setTimeout(() => this.sync(true).catch(() => {}), 500);
+            console.log('💰 [CreditManager] Inicializado');
+        }
+
+        _loadFromAppState() {
+            try {
+                if (window.__APP_STATE) {
+                    this._balance = window.__APP_STATE.credits || 0;
+                    this._isPremium = window.__APP_STATE.isPremium || false;
+                    this._isAdmin = window.__APP_STATE.isAdmin || false;
+                    return true;
+                }
+                if (window.appAuth) {
+                    if (window.appAuth.userData) {
+                        this._balance = window.appAuth.userData.credits || 0;
+                        this._isPremium = window.appAuth.userData.is_premium || false;
+                        this._isAdmin = window.appAuth.userData.is_admin || false;
+                        return true;
                     }
-                }, 500);
-            }
-        }
-
-        // ==========================================
-        // 🔥 INVALIDAR CACHE
-        // ==========================================
-
-        async _invalidateCache() {
-            try {
-                if (Utils.cache && typeof Utils.cache.clear === 'function') {
-                    await Utils.cache.clear();
                 }
-                this._analysisCache.clear();
-                this._fileCache.clear();
-                console.log('🧹 Cache invalidado');
-            } catch (e) {
-                console.warn('⚠️ Erro ao invalidar cache:', e);
-            }
+                const userData = localStorage.getItem('user_data');
+                if (userData) {
+                    const parsed = JSON.parse(userData);
+                    this._balance = parsed.credits || 0;
+                    this._isPremium = parsed.is_premium || false;
+                    this._isAdmin = parsed.is_admin || false;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
         }
 
-        // ==========================================
-        // 🔥 OBTER TAB MANAGER
-        // ==========================================
+        _setupEventListeners() {
+            document.addEventListener('creditsUpdated', (e) => {
+                const data = e.detail || {};
+                if (data.credits !== undefined) {
+                    this._balance = data.credits;
+                    this._isPremium = data.isPremium || false;
+                    this._isAdmin = data.isAdmin || false;
+                    this._updateUI();
+                }
+            });
+            document.addEventListener('app:state_changed', () => this._loadFromAppState());
+            document.addEventListener('authLoginSuccess', () => setTimeout(() => this.sync(true), 500));
+        }
 
-        _getTabManager() {
-            if (window.__dashboard && window.__dashboard.tabManager) {
-                return window.__dashboard.tabManager;
+        get balance() { return this._balance; }
+        get isPremium() { return this._isPremium; }
+        get isAdmin() { return this._isAdmin; }
+        get display() {
+            if (this.isAdmin) return '∞';
+            if (this.isPremium) {
+                const maxCredits = CONFIG.CREDITS.MAX_CREDITS_PREMIUM;
+                return `${Math.min(this.balance, maxCredits)}/${maxCredits}`;
             }
-            
+            return String(Math.max(0, this.balance));
+        }
+
+        async sync(force = false) {
+            if (this._syncInProgress && !force) return this._balance;
+            this._syncInProgress = true;
+
             try {
-                const { TabManager } = window;
-                if (TabManager) {
-                    const manager = new TabManager();
-                    manager.init();
-                    return manager;
+                if (window.appAuth && typeof window.appAuth.getCredits === 'function') {
+                    this._balance = window.appAuth.getCredits() || 0;
+                    this._syncInProgress = false;
+                    this._updateUI();
+                    return this._balance;
+                }
+
+                const token = Utils.getToken();
+                if (!token) {
+                    this._syncInProgress = false;
+                    return this._balance;
+                }
+
+                const response = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this._balance = data.credits || 0;
+                    this._isPremium = data.is_premium || false;
+                    this._isAdmin = data.is_admin || false;
+                    this._lastSync = Date.now();
+                    this._updateUI();
                 }
             } catch (e) {
-                console.warn('⚠️ Erro ao obter TabManager:', e);
+                console.warn('⚠️ [CreditManager] Erro sync:', e);
+            } finally {
+                this._syncInProgress = false;
             }
-            
-            return null;
+            return this._balance;
         }
 
-        // ==========================================
-        // 🔥 MÉTODOS PÚBLICOS
-        // ==========================================
+        syncDebounced = Utils.debounce(() => this.sync().catch(() => {}), CONFIG.CREDITS.SYNC_DEBOUNCE || 300);
 
-        getCredits() {
-            return this._creditManager.balance;
+        hasCredits(required = 1) {
+            if (this.isAdmin) return true;
+            return this.balance >= required;
         }
 
-        getCreditsDisplay() {
-            return this._creditManager.display;
+        _updateUI() {
+            const display = this.display;
+            const selectors = [
+                '#creditsCount', '#uploadCredits', '#creditsDisplay',
+                '.credits-display', '#modalCreditsCount', '.credits-badge-nav span',
+                '.user-credits', '#navbarCredits span'
+            ];
+            selectors.forEach(selector => {
+                document.querySelectorAll(selector).forEach(el => {
+                    if (el) el.textContent = display;
+                });
+            });
         }
 
-        isPremium() {
-            return this._creditManager.isPremium;
-        }
-
-        isAdmin() {
-            return this._creditManager.isAdmin;
-        }
-
-        async refreshCredits() {
-            return await this._creditManager.sync(true);
-        }
-
-        async syncCredits() {
-            return await this._creditManager.syncCredits();
-        }
-
-        async forceSyncCredits() {
-            return await this._forceSyncCredits();
-        }
-
-        renderAllCharts(chartData) {
-            return this._renderAllCharts(chartData);
-        }
-
-        renderGPSA(chartData) {
-            return this._renderGPSA(chartData);
-        }
-
-        switchToAnalysis(analysisId) {
-            this._switchAnalysis(analysisId);
-        }
-
-        getAnalysisHistory() {
-            return this._analysisHistory;
-        }
-
-        destroy() {
-            this._stopPolling();
-            if (this._pollingInterval) {
-                clearInterval(this._pollingInterval);
-                this._pollingInterval = null;
-            }
-            
-            this._destroyAllCharts();
-            this._stopAutoSync();
-            
-            document.removeEventListener('creditsUpdated', this._handleCreditsUpdated);
-            document.removeEventListener('chart:data_ready', this._handleChartDataReady);
-            document.removeEventListener('dashboard:render_chart', this._handleChartDataReady);
-            
-            this._initialized = false;
-            console.log('🧹 [Dashboard] Destruído');
-        }
+        async syncCredits() { return await this.sync(true); }
     }
 
     // ==============================================
@@ -3067,7 +2061,6 @@
         }, 3000);
     });
 
-    // 🔥 EXPORTAÇÃO GLOBAL
     window.Dashboard = Dashboard;
     window.initDashboard = initDashboard;
 
@@ -3080,15 +2073,11 @@
     };
 
     console.log('='.repeat(60));
-    console.log('🔥 dashboard.js v16.13 carregado - CORREÇÃO COMPLETA');
-    console.log('   ✅ CORRIGIDO: window.appAuth?.isAuthenticated (propriedade)');
-    console.log('   ✅ CORRIGIDO: Utils.isAuthenticated()');
-    console.log('   ✅ CORRIGIDO: Erro de bind no construtor');
-    console.log('   ✅ CORRIGIDO: _handleCreditsUpdated definido como arrow function');
-    console.log('   ✅ MANTIDAS: TODAS as funções de gráficos, GPSA, etc');
-    console.log('   📊 3 gráficos + GPSA (Performance da Oficina)');
-    console.log('   💰 Créditos: Sincronização 100% confiável');
-    console.log('   🔥 Use window.forceSyncCredits() para sync manual');
+    console.log('🔥 dashboard.js v16.15 carregado');
+    console.log('   ✅ RECEBE dados reais do ML');
+    console.log('   ✅ GRÁFICOS com dados reais (SEM FALLBACK)');
+    console.log('   ✅ MENSAGENS para guiar o usuário');
+    console.log('   📊 3 gráficos + GPSA');
     console.log('='.repeat(60));
 
 })();
