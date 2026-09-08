@@ -1,22 +1,23 @@
-# backend/ml/multi_analysis.py - VERSÃO 6.0 (INTEGRADO COM TRAIN V4.0 E PREDICT V7.0)
+# backend/ml/multi_analysis.py - VERSÃO 6.1 (CORRIGIDA - SEM FALLBACK GEMINI)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V6.0
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V6.1
 ================================================================================
-✅ NOVIDADES V6.0:
-   - 🔥 INTEGRAÇÃO COM TRAIN.PY V4.0 E PREDICT.PY V7.0
-   - 🔥 NORMALIZAÇÃO Z-SCORE: Usa StandardScaler nos dados
-   - 🔥 ADAPTAÇÃO AUTOMÁTICA: Detecta e adapta features
-   - 🔥 MELHORES MÉTRICAS: Inclui precision, recall, f1, roc_auc
-   - 🔥 SUPORTE A ENSEMBLE: Integração com BoostingEnsemble V3.0
-   - 🔥 CACHE INTELIGENTE: Cache com base no conteúdo e features
-   - 🔥 LOGS DETALHADOS: Mais informações para debug
+✅ CORREÇÕES V6.1:
+   - 🔥 REMOVIDO: Fallback silencioso do Gemini
+   - 🔥 ADICIONADO: Logs detalhados para diagnóstico
+   - 🔥 ADICIONADO: Validação rigorosa das respostas do Gemini
+   - 🔥 ADICIONADO: Exceções claras em vez de dados falsos
+   - 🔥 MELHORADO: Integração com Gemini Service V5.2
+   - 🔥 MELHORADO: Logs estruturados com todos os erros
 
-✅ MANTIDO V5.3:
+✅ MANTIDO V6.0:
+   - Integração com TRAIN.PY V4.0 E PREDICT.PY V7.0
+   - Normalização Z-Score (StandardScaler)
+   - Adaptação automática de features
+   - Métricas: precision, recall, f1, roc_auc
+   - Suporte a Ensemble (BoostingEnsemble V3.0)
+   - Cache inteligente com TTL
    - Processamento paralelo com semáforo (max 3)
-   - Progresso salvo no banco
-   - Chart data gerado durante processamento
-   - Fallback automático
-   - Métricas detalhadas
 ================================================================================
 """
 
@@ -140,7 +141,6 @@ class FileMetrics:
     encoding_used: Optional[str] = None
     processing_time_ms: float = 0.0
     model_used: str = "default"
-    # 🔥 NOVO: Métricas adicionais
     precision: float = 0.0
     recall: float = 0.0
     f1_score: float = 0.0
@@ -159,7 +159,6 @@ class MLResults:
     min_score: float
     max_score: float
     risk_distribution: Dict[str, float]
-    # 🔥 NOVO
     avg_accuracy: float = 0.0
     avg_precision: float = 0.0
     avg_recall: float = 0.0
@@ -207,7 +206,6 @@ class ConsolidatedAnalysis:
     combined_recommendations: List[str] = field(default_factory=list)
     chart_data: Dict[str, Any] = field(default_factory=dict)
     processing_time_ms: float = 0
-    # 🔥 NOVO
     normalization: str = "Z-Score"
     total_files_analyzed: int = 0
     
@@ -305,7 +303,6 @@ class MultiFileAnalysisResult:
     encodings_used: List[str] = field(default_factory=list)
     status: str = AnalysisStatus.PENDING.value
     progress: float = 0.0
-    # 🔥 NOVO
     normalization: str = "Z-Score"
     model_version: str = "V7.0"
     feature_count_avg: int = 0
@@ -380,12 +377,12 @@ class MultiFileAnalysisResult:
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V6.0
+# CLASSE PRINCIPAL - ANALISADOR MÚLTIPLO V6.1
 # ==============================================
 
 class MultiFileAnalyzerV6:
     """
-    🔥 Analisador de múltiplos arquivos com IA Avançada - V6.0
+    🔥 Analisador de múltiplos arquivos com IA Avançada - V6.1
     Integrado com train.py V4.0 e predict.py V7.0
     
     Características:
@@ -393,10 +390,10 @@ class MultiFileAnalyzerV6:
     - Cache inteligente com TTL
     - Progresso salvo no banco
     - Chart data gerado durante processamento
-    - Fallback automático
     - Métricas detalhadas
     - Normalização Z-Score
-    - Adaptação automática de features
+    - 🔥 SEM FALLBACK SILENCIOSO DO GEMINI
+    - 🔥 LOGS DETALHADOS PARA DIAGNÓSTICO
     """
     
     # Configurações
@@ -404,7 +401,7 @@ class MultiFileAnalyzerV6:
     CACHE_TTL = 300  # 5 minutos
     MAX_CONCURRENT = 3
     TIMEOUT_SECONDS = 60  # Timeout por arquivo
-    NORMALIZATION = "Z-Score"  # 🔥 Padrão
+    NORMALIZATION = "Z-Score"
     
     def __init__(self):
         """Inicializa o analisador com todas as dependências"""
@@ -441,7 +438,9 @@ class MultiFileAnalyzerV6:
             "files_processed_total": 0,
             "errors_total": 0,
             "feature_adaptations": 0,
-            "normalizations_applied": 0
+            "normalizations_applied": 0,
+            "gemini_errors": 0,
+            "gemini_timeouts": 0
         }
         
         # ==========================================
@@ -451,7 +450,7 @@ class MultiFileAnalyzerV6:
         self.process_file = None
         self.gemini = None
         self.is_gemini_available = False
-        self.predictor = None  # 🔥 NOVO: Referência ao predictor V7.0
+        self.predictor = None
         
         # ==========================================
         # CALLBACKS E DB
@@ -466,13 +465,47 @@ class MultiFileAnalyzerV6:
         self._load_dependencies()
         self._load_predictor()
         
-        logger.info("✅ MultiFileAnalyzerV6.0 inicializado (integrado com Train V4.0)")
+        # 🔥 LOG DETALHADO DO STATUS
+        logger.info("=" * 60)
+        logger.info("✅ MultiFileAnalyzerV6.1 inicializado")
+        logger.info("=" * 60)
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
         logger.info(f"   🔄 Processamento paralelo: {self.MAX_CONCURRENT}")
         logger.info(f"   📊 Normalização: {self.NORMALIZATION}")
-        logger.info(f"   🔥 Gemini disponível: {self.is_gemini_available}")
-        logger.info(f"   🔥 Predictor V7.0: {'disponível' if self.predictor else 'não carregado'}")
+        logger.info(f"   🔥 Predictor V7.0: {'✅ disponível' if self.predictor else '❌ não carregado'}")
+        
+        # 🔥 LOG DETALHADO DO GEMINI
+        if self.gemini:
+            try:
+                model = getattr(self.gemini, 'current_model', 'unknown')
+                health = self.gemini.is_healthy() if hasattr(self.gemini, 'is_healthy') else False
+                
+                if health:
+                    logger.info(f"   🔥 Gemini Service: ✅ DISPONÍVEL")
+                    logger.info(f"   🔥 Modelo atual: {model}")
+                    
+                    if hasattr(self.gemini, 'available_models'):
+                        models = self.gemini.available_models[:3]
+                        logger.info(f"   🔥 Modelos disponíveis: {models}")
+                else:
+                    logger.error(f"   ❌ Gemini Service: INDISPONÍVEL")
+                    logger.error(f"   → Status: {self.gemini.health_status if hasattr(self.gemini, 'health_status') else 'desconhecido'}")
+                    
+                    if hasattr(self.gemini, '_last_error') and self.gemini._last_error:
+                        logger.error(f"   → Último erro: {self.gemini._last_error}")
+                    
+                    self.is_gemini_available = False
+                    
+            except Exception as e:
+                logger.error(f"   ❌ Erro ao verificar Gemini: {e}")
+                self.is_gemini_available = False
+        else:
+            logger.error("   ❌ Gemini Service: NÃO INICIALIZADO")
+            logger.error("   → Verifique GEMINI_API_KEY no arquivo .env")
+            logger.error("   → O serviço de IA não estará disponível")
+        
+        logger.info("=" * 60)
     
     # ==========================================
     # 🔥 CARREGAMENTO DE DEPENDÊNCIAS
@@ -494,25 +527,56 @@ class MultiFileAnalyzerV6:
         
         # ----- GEMINI -----
         try:
+            logger.info("   🔄 Carregando Gemini Service...")
             from backend.gemini import get_gemini_service, is_gemini_available
             
             self.gemini = get_gemini_service()
             self.is_gemini_available = is_gemini_available()
             
-            if self.gemini and self.is_gemini_available:
-                model = getattr(self.gemini, 'current_model', 'unknown')
-                logger.info(f"   ✅ Gemini Service carregado: {model}")
+            if self.gemini:
+                # Verificar saúde
+                is_healthy = self.gemini.is_healthy() if hasattr(self.gemini, 'is_healthy') else False
+                
+                if is_healthy:
+                    model = getattr(self.gemini, 'current_model', 'unknown')
+                    logger.info(f"   ✅ Gemini Service carregado: {model}")
+                    
+                    # Log de métricas
+                    if hasattr(self.gemini, 'get_metrics'):
+                        try:
+                            metrics = self.gemini.get_metrics()
+                            overview = metrics.get('overview', {})
+                            logger.info(f"   📊 Gemini - Total de chamadas: {overview.get('total_calls', 0)}")
+                            logger.info(f"   📊 Gemini - Taxa de sucesso: {overview.get('success_rate', 0):.1f}%")
+                        except Exception as e:
+                            logger.debug(f"   ⚠️ Não foi possível obter métricas do Gemini: {e}")
+                else:
+                    logger.error("   ❌ Gemini Service NÃO ESTÁ SAUDÁVEL")
+                    
+                    # Tentar obter diagnóstico
+                    try:
+                        health = self.gemini.get_health_status() if hasattr(self.gemini, 'get_health_status') else {}
+                        logger.error(f"   → Status: {health.get('status', 'desconhecido')}")
+                        logger.error(f"   → Circuit: {health.get('circuit_breaker', 'desconhecido')}")
+                        if hasattr(self.gemini, '_last_error') and self.gemini._last_error:
+                            logger.error(f"   → Erro: {self.gemini._last_error}")
+                    except Exception as e:
+                        logger.error(f"   → Erro ao obter diagnóstico: {e}")
+                    
+                    self.is_gemini_available = False
             else:
-                logger.warning("   ⚠️ Gemini Service não disponível")
-                self.gemini = None
+                logger.error("   ❌ Gemini Service retornou None")
                 self.is_gemini_available = False
                 
         except ImportError as e:
-            logger.warning(f"   ⚠️ Gemini Service não disponível: {e}")
+            logger.error(f"   ❌ Erro de importação do Gemini: {e}")
+            logger.error("   → Verifique se o arquivo gemini.py existe")
             self.gemini = None
             self.is_gemini_available = False
         except Exception as e:
             logger.error(f"   ❌ Erro ao carregar Gemini: {e}")
+            logger.error(f"   → Tipo: {type(e).__name__}")
+            logger.error(f"   → Stack trace:", exc_info=True)
             self.gemini = None
             self.is_gemini_available = False
     
@@ -754,6 +818,7 @@ class MultiFileAnalyzerV6:
             logger.info(f"✅ Análise concluída em {result.processing_time_ms:.0f}ms")
             logger.info(f"   📝 Encodings usados: {result.encodings_used}")
             logger.info(f"   📊 Normalização: {result.normalization}")
+            logger.info(f"   🤖 Modelo Gemini: {gemini_analysis.get('model_used', 'desconhecido')}")
             
             await self._update_progress(1.0, "Análise concluída! ✅")
             
@@ -816,7 +881,7 @@ class MultiFileAnalyzerV6:
         return processed
     
     # ==========================================
-    # 🔥 _process_single_file - V6.0
+    # 🔥 _process_single_file - V6.1
     # ==========================================
     
     async def _process_single_file(
@@ -1281,7 +1346,7 @@ class MultiFileAnalyzerV6:
                 "normalization": self.NORMALIZATION
             }
         
-        # Fallback
+        # Fallback para dados de teste
         random.seed(42)
         return {
             "weekly": {
@@ -1302,53 +1367,174 @@ class MultiFileAnalyzerV6:
         }
     
     # ==========================================
-    # 🔥 GERAR ANÁLISE COM GEMINI
+    # 🔥 GERAR ANÁLISE COM GEMINI - V6.1 (SEM FALLBACK)
     # ==========================================
     
     async def _generate_gemini_analysis(
         self,
         consolidated: ConsolidatedAnalysis
     ) -> Dict[str, Any]:
-        """Gera análise com Gemini usando dados estruturados"""
-        if not self.gemini or not self.is_gemini_available:
-            logger.warning("⚠️ Gemini não disponível, usando fallback")
-            return self._generate_fallback_analysis(consolidated)
+        """
+        🔥 Gera análise com Gemini usando dados estruturados
+        🔥 SEM FALLBACK - Logs detalhados e exceções claras
+        """
+        logger.info("=" * 60)
+        logger.info("🤖 INICIANDO ANÁLISE COM GEMINI")
+        logger.info("=" * 60)
         
+        # 1️⃣ VERIFICAR DISPONIBILIDADE DO GEMINI
+        if not self.gemini:
+            logger.error("❌ Gemini Service NÃO INICIALIZADO")
+            logger.error("   → Verifique se a API key está configurada")
+            logger.error("   → Verifique se o serviço foi carregado corretamente")
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError(
+                "Gemini Service não disponível. "
+                "Verifique GEMINI_API_KEY no arquivo .env e reinicie o servidor."
+            )
+        
+        if not self.is_gemini_available:
+            logger.error("❌ Gemini Service INDISPONÍVEL")
+            logger.error("   → Verifique a conexão com a internet")
+            logger.error("   → Verifique se a API key é válida")
+            logger.error("   → Verifique se o modelo está acessível")
+            
+            # Log detalhado do status
+            try:
+                from backend.gemini import get_gemini_service
+                service = get_gemini_service()
+                health = service.get_health_status() if hasattr(service, 'get_health_status') else {}
+                logger.error(f"   → Status de saúde: {health}")
+                
+                metrics = service.get_metrics() if hasattr(service, 'get_metrics') else {}
+                logger.error(f"   → Métricas: {metrics.get('overview', {})}")
+            except Exception as e:
+                logger.error(f"   → Erro ao obter diagnóstico: {e}")
+            
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError(
+                "Gemini Service indisponível. "
+                "Verifique a conexão e a API key."
+            )
+        
+        # 2️⃣ LOG DOS DADOS SENDO ENVIADOS
+        logger.info(f"📊 Dados para análise:")
+        logger.info(f"   → Total de arquivos: {consolidated.total_files}")
+        logger.info(f"   → Processados: {consolidated.processed_files}")
+        logger.info(f"   → Falhas: {consolidated.failed_files}")
+        logger.info(f"   → Normalização: {consolidated.normalization}")
+        logger.info(f"   → Total de receita: R$ {consolidated.total_revenue:,.2f}")
+        logger.info(f"   → Score médio: {consolidated.avg_score_overall:.3f}")
+        
+        # 3️⃣ PREPARAR DADOS
         try:
             analysis_data = consolidated.to_dict()
             analysis_data['analysis_type'] = 'analise_avancada'
             analysis_data['normalization'] = consolidated.normalization
             
-            logger.info(f"🤖 Enviando dados para Gemini ({consolidated.total_files} arquivos)")
+            # Log do tamanho dos dados
+            data_size = len(json.dumps(analysis_data, default=str))
+            logger.info(f"   → Tamanho dos dados: {data_size} bytes")
             
+        except Exception as e:
+            logger.error(f"❌ Erro ao preparar dados para Gemini: {e}")
+            logger.error(f"   → Stack trace:", exc_info=True)
+            raise RuntimeError(f"Erro ao preparar dados: {e}")
+        
+        # 4️⃣ CHAMAR GEMINI
+        logger.info("📤 Enviando requisição para Gemini...")
+        start_time = time.time()
+        
+        try:
             response = await self.gemini.analyze_office_data(
                 data_type="analise_avancada",
                 analysis_data=analysis_data
             )
             
-            if response.get('success'):
-                full_text = response.get('full_analysis', '')
-                return {
-                    'success': True,
-                    'executive_score': self._parse_executive_score(full_text),
-                    'executive_summary': self._parse_summary(full_text),
-                    'comparison': self._parse_comparison(full_text),
-                    'trend': self._parse_trend(full_text),
-                    'recommendations': self._parse_recommendations(full_text),
-                    'forecast': self._parse_forecast(full_text),
-                    'conclusion': self._parse_conclusion(full_text),
-                    'full_analysis': full_text
-                }
-            else:
-                logger.warning(f"⚠️ Gemini retornou erro: {response.get('error')}")
-                return self._generate_fallback_analysis(consolidated)
-                
+            elapsed = (time.time() - start_time) * 1000
+            logger.info(f"⏱️ Resposta do Gemini recebida em {elapsed:.0f}ms")
+            
+        except asyncio.TimeoutError as e:
+            logger.error(f"❌ TIMEOUT na requisição Gemini (após {self.TIMEOUT_SECONDS}s)")
+            logger.error(f"   → Verifique a conexão com a internet")
+            logger.error(f"   → O servidor Gemini pode estar sobrecarregado")
+            self._stats["gemini_timeouts"] += 1
+            raise RuntimeError(f"Timeout na requisição Gemini: {e}")
+            
         except Exception as e:
-            logger.error(f"❌ Erro na análise Gemini: {e}")
-            return self._generate_fallback_analysis(consolidated)
+            logger.error(f"❌ Erro na requisição Gemini: {e}")
+            logger.error(f"   → Tipo: {type(e).__name__}")
+            logger.error(f"   → Stack trace:", exc_info=True)
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError(f"Erro na requisição Gemini: {e}")
+        
+        # 5️⃣ VALIDAR RESPOSTA
+        logger.info("🔍 Validando resposta do Gemini...")
+        
+        if not response:
+            logger.error("❌ Resposta do Gemini é VAZIA ou None")
+            logger.error("   → A API pode ter retornado um erro silencioso")
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError("Resposta vazia do Gemini")
+        
+        if not response.get('success', False):
+            error_msg = response.get('error', 'Erro desconhecido')
+            error_msg_full = response.get('message', error_msg)
+            logger.error(f"❌ Gemini retornou erro: {error_msg}")
+            logger.error(f"   → Mensagem: {error_msg_full}")
+            logger.error(f"   → Resposta completa: {response}")
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError(f"Gemini retornou erro: {error_msg_full}")
+        
+        if not response.get('full_analysis'):
+            logger.error("❌ Resposta do Gemini sem 'full_analysis'")
+            logger.error(f"   → Campos disponíveis: {list(response.keys())}")
+            logger.error(f"   → Resposta: {response}")
+            self._stats["gemini_errors"] += 1
+            raise RuntimeError("Resposta do Gemini incompleta (sem full_analysis)")
+        
+        full_text = response.get('full_analysis', '')
+        if len(full_text) < 50:
+            logger.warning(f"⚠️ Resposta do Gemini muito curta: {len(full_text)} caracteres")
+            logger.warning(f"   → Conteúdo: {full_text[:200]}")
+            # Não falha, mas loga o aviso
+        
+        # 6️⃣ LOG DE SUCESSO
+        logger.info("✅ Análise Gemini concluída com sucesso!")
+        logger.info(f"   → Tamanho da resposta: {len(full_text)} caracteres")
+        logger.info(f"   → Modelo usado: {response.get('model_used', 'desconhecido')}")
+        logger.info(f"   → Tokens usados: {response.get('tokens_used', 0)}")
+        
+        # 7️⃣ EXTRAIR DADOS ESTRUTURADOS
+        try:
+            result = {
+                'success': True,
+                'executive_score': self._parse_executive_score(full_text),
+                'executive_summary': self._parse_summary(full_text),
+                'comparison': self._parse_comparison(full_text),
+                'trend': self._parse_trend(full_text),
+                'recommendations': self._parse_recommendations(full_text),
+                'forecast': self._parse_forecast(full_text),
+                'conclusion': self._parse_conclusion(full_text),
+                'full_analysis': full_text,
+                'model_used': response.get('model_used', 'desconhecido'),
+                'tokens_used': response.get('tokens_used', 0),
+                'response_time_ms': response.get('response_time_ms', elapsed)
+            }
+            
+            logger.info(f"   → Insights extraídos: {len(result['recommendations'])}")
+            logger.info(f"   → Recomendações extraídas: {len(result['recommendations'])}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao parsear resposta do Gemini: {e}")
+            logger.error(f"   → Texto original: {full_text[:500]}...")
+            logger.error(f"   → Stack trace:", exc_info=True)
+            raise RuntimeError(f"Erro ao parsear resposta do Gemini: {e}")
     
     # ==========================================
-    # 🔥 CONSTRUIR RESULTADO - V6.0
+    # 🔥 CONSTRUIR RESULTADO - V6.1 (COM VALIDAÇÃO)
     # ==========================================
     
     def _build_result(
@@ -1360,9 +1546,24 @@ class MultiFileAnalyzerV6:
         processing_time_ms: float,
         normalize: bool = True
     ) -> MultiFileAnalysisResult:
-        """Constrói o resultado final com objetos corretos e métricas aprimoradas"""
+        """Constrói o resultado final com validação rigorosa"""
         
         success_count = sum(1 for r in processed_results if r.get('success'))
+        
+        # 🔥 VALIDAR ANÁLISE GEMINI
+        if not gemini_analysis:
+            logger.error("❌ gemini_analysis é None ou vazio")
+            raise RuntimeError("Análise Gemini não disponível")
+        
+        if not gemini_analysis.get('success', False):
+            error_msg = gemini_analysis.get('error', 'Erro desconhecido no Gemini')
+            logger.error(f"❌ gemini_analysis falhou: {error_msg}")
+            raise RuntimeError(f"Análise Gemini falhou: {error_msg}")
+        
+        if not gemini_analysis.get('full_analysis'):
+            logger.error("❌ gemini_analysis sem 'full_analysis'")
+            logger.error(f"   → Campos: {list(gemini_analysis.keys())}")
+            raise RuntimeError("Análise Gemini incompleta")
         
         # Coletar encodings
         encodings_used = []
@@ -1389,6 +1590,11 @@ class MultiFileAnalyzerV6:
         # 🔥 Calcular média de features
         feature_counts = [f.feature_count for f in consolidated.files if f.feature_count > 0]
         avg_feature_count = sum(feature_counts) / len(feature_counts) if feature_counts else 0
+        
+        # 🔥 LOG DO MODELO USADO
+        model_used = gemini_analysis.get('model_used', 'desconhecido')
+        logger.info(f"   🤖 Modelo Gemini usado: {model_used}")
+        logger.info(f"   📊 Tokens consumidos: {gemini_analysis.get('tokens_used', 0)}")
         
         return MultiFileAnalysisResult(
             success=success_count > 0,
@@ -1728,63 +1934,6 @@ class MultiFileAnalyzerV6:
             return 'alto'
         return 'medio'
     
-    def _generate_fallback_analysis(self, consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
-        """Gera análise de fallback com objetos corretos e métricas"""
-        return {
-            'success': True,
-            'executive_score': {
-                'saude_financeira': min(10, max(0, consolidated.avg_score_overall * 10)),
-                'eficiencia': min(10, max(0, consolidated.avg_score_overall * 8 + 2)),
-                'controle_custos': min(10, max(0, consolidated.avg_score_overall * 6 + 4)),
-                'crescimento': min(10, max(0, consolidated.avg_score_overall * 7 + 3)),
-                'nivel_risco': 'Moderado' if consolidated.avg_score_overall < 0.6 else 'Baixo',
-                'nota_geral': min(10, max(0, consolidated.avg_score_overall * 8 + 2))
-            },
-            'executive_summary': f"Análise de {consolidated.total_files} arquivo(s) concluída. Receita total: R$ {consolidated.total_revenue:,.2f}. Normalização: {consolidated.normalization}.",
-            'recommendations': [
-                {
-                    'priority': 'media',
-                    'category': 'geral',
-                    'description': '📊 Monitorar KPIs mensalmente para acompanhar evolução do negócio.',
-                    'expected_impact': 'Médio impacto',
-                    'effort': 'medio'
-                },
-                {
-                    'priority': 'media',
-                    'category': 'financeiro',
-                    'description': '💰 Revisar custos operacionais para identificar oportunidades de redução.',
-                    'expected_impact': 'Alto impacto',
-                    'effort': 'medio'
-                },
-                {
-                    'priority': 'baixa',
-                    'category': 'operacional',
-                    'description': '📋 Documentar processos e procedimentos para padronização.',
-                    'expected_impact': 'Médio impacto',
-                    'effort': 'baixo'
-                }
-            ],
-            'forecast': 'Baseado nos dados analisados, espera-se manutenção da tendência atual.',
-            'conclusion': 'A análise demonstra potencial de melhoria com foco em otimização de custos.',
-            'comparison': ComparisonResults(
-                best_revenue='',
-                best_profit='',
-                best_growth='',
-                best_efficiency='',
-                highest_risk='',
-                lowest_performance='',
-                comparison_table={},
-                summary=''
-            ),
-            'trend': TrendResults(
-                direction=TrendDirection.ESTAVEL,
-                strength=0.5,
-                confidence=0.7,
-                description='Tendência estável detectada.',
-                key_observations=['Dados insuficientes para análise detalhada.']
-            )
-        }
-    
     # ==========================================
     # 🔥 CACHE
     # ==========================================
@@ -1921,6 +2070,8 @@ class MultiFileAnalyzerV6:
                 self._stats["successful_analyses"] / self._stats["total_analyses"] * 100
                 if self._stats["total_analyses"] > 0 else 0
             ),
+            "gemini_errors": self._stats["gemini_errors"],
+            "gemini_timeouts": self._stats["gemini_timeouts"],
             "normalization": self.NORMALIZATION,
             "timestamp": datetime.now().isoformat()
         }
@@ -1955,7 +2106,7 @@ async def analyze_multiple_files(
     normalize: bool = True
 ) -> Dict[str, Any]:
     """
-    🔥 Função principal para análise múltipla - V6.0
+    🔥 Função principal para análise múltipla - V6.1
     
     Args:
         files: Lista de arquivos com 'content' e 'filename'
@@ -1991,7 +2142,7 @@ async def analyze_multiple_files(
 async def test_multi_analysis():
     """Função de teste completa"""
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V6.0")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V6.1")
     print("=" * 70)
     
     import pandas as pd
@@ -2028,44 +2179,51 @@ async def test_multi_analysis():
         if progress >= 1.0:
             print()
     
-    result = await analyze_multiple_files(
-        files=files,
-        user_email='teste@email.com',
-        user_id=1,
-        progress_callback=print_progress,
-        normalize=True
-    )
-    
-    print(f"\n📊 RESULTADO:")
-    print(f"   ✅ Sucesso: {result['success']}")
-    print(f"   📁 Total: {result['total_files']}")
-    print(f"   ✅ Processados: {result['processed_files']}")
-    print(f"   ❌ Falhas: {result['failed_files']}")
-    print(f"   ⏱️ Tempo: {result['processing_time_ms']:.0f}ms")
-    print(f"   📊 Normalização: {result.get('normalization', 'N/A')}")
-    print(f"   🔥 Modelo: {result.get('model_version', 'N/A')}")
-    
-    encodings = result.get('encodings_used', [])
-    print(f"   📝 Encodings usados: {encodings if encodings else 'N/A'}")
-    
-    if result.get('executive_score'):
-        print("\n🏆 SCORE EXECUTIVO:")
-        for key, value in result['executive_score'].items():
-            if isinstance(value, (int, float)):
-                print(f"   {key}: {value:.1f}")
-            else:
-                print(f"   {key}: {value}")
-    
-    print("\n📝 RECOMENDAÇÕES:")
-    for rec in result.get('recommendations', [])[:3]:
-        emoji = '🔴' if rec['priority'] == 'alta' else '🟡' if rec['priority'] == 'media' else '🟢'
-        print(f"   {emoji} [{rec['priority'].upper()}] {rec['description'][:60]}...")
-    
-    print("\n" + "=" * 70)
-    print("✅ Teste concluído!")
-    print("=" * 70)
-    
-    return result
+    try:
+        result = await analyze_multiple_files(
+            files=files,
+            user_email='teste@email.com',
+            user_id=1,
+            progress_callback=print_progress,
+            normalize=True
+        )
+        
+        print(f"\n📊 RESULTADO:")
+        print(f"   ✅ Sucesso: {result['success']}")
+        print(f"   📁 Total: {result['total_files']}")
+        print(f"   ✅ Processados: {result['processed_files']}")
+        print(f"   ❌ Falhas: {result['failed_files']}")
+        print(f"   ⏱️ Tempo: {result['processing_time_ms']:.0f}ms")
+        print(f"   📊 Normalização: {result.get('normalization', 'N/A')}")
+        print(f"   🔥 Modelo: {result.get('model_version', 'N/A')}")
+        
+        encodings = result.get('encodings_used', [])
+        print(f"   📝 Encodings usados: {encodings if encodings else 'N/A'}")
+        
+        if result.get('executive_score'):
+            print("\n🏆 SCORE EXECUTIVO:")
+            for key, value in result['executive_score'].items():
+                if isinstance(value, (int, float)):
+                    print(f"   {key}: {value:.1f}")
+                else:
+                    print(f"   {key}: {value}")
+        
+        print("\n📝 RECOMENDAÇÕES:")
+        for rec in result.get('recommendations', [])[:3]:
+            emoji = '🔴' if rec['priority'] == 'alta' else '🟡' if rec['priority'] == 'media' else '🟢'
+            print(f"   {emoji} [{rec['priority'].upper()}] {rec['description'][:60]}...")
+        
+        print("\n" + "=" * 70)
+        print("✅ Teste concluído!")
+        print("=" * 70)
+        
+        return result
+        
+    except Exception as e:
+        print(f"\n❌ TESTE FALHOU: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 if __name__ == "__main__":

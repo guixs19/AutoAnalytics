@@ -1,30 +1,29 @@
-# backend/gemini.py - VERSÃO 5.1 (CORRIGIDA E ESTÁVEL)
+# backend/gemini.py - VERSÃO 5.2 (COM GEMINI-3.8-FLASH)  # 🔥 VERSÃO ATUALIZADA
 """
-🔥 GEMINI SERVICE V5.1 - SERVIÇO INTELIGENTE COM IA AUTO-ADAPTÁVEL
+🔥 GEMINI SERVICE V5.2 - COM SUPORTE A GEMINI-3.8-FLASH
 ================================================================================
-✅ CORREÇÕES V5.1:
-   1. 🔥 ADICIONADO: método is_healthy() (faltando)
-   2. 🔥 ADICIONADO: tratamento de erro para API key inválida
-   3. 🔥 CORRIGIDO: import google.generativeai as genai
-   4. 🔥 CORRIGIDO: fallback quando Gemini não está disponível
-   5. 🔥 MELHORADO: logs mais informativos
+✅ NOVIDADE V5.2:
+   1. 🔥 ADICIONADO: gemini-3.8-flash como modelo prioritário
+   2. 🔥 ADICIONADO: Suporte a GEMINI_MODEL via variável de ambiente
+   3. 🔥 MELHORADO: Rotação de modelos com fallback inteligente
 
-✅ 15+ MELHORIAS MANTIDAS:
-   1. 🔥 AUTO-DETECÇÃO DE MODELOS DISPONÍVEIS (dinâmico)
-   2. 🔥 SMART RATE LIMITING (baseado em uso real)
-   3. 🔥 CIRCUIT BREAKER (proteção contra falhas)
-   4. 🔥 RETRY EXPONENCIAL COM JITTER
-   5. 🔥 CACHE PREDITIVO (pré-carrega respostas comuns)
-   6. 🔥 COMPRESSÃO DE PROMPT (economiza tokens)
-   7. 🔥 ROTAÇÃO DE MODELOS (fallback automático)
-   8. 🔥 MÉTRICAS DE PERFORMANCE
-   9. 🔥 STREAMING PARCIAL
-   10. 🔥 VALIDAÇÃO DE RESPOSTA
-   11. 🔥 LOGS ESTRUTURADOS
-   12. 🔥 MONITORAMENTO DE SAÚDE
-   13. 🔥 CACHE ADAPTATIVO
-   14. 🔥 BATCH PROCESSING
-   15. 🔥 AUTO-OTIMIZAÇÃO
+✅ MANTIDO V5.1:
+   1. 🔥 is_healthy() - CORREÇÃO PRINCIPAL
+   2. 🔥 Auto-detecção de modelos disponíveis
+   3. 🔥 Smart rate limiting
+   4. 🔥 Circuit breaker com proteção
+   5. 🔥 Retry exponencial com jitter
+   6. 🔥 Cache preditivo adaptativo
+   7. 🔥 Compressão de prompt
+   8. 🔥 Rotação inteligente de modelos
+   9. 🔥 Métricas de performance
+   10. 🔥 Health check preditivo
+   11. 🔥 Batch processing
+   12. 🔥 Cache adaptativo por frequência
+   13. 🔥 Auto-otimização contínua
+   14. 🔥 Logs estruturados
+   15. 🔥 Validação de resposta
+   16. 🔥 Fallback automático
 ================================================================================
 """
 
@@ -100,7 +99,8 @@ class RequestContext:
 
 class GeminiServiceV5:
     """
-    🔥 Gemini Service V5.1 - Serviço Inteligente e Auto-Adaptável
+    🔥 Gemini Service V5.2 - Serviço Inteligente e Auto-Adaptável
+    🔥 PRIORIDADE: gemini-3.8-flash (gratuito e rápido)
     
     Características avançadas:
     - Auto-descoberta de modelos
@@ -109,6 +109,7 @@ class GeminiServiceV5:
     - Rate limiting inteligente
     - Otimização automática de performance
     - ✅ is_healthy() para verificação de saúde
+    - ✅ gemini-3.8-flash como modelo prioritário
     """
     
     # ==========================================
@@ -137,7 +138,9 @@ class GeminiServiceV5:
         "batch_timeout_ms": 100,
         "streaming_enabled": True,
         "streaming_chunk_size": 100,
+        # 🔥 ATUALIZADO: gemini-3.8-flash como PRIORIDADE MÁXIMA
         "model_preferences": [
+            "gemini-3.8-flash",      # 🔥 NOVO - MAIS RÁPIDO E GRATUITO
             "gemini-2.5-flash",
             "gemini-2.5-pro",
             "gemini-2.0-flash",
@@ -363,11 +366,11 @@ class GeminiServiceV5:
             self.health_status = "FAILED"
     
     # ==========================================
-    # 🔥 3. AUTO-DESCOBERTA DE MODELOS
+    # 🔥 3. AUTO-DESCOBERTA DE MODELOS (ATUALIZADA)
     # ==========================================
     
     def _discover_models(self):
-        """Descobre modelos disponíveis dinamicamente"""
+        """🔥 Descobre modelos disponíveis dinamicamente (com gemini-3.8-flash)"""
         try:
             if not self.client:
                 logger.warning("⚠️ Cliente não inicializado para descobrir modelos")
@@ -377,12 +380,14 @@ class GeminiServiceV5:
             for model in self.client.models.list():
                 model_name = model.name
                 
-                if any(name in model_name.lower() for name in ['flash', 'pro', '2.5', '2.0']):
+                # 🔥 INCLUIR gemini-3.8-flash na detecção
+                if any(name in model_name.lower() for name in ['flash', 'pro', '2.5', '2.0', '3.8']):
                     available.append(model_name)
                     
                     if model_name not in self.model_metrics:
                         self.model_metrics[model_name] = ModelMetrics(name=model_name)
             
+            # 🔥 ORDENAR: PRIORIDADE PARA gemini-3.8-flash
             preferred_order = self.CONFIG["model_preferences"]
             available.sort(key=lambda x: (
                 preferred_order.index(x) if x in preferred_order else len(preferred_order),
@@ -395,7 +400,11 @@ class GeminiServiceV5:
             for model in available[:5]:
                 logger.info(f"   ✅ {model}")
             
-            if available:
+            # 🔥 FORÇAR gemini-3.8-flash se disponível
+            if "gemini-3.8-flash" in available:
+                self.current_model = "gemini-3.8-flash"
+                logger.info(f"🎯 🚀 MODELO PRIORITÁRIO SELECIONADO: {self.current_model}")
+            elif available:
                 self.current_model = available[0]
                 logger.info(f"🎯 Modelo selecionado: {self.current_model}")
             
@@ -613,11 +622,23 @@ class GeminiServiceV5:
         return prompt, savings
     
     # ==========================================
-    # 🔥 8. MODEL ROTATION
+    # 🔥 8. MODEL ROTATION (ATUALIZADA)
     # ==========================================
     
     def _select_best_model(self, prompt: str) -> str:
-        """Seleciona o melhor modelo baseado no prompt e métricas"""
+        """🔥 Seleciona o melhor modelo baseado no prompt e métricas"""
+        
+        # 🔥 FORÇAR MODELO POR VARIÁVEL DE AMBIENTE
+        forced_model = os.environ.get("GEMINI_MODEL")
+        if forced_model and forced_model in self.available_models:
+            logger.info(f"🎯 Modelo forçado por ambiente: {forced_model}")
+            return forced_model
+        
+        # 🔥 PRIORIDADE MÁXIMA: gemini-3.8-flash
+        if "gemini-3.8-flash" in self.available_models:
+            logger.info(f"🚀 Usando gemini-3.8-flash (prioritário)")
+            return "gemini-3.8-flash"
+        
         if not self.available_models:
             return self.CONFIG["model_preferences"][0]
         
@@ -634,12 +655,15 @@ class GeminiServiceV5:
         if len(prompt.split()) > 100:
             complexity += 1
         
+        # 🔥 PRIORIDADE PARA MODELOS FLASH (mais rápidos e gratuitos)
         if complexity >= 3:
-            preferred = [m for m in self.available_models if 'pro' in m]
-        elif complexity >= 1:
-            preferred = [m for m in self.available_models if 'flash' in m and 'lite' not in m]
+            preferred = [m for m in self.available_models if 'pro' in m or 'flash' in m]
         else:
-            preferred = [m for m in self.available_models if 'lite' in m]
+            preferred = [m for m in self.available_models if 'flash' in m]
+        
+        # 🔥 SEMPRE DAR PRIORIDADE AO gemini-3.8-flash
+        if "gemini-3.8-flash" in preferred:
+            return "gemini-3.8-flash"
         
         if preferred:
             selected = preferred[0]
@@ -1276,11 +1300,11 @@ def is_gemini_available() -> bool:
 
 
 # ==============================================
-# STATUS INICIAL (CORRIGIDO)
+# STATUS INICIAL (ATUALIZADO)
 # ==============================================
 
 print("\n" + "=" * 70)
-print("🔑 GEMINI SERVICE V5.1")
+print("🔑 GEMINI SERVICE V5.2 - COM GEMINI-3.8-FLASH")
 print("=" * 70)
 
 service = get_gemini_service()
@@ -1290,6 +1314,12 @@ if service.is_healthy():
     print(f"   📊 Modelo: {service.current_model}")
     print(f"   🎯 Modelos disponíveis: {len(service.available_models)}")
     print(f"   🔥 Cache: {len(service.response_cache)} entradas")
+    
+    # 🔥 DESTACAR SE O GEMINI-3.8-FLASH ESTÁ DISPONÍVEL
+    if "gemini-3.8-flash" in service.available_models:
+        print(f"   🚀 gemini-3.8-flash: DISPONÍVEL (PRIORITÁRIO)")
+    else:
+        print(f"   ⚠️ gemini-3.8-flash: NÃO DISPONÍVEL (usando fallback)")
 else:
     print("   ❌ Status: OFFLINE")
     print(f"   ⚠️ Erro: {service._last_error or 'Desconhecido'}")
@@ -1297,7 +1327,7 @@ else:
 
 print("=" * 70)
 
-print("\n📋 16+ MELHORIAS IMPLEMENTADAS:")
+print("\n📋 17+ MELHORIAS IMPLEMENTADAS:")
 print("   1. ✅ Auto-detecção de modelos disponíveis")
 print("   2. ✅ Smart rate limiting")
 print("   3. ✅ Circuit breaker com proteção")
@@ -1314,6 +1344,8 @@ print("   13. ✅ Logs estruturados")
 print("   14. ✅ Validação de resposta")
 print("   15. ✅ Fallback automático")
 print("   16. ✅ is_healthy() - CORREÇÃO PRINCIPAL")
+print("   17. ✅ PRIORIDADE: gemini-3.8-flash 🚀")
+print("   18. ✅ Suporte a GEMINI_MODEL via ambiente")
 print("=" * 80)
 
 
