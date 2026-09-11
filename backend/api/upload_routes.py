@@ -1,27 +1,26 @@
-# backend/api/upload_routes.py - VERSÃO 12.7 (LÓGICA DE CRÉDITOS FORTALECIDA)
+# backend/api/upload_routes.py - VERSÃO 12.8 (1 CRÉDITO POR ARQUIVO + IDEMPOTENTE)
 """
-🚀 ROTAS DE UPLOAD - VERSÃO 12.7
+🚀 ROTAS DE UPLOAD - VERSÃO 12.8
 ================================================================================
-✅ CORREÇÃO v12.7:
-   - 🔥 NÃO BLOQUEIA UPLOAD por falta de créditos (apenas avisa)
-   - 🔥 CRIA ANÁLISE MESMO SEM CRÉDITOS (status "pending_credit")
-   - 🔥 PROCESSAMENTO ML CONTINUA MESMO SEM CRÉDITOS
-   - 🔥 CRÉDITO CONSUMIDO NO FINAL DO ML (se disponível)
-   - 🔥 SE NÃO TIVER CRÉDITOS, análise fica "pending_credit"
-   - 🔥 USUÁRIO PODE ASSINAR PREMIUM E LIBERAR ANÁLISE
-   - 🔥 ROTA /analysis/retry-credit/{id} para liberar análises pendentes
+✅ CORREÇÃO v12.8 (LÓGICA CORRIGIDA):
+   - 🔥 1 ARQUIVO = 1 CRÉDITO (2 arquivos = 2, 3 arquivos = 3)
+   - 🔥 VERIFICAÇÃO ÚNICA: consulta banco UMA vez no upload
+   - 🔥 BLOQUEIA com HTTP 402 se não tiver créditos suficientes
+   - 🔥 CRÉDITO CONSUMIDO AO FINAL DO ML (idempotente)
+   - 🔥 PROTEÇÃO CONTRA DUPLICAÇÃO: flag credits_consumed
+   - 🔥 SE NÃO TIVER CRÉDITOS, não processa (economiza recursos)
 
-✅ CORREÇÃO v12.6:
-   - 🔥 CRÉDITO CONSUMIDO AUTOMATICAMENTE quando o ML termina o processamento
-   - 🔥 NÃO CONSUME no upload (apenas verifica se tem créditos)
-   - 🔥 NÃO CONSUME no PDF (já foi consumido)
-   - 🔥 1 análise = 1 crédito (independente do número de arquivos)
-
-✅ MANTIDO v12.3:
-   - Elegibilidade de créditos
+✅ MANTIDO v12.7:
    - Polling e progresso
    - Rate limiting
+   - Elegibilidade de créditos
    - Validação de arquivos
+
+✅ REGRA DE NEGÓCIO:
+   - 1 arquivo  = 1 crédito
+   - 2 arquivos = 2 créditos
+   - 3 arquivos = 3 créditos (máximo)
+   - Se não tem créditos: HTTP 402 com mensagem clara
 ================================================================================
 """
 
@@ -56,7 +55,7 @@ from backend import crud
 from backend.security import get_current_active_user
 from backend.api.pow_routes import validate_pow_request
 
-# 🔥 IMPORTAR FUNÇÕES DO CRUD V2.3
+# 🔥 IMPORTAR FUNÇÕES DO CRUD
 from backend.crud import (
     get_credit_eligibility,
     MAX_CREDITS_PREMIUM,
@@ -103,8 +102,6 @@ except ImportError as e:
             "error": None
         }
 
-
-    
     class MockReport:
         def to_dict(self): return {"content": "Relatório gerado (modo fallback)"}
     
@@ -149,9 +146,11 @@ class UploadConfig:
     HISTORY_PAGE_SIZE = 10
     MAX_HISTORY_DAYS = 90
     
-    # 🔥 V12.7: Créditos - 1 por análise
+    # 🔥 V12.8: Créditos - 1 POR ARQUIVO
     MAX_CREDITS_PREMIUM = MAX_CREDITS_PREMIUM
     INITIAL_FREE_CREDITS = INITIAL_FREE_CREDITS
+    CREDITS_PER_FILE = 1  # 🔥 1 crédito por arquivo
+    # Alias para compatibilidade
     CREDITS_PER_ANALYSIS = 1
     
     # Status
@@ -436,12 +435,12 @@ async def validate_files_advanced(files: List[UploadFile]) -> Dict[str, Any]:
 
 
 # ==============================================
-# 🔥 FUNÇÕES DE CRÉDITOS (VERSÃO 12.7 - FORTALECIDA)
+# 🔥 FUNÇÕES DE CRÉDITOS (V12.8 - 1 POR ARQUIVO)
 # ==============================================
 
 def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
     """
-    🔥 V12.7: Retorna informações completas de créditos do usuário COM ELEGIBILIDADE
+    🔥 V12.8: Retorna informações completas de créditos do usuário
     """
     user_refresh = db.query(models.User).filter(models.User.id == user.id).first()
     if not user_refresh:
@@ -457,7 +456,6 @@ def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
             "reason": "Usuário não encontrado"
         }
     
-    # 🔥 USAR ELEGIBILIDADE
     eligibility = get_credit_eligibility(db, user_refresh)
     
     is_premium = eligibility.get("is_premium", False)
@@ -478,30 +476,40 @@ def get_user_credits_info(db: Session, user: models.User) -> Dict[str, Any]:
     }
 
 
-def check_credits_advanced(db: Session, user: models.User, required: int) -> Dict[str, Any]:
+def check_credits_advanced(
+    db: Session, 
+    user: models.User, 
+    num_files: int
+) -> Dict[str, Any]:
     """
-    🔥 V12.7: Verifica créditos com ELEGIBILIDADE e mensagens inteligentes
-    🔥 V12.7: AGORA RETORNA informativo, NÃO BLOQUEIA
+    🔥 V12.8: Verificação SIMPLES baseada em NÚMERO DE ARQUIVOS
     
-    Retorna informações detalhadas sobre:
-    - Se tem créditos suficientes
-    - Se é premium e pode receber crédito hoje
-    - Sugestões personalizadas (FREE vs PREMIUM)
+    REGRA:
+    - 1 arquivo  = 1 crédito
+    - 2 arquivos = 2 créditos
+    - 3 arquivos = 3 créditos
+    
+    CONSULTA O BANCO UMA VEZ.
+    Retorna can_proceed=False se não tiver créditos suficientes.
     """
+    required = num_files * UploadConfig.CREDITS_PER_FILE
+    
+    # 👑 Admin sempre pode
     if user.is_admin:
         return {
             "valid": True,
-            "message": "👑 Admin - créditos ilimitados",
+            "message": f"👑 Admin - {num_files} arquivo(s)",
             "available": "∞",
-            "required": 0,
+            "required": required,
             "is_admin": True,
             "is_premium": True,
             "remaining_after": "∞",
             "can_proceed": True,
-            "status": "admin"
+            "status": "admin",
+            "files_count": num_files
         }
     
-    # Buscar usuário atualizado
+    # 🔥 CONSULTA O BANCO UMA VEZ
     user_refresh = db.query(models.User).filter(models.User.id == user.id).first()
     if not user_refresh:
         return {
@@ -513,122 +521,66 @@ def check_credits_advanced(db: Session, user: models.User, required: int) -> Dic
             "is_premium": False,
             "remaining_after": 0,
             "can_proceed": False,
-            "status": "error"
+            "status": "error",
+            "files_count": num_files
         }
     
-    # 🔥 USAR ELEGIBILIDADE
-    eligibility = get_credit_eligibility(db, user_refresh)
-    
-    is_premium = eligibility.get("is_premium", False)
     current_credits = user_refresh.credits or 0
-    can_receive_today = eligibility.get("can_receive_today", False)
-    at_max_limit = eligibility.get("at_max_limit", False)
-    reason = eligibility.get("reason", "")
-    days_left = eligibility.get("days_left", 0)
     
-    # 🔥 V12.7: SEMPRE PERMITE PROSSEGUIR (não bloqueia)
-    # Apenas informa o status para o frontend
+    # Detectar premium (tenta múltiplas formas)
+    is_premium = False
+    if hasattr(user_refresh, 'is_premium') and callable(user_refresh.is_premium):
+        try:
+            is_premium = user_refresh.is_premium()
+        except:
+            is_premium = False
+    elif hasattr(user_refresh, 'plan'):
+        plan = user_refresh.plan
+        if hasattr(plan, 'value'):
+            is_premium = plan.value == "premium_mensal"
+        elif hasattr(plan, 'name'):
+            is_premium = plan.name == "PREMIUM_MENSAL"
     
+    # ✅ TEM CRÉDITOS SUFICIENTES
     if current_credits >= required:
-        # ✅ TEM CRÉDITOS
         return {
             "valid": True,
-            "message": f"✅ Créditos suficientes: {current_credits}",
+            "message": f"✅ {current_credits} crédito(s) para {num_files} arquivo(s)",
             "available": current_credits,
             "required": required,
-            "is_admin": False,
             "is_premium": is_premium,
-            "can_receive_today": can_receive_today,
             "remaining_after": current_credits - required,
             "can_proceed": True,
             "status": "has_credits",
-            "will_consume_at_end": True
+            "files_count": num_files
         }
+    
+    # ❌ NÃO TEM CRÉDITOS - BLOQUEIA
+    missing = required - current_credits
+    
+    # Sugestão personalizada
+    if is_premium:
+        suggestion = "Aguarde o próximo crédito diário ou compre mais créditos."
     else:
-        # ❌ SEM CRÉDITOS SUFICIENTES
-        # 🔥 PERMITE PROSSEGUIR, mas avisa que ficará pendente
-        
-        if is_premium and can_receive_today:
-            return {
-                "valid": False,
-                "message": "⭐ Seus créditos premium acabaram! Você pode receber 1 crédito hoje.",
-                "available": current_credits,
-                "required": required,
-                "is_admin": False,
-                "is_premium": True,
-                "suggestion": "Clique em 'Receber Crédito Diário' para ganhar 1 crédito grátis.",
-                "can_receive_today": True,
-                "remaining_after": 0,
-                "can_proceed": True,  # 🔥 PERMITE PROSSEGUIR
-                "status": "premium_can_receive",
-                "will_consume_at_end": True,
-                "pending_credit": True
-            }
-        elif is_premium and at_max_limit:
-            return {
-                "valid": False,
-                "message": f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos.",
-                "available": current_credits,
-                "required": required,
-                "is_admin": False,
-                "is_premium": True,
-                "suggestion": f"Gaste 1 crédito para poder receber mais.",
-                "can_receive_today": False,
-                "remaining_after": 0,
-                "can_proceed": True,  # 🔥 PERMITE PROSSEGUIR
-                "status": "premium_at_max",
-                "will_consume_at_end": True,
-                "pending_credit": True
-            }
-        elif is_premium and eligibility.get("received_today", False):
-            return {
-                "valid": False,
-                "message": "📌 Você já recebeu seu crédito premium hoje. Volte amanhã!",
-                "available": current_credits,
-                "required": required,
-                "is_admin": False,
-                "is_premium": True,
-                "suggestion": "Amanhã você receberá 1 crédito premium.",
-                "can_receive_today": False,
-                "remaining_after": 0,
-                "can_proceed": True,  # 🔥 PERMITE PROSSEGUIR
-                "status": "premium_received_today",
-                "will_consume_at_end": True,
-                "pending_credit": True
-            }
-        elif is_premium:
-            return {
-                "valid": False,
-                "message": f"📌 {reason or 'Créditos insuficientes.'}",
-                "available": current_credits,
-                "required": required,
-                "is_admin": False,
-                "is_premium": True,
-                "suggestion": "Aguarde o próximo ciclo de créditos.",
-                "can_receive_today": False,
-                "remaining_after": 0,
-                "can_proceed": True,  # 🔥 PERMITE PROSSEGUIR
-                "status": "premium_waiting",
-                "will_consume_at_end": True,
-                "pending_credit": True
-            }
-        else:
-            # ❌ USUÁRIO FREE - SEM CRÉDITOS
-            return {
-                "valid": False,
-                "message": f"💡 Seus créditos acabaram! Você tem {current_credits}, precisa de {required}.",
-                "available": current_credits,
-                "required": required,
-                "is_admin": False,
-                "is_premium": False,
-                "suggestion": "Assine o plano Premium para receber 1 crédito por dia! 🚀",
-                "can_receive_today": False,
-                "remaining_after": 0,
-                "can_proceed": True,  # 🔥 PERMITE PROSSEGUIR
-                "status": "free_no_credits",
-                "will_consume_at_end": True,
-                "pending_credit": True
-            }
+        suggestion = "Assine o Premium para receber 1 crédito por dia! 🚀"
+    
+    return {
+        "valid": False,
+        "message": (
+            f"❌ Créditos insuficientes para {num_files} arquivo(s). "
+            f"Você tem {current_credits}, precisa de {required}."
+        ),
+        "available": current_credits,
+        "required": required,
+        "is_admin": False,
+        "is_premium": is_premium,
+        "remaining_after": 0,
+        "can_proceed": False,  # 🔥 BLOQUEIA
+        "status": "insufficient_credits",
+        "files_count": num_files,
+        "missing": missing,
+        "suggestion": suggestion
+    }
 
 
 # ==============================================
@@ -643,12 +595,10 @@ def get_user_analyses_count(db: Session, user_id: int) -> int:
 
 
 def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
-    """Retorna estatísticas avançadas do usuário (V12.7 com pending_credit)"""
+    """Retorna estatísticas avançadas do usuário"""
     
-    # Total de análises
     total_analyses = get_user_analyses_count(db, user_id)
     
-    # Análises por status
     status_counts = {}
     for status in UploadConfig.STATUS_LABELS.keys():
         count = db.query(models.Analysis).filter(
@@ -658,21 +608,18 @@ def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
         if count > 0:
             status_counts[status] = count
     
-    # Análises hoje
     today = datetime.now().date()
     today_analyses = db.query(models.Analysis).filter(
         models.Analysis.user_id == user_id,
         func.date(models.Analysis.uploaded_at) == today
     ).count()
     
-    # Total de linhas processadas
     total_rows = db.query(func.sum(models.Analysis.rows_processed)).filter(
         models.Analysis.user_id == user_id,
         models.Analysis.status == "completed"
     ).first()
     total_rows = total_rows[0] or 0
     
-    # Score médio
     scores = db.query(models.Analysis.confidence_score).filter(
         models.Analysis.user_id == user_id,
         models.Analysis.status == "completed",
@@ -684,25 +631,21 @@ def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
         total_score = sum(s[0] for s in scores if s[0])
         avg_score = round(total_score / len(scores), 2) if scores else 0
     
-    # Última análise
     last_analysis = db.query(models.Analysis).filter(
         models.Analysis.user_id == user_id
     ).order_by(desc(models.Analysis.uploaded_at)).first()
     
-    # Tempo médio de processamento
     avg_time = db.query(func.avg(models.Analysis.processing_time_ms)).filter(
         models.Analysis.user_id == user_id,
         models.Analysis.status == "completed"
     ).first()
     avg_processing_time = avg_time[0] or 0
     
-    # 🔥 V12.7: Análises com créditos pendentes
     pending_credit = db.query(models.Analysis).filter(
         models.Analysis.user_id == user_id,
         models.Analysis.status == "pending_credit"
     ).count()
     
-    # 🔥 V12.7: Análises com créditos já consumidos
     credits_consumed = db.query(models.Analysis).filter(
         models.Analysis.user_id == user_id,
         models.Analysis.credits_consumed == True
@@ -723,14 +666,11 @@ def get_user_stats_advanced(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 # ==============================================
-# 🔥🔥🔥 FUNÇÃO: ATUALIZAR PROGRESSO
+# 🔥 FUNÇÃO: ATUALIZAR PROGRESSO
 # ==============================================
 
 async def update_analysis_progress(db: Session, process_id: int, progress: int, message: str) -> bool:
-    """
-    🔥 Atualiza o progresso de uma análise no banco de dados
-    Usada pelo processamento em background para informar o frontend via polling
-    """
+    """Atualiza o progresso de uma análise no banco de dados"""
     try:
         analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
         if analysis:
@@ -751,93 +691,125 @@ async def update_analysis_progress(db: Session, process_id: int, progress: int, 
 
 
 # ==============================================
-# 🔥🔥🔥 FUNÇÃO: CONSUMIR CRÉDITO DA ANÁLISE (V12.7 - FORTALECIDA)
+# 🔥🔥🔥 FUNÇÃO: CONSUMIR CRÉDITOS (V12.8 - IDEMPOTENTE)
 # ==============================================
 
 async def consume_analysis_credit(
     db: Session,
     analysis: models.Analysis,
-    user: models.User
+    user: models.User,
+    num_files: int
 ) -> Tuple[bool, str]:
     """
-    🔥 V12.7: Consome 1 crédito da análise (FORTALECIDA)
-    Retorna (success, message)
+    🔥 V12.8: Consome N créditos de forma IDEMPOTENTE
+    - 1 arquivo  = 1 crédito
+    - 2 arquivos = 2 créditos
+    - 3 arquivos = 3 créditos
+    
+    ⚠️ PROTEÇÃO CONTRA DUPLICAÇÃO:
+    - Se analysis.credits_consumed == True → NÃO consome de novo
     """
     if not analysis or not user:
         return False, "Dados inválidos"
     
-    # Admin não consome créditos
+    required = num_files * UploadConfig.CREDITS_PER_FILE
+    
+    # ==========================================
+    # 🔥🔥🔥 PROTEÇÃO #1: IDEMPOTÊNCIA
+    # ==========================================
+    if getattr(analysis, 'credits_consumed', False):
+        logger.info(
+            f"⚠️ [IDEMPOTENT] Análise {analysis.id} já consumiu "
+            f"{analysis.credits_consumed_amount} crédito(s). Ignorando."
+        )
+        return True, f"Créditos já consumidos ({analysis.credits_consumed_amount})"
+    
+    # ==========================================
+    # 👑 ADMIN
+    # ==========================================
     if user.is_admin:
         analysis.credits_consumed = True
         analysis.credits_consumed_at = datetime.now()
         analysis.credits_consumed_amount = 0
         analysis.credits_remaining_after = None
         analysis.status = "completed"
+        analysis.progress_message = "✅ Análise concluída (Admin)."
         db.commit()
-        logger.info(f"👑 [CREDIT] Admin {user.email} - análise {analysis.id} marcada como consumida")
+        logger.info(f"👑 [CREDIT] Admin {user.email} - análise {analysis.id}")
         return True, "Admin - créditos ilimitados"
     
-    # Verificar se já consumiu
-    if analysis.credits_consumed:
-        return True, "Crédito já consumido anteriormente"
-    
-    # 🔥 V12.7: Verificar se tem créditos
-    # Se não tiver, análise fica pendente (mas já foi processada)
-    if user.credits < 1:
-        # 🔥 Sem créditos - análise fica pendente
+    # ==========================================
+    # 🔥 PROTEÇÃO #2: Verificar créditos no momento do consumo
+    # ==========================================
+    if (user.credits or 0) < required:
+        analysis.credits_error = f"Créditos insuficientes: {user.credits}/{required}"
+        analysis.credits_needed = required
         analysis.status = "pending_credit"
-        analysis.progress_message = "💡 Créditos insuficientes. Assine Premium para liberar os resultados."
-        analysis.credits_error = "Créditos insuficientes"
+        analysis.progress_message = (
+            f"💡 Créditos insuficientes: {user.credits}/{required}. "
+            f"Assine Premium para liberar."
+        )
         db.commit()
-        logger.warning(f"⚠️ [CREDIT] Usuário {user.email} sem créditos para análise {analysis.id}")
-        logger.info(f"📌 [CREDIT] Análise {analysis.id} em pending_credit - aguardando assinatura Premium")
-        return False, "Créditos insuficientes. Análise aguardando créditos."
+        logger.warning(
+            f"⚠️ [CREDIT] {user.email} sem créditos no consumo: "
+            f"{user.credits}/{required} para análise {analysis.id}"
+        )
+        return False, f"Créditos insuficientes. Precisa de {required}, tem {user.credits}."
     
+    # ==========================================
+    # 🔥 CONSUMIR N CRÉDITOS (1 por arquivo)
+    # ==========================================
     try:
-        # 🔥 CONSUMIR 1 CRÉDITO
         result = manage_credits_after_consumption(
             db=db,
             user=user,
-            amount=1,
-            description=f"Análise ML {analysis.id}: {analysis.filename[:50]}"
+            amount=required,  # 🔥 N créditos
+            description=f"Análise {analysis.id} ({num_files} arquivo(s))"
         )
         
         if result.get("success"):
             db.refresh(user)
             
-            # Atualizar análise
+            # 🔥 Marcar análise como consumida (ATÔMICO)
             analysis.credits_consumed = True
             analysis.credits_consumed_at = datetime.now()
-            analysis.credits_consumed_amount = 1
+            analysis.credits_consumed_amount = required
             analysis.credits_remaining_after = user.credits
+            analysis.credits_needed = 0
+            analysis.credits_error = None
             analysis.status = "completed"
-            analysis.progress_message = "✅ Análise concluída com sucesso! PDF disponível."
+            analysis.progress_message = (
+                f"✅ Análise concluída! {required} crédito(s) consumido(s). "
+                f"Saldo: {user.credits}"
+            )
             
-            # Registrar bônus se houver
             if result.get("bonus_granted"):
                 analysis.credits_bonus_granted = True
                 analysis.credits_bonus_amount = result.get("bonus_amount", 0)
-                logger.info(f"⭐ [CREDIT] Bônus concedido: +{result.get('bonus_amount')} crédito(s)")
+                logger.info(f"⭐ [CREDIT] Bônus premium: +{result.get('bonus_amount')}")
             
             db.commit()
             
-            logger.info(f"💰 [CREDIT] 1 crédito consumido para análise {analysis.id}")
-            logger.info(f"💰 [CREDIT] Saldo restante: {user.credits}")
+            logger.info(
+                f"💰 [CREDIT] {required} crédito(s) consumido(s) "
+                f"para análise {analysis.id} ({num_files} arquivo(s)). "
+                f"Saldo: {user.credits}"
+            )
             
-            return True, f"Crédito consumido com sucesso. Saldo: {user.credits}"
+            return True, f"{required} crédito(s) consumido(s). Saldo: {user.credits}"
         else:
-            error_msg = result.get("message", "Erro desconhecido ao consumir crédito")
-            logger.error(f"❌ [CREDIT] Falha ao consumir crédito: {error_msg}")
+            error_msg = result.get("message", "Erro desconhecido")
+            logger.error(f"❌ [CREDIT] Falha: {error_msg}")
             
             analysis.credits_error = error_msg
             analysis.status = "pending_credit"
-            analysis.progress_message = f"⚠️ Erro: {error_msg[:100]}"
+            analysis.progress_message = f"⚠️ {error_msg[:100]}"
             db.commit()
             
             return False, error_msg
             
     except Exception as e:
-        logger.error(f"❌ [CREDIT] Erro ao consumir crédito: {e}")
+        logger.error(f"❌ [CREDIT] Erro: {e}")
         db.rollback()
         
         analysis.credits_error = str(e)
@@ -849,7 +821,7 @@ async def consume_analysis_credit(
 
 
 # ==============================================
-# 🔥🔥🔥 FUNÇÃO DE PROCESSAMENTO EM BACKGROUND (V12.7 - FORTALECIDA)
+# 🔥 FUNÇÃO DE PROCESSAMENTO EM BACKGROUND (V12.8)
 # ==============================================
 
 async def process_analysis_background(
@@ -858,43 +830,31 @@ async def process_analysis_background(
     user_id: int,
     user_email: str,
     analysis_type: str,
+    num_files: int,  # 🔥 NOVO PARÂMETRO
     db: Session
 ):
     """
-    🔥 PROCESSAMENTO EM BACKGROUND (V12.7 - FORTALECIDA)
-    - Executa o ML mesmo sem créditos
-    - Salva resultados
-    - 🔥 TENTA CONSUMIR 1 CRÉDITO AUTOMATICAMENTE quando termina
-    - 🔥 Se não tiver créditos, análise fica com status "pending_credit"
-    - 🔥 Marca credits_consumed = True se consumiu
-    - 🔥 PDF fica disponível SEM consumo adicional (após liberação)
+    🔥 V12.8: Processamento em background
+    - Recebe num_files para consumir N créditos (1 por arquivo)
+    - Idempotente: não duplica
     """
     try:
         logger.info(f"🔄 [BACKGROUND] Iniciando processamento {process_id}")
-        logger.info(f"   📁 Arquivos: {len(file_data_list)}")
+        logger.info(f"   📁 Arquivos: {num_files}")
+        logger.info(f"   💰 Créditos a consumir: {num_files}")
         logger.info(f"   👤 Usuário: {user_email} (ID: {user_id})")
         
         # ==========================================
         # 1. ATUALIZAR PROGRESSO: 20%
         # ==========================================
-        
         await update_analysis_progress(db, process_id, 20, "Iniciando análise dos dados...")
         
         # ==========================================
-        # 2. CARREGAR MÓDULOS ML
+        # 2. EXECUTAR ANÁLISE ML
         # ==========================================
-        
         from backend.ml.multi_analysis import analyze_multiple_files
         
-        # ==========================================
-        # 3. ATUALIZAR PROGRESSO: 30%
-        # ==========================================
-        
         await update_analysis_progress(db, process_id, 30, "Processando arquivos com IA...")
-        
-        # ==========================================
-        # 4. EXECUTAR ANÁLISE ML (MESMO SEM CRÉDITOS)
-        # ==========================================
         
         logger.info(f"🤖 [BACKGROUND] Chamando analyze_multiple_files para {process_id}")
         
@@ -910,24 +870,21 @@ async def process_analysis_background(
         logger.info(f"✅ [BACKGROUND] analyze_multiple_files concluído para {process_id}")
         
         # ==========================================
-        # 5. ATUALIZAR PROGRESSO: 80%
+        # 3. ATUALIZAR PROGRESSO: 80%
         # ==========================================
-        
         await update_analysis_progress(db, process_id, 80, "Gerando relatório e insights...")
         
         # ==========================================
-        # 6. BUSCAR A ANÁLISE NO BANCO
+        # 4. BUSCAR A ANÁLISE NO BANCO
         # ==========================================
-        
         analysis = db.query(models.Analysis).filter(models.Analysis.id == process_id).first()
         if not analysis:
             logger.error(f"❌ [BACKGROUND] Análise {process_id} não encontrada")
             return
         
         # ==========================================
-        # 7. SALVAR RESULTADOS (MESMO SEM CRÉDITOS)
+        # 5. SALVAR RESULTADOS
         # ==========================================
-        
         chart_data = analysis_result.get('chart_data', {})
         executive_score = analysis_result.get('executive_score', {})
         executive_summary = analysis_result.get('executive_summary', '')
@@ -936,7 +893,6 @@ async def process_analysis_background(
         general_conclusion = analysis_result.get('general_conclusion', '')
         processed_files = analysis_result.get('processed_files', 0)
         
-        # Salva todos os resultados (disponíveis mesmo em pending_credit)
         analysis.chart_data = chart_data
         analysis.insights = executive_summary
         analysis.recommendations = recommendations
@@ -949,23 +905,21 @@ async def process_analysis_background(
             analysis.executive_score = executive_score
         
         # ==========================================
-        # 8. 🔥🔥🔥 TENTAR CONSUMIR 1 CRÉDITO (V12.7)
+        # 6. 🔥🔥🔥 CONSUMIR N CRÉDITOS (1 por arquivo)
         # ==========================================
-        
         user = db.query(models.User).filter(models.User.id == user_id).first()
         
         if user:
-            credit_success, credit_message = await consume_analysis_credit(db, analysis, user)
+            credit_success, credit_message = await consume_analysis_credit(
+                db, analysis, user, num_files  # 🔥 PASSA num_files
+            )
             
             if credit_success:
-                logger.info(f"✅ [BACKGROUND] Análise {process_id} concluída e crédito consumido!")
-                logger.info(f"💰 [BACKGROUND] {credit_message}")
-                analysis.progress_message = "✅ Análise concluída com sucesso! PDF disponível."
+                logger.info(f"✅ [BACKGROUND] Análise {process_id}: {credit_message}")
+                analysis.progress_message = "✅ Análise concluída! PDF disponível."
             else:
-                # ❌ Falha ao consumir crédito - análise fica pendente
-                logger.warning(f"⚠️ [BACKGROUND] Análise {process_id} em status 'pending_credit'")
-                logger.info(f"📌 [BACKGROUND] Usuário pode assinar Premium e usar /analysis/retry-credit/{process_id}")
-                analysis.progress_message = f"💡 Análise processada! {credit_message[:100]}"
+                logger.warning(f"⚠️ [BACKGROUND] Análise {process_id}: {credit_message}")
+                analysis.progress_message = f"💡 {credit_message[:100]}"
                 analysis.status = "pending_credit"
                 db.commit()
                 return
@@ -977,13 +931,10 @@ async def process_analysis_background(
             return
         
         # ==========================================
-        # 9. FINALIZAR
+        # 7. FINALIZAR
         # ==========================================
-        
         db.commit()
-        
-        logger.info(f"✅ [BACKGROUND] Processamento {process_id} concluído com sucesso!")
-        logger.info(f"💰 [BACKGROUND] Crédito consumido, PDF disponível sem custo adicional")
+        logger.info(f"✅ [BACKGROUND] Processamento {process_id} concluído!")
         
     except Exception as e:
         logger.error(f"❌ [BACKGROUND] Erro no processamento {process_id}: {e}")
@@ -1010,9 +961,7 @@ async def get_user_analyses_count_endpoint(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """
-    🔥 Retorna o total de análises do usuário
-    """
+    """Retorna o total de análises do usuário"""
     try:
         total = get_user_analyses_count(db, current_user.id)
         return jsonable_encoder({
@@ -1035,9 +984,7 @@ async def get_user_credits_status(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """
-    🔥 V12.7: Retorna status detalhado de créditos e análises do usuário
-    """
+    """Retorna status detalhado de créditos e análises do usuário"""
     try:
         user = db.query(models.User).filter(models.User.id == current_user.id).first()
         if not user:
@@ -1060,6 +1007,7 @@ async def get_user_credits_status(
                 "is_premium": credits_info.get("is_premium", False),
                 "is_admin": user.is_admin or False
             },
+            "credits_per_file": UploadConfig.CREDITS_PER_FILE,
             "credits_per_analysis": UploadConfig.CREDITS_PER_ANALYSIS
         })
     except Exception as e:
@@ -1071,7 +1019,7 @@ async def get_user_credits_status(
 
 
 # ==============================================
-# 🔥🔥🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING) - V12.7
+# 🔥 ROTA: PROGRESSO DA ANÁLISE (POLLING)
 # ==============================================
 
 @router.get("/analysis/progress/{process_id}")
@@ -1080,10 +1028,7 @@ async def get_analysis_progress(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """
-    🔥 CONSULTA PROGRESSO DA ANÁLISE (V12.7)
-    Retorna status completo, incluindo se o crédito foi consumido
-    """
+    """Consulta progresso da análise"""
     analysis = db.query(models.Analysis).filter(
         models.Analysis.id == process_id,
         models.Analysis.user_id == current_user.id
@@ -1092,7 +1037,6 @@ async def get_analysis_progress(
     if not analysis:
         raise HTTPException(status_code=404, detail="Análise não encontrada")
     
-    # 🔥 V12.7: Verifica se a análise está com crédito pendente
     if analysis.status == "pending_credit":
         return {
             "process_id": process_id,
@@ -1101,9 +1045,9 @@ async def get_analysis_progress(
             "message": "💡 Análise processada! Assine Premium para liberar os resultados.",
             "result": None,
             "credits": {
-                "needed": UploadConfig.CREDITS_PER_ANALYSIS,
+                "needed": analysis.credits_needed if hasattr(analysis, 'credits_needed') else 1,
                 "status": "pending",
-                "message": "Análise aguardando 1 crédito para finalizar.",
+                "message": "Análise aguardando créditos para finalizar.",
                 "action": "Assine Premium ou receba crédito diário",
                 "retry_url": f"/api/analysis/retry-credit/{process_id}"
             },
@@ -1138,21 +1082,18 @@ async def get_analysis_progress(
                 "processing_time_ms": analysis.processing_time_ms or 0
             },
             "executive_score": {},
-            # 🔥 V12.7: Status de créditos - JÁ CONSUMIDO
             "credits": {
                 "consumed": analysis.credits_consumed if hasattr(analysis, 'credits_consumed') else False,
                 "consumed_at": analysis.credits_consumed_at.isoformat() if hasattr(analysis, 'credits_consumed_at') and analysis.credits_consumed_at else None,
                 "amount_consumed": analysis.credits_consumed_amount if hasattr(analysis, 'credits_consumed_amount') else 0,
                 "remaining_after": analysis.credits_remaining_after if hasattr(analysis, 'credits_remaining_after') else None,
-                "credits_needed": UploadConfig.CREDITS_PER_ANALYSIS,
-                "message": "✅ Crédito consumido automaticamente na conclusão da análise." if analysis.credits_consumed else "Aguardando consumo de crédito..."
+                "credits_needed": analysis.credits_needed if hasattr(analysis, 'credits_needed') else 0,
+                "message": "✅ Créditos consumidos na conclusão." if analysis.credits_consumed else "Aguardando consumo..."
             }
         }
         
         if hasattr(analysis, 'executive_score') and analysis.executive_score:
             result_data["executive_score"] = analysis.executive_score
-        
-        logger.info(f"📊 [POLLING] Retornando análise {process_id} - créditos consumidos: {analysis.credits_consumed if hasattr(analysis, 'credits_consumed') else False}")
         
         return {
             "process_id": process_id,
@@ -1189,7 +1130,7 @@ async def get_analysis_progress(
 
 
 # ==============================================
-# 🔥🔥🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (V12.7 - NÃO BLOQUEIA)
+# 🔥🔥🔥 ROTA PRINCIPAL: UPLOAD MÚLTIPLO (V12.8)
 # ==============================================
 
 @router.post("/upload-multi-analyze")
@@ -1205,15 +1146,14 @@ async def upload_multi_analyze(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD MÚLTIPLO COM POLLING (VERSÃO 12.7)
+    🔥 UPLOAD MÚLTIPLO - VERSÃO 12.8
     
-    ✅ RETORNA process_id IMEDIATAMENTE
-    ✅ FRONTEND FAZ POLLING para acompanhar progresso
-    ✅ PROCESSAMENTO ML EM BACKGROUND (MESMO SEM CRÉDITOS)
-    ✅ 🔥 NÃO BLOQUEIA POR FALTA DE CRÉDITOS
-    ✅ 🔥 CRÉDITOS CONSUMIDOS AUTOMATICAMENTE QUANDO O ML TERMINA
-    ✅ 🔥 SE NÃO TIVER CRÉDITOS, análise fica "pending_credit"
-    ✅ VERIFICAÇÃO DE ELEGIBILIDADE INTELIGENTE (INFORMATIVA)
+    ✅ 1 arquivo  = 1 crédito
+    ✅ 2 arquivos = 2 créditos
+    ✅ 3 arquivos = 3 créditos
+    ✅ BLOQUEIA com HTTP 402 se não tiver créditos suficientes
+    ✅ CONSULTA O BANCO UMA VEZ (check_credits_advanced)
+    ✅ CRÉDITO CONSUMIDO AO FINAL DO ML (idempotente)
     """
     start_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
@@ -1254,25 +1194,7 @@ async def upload_multi_analyze(
         )
     
     # ==========================================
-    # PASSO 3: 🔥 VERIFICAR CRÉDITOS (V12.7 - NÃO BLOQUEIA)
-    # ==========================================
-    
-    credit_check = check_credits_advanced(db, current_user, UploadConfig.CREDITS_PER_ANALYSIS)
-    
-    # 🔥 V12.7: NUNCA BLOQUEIA POR FALTA DE CRÉDITOS
-    # Apenas registra e informa o frontend
-    has_credits = credit_check.get("valid", False)
-    will_be_pending = not has_credits and credit_check.get("can_proceed", True)
-    
-    logger.info(f"💰 [MULTI-UPLOAD] Usuário {current_user.email} - Créditos: {credit_check.get('available', 0)}")
-    logger.info(f"💰 [MULTI-UPLOAD] Status: {credit_check.get('status', 'unknown')}")
-    
-    if not has_credits:
-        logger.warning(f"⚠️ [MULTI-UPLOAD] Usuário {current_user.email} SEM CRÉDITOS - análise ficará pendente")
-        logger.info(f"📌 [MULTI-UPLOAD] Mensagem: {credit_check.get('message', '')}")
-    
-    # ==========================================
-    # PASSO 4: VALIDAR ARQUIVOS
+    # PASSO 3: VALIDAR ARQUIVOS (para saber quantos são válidos)
     # ==========================================
     
     validation_result = await validate_files_advanced(files)
@@ -1293,6 +1215,50 @@ async def upload_multi_analyze(
     valid_files = validation_result["valid"]
     invalid_files = validation_result["invalid"]
     
+    # 🔥🔥🔥 NÚMERO DE ARQUIVOS VÁLIDOS = NÚMERO DE CRÉDITOS
+    num_valid_files = len(valid_files)
+    
+    # ==========================================
+    # 🔥🔥🔥 PASSO 4: VERIFICAÇÃO ÚNICA DE CRÉDITOS
+    # ==========================================
+    
+    credit_check = check_credits_advanced(db, current_user, num_valid_files)
+    has_credits = credit_check.get("can_proceed", False)
+    
+    logger.info(
+        f"💰 [MULTI-UPLOAD] {current_user.email}: "
+        f"{num_valid_files} arquivo(s) = {num_valid_files} crédito(s) | "
+        f"Saldo: {credit_check.get('available', 0)} | "
+        f"Status: {credit_check.get('status')}"
+    )
+    
+    # ❌ BLOQUEIA SE NÃO TIVER CRÉDITOS
+    if not has_credits:
+        logger.warning(
+            f"⛔ [MULTI-UPLOAD] {current_user.email} BLOQUEADO: "
+            f"{credit_check.get('message')}"
+        )
+        
+        raise HTTPException(
+            status_code=402,  # Payment Required
+            detail={
+                "error": "insufficient_credits",
+                "message": credit_check.get("message"),
+                "files_requested": num_valid_files,
+                "credits_available": credit_check.get("available", 0),
+                "credits_required": credit_check.get("required", 0),
+                "credits_missing": credit_check.get("missing", 0),
+                "is_premium": credit_check.get("is_premium", False),
+                "suggestion": credit_check.get("suggestion", "")
+            }
+        )
+    
+    # ==========================================
+    # ✅ TEM CRÉDITOS → PROSSEGUIR
+    # ==========================================
+    
+    logger.info(f"✅ [MULTI-UPLOAD] Créditos OK. Processando {num_valid_files} arquivo(s)...")
+    
     file_data_list = [
         {
             'content': f.content,
@@ -1305,37 +1271,29 @@ async def upload_multi_analyze(
     ]
     
     # ==========================================
-    # PASSO 5: CRIAR ANÁLISE (V12.7 COM STATUS ADEQUADO)
+    # PASSO 5: CRIAR ANÁLISE
     # ==========================================
-    
-    # 🔥 V12.7: Determina o status inicial
-    if has_credits:
-        initial_status = "processing"
-        initial_message = "Arquivos validados. Iniciando análise..."
-    else:
-        initial_status = "processing"  # 🔥 Começa processing, depois vai para pending_credit
-        initial_message = "Arquivos validados. Iniciando análise (crédito será verificado ao final)..."
     
     analysis_record = models.Analysis(
         user_id=current_user.id,
         filename=" | ".join([f.filename for f in valid_files]),
         file_size=sum([f.file_size for f in valid_files]),
         analysis_type=analysis_type,
-        status=initial_status,
+        status="processing",
         progress=10,
-        progress_message=initial_message,
+        progress_message=f"Processando {num_valid_files} arquivo(s)...",
         uploaded_at=datetime.now(),
         processed_at=None,
         pow_verified=pow_valid,
         client_ip=client_ip,
         user_agent=user_agent[:255] if user_agent else None,
-        # 🔥 V12.7: Campos de crédito
+        # 🔥 Campos de crédito
         credits_consumed=False,
         credits_consumed_at=None,
         credits_consumed_amount=0,
         credits_remaining_after=None,
         credits_error=None,
-        credits_needed=UploadConfig.CREDITS_PER_ANALYSIS if not has_credits else 0
+        credits_needed=num_valid_files  # 🔥 N arquivos = N créditos
     )
     db.add(analysis_record)
     db.commit()
@@ -1344,9 +1302,7 @@ async def upload_multi_analyze(
     process_id = analysis_record.id
     
     logger.info(f"📝 [MULTI-UPLOAD] Análise criada: ID {process_id} para {current_user.email}")
-    logger.info(f"💰 [MULTI-UPLOAD] Análise {process_id} - crédito será consumido no final do ML")
-    if not has_credits:
-        logger.info(f"📌 [MULTI-UPLOAD] Análise {process_id} ficará em 'pending_credit' após processamento")
+    logger.info(f"💰 [MULTI-UPLOAD] Análise {process_id} - {num_valid_files} crédito(s) será(ão) consumido(s) ao final")
     
     # ==========================================
     # PASSO 6: INICIAR PROCESSAMENTO EM BACKGROUND
@@ -1359,37 +1315,32 @@ async def upload_multi_analyze(
         user_id=current_user.id,
         user_email=current_user.email,
         analysis_type=analysis_type,
+        num_files=num_valid_files,  # 🔥 PASSA NÚMERO DE ARQUIVOS
         db=db
     )
     
     logger.info(f"🚀 [MULTI-UPLOAD] Background task iniciada para análise {process_id}")
     
     # ==========================================
-    # PASSO 7: RESPOSTA IMEDIATA (V12.7)
+    # PASSO 7: RESPOSTA
     # ==========================================
     
     credits_before = current_user.credits
-    files_uploaded = len(valid_files)
-    
     eligibility = get_credit_eligibility(db, current_user)
     
-    # 🔥 V12.7: Mensagem personalizada
-    if has_credits:
-        credit_message = f"1 crédito será consumido automaticamente quando a análise estiver pronta."
-        credit_status = "will_be_consumed_when_ready"
-    else:
-        credit_message = f"💡 Você está sem créditos. A análise será processada, mas os resultados ficarão bloqueados até você assinar Premium ou receber créditos."
-        credit_status = "pending_credit_after_processing"
+    credit_message = (
+        f"{num_valid_files} crédito(s) será(ão) consumido(s) ao final do processamento."
+    )
     
     response_data = {
         "success": True,
         "process_id": process_id,
         "status": "processing",
         "progress": 10,
-        "message": "Processamento iniciado. O crédito será verificado ao final.",
+        "message": f"Processando {num_valid_files} arquivo(s). {num_valid_files} crédito(s) será(ão) consumido(s).",
         "data": {
             "total_files": total_files,
-            "valid_files": files_uploaded,
+            "valid_files": num_valid_files,
             "invalid_files": len(invalid_files),
             "files": [
                 {"filename": f.filename, "size": f.file_size, "valid": True}
@@ -1403,16 +1354,13 @@ async def upload_multi_analyze(
             "before": credits_before,
             "consumed": 0,
             "remaining": credits_before,
-            "credits_per_analysis": UploadConfig.CREDITS_PER_ANALYSIS,
-            "files_uploaded": files_uploaded,
-            "total_cost": UploadConfig.CREDITS_PER_ANALYSIS,
-            "status": credit_status,
+            "credits_per_file": UploadConfig.CREDITS_PER_FILE,
+            "files_uploaded": num_valid_files,
+            "total_cost": num_valid_files,
+            "status": "will_be_consumed_when_ready",
             "message": credit_message,
-            "has_credits": has_credits,
-            "will_be_pending": not has_credits,
-            "status_detail": credit_check.get("status", "unknown"),
-            "suggestion": credit_check.get("suggestion", ""),
-            "can_receive_today": credit_check.get("can_receive_today", False)
+            "has_credits": True,
+            "will_be_pending": False
         },
         "eligibility": {
             "is_premium": eligibility.get("is_premium", False),
@@ -1434,13 +1382,10 @@ async def upload_multi_analyze(
         "X-Process-Id": str(process_id),
         "X-Status": "processing",
         "X-Credits-Before": str(credits_before),
-        "X-Credits-Per-Analysis": str(UploadConfig.CREDITS_PER_ANALYSIS),
-        "X-Files-Valid": str(files_uploaded),
+        "X-Credits-Per-File": str(UploadConfig.CREDITS_PER_FILE),
+        "X-Files-Valid": str(num_valid_files),
+        "X-Total-Cost": str(num_valid_files),
         "X-Poll-Url": f"/api/analysis/progress/{process_id}",
-        "X-Is-Premium": str(eligibility.get("is_premium", False)),
-        "X-Can-Receive-Today": str(eligibility.get("can_receive_today", False)),
-        "X-Has-Credits": str(has_credits),
-        "X-Will-Be-Pending": str(not has_credits),
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0"
@@ -1453,7 +1398,7 @@ async def upload_multi_analyze(
 
 
 # ==============================================
-# 🔥 ROTA: HISTÓRICO (V12.7 COM STATUS DE CRÉDITO)
+# 🔥 ROTA: HISTÓRICO
 # ==============================================
 
 @router.get("/analyses/history")
@@ -1470,7 +1415,7 @@ async def get_analyses_history(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Retorna histórico de análises com filtros avançados (V12.7)"""
+    """Retorna histórico de análises com filtros avançados"""
     try:
         client_ip = request.client.host if request.client else "unknown"
         logger.info(f"📊 [HISTORY] {current_user.email} | IP: {client_ip} | limit: {limit}, offset: {offset}")
@@ -1543,7 +1488,6 @@ async def get_analyses_history(
                 "low_risk": float(predictions.get('low_risk_percentage', 0)),
                 "processing_time_ms": analysis.processing_time_ms,
                 "pow_verified": analysis.pow_verified,
-                # 🔥 V12.7: Status de créditos
                 "credits_consumed": analysis.credits_consumed if hasattr(analysis, 'credits_consumed') else False,
                 "credits_consumed_at": analysis.credits_consumed_at.isoformat() if hasattr(analysis, 'credits_consumed_at') and analysis.credits_consumed_at else None,
                 "credits_remaining_after": analysis.credits_remaining_after if hasattr(analysis, 'credits_remaining_after') else None,
@@ -1566,7 +1510,7 @@ async def get_analyses_history(
                 "sort_by": sort_by,
                 "sort_order": sort_order
             },
-            "credits_per_analysis": UploadConfig.CREDITS_PER_ANALYSIS
+            "credits_per_file": UploadConfig.CREDITS_PER_FILE
         })
         
     except Exception as e:
@@ -1580,7 +1524,7 @@ async def get_analyses_history(
 
 
 # ==============================================
-# 🔥 ROTA: RESULTADO DA ANÁLISE (V12.7)
+# 🔥 ROTA: RESULTADO DA ANÁLISE
 # ==============================================
 
 @router.get("/analysis/result/{analysis_id}")
@@ -1590,7 +1534,7 @@ async def get_analysis_result(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Busca resultado completo de uma análise (V12.7)"""
+    """Busca resultado completo de uma análise"""
     try:
         analysis = db.query(models.Analysis).filter(
             models.Analysis.id == analysis_id,
@@ -1603,14 +1547,13 @@ async def get_analysis_result(
         if analysis.user_id != current_user.id and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Acesso negado")
         
-        # 🔥 V12.7: Se estiver pending_credit, retorna erro informativo
         if analysis.status == "pending_credit":
             raise HTTPException(
                 status_code=403,
                 detail={
                     "error": "pending_credit",
                     "message": "💡 Esta análise está aguardando créditos. Assine Premium ou receba crédito diário.",
-                    "credits_needed": UploadConfig.CREDITS_PER_ANALYSIS,
+                    "credits_needed": analysis.credits_needed if hasattr(analysis, 'credits_needed') else 1,
                     "retry_url": f"/api/analysis/retry-credit/{analysis_id}",
                     "can_receive_credit": current_user.is_premium() and current_user.credits < MAX_CREDITS_PREMIUM
                 }
@@ -1657,13 +1600,12 @@ async def get_analysis_result(
                 "low_risk_percentage": float(predictions_summary.get("low_risk_percentage", 0)),
                 "total_predictions": int(predictions_summary.get("total_predictions", 0))
             },
-            # 🔥 V12.7: Status de créditos
             "credits": {
                 "consumed": analysis.credits_consumed if hasattr(analysis, 'credits_consumed') else False,
                 "consumed_at": analysis.credits_consumed_at.isoformat() if hasattr(analysis, 'credits_consumed_at') and analysis.credits_consumed_at else None,
                 "amount_consumed": analysis.credits_consumed_amount if hasattr(analysis, 'credits_consumed_amount') else 0,
                 "remaining_after": analysis.credits_remaining_after if hasattr(analysis, 'credits_remaining_after') else None,
-                "credits_needed": UploadConfig.CREDITS_PER_ANALYSIS,
+                "credits_needed": analysis.credits_needed if hasattr(analysis, 'credits_needed') else 0,
                 "error": analysis.credits_error if hasattr(analysis, 'credits_error') else None
             }
         }
@@ -1681,7 +1623,7 @@ async def get_analysis_result(
 
 
 # ==============================================
-# 🔥 ROTA: UPLOAD AUTO (V12.7 - NÃO BLOQUEIA)
+# 🔥 ROTA: UPLOAD AUTO (V12.8 - BLOQUEIA)
 # ==============================================
 
 @router.post("/upload-auto")
@@ -1694,8 +1636,8 @@ async def upload_auto_optimized(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 UPLOAD ÚNICO - Versão otimizada (V12.7)
-    🔥 NÃO BLOQUEIA POR FALTA DE CRÉDITOS
+    🔥 UPLOAD AUTO - V12.8
+    1 arquivo = 1 crédito. BLOQUEIA se não tiver.
     """
     start_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
@@ -1712,15 +1654,7 @@ async def upload_auto_optimized(
     
     logger.info(f"📤 [UPLOAD] {current_user.email} | {total_files} arquivos | IP: {client_ip}")
     
-    # 🔥 V12.7: Verifica créditos (NÃO BLOQUEIA)
-    credit_check = check_credits_advanced(db, current_user, UploadConfig.CREDITS_PER_ANALYSIS)
-    
-    has_credits = credit_check.get("valid", False)
-    
-    if not has_credits:
-        logger.warning(f"⚠️ [UPLOAD] Usuário {current_user.email} SEM CRÉDITOS")
-        logger.info(f"📌 [UPLOAD] Mensagem: {credit_check.get('message', '')}")
-    
+    # 🔥 VALIDAR ARQUIVOS PRIMEIRO
     validation_result = await validate_files_advanced(files)
     
     if validation_result["valid_count"] == 0:
@@ -1736,12 +1670,30 @@ async def upload_auto_optimized(
             }
         )
     
-    # 🔥 V12.7: NÃO CONSOLE CRÉDITOS AQUI
+    num_valid_files = validation_result["valid_count"]
+    
+    # 🔥 VERIFICAR CRÉDITOS (BLOQUEIA se insuficiente)
+    credit_check = check_credits_advanced(db, current_user, num_valid_files)
+    
+    if not credit_check.get("can_proceed", False):
+        logger.warning(f"⛔ [UPLOAD] {current_user.email} BLOQUEADO")
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "message": credit_check.get("message"),
+                "files_requested": num_valid_files,
+                "credits_available": credit_check.get("available", 0),
+                "credits_required": credit_check.get("required", 0),
+                "suggestion": credit_check.get("suggestion", "")
+            }
+        )
+    
     eligibility = get_credit_eligibility(db, current_user)
     
     response_data = {
         "success": True,
-        "message": f"Processado {validation_result['valid_count']} de {total_files} arquivo(s)",
+        "message": f"Processado {num_valid_files} de {total_files} arquivo(s)",
         "data": {
             "valid_files": [{"filename": f.filename, "size": f.file_size} for f in validation_result["valid"]],
             "invalid_files": [{"filename": f.filename, "error": f.error} for f in validation_result["invalid"]]
@@ -1751,13 +1703,10 @@ async def upload_auto_optimized(
             "consumed": 0,
             "remaining": current_user.credits if not current_user.is_admin else "∞",
             "display": crud.get_credits_display(current_user) if hasattr(crud, 'get_credits_display') else str(current_user.credits or 0),
-            "credits_per_analysis": UploadConfig.CREDITS_PER_ANALYSIS,
-            "files_uploaded": validation_result["valid_count"],
-            "total_cost": UploadConfig.CREDITS_PER_ANALYSIS,
-            "status": "will_be_consumed_when_ready" if has_credits else "pending_credit_after_processing",
-            "message": "1 crédito será consumido automaticamente quando a análise estiver pronta." if has_credits else "💡 Você está sem créditos. A análise será processada, mas os resultados ficarão bloqueados até você assinar Premium.",
-            "has_credits": has_credits,
-            "suggestion": credit_check.get("suggestion", "")
+            "credits_per_file": UploadConfig.CREDITS_PER_FILE,
+            "files_uploaded": num_valid_files,
+            "total_cost": num_valid_files,
+            "message": f"{num_valid_files} crédito(s) será(ão) consumido(s) no processamento."
         },
         "eligibility": {
             "is_premium": eligibility.get("is_premium", False),
@@ -1773,7 +1722,7 @@ async def upload_auto_optimized(
 
 
 # ==============================================
-# 🔥 ROTA: REPROCESSAR ANÁLISE COM CRÉDITO PENDENTE (V12.7)
+# 🔥 ROTA: RETRY CRÉDITO (V12.8)
 # ==============================================
 
 @router.post("/analysis/retry-credit/{process_id}")
@@ -1783,7 +1732,8 @@ async def retry_analysis_credit(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 V12.7: Tenta novamente consumir o crédito de uma análise pendente
+    🔥 V12.8: Tenta novamente consumir créditos de uma análise pendente
+    Calcula o número de arquivos para saber quantos créditos são necessários
     """
     analysis = db.query(models.Analysis).filter(
         models.Analysis.id == process_id,
@@ -1793,41 +1743,56 @@ async def retry_analysis_credit(
     if not analysis:
         raise HTTPException(status_code=404, detail="Análise não encontrada")
     
+    # 🔥 IDEMPOTÊNCIA: Se já consumiu, não faz nada
+    if getattr(analysis, 'credits_consumed', False):
+        return {
+            "success": True,
+            "message": f"✅ Créditos já consumidos anteriormente ({analysis.credits_consumed_amount}).",
+            "analysis_id": process_id,
+            "status": "completed",
+            "already_consumed": True
+        }
+    
     if analysis.status != "pending_credit":
         return {
             "success": False,
             "message": f"Análise está com status '{analysis.status}', não precisa de retry."
         }
     
-    # Buscar usuário
     user = db.query(models.User).filter(models.User.id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    # Verificar se tem créditos agora
-    if user.credits < 1:
+    # 🔥 CALCULAR NÚMERO DE ARQUIVOS pelo filename
+    num_files = len(analysis.filename.split(" | ")) if analysis.filename else 1
+    required = num_files * UploadConfig.CREDITS_PER_FILE
+    
+    if user.credits < required:
         return {
             "success": False,
-            "message": "❌ Você ainda não tem créditos. Assine Premium ou receba crédito diário.",
-            "credits_needed": UploadConfig.CREDITS_PER_ANALYSIS,
+            "message": f"❌ Você tem {user.credits} crédito(s) mas precisa de {required} para {num_files} arquivo(s).",
+            "credits_needed": required,
+            "credits_available": user.credits,
+            "files_count": num_files,
             "can_receive_credit": user.is_premium() and user.credits < MAX_CREDITS_PREMIUM,
-            "suggestion": "Assine Premium para receber 1 crédito por dia!"
+            "suggestion": "Assine Premium ou aguarde o próximo crédito diário."
         }
     
-    # Tentar consumir crédito novamente
-    credit_success, credit_message = await consume_analysis_credit(db, analysis, user)
+    credit_success, credit_message = await consume_analysis_credit(
+        db, analysis, user, num_files
+    )
     
     if credit_success:
         return {
             "success": True,
-            "message": f"✅ Crédito consumido com sucesso! {credit_message}",
+            "message": f"✅ {credit_message}",
             "analysis_id": process_id,
             "status": "completed"
         }
     else:
         return {
             "success": False,
-            "message": f"❌ Falha ao consumir crédito: {credit_message}",
+            "message": f"❌ {credit_message}",
             "analysis_id": process_id,
             "status": "pending_credit"
         }
@@ -1838,7 +1803,7 @@ async def retry_analysis_credit(
 # ==============================================
 
 print("=" * 80)
-print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.7 (LÓGICA DE CRÉDITOS FORTALECIDA)")
+print("🚀 UPLOAD_ROUTES.PY - VERSÃO 12.8 (1 CRÉDITO POR ARQUIVO)")
 print("=" * 80)
 print(f"   📁 Limites: {UploadConfig.MAX_FILES_PER_BATCH} arquivos, {UploadConfig.MAX_FILE_SIZE//1024}KB cada")
 print(f"   🔥 Multi-analyze: até {UploadConfig.MAX_FILES_MULTI_ANALYZE} arquivos")
@@ -1848,17 +1813,12 @@ print(f"   🔧 Preprocessing: { '✅' if _preprocessing_available else '⚠️ 
 print(f"   🚦 Rate Limit: {UploadConfig.RATE_LIMIT_PER_USER} req/hora")
 print(f"   ⏱️ Timeout: {UploadConfig.PROCESSING_TIMEOUT_SECONDS}s")
 print(f"")
-print(f"   🔥 CORREÇÃO V12.7 (LÓGICA FORTALECIDA):")
-print(f"      - ✅ NÃO BLOQUEIA UPLOAD por falta de créditos")
-print(f"      - ✅ CRIA ANÁLISE MESMO SEM CRÉDITOS")
-print(f"      - ✅ PROCESSAMENTO ML CONTINUA MESMO SEM CRÉDITOS")
-print(f"      - ✅ SE NÃO TIVER CRÉDITOS, análise fica 'pending_credit'")
-print(f"      - ✅ USUÁRIO PODE ASSINAR PREMIUM E LIBERAR ANÁLISE")
-print(f"      - ✅ ROTA /analysis/retry-credit/{id} para liberar")
-print(f"")
-print(f"   ✅ MANTIDO V12.6:")
-print(f"      - ✅ CRÉDITO CONSUMIDO AUTOMATICAMENTE quando o ML termina")
-print(f"      - ✅ NÃO CONSUME no upload (apenas verifica)")
-print(f"      - ✅ NÃO CONSUME no PDF (já foi consumido)")
-print(f"      - ✅ 1 análise = 1 crédito")
+print(f"   🔥 CORREÇÃO V12.8 (1 CRÉDITO POR ARQUIVO):")
+print(f"      - ✅ 1 arquivo = 1 crédito")
+print(f"      - ✅ 2 arquivos = 2 créditos")
+print(f"      - ✅ 3 arquivos = 3 créditos")
+print(f"      - ✅ VERIFICAÇÃO ÚNICA no upload (consulta banco 1x)")
+print(f"      - ✅ BLOQUEIA com HTTP 402 se insuficiente")
+print(f"      - ✅ CRÉDITO CONSUMIDO AO FINAL DO ML (idempotente)")
+print(f"      - ✅ PROTEÇÃO: analysis.credits_consumed evita duplicação")
 print("=" * 80)
