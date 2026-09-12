@@ -1440,6 +1440,12 @@ Seja específico e objetivo baseado nos dados fornecidos."""
 
 _gemini_service = None
 
+# 🔥 Alias de compatibilidade: parte do código (ex.: backend/services/
+# __init__.py) importa `GeminiService`, não `GeminiServiceV5`. Esse nome
+# nunca existiu neste módulo — não é algo introduzido pelas correções
+# anteriores, é uma inconsistência pré-existente entre os dois arquivos.
+GeminiService = GeminiServiceV5
+
 def get_gemini_service() -> GeminiServiceV5:
     """🔥 Retorna instância do serviço Gemini (SINGLETON)"""
     global _gemini_service
@@ -1515,6 +1521,7 @@ print("=" * 80)
 
 __all__ = [
     'GeminiServiceV5',
+    'GeminiService',
     'get_gemini_service',
     'is_gemini_available',
     '_gemini_service'
