@@ -1,7 +1,24 @@
-# backend/gemini.py - VERSÃO 5.2 (COM GEMINI-3.8-FLASH)  # 🔥 VERSÃO ATUALIZADA
+# backend/gemini.py - VERSÃO 5.3 (CORRIGIDA)  # 🔥 VERSÃO ATUALIZADA
 """
-🔥 GEMINI SERVICE V5.2 - COM SUPORTE A GEMINI-3.8-FLASH
+🔥 GEMINI SERVICE V5.3 - CORRIGIDA (SDK + gemini-3.8-flash)
 ================================================================================
+✅ CORREÇÕES V5.3 (ver comentários inline para detalhes de cada uma):
+   1. 🔥 CRÍTICO: import trocado de 'google.generativeai' (SDK legado, sem
+      Client) para 'from google import genai' (SDK novo 'google-genai'),
+      que é o que o resto do código já esperava (genai.Client, etc.).
+      Sem essa correção, _initialize_client() falhava sempre, silenciosamente.
+   2. 🔥 Nomes de modelo normalizados (removido prefixo "models/" retornado
+      pela API), corrigindo a seleção do modelo prioritário gemini-3.8-flash.
+   3. 🔥 Descoberta de modelos consolidada em 1 chamada de API (era 2).
+   4. 🔥 Health monitor agora roda de fato (thread dedicada em vez de task
+      assíncrona que nunca era executada) e usa o timeout já configurado.
+   5. 🔥 Removido "warm-up" de cache que sobrescrevia respostas reais de
+      prompts como "status"/"ping" com texto falso.
+   6. 🔥 health_status agora reage a falhas reais de geração (circuit
+      breaker), não só ao health_check() periódico.
+   7. 🔥 Modelo prioritário lido de CONFIG["model_preferences"][0] em vez
+      de hardcoded em 3 lugares diferentes do código.
+
 ✅ NOVIDADE V5.2:
    1. 🔥 ADICIONADO: gemini-3.8-flash como modelo prioritário
    2. 🔥 ADICIONADO: Suporte a GEMINI_MODEL via variável de ambiente
@@ -27,7 +44,6 @@
 ================================================================================
 """
 
-import google.generativeai as genai
 import json
 import logging
 import os
@@ -39,7 +55,7 @@ from typing import Dict, Any, List, Optional, Tuple, Set
 from pathlib import Path
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
-from threading import Lock
+from threading import Lock, Thread
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
@@ -52,6 +68,50 @@ from dotenv import load_dotenv
 # ==============================================
 
 logger = logging.getLogger(__name__)
+
+# ==============================================
+# 🔥 SDK CORRETO: google-genai (NÃO google-generativeai)
+# ==============================================
+#
+# Este módulo usa a API baseada em Client (genai.Client(...),
+# client.models.list(), client.models.generate_content(...)), que pertence
+# ao SDK novo e unificado "google-genai" (import: `from google import genai`).
+#
+# O pacote legado "google-generativeai" (import: `import google.generativeai
+# as genai`) usa uma API totalmente diferente (`genai.configure()` +
+# `genai.GenerativeModel(...)`) e NÃO possui `genai.Client`. Se os dois
+# pacotes forem confundidos, `_initialize_client()` falha com
+# `AttributeError: module 'google.generativeai' has no attribute 'Client'`,
+# capturado silenciosamente pelo try/except e reportado apenas como
+# "health_status = FAILED" — ou seja, o serviço parece "configurado errado"
+# mesmo com uma API key válida.
+#
+# Instalação correta:
+#   pip uninstall -y google-generativeai   # opcional, evita confusão futura
+#   pip install -U google-genai
+GENAI_SDK_OK = True
+try:
+    from google import genai
+except ImportError as e:
+    GENAI_SDK_OK = False
+    genai = None  # type: ignore[assignment]
+    logger.error(
+        "❌ SDK 'google-genai' não encontrado (%s). Instale com: "
+        "pip install -U google-genai — este módulo NÃO funciona com o "
+        "pacote legado 'google-generativeai'.",
+        e,
+    )
+else:
+    if not hasattr(genai, "Client"):
+        # Algo no ambiente está fornecendo um módulo `google.genai` sem
+        # `Client` — sinal de instalação corrompida ou conflito de pacotes.
+        GENAI_SDK_OK = False
+        logger.error(
+            "❌ 'google.genai' foi importado mas não expõe 'Client'. "
+            "Verifique se o pacote instalado é 'google-genai' (novo SDK) e "
+            "não 'google-generativeai' (legado). Reinstale com: "
+            "pip install -U --force-reinstall google-genai"
+        )
 
 # ==============================================
 # DATACLASSES PARA ESTRUTURA DE DADOS
@@ -228,14 +288,13 @@ class GeminiServiceV5:
         # THREAD SAFETY
         self._lock = Lock()
         self._health_monitoring_active = False
+        self._health_thread: Optional[Thread] = None
         
         # INICIALIZAR
         self.api_key = self._load_api_key()
         
         if self.api_key:
             self._initialize_client()
-            self._discover_models()
-            self._warm_up_cache()
             self._start_health_monitoring()
         else:
             self._last_error = "API key não encontrada"
@@ -344,21 +403,37 @@ class GeminiServiceV5:
     
     def _initialize_client(self):
         """Inicializa o cliente Gemini com validação"""
+        if not GENAI_SDK_OK:
+            self._last_error = (
+                "SDK 'google-genai' ausente ou inválido — "
+                "instale com: pip install -U google-genai"
+            )
+            logger.error(f"❌ {self._last_error}")
+            self.client = None
+            self.health_status = "FAILED"
+            return
+
         try:
             logger.info("🔄 Inicializando cliente Gemini...")
-            
+
             self.client = genai.Client(api_key=self.api_key)
-            
-            test_models = list(self.client.models.list())
-            logger.info(f"✅ Cliente conectado! {len(test_models)} modelos disponíveis")
-            
-            if self.available_models:
-                self.current_model = self.available_models[0]
+
+            # Uma única chamada de listagem — usada tanto para validar a
+            # conexão quanto para popular available_models (antes disso era
+            # feito em duas chamadas separadas: uma aqui, descartada, e
+            # outra em _discover_models()).
+            self._discover_models(raw_models=list(self.client.models.list()))
+            logger.info(
+                f"✅ Cliente conectado! {len(self.available_models)} "
+                "modelos compatíveis disponíveis"
+            )
+
+            if self.current_model:
                 logger.info(f"✅ Modelo inicial: {self.current_model}")
-            
+
             self.health_status = "HEALTHY"
             self._last_error = None
-            
+
         except Exception as e:
             self._last_error = str(e)
             logger.error(f"❌ Erro ao inicializar cliente: {e}")
@@ -369,45 +444,79 @@ class GeminiServiceV5:
     # 🔥 3. AUTO-DESCOBERTA DE MODELOS (ATUALIZADA)
     # ==========================================
     
-    def _discover_models(self):
-        """🔥 Descobre modelos disponíveis dinamicamente (com gemini-3.8-flash)"""
+    # Substrings que identificam modelos que NÃO são de geração de texto de
+    # propósito geral (embeddings, imagem, vídeo, etc.) e não devem entrar
+    # na lista de modelos utilizáveis por generate_content().
+    _NON_CHAT_MODEL_MARKERS = ("embedding", "aqa", "imagen", "veo", "gecko", "vision-safety")
+
+    def _discover_models(self, raw_models: Optional[list] = None):
+        """
+        🔥 Descobre modelos disponíveis dinamicamente
+
+        Args:
+            raw_models: resultado já obtido de self.client.models.list().
+                Se None, a listagem é feita aqui (fallback para chamadas
+                avulsas, ex.: refresh manual depois do boot).
+        """
         try:
             if not self.client:
                 logger.warning("⚠️ Cliente não inicializado para descobrir modelos")
                 return
-            
+
+            if raw_models is None:
+                raw_models = list(self.client.models.list())
+
             available = []
-            for model in self.client.models.list():
-                model_name = model.name
-                
-                # 🔥 INCLUIR gemini-3.8-flash na detecção
-                if any(name in model_name.lower() for name in ['flash', 'pro', '2.5', '2.0', '3.8']):
-                    available.append(model_name)
-                    
-                    if model_name not in self.model_metrics:
-                        self.model_metrics[model_name] = ModelMetrics(name=model_name)
-            
-            # 🔥 ORDENAR: PRIORIDADE PARA gemini-3.8-flash
+            for model in raw_models:
+                # 🔥 A API retorna nomes prefixados, ex.: "models/gemini-3.8-flash".
+                # Precisamos do id "nu" (gemini-3.8-flash) porque é assim que
+                # o resto do código (CONFIG["model_preferences"], a variável
+                # de ambiente GEMINI_MODEL, generate_content) compara nomes.
+                # Sem esse strip, "gemini-3.8-flash" nunca aparece como igual
+                # a "models/gemini-3.8-flash" e o modelo prioritário nunca é
+                # selecionado mesmo estando disponível.
+                model_id = model.name.split("/")[-1]
+                lname = model_id.lower()
+
+                if "gemini" not in lname:
+                    continue
+                if any(marker in lname for marker in self._NON_CHAT_MODEL_MARKERS):
+                    continue
+
+                available.append(model_id)
+                if model_id not in self.model_metrics:
+                    self.model_metrics[model_id] = ModelMetrics(name=model_id)
+
+            # 🔥 ORDENAR pela preferência configurada em CONFIG["model_preferences"]
             preferred_order = self.CONFIG["model_preferences"]
             available.sort(key=lambda x: (
                 preferred_order.index(x) if x in preferred_order else len(preferred_order),
                 x
             ))
-            
+
             self.available_models = available
-            
-            logger.info(f"📊 Modelos disponíveis: {len(available)}")
+
+            logger.info(f"📊 Modelos compatíveis disponíveis: {len(available)}")
             for model in available[:5]:
                 logger.info(f"   ✅ {model}")
-            
-            # 🔥 FORÇAR gemini-3.8-flash se disponível
-            if "gemini-3.8-flash" in available:
-                self.current_model = "gemini-3.8-flash"
+
+            # 🔥 Modelo prioritário = primeiro item de model_preferences que
+            # esteja realmente disponível na conta (evita hardcode do nome
+            # do modelo espalhado pelo código — atualizar CONFIG basta).
+            priority_model = next(
+                (m for m in preferred_order if m in available), None
+            )
+            if priority_model:
+                self.current_model = priority_model
                 logger.info(f"🎯 🚀 MODELO PRIORITÁRIO SELECIONADO: {self.current_model}")
             elif available:
                 self.current_model = available[0]
                 logger.info(f"🎯 Modelo selecionado: {self.current_model}")
-            
+            else:
+                logger.warning(
+                    "⚠️ Nenhum modelo Gemini compatível encontrado na conta/API key"
+                )
+
         except Exception as e:
             self._last_error = str(e)
             logger.error(f"❌ Erro ao descobrir modelos: {e}")
@@ -418,24 +527,23 @@ class GeminiServiceV5:
     # ==========================================
     
     def _warm_up_cache(self):
-        """Pré-carrega cache com respostas comuns"""
-        common_queries = [
-            "status",
-            "health",
-            "ping",
-            "teste",
-            "conexão",
-        ]
-        
-        for query in common_queries:
-            cache_key = self._generate_cache_key(query)
-            self.response_cache[cache_key] = CacheEntry(
-                value=f"Cache warm-up: {query}",
-                timestamp=time.time(),
-                ttl=3600,
-            )
-        
-        logger.info(f"🔥 Cache pré-carregado com {len(common_queries)} entradas")
+        """
+        Placeholder de warm-up intencionalmente inerte.
+
+        🔥 CORREÇÃO: a versão anterior gravava valores falsos (ex.:
+        "Cache warm-up: status") em response_cache usando exatamente a
+        mesma função de hash que _get_cached_response() usa para prompts
+        reais. Resultado: um usuário que mandasse literalmente "status",
+        "ping", "teste" etc. como prompt recebia esse texto falso de volta
+        em vez de uma resposta real do Gemini — sem nunca chamar a API.
+
+        Um warm-up de verdade exigiria uma chamada real (e paga) à API só
+        para "esquentar" conexão/cache, o que não compensa para a maioria
+        dos casos de uso. Por isso o método foi esvaziado; se um warm-up
+        real for necessário no futuro, use um prefixo de chave reservado
+        (ex.: "__warmup__:") que nunca colida com _generate_cache_key().
+        """
+        return
     
     def _generate_cache_key(self, prompt: str, model: Optional[str] = None) -> str:
         """Gera chave de cache inteligente"""
@@ -540,6 +648,7 @@ class GeminiServiceV5:
             if self.circuit_success_count >= self.CONFIG["circuit_breaker_half_open_attempts"]:
                 self.circuit_state = "CLOSED"
                 self.circuit_failure_count = 0
+                self.health_status = "HEALTHY"
                 logger.info("✅ Circuit breaker: CLOSED (recuperado com sucesso)")
                 self.metrics["circuit_closes"] += 1
     
@@ -552,6 +661,11 @@ class GeminiServiceV5:
             if self.circuit_state != "OPEN":
                 self.circuit_state = "OPEN"
                 self.metrics["circuit_opens"] += 1
+                # 🔥 is_healthy() já checa circuit_state == "OPEN", mas
+                # também refletimos isso em health_status para que
+                # get_gemini_status()/get_health_status() não mostrem
+                # "HEALTHY" desatualizado entre um health_check() e outro.
+                self.health_status = "DEGRADED"
                 logger.error(f"⛔ Circuit breaker: OPEN (falhas: {self.circuit_failure_count})")
     
     # ==========================================
@@ -633,12 +747,17 @@ class GeminiServiceV5:
         if forced_model and forced_model in self.available_models:
             logger.info(f"🎯 Modelo forçado por ambiente: {forced_model}")
             return forced_model
-        
-        # 🔥 PRIORIDADE MÁXIMA: gemini-3.8-flash
-        if "gemini-3.8-flash" in self.available_models:
-            logger.info(f"🚀 Usando gemini-3.8-flash (prioritário)")
-            return "gemini-3.8-flash"
-        
+
+        # 🔥 PRIORIDADE MÁXIMA: primeiro modelo de CONFIG["model_preferences"]
+        # que esteja realmente disponível na conta.
+        priority_model = next(
+            (m for m in self.CONFIG["model_preferences"] if m in self.available_models),
+            None,
+        )
+        if priority_model:
+            logger.info(f"🚀 Usando {priority_model} (prioritário)")
+            return priority_model
+
         if not self.available_models:
             return self.CONFIG["model_preferences"][0]
         
@@ -661,10 +780,13 @@ class GeminiServiceV5:
         else:
             preferred = [m for m in self.available_models if 'flash' in m]
         
-        # 🔥 SEMPRE DAR PRIORIDADE AO gemini-3.8-flash
-        if "gemini-3.8-flash" in preferred:
-            return "gemini-3.8-flash"
-        
+        # 🔥 SEMPRE DAR PRIORIDADE ao modelo no topo de model_preferences
+        priority_in_preferred = next(
+            (m for m in self.CONFIG["model_preferences"] if m in preferred), None
+        )
+        if priority_in_preferred:
+            return priority_in_preferred
+
         if preferred:
             selected = preferred[0]
         else:
@@ -938,17 +1060,39 @@ class GeminiServiceV5:
     # ==========================================
     
     def _start_health_monitoring(self):
-        """Inicia monitoramento de saúde automático"""
+        """
+        Inicia monitoramento de saúde automático em thread dedicada.
+
+        🔥 CORREÇÃO: a versão anterior tentava `asyncio.get_event_loop()
+        .create_task(...)`, o que só executa de fato se já existir um event
+        loop rodando no momento da chamada. Como GeminiServiceV5() é
+        instanciado no nível de módulo (import síncrono), normalmente não
+        há loop ativo — a task era criada mas nunca "andava", então
+        health_status ficava congelado no valor definido em
+        _initialize_client() para sempre, mesmo que chamadas reais
+        começassem a falhar depois. Agora o monitor roda em uma thread
+        própria com seu próprio loop (via asyncio.run), então funciona
+        independente do contexto (script, WSGI, ASGI, etc.).
+        """
         if self._health_monitoring_active:
             return
-        
+
         self._health_monitoring_active = True
-        
-        try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._health_monitor_loop())
-        except RuntimeError:
-            logger.warning("⚠️ Não foi possível iniciar health monitor (sem event loop)")
+
+        def _runner():
+            try:
+                asyncio.run(self._health_monitor_loop())
+            except Exception as e:
+                logger.error(f"❌ Health monitor encerrou com erro: {e}")
+
+        self._health_thread = Thread(
+            target=_runner, name="gemini-health-monitor", daemon=True
+        )
+        self._health_thread.start()
+        logger.info(
+            f"🩺 Health monitor iniciado (intervalo: "
+            f"{self.CONFIG['health_check_interval']}s)"
+        )
     
     async def _health_monitor_loop(self):
         """Loop de monitoramento de saúde"""
@@ -991,11 +1135,19 @@ class GeminiServiceV5:
             
             test_prompt = "Teste de saúde. Responda apenas: OK"
             try:
-                response = self.client.models.generate_content(
-                    model=self.current_model or self.available_models[0],
-                    contents=test_prompt
+                loop = asyncio.get_event_loop()
+                model_for_check = self.current_model or self.available_models[0]
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: self.client.models.generate_content(
+                            model=model_for_check,
+                            contents=test_prompt,
+                        ),
+                    ),
+                    timeout=self.CONFIG["health_check_timeout"],
                 )
-                
+
                 if response and response.text:
                     status_data["status"] = "HEALTHY"
                     status_data["details"]["response"] = response.text
@@ -1271,10 +1423,14 @@ Seja específico e objetivo baseado nos dados fornecidos."""
     def shutdown(self):
         """Desliga o serviço gracefulmente"""
         logger.info("🔄 Desligando Gemini Service...")
-        
+
         self._health_monitoring_active = False
+        health_thread = getattr(self, "_health_thread", None)
+        if health_thread and health_thread.is_alive():
+            health_thread.join(timeout=self.CONFIG["health_check_interval"] + 5)
+
         self.batch_executor.shutdown(wait=True)
-        
+
         logger.info("✅ Gemini Service desligado")
 
 
@@ -1304,26 +1460,34 @@ def is_gemini_available() -> bool:
 # ==============================================
 
 print("\n" + "=" * 70)
-print("🔑 GEMINI SERVICE V5.2 - COM GEMINI-3.8-FLASH")
+print("🔑 GEMINI SERVICE V5.3")
 print("=" * 70)
 
+if not GENAI_SDK_OK:
+    print("   ❌ SDK incorreto/ausente: instale com 'pip install -U google-genai'")
+    print("   ⚠️ Este módulo requer o pacote novo 'google-genai', não 'google-generativeai'")
+
 service = get_gemini_service()
+_priority_model = next(
+    (m for m in GeminiServiceV5.CONFIG["model_preferences"] if m in service.available_models),
+    GeminiServiceV5.CONFIG["model_preferences"][0],
+)
 
 if service.is_healthy():
     print(f"   ✅ Status: ONLINE")
     print(f"   📊 Modelo: {service.current_model}")
     print(f"   🎯 Modelos disponíveis: {len(service.available_models)}")
     print(f"   🔥 Cache: {len(service.response_cache)} entradas")
-    
-    # 🔥 DESTACAR SE O GEMINI-3.8-FLASH ESTÁ DISPONÍVEL
-    if "gemini-3.8-flash" in service.available_models:
-        print(f"   🚀 gemini-3.8-flash: DISPONÍVEL (PRIORITÁRIO)")
+
+    # 🔥 DESTACAR SE O MODELO PRIORITÁRIO (topo de model_preferences) ESTÁ DISPONÍVEL
+    if _priority_model in service.available_models:
+        print(f"   🚀 {_priority_model}: DISPONÍVEL (PRIORITÁRIO)")
     else:
-        print(f"   ⚠️ gemini-3.8-flash: NÃO DISPONÍVEL (usando fallback)")
+        print(f"   ⚠️ {_priority_model}: NÃO DISPONÍVEL (usando fallback)")
 else:
     print("   ❌ Status: OFFLINE")
     print(f"   ⚠️ Erro: {service._last_error or 'Desconhecido'}")
-    print("   💡 Verifique GEMINI_API_KEY no arquivo .env")
+    print("   💡 Verifique GEMINI_API_KEY no arquivo .env e o SDK instalado")
 
 print("=" * 70)
 
