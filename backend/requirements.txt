@@ -43,7 +43,7 @@ pillow>=10.0.0
 # IA e Integrações
 google-generativeai==0.8.0 # 🔥 Gemini API
 tenacity==8.2.3              # 🔥 Retry logic
-
+apscheduler
 # Cache & Rate Limiting
 redis                    # 🔥 ADICIONE ESTE
 
