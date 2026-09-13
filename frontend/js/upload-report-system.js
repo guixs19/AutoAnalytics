@@ -1,10 +1,10 @@
-// frontend/js/upload-report-system.js - v2.6 (COM CHART_DATA E MELHORIAS)
+// frontend/js/upload-report-system.js - v2.7 (CORRIGIDO - SEM FALLBACK /upload-auto)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
 
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v2.6...');
+    console.log('📊 Inicializando UploadReportSystem v2.7...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -18,7 +18,7 @@
         MAX_POLLING_ATTEMPTS: 300,
         API_BASE: '/api',
         UPLOAD_ENDPOINT: '/upload-multi-analyze',
-        UPLOAD_ENDPOINT_FALLBACK: '/upload-auto',
+        // 🔴 BUGFIX v2.7: REMOVIDO FALLBACK /upload-auto (evitava consumo duplo de PoW)
         UPLOAD_RETRY_ATTEMPTS: 3,
         UPLOAD_RETRY_DELAY: 2000,
         GLOBAL_TIMEOUT: 600000,
@@ -28,7 +28,7 @@
             '/analysis/',
             '/analyses/',
         ],
-        POW_MAX_AGE: 600000,
+        POW_MAX_AGE: 600000,  // 🔴 BUGFIX v2.7: sincronizado com backend (600s)
         POW_RETRY_ATTEMPTS: 2,
         MAX_RETRY_BACKOFF: 10000,
         HEALTH_CHECK_INTERVAL: 30000,
@@ -54,7 +54,6 @@
         lastError: null,
         errorCount: 0,
         isRecovering: false,
-        // 🔥 NOVO: Cache de chart_data
         chartData: null,
     };
 
@@ -90,7 +89,6 @@
         elements.uploadCredits = document.getElementById('uploadCredits');
         elements.modalCredits = document.getElementById('modalCreditsCount');
         
-        // 🔥 NOVO: Canvas do gráfico
         elements.revenueChart = document.getElementById('revenueChart');
     }
 
@@ -219,18 +217,16 @@
     }
 
     // ==============================================
-    // 🔥 EXTRAÇÃO DE DADOS (NOVA)
+    // 🔥 EXTRAÇÃO DE DADOS
     // ==============================================
 
     function extractChartData(data) {
-        // 🔥 Tenta extrair chart_data de múltiplas fontes
         let chartData = data?.result?.chart_data || 
                          data?.chart_data || 
                          data?.analysis?.chart_data || 
                          data?.data?.chart_data || 
                          {};
         
-        // 🔥 Se chartData não tem weekly, tenta construir
         if (!chartData.weekly && chartData.revenue) {
             chartData = {
                 weekly: {
@@ -416,7 +412,7 @@
     }
 
     // ==============================================
-    // 🔥 RESULT DISPLAY (CORRIGIDO COM CHART_DATA)
+    // 🔥 RESULT DISPLAY
     // ==============================================
 
     function showResult(data) {
@@ -427,7 +423,6 @@
 
         console.log('📊 [showResult] Dados recebidos:', data);
         
-        // 🔥 EXTRAIR DADOS DE MÚLTIPLAS FONTES
         const chartData = extractChartData(data);
         const executiveScore = extractExecutiveScore(data);
         const recommendations = extractRecommendations(data);
@@ -438,10 +433,8 @@
         console.log('📊 [showResult] chart_data:', chartData);
         console.log('   Weekly:', chartData.weekly ? '✅' : '❌');
 
-        // 🔥 SALVAR CHART_DATA NO ESTADO
         state.chartData = chartData;
 
-        // 🔥 DISPARAR EVENTO PARA O DASHBOARD RENDERIZAR OS GRÁFICOS
         if (chartData && Object.keys(chartData).length > 0 && chartData.weekly) {
             console.log('📊 [showResult] Disparando evento chart:data_ready');
             window.dispatchEvent(new CustomEvent('chart:data_ready', {
@@ -452,7 +445,6 @@
             }));
         }
 
-        // 🔥 MOSTRAR RESULTADO NA UI
         if (elements.resultPlaceholder) elements.resultPlaceholder.style.display = 'none';
         if (elements.resultContainer) elements.resultContainer.classList.add('show');
 
@@ -464,7 +456,6 @@
         const confianca = Math.round(confidenceScore * 100);
         const filename = data.filename || data.result?.filename || 'Análise';
 
-        // 🔥 MÉTRICAS
         if (elements.resultMetrics) {
             elements.resultMetrics.innerHTML = `
                 <div class="result-stat">
@@ -486,7 +477,6 @@
             `;
         }
 
-        // 🔥 INSIGHTS E RECOMENDAÇÕES
         if (elements.resultInsights) {
             let insightsHtml = `
                 <div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
@@ -495,7 +485,6 @@
                 </div>
             `;
 
-            // Usar recomendações extraídas
             const finalRecommendations = recommendations.length > 0 ? recommendations : 
                 (insights.recomendacoes || insights.recommendations || []);
             
@@ -510,7 +499,6 @@
                     `;
                 });
             } else {
-                // Fallback
                 const defaultInsights = confidenceScore >= 0.7 ? [
                     '✅ Seus dados mostram um alto potencial de performance. Continue com as boas práticas!',
                     '📈 Recomendamos manter o foco em treinamento e manutenção preventiva.',
@@ -538,7 +526,6 @@
             elements.resultInsights.innerHTML = insightsHtml;
         }
 
-        // 🔥 SUMMARY
         if (elements.resultSummary) {
             const modelUsed = data.model_used || data.result?.model_used || 'AutoML';
             const encodingUsed = data.encoding_used || data.result?.encoding_used || 'auto';
@@ -558,7 +545,6 @@
             elements.resultFilename.textContent = filename;
         }
 
-        // 🔥 SALVAR NO ESTADO GLOBAL
         state.analysisResult = data;
         window._lastResult = data;
         window._lastChartData = chartData;
@@ -566,7 +552,6 @@
         const userName = getUserName();
         showNotification(`✅ ${userName}, análise concluída com sucesso!`, 'success');
 
-        // 🔥 ROLAR PARA O RESULTADO
         const resultCard = document.getElementById('resultCard');
         if (resultCard) {
             setTimeout(() => {
@@ -590,32 +575,55 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO
+    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (CORRIGIDO v2.7)
     // ==============================================
 
+    /**
+     * 🔴 BUGFIX v2.7: getPowSolution NÃO retorna mais null silenciosamente.
+     * - Força renovação REAL do challenge
+     * - Lança erro se não conseguir
+     * - Só usa window.powClient (sistema unificado)
+     */
     async function getPowSolution(forceRefresh = false) {
-        const app = getApp();
-        
         const now = Date.now();
+        
+        // 🔥 FORÇAR renovação REAL: limpar cache ANTES de pedir novo
         if (forceRefresh || (now - state.powLastRefresh) > CONFIG.POW_MAX_AGE) {
-            console.log('🔄 Renovando PoW (idade:', Math.round((now - state.powLastRefresh)/1000), 's)');
+            console.log('🔄 Renovando PoW (forçado)...');
+            if (window.powClient) {
+                try {
+                    window.powClient.clearCache();
+                    window.powClient.reset();
+                } catch (e) {
+                    console.warn('⚠️ Erro ao limpar cache do powClient:', e.message);
+                }
+            }
             state.powLastRefresh = now;
         }
         
         console.log('🔐 [PoW] Tentando obter solução...');
-        console.log('   📦 app disponível?', !!app);
         console.log('   📦 powClient disponível?', !!window.powClient);
         
-        if (window.powClient && typeof window.powClient.isPowHealthy === 'function') {
+        if (!window.powClient) {
+            throw new Error('Sistema de segurança (PoW) não carregado. Recarregue a página.');
+        }
+        
+        if (typeof window.powClient.getSolutionForUpload !== 'function') {
+            throw new Error('PoW Client inválido (getSolutionForUpload ausente). Recarregue a página.');
+        }
+        
+        // 🔥 Verificar saúde primeiro (se disponível)
+        if (typeof window.powClient.isPowHealthy === 'function') {
             try {
                 const healthy = await window.powClient.isPowHealthy();
-                if (healthy) {
-                    console.log('   ✅ PoW saudável');
-                } else {
+                console.log('   🩺 PoW saudável?', healthy);
+                
+                if (!healthy) {
                     console.log('   ⚠️ PoW não saudável, tentando recuperar...');
                     if (typeof window.powClient.autoRecover === 'function') {
-                        await window.powClient.autoRecover();
+                        const recovered = await window.powClient.autoRecover();
                         state.powRecoveryAttempts++;
+                        console.log('   🔄 Recuperação:', recovered ? 'sucesso' : 'falhou');
                     }
                 }
             } catch (e) {
@@ -623,64 +631,29 @@
             }
         }
         
-        if (app && app.Pow) {
-            try {
-                if (typeof app.Pow.prepareForUpload === 'function') {
-                    const ready = await app.Pow.prepareForUpload();
-                    console.log('   🔐 app.Pow.prepareForUpload result:', ready);
-                    if (!ready) {
-                        console.log('⏳ PoW não está pronto via app.Pow');
-                    }
-                }
-                
-                if (window.powClient && typeof window.powClient.getSolutionForUpload === 'function') {
-                    const solution = await window.powClient.getSolutionForUpload();
-                    if (solution && solution.prefix && solution.nonce) {
-                        console.log('✅ PoW solução obtida via powClient');
-                        console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
-                        console.log(`   🔑 Nonce: ${solution.nonce}`);
-                        return solution;
-                    }
-                }
-                
-                if (typeof app.Pow.getSolution === 'function') {
-                    const solution = await app.Pow.getSolution();
-                    if (solution && solution.prefix && solution.nonce) {
-                        console.log('✅ PoW solução obtida via app.Pow');
-                        return solution;
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Erro ao obter PoW via app.Pow:', e.message);
+        // 🔥 OBTER SOLUÇÃO
+        try {
+            const solution = await window.powClient.getSolutionForUpload();
+            
+            if (!solution || !solution.prefix || !solution.nonce) {
+                throw new Error('Solução PoW inválida retornada pelo cliente');
             }
+            
+            console.log('✅ PoW solução obtida');
+            console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
+            console.log(`   🔑 Nonce: ${solution.nonce}`);
+            console.log(`   🔑 Complexity: ${solution.complexity}`);
+            
+            return solution;
+            
+        } catch (e) {
+            console.error('❌ Erro ao obter solução PoW:', e.message);
+            throw new Error(`Falha ao obter PoW: ${e.message}`);
         }
-        
-        if (window.powClient) {
-            try {
-                console.log('   🔐 Tentando via powClient direto...');
-                if (typeof window.powClient.prepareForUpload === 'function') {
-                    await window.powClient.prepareForUpload();
-                }
-                if (typeof window.powClient.getSolutionForUpload === 'function') {
-                    const solution = await window.powClient.getSolutionForUpload();
-                    if (solution && solution.prefix && solution.nonce) {
-                        console.log('✅ PoW solução obtida via powClient');
-                        console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
-                        console.log(`   🔑 Nonce: ${solution.nonce}`);
-                        return solution;
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Erro no powClient:', e.message);
-            }
-        }
-        
-        console.log('⏳ PoW não disponível, continuando sem');
-        return null;
     }
 
     // ==============================================
-    // 🔥 UPLOAD E ANÁLISE
+    // 🔥 UPLOAD E ANÁLISE (CORRIGIDO v2.7)
     // ==============================================
 
     async function startAnalysis() {
@@ -731,11 +704,28 @@
             formData.append('analysis_type', 'auto');
             formData.append('report_format', 'html');
 
+            // 🔴 BUGFIX v2.7: NÃO continuar sem PoW!
             let solution = null;
             try {
+                updateAnalysisProgress(15, '🔐 Gerando prova de segurança...');
                 solution = await getPowSolution(true);
             } catch (e) {
-                console.warn('⚠️ Erro ao obter PoW:', e.message);
+                console.error('❌ Falha crítica ao obter PoW:', e.message);
+                showNotification(`❌ Erro de segurança: ${e.message}`, 'error');
+                state.isUploading = false;
+                state.lastError = e.message;
+                state.errorCount++;
+                resetAnalysisStatus();
+                if (elements.dropArea) elements.dropArea.classList.add('error');
+                return;
+            }
+            
+            if (!solution) {
+                console.error('❌ PoW retornou null');
+                showNotification('❌ Erro de segurança: PoW não disponível.', 'error');
+                state.isUploading = false;
+                resetAnalysisStatus();
+                return;
             }
             
             const result = await uploadWithRetry(formData, solution, filesToUpload);
@@ -768,7 +758,6 @@
                 state.currentProcessId = processId;
                 await pollAnalysisStatus(processId);
             } else {
-                // 🔥 SEM PROCESS_ID: Tentar extrair dados diretamente
                 const chartData = extractChartData(data);
                 if (chartData && chartData.weekly) {
                     window.dispatchEvent(new CustomEvent('chart:data_ready', {
@@ -843,17 +832,21 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD COM RETRY
+    // 🔥 UPLOAD COM RETRY (CORRIGIDO v2.7)
     // ==============================================
 
+    /**
+     * 🔴 BUGFIX v2.7:
+     * - Envia TODOS os headers do PoW (X-PoW-Complexity, X-PoW-Timestamp, X-Request-ID)
+     * - Não permite upload SEM PoW
+     * - Usa apenas o endpoint principal (sem fallback)
+     */
     async function uploadWithRetry(formData, solution, files) {
         let lastError = null;
         const maxRetries = CONFIG.UPLOAD_RETRY_ATTEMPTS;
         
-        const endpoints = [
-            CONFIG.UPLOAD_ENDPOINT,
-            CONFIG.UPLOAD_ENDPOINT_FALLBACK
-        ];
+        // 🔴 BUGFIX v2.7: usar APENAS o endpoint principal (sem fallback)
+        const endpoints = [CONFIG.UPLOAD_ENDPOINT];
         
         for (let endpoint of endpoints) {
             let endpointFailed = false;
@@ -865,26 +858,32 @@
                         throw new Error('Token não encontrado. Faça login novamente.');
                     }
                     
+                    // 🔴 BUGFIX v2.7: NÃO permitir upload sem PoW
+                    if (!solution || !solution.prefix || !solution.nonce) {
+                        throw new Error('PoW ausente. Não é possível fazer upload.');
+                    }
+                    
+                    // 🔴 BUGFIX v2.7: enviar TODOS os headers que o backend espera
                     const headers = {
                         'Authorization': `Bearer ${token}`,
                         'Accept': 'application/json',
+                        'X-PoW-Challenge': solution.prefix,
+                        'X-PoW-Nonce': solution.nonce,
+                        'X-PoW-Complexity': String(solution.complexity || 4),
+                        'X-PoW-Timestamp': String(Date.now()),
+                        'X-Request-ID': Math.random().toString(36).substring(2, 10),
                     };
 
-                    if (solution && solution.prefix && solution.nonce) {
-                        headers['X-PoW-Challenge'] = solution.prefix;
-                        headers['X-PoW-Nonce'] = solution.nonce;
-                        console.log(`📤 Upload com PoW (tentativa ${attempt}/${maxRetries})`);
-                        console.log(`   🔑 Challenge: ${solution.prefix.substring(0, 10)}...`);
-                        console.log(`   🔑 Nonce: ${solution.nonce}`);
-                        console.log(`   🌐 Endpoint: ${endpoint}`);
-                    } else {
-                        console.log(`📤 Upload SEM PoW (tentativa ${attempt}/${maxRetries})`);
-                    }
+                    console.log(`📤 Upload com PoW (tentativa ${attempt}/${maxRetries})`);
+                    console.log(`   🔑 Challenge: ${solution.prefix.substring(0, 10)}...`);
+                    console.log(`   🔑 Nonce: ${solution.nonce}`);
+                    console.log(`   🔑 Complexity: ${solution.complexity}`);
+                    console.log(`   🌐 Endpoint: ${endpoint}`);
 
                     const url = buildApiUrl(endpoint);
                     
                     updateAnalysisProgress(
-                        10 + (attempt - 1) * 15,
+                        20 + (attempt - 1) * 15,
                         `📤 Tentativa ${attempt}/${maxRetries}...`
                     );
 
@@ -938,6 +937,8 @@
                                 window.powClient.clearCache();
                                 window.powClient.reset();
                             }
+                            state.powLastRefresh = 0;
+                            
                             try {
                                 const newSolution = await getPowSolution(true);
                                 if (newSolution) {
@@ -947,17 +948,12 @@
                                 }
                             } catch (e) {
                                 console.warn('⚠️ Falha ao renovar PoW:', e.message);
+                                throw new Error(`Falha ao renovar PoW: ${e.message}`);
                             }
                         }
                         
                         if (isCreditsError(errorStr)) {
                             throw new Error(`Créditos insuficientes: ${errorStr}`);
-                        }
-                        
-                        if (errorStr.includes('not found') || errorStr.includes('404')) {
-                            console.log(`🔄 Endpoint ${endpoint} não encontrado, tentando próximo...`);
-                            endpointFailed = true;
-                            break;
                         }
                         
                         throw new Error(errorStr);
@@ -969,6 +965,8 @@
                             window.powClient.clearCache();
                             window.powClient.reset();
                         }
+                        state.powLastRefresh = 0;
+                        
                         try {
                             const newSolution = await getPowSolution(true);
                             if (newSolution) {
@@ -1023,8 +1021,8 @@
                     console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
                     
                     if (isCreditsError(error.message) ||
-                        error.message.includes('inválido') ||
-                        error.message.includes('Sessão expirada')) {
+                        error.message.includes('Sessão expirada') ||
+                        error.message.includes('PoW ausente')) {
                         throw error;
                     }
                     
@@ -1041,7 +1039,6 @@
             }
             
             if (endpointFailed) {
-                console.log(`🔄 Pulando para próximo endpoint...`);
                 continue;
             }
         }
@@ -1050,7 +1047,7 @@
     }
 
     // ==============================================
-    // 🔥🔥🔥 POLLING (CORRIGIDO COM CHART_DATA)
+    // 🔥 POLLING
     // ==============================================
 
     async function pollAnalysisStatus(processId) {
@@ -1125,7 +1122,6 @@
                 
                 console.log(`📊 [Polling] Status: ${status}, Progresso: ${progress}%, Mensagem: ${message}`);
 
-                // 🔥 SE FOR PROCESSING, ATUALIZAR PROGRESSO
                 if (status === 'processing') {
                     const pollProgress = Math.min(50 + (attempts / maxAttempts) * 40, 95);
                     const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -1144,11 +1140,9 @@
                     continue;
                 }
 
-                // 🔥 ANÁLISE CONCLUÍDA
                 if (status === 'completed' || status === 'complete' || status === 'success') {
                     updateAnalysisProgress(90, '📊 Buscando relatório completo...');
                     
-                    // 🔥 TENTAR EXTRAIR CHART_DATA DO POLLING
                     const chartData = extractChartData(statusData);
                     if (chartData && chartData.weekly) {
                         console.log('📊 [Polling] Chart_data obtido do polling');
@@ -1157,13 +1151,11 @@
                         }));
                     }
                     
-                    // 🔥 TENTAR BUSCAR RESULTADO COMPLETO
                     const resultData = await fetchAnalysisResult(processId);
                     
                     if (resultData) {
                         updateAnalysisProgress(95, '✅ Relatório pronto!');
                         await sleep(500);
-                        // 🔥 Extrair chart_data do resultado
                         const resultChartData = extractChartData(resultData);
                         if (resultChartData && resultChartData.weekly) {
                             window.dispatchEvent(new CustomEvent('chart:data_ready', {
@@ -1182,7 +1174,6 @@
                         continue;
                     }
                     
-                // 🔥 ERRO NA ANÁLISE
                 } else if (status === 'error' || status === 'failed') {
                     throw new Error(statusData.error || statusData.message || 'Erro na análise');
                     
@@ -1348,13 +1339,11 @@
             });
         }
 
-        // 🔥 NOVO: ESCUTAR EVENTO DE CHART_DATA
         document.addEventListener('chart:data_ready', function(e) {
             const detail = e.detail || {};
             console.log('📊 [Event] chart:data_ready recebido');
             
             if (detail.chart_data && detail.chart_data.weekly) {
-                // 🔥 DISPARAR PARA O DASHBOARD RENDERIZAR
                 window.dispatchEvent(new CustomEvent('dashboard:render_chart', {
                     detail: {
                         chart_data: detail.chart_data,
@@ -1364,7 +1353,6 @@
             }
         });
 
-        // 🔥 ESCUTAR EVENTO DE RENDERIZAÇÃO DO DASHBOARD
         document.addEventListener('dashboard:chart_rendered', function(e) {
             const detail = e.detail || {};
             console.log('📊 [Event] dashboard:chart_rendered:', detail);
@@ -1461,7 +1449,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v2.6...');
+        console.log('🚀 Inicializando UploadReportSystem v2.7...');
         
         cacheElements();
         
@@ -1481,23 +1469,19 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v2.6 inicializado!');
+        console.log('✅ UploadReportSystem v2.7 inicializado!');
         console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
         console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
         console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
         console.log(`   🔄 Polling interval: ${CONFIG.POLLING_INTERVAL}ms`);
-        console.log(`   🔥 MAX_POLLING_ATTEMPTS: ${CONFIG.MAX_POLLING_ATTEMPTS} (${CONFIG.MAX_POLLING_ATTEMPTS * CONFIG.POLLING_INTERVAL / 1000}s)`);
-        console.log(`   ⏰ GLOBAL_TIMEOUT: ${CONFIG.GLOBAL_TIMEOUT/1000}s (10 minutos)`);
-        console.log(`   🔍 Result endpoints: ${CONFIG.RESULT_ENDPOINTS.join(', ')}`);
-        console.log(`   🔥 MELHORIAS v2.6:`);
-        console.log(`      ✅ Extração inteligente de chart_data`);
-        console.log(`      ✅ Evento chart:data_ready para renderização`);
-        console.log(`      ✅ Suporte a múltiplos formatos de dados`);
-        console.log(`      ✅ Melhor logging para debug`);
-        console.log(`      ✅ Função getChartData() para acessar dados`);
-        console.log(`      ✅ Diagnóstico com status do chart_data`);
+        console.log(`   ⏰ GLOBAL_TIMEOUT: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
+        console.log(`   🔥 CORREÇÕES v2.7:`);
+        console.log(`      ✅ getPowSolution NÃO retorna null (lança erro)`);
+        console.log(`      ✅ Headers X-PoW-Complexity/Timestamp/Request-ID enviados`);
+        console.log(`      ✅ Removido fallback /upload-auto (evitava consumo duplo)`);
+        console.log(`      ✅ NÃO permite upload sem PoW`);
+        console.log(`      ✅ POW_MAX_AGE sincronizado com backend (600s)`);
         console.log(`   🔧 Use window.UploadSystem.getDiagnostics() para debug`);
-        console.log(`   🔧 Use window.UploadSystem.getChartData() para acessar dados do gráfico`);
     }
 
     if (document.readyState === 'loading') {
@@ -1506,15 +1490,11 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v2.6 carregado');
-    console.log(`   🔥 Rota polling: /analysis/progress/{id} (✅ corrigida)`);
-    console.log(`   🔥 Timeout: 10min (✅ corrigido)`);
-    console.log(`   🔥 Chart data: extração inteligente (✅ nova)`);
-    console.log(`   🔥 Eventos: chart:data_ready (✅ novo)`);
-    console.log(`   🔄 Fallback upload: /upload-auto`);
-    console.log('   📊 Polling inteligente com fallback');
-    console.log('   📈 Busca resultado em múltiplos endpoints');
-    console.log('   🔧 Tratamento de erro 400 com auto-recuperação');
-    console.log('   🛡️ Detecção de PoW e créditos');
+    console.log('📊 upload-report-system.js v2.7 carregado (CORRIGIDO)');
+    console.log('   ✅ PoW renovado corretamente');
+    console.log('   ✅ Headers completos enviados');
+    console.log('   ✅ Sem fallback /upload-auto');
+    console.log('   ✅ Não permite upload sem PoW');
+    console.log('='.repeat(60));
 
 })();
