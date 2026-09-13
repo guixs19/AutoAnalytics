@@ -1,263 +1,349 @@
-# backend/gemini.py - VERSÃO 5.3 (CORRIGIDA)  # 🔥 VERSÃO ATUALIZADA
+# backend/gemini.py - VERSÃO 6.0 (REESCRITA E CORRIGIDA)
 """
-🔥 GEMINI SERVICE V5.3 - CORRIGIDA (SDK + gemini-3.8-flash)
+GEMINI SERVICE V6.0 — Produção-ready
 ================================================================================
-✅ CORREÇÕES V5.3 (ver comentários inline para detalhes de cada uma):
-   1. 🔥 CRÍTICO: import trocado de 'google.generativeai' (SDK legado, sem
-      Client) para 'from google import genai' (SDK novo 'google-genai'),
-      que é o que o resto do código já esperava (genai.Client, etc.).
-      Sem essa correção, _initialize_client() falhava sempre, silenciosamente.
-   2. 🔥 Nomes de modelo normalizados (removido prefixo "models/" retornado
-      pela API), corrigindo a seleção do modelo prioritário gemini-3.8-flash.
-   3. 🔥 Descoberta de modelos consolidada em 1 chamada de API (era 2).
-   4. 🔥 Health monitor agora roda de fato (thread dedicada em vez de task
-      assíncrona que nunca era executada) e usa o timeout já configurado.
-   5. 🔥 Removido "warm-up" de cache que sobrescrevia respostas reais de
-      prompts como "status"/"ping" com texto falso.
-   6. 🔥 health_status agora reage a falhas reais de geração (circuit
-      breaker), não só ao health_check() periódico.
-   7. 🔥 Modelo prioritário lido de CONFIG["model_preferences"][0] em vez
-      de hardcoded em 3 lugares diferentes do código.
+CORREÇÕES APLICADAS (referentes ao diagnóstico da V5.3):
 
-✅ NOVIDADE V5.2:
-   1. 🔥 ADICIONADO: gemini-3.8-flash como modelo prioritário
-   2. 🔥 ADICIONADO: Suporte a GEMINI_MODEL via variável de ambiente
-   3. 🔥 MELHORADO: Rotação de modelos com fallback inteligente
+CRÍTICAS
+  1.  [C1] Removidos TODOS os efeitos colaterais no import. O bloco final
+           agora vive dentro de `if __name__ == "__main__":`. Antes, importar
+           o módulo criava client, threads e imprimia no stdout — quebrando
+           gunicorn/uWSGI (fork), Celery e reloaders.
+  2.  [C2] Health monitor + client não sobrevivem ao fork. Agora o serviço
+           detecta PID e reinicializa o client/threads no processo filho
+           (_ensure_pid_consistency). Essencial para gunicorn/celery.
+  3.  [C3] `asyncio.get_event_loop()` (deprecated e falha em thread sem loop)
+           trocado por `asyncio.get_running_loop()` dentro de coroutines.
+           O health check síncrono usa `asyncio.run_coroutine_threadsafe`
+           no loop principal, ou um runner dedicado.
+  4.  [C4] ThreadPoolExecutor dedicado para I/O do SDK (não usa o pool
+           default do loop, que é compartilhado com outras libs e causava
+           contenção/vazamento de threads em timeouts).
+  5.  [C5] Cache key agora inclui o MODELO REALMENTE usado, não
+           `self.current_model`. Antes, rotação/fallback geravam respostas
+           cruzadas entre modelos.
+  6.  [C6] `response.text` pode levantar ValueError quando o conteúdo é
+           bloqueado por safety. Agora é tratado como "blocked", não como
+           falha de infraestrutura (não abre circuit breaker).
+  7.  [C7] `CONFIG["health_threshold_failures"]` (que existia mas nunca era
+           usado) agora É usado: health só vira FAILED após N falhas
+           consecutivas, evitando tirar o site do ar por um soluço de rede.
 
-✅ MANTIDO V5.1:
-   1. 🔥 is_healthy() - CORREÇÃO PRINCIPAL
-   2. 🔥 Auto-detecção de modelos disponíveis
-   3. 🔥 Smart rate limiting
-   4. 🔥 Circuit breaker com proteção
-   5. 🔥 Retry exponencial com jitter
-   6. 🔥 Cache preditivo adaptativo
-   7. 🔥 Compressão de prompt
-   8. 🔥 Rotação inteligente de modelos
-   9. 🔥 Métricas de performance
-   10. 🔥 Health check preditivo
-   11. 🔥 Batch processing
-   12. 🔥 Cache adaptativo por frequência
-   13. 🔥 Auto-otimização contínua
-   14. 🔥 Logs estruturados
-   15. 🔥 Validação de resposta
-   16. 🔥 Fallback automático
+GRAVES
+  8.  [G1] Rate limit reescrito com deque sem maxlen + timestamps; burst
+           agora tem janela real (não "por acidente").
+  9.  [G2] `_compress_prompt` não destrói mais `#` em JSON/markdown/hex.
+           Só remove comentários em blocos de código detectados.
+ 10.  [G3] `batch_generate` agora usa semáforo (concorrência limitada) em
+           vez de disparar N chamadas simultâneas ilimitadas.
+ 11.  [G4] `shutdown()` respeita terminationGracePeriod: espera configurável
+           e não bloqueia deploy por 65s.
+ 12.  [G5] `_load_from_settings` envolto em try/except ImportError +
+           RuntimeError (import circular).
+ 13.  [G6] API key nunca aparece em logs/repr — substituída por hash curto.
+
+MÉDIAS
+ 14.  [M1] Versão unificada em `__version__ = "6.0.0"`.
+ 15.  [M2] CONFIG congelado como `MappingProxyType` (imutável) — evita
+           mutação acidental de atributo de classe compartilhado.
+ 16.  [M3] Cálculo de média acumulada isolado em helper com lock.
+ 17.  [M4] Fallback de modelo agora tenta TODOS os modelos disponíveis em
+           ordem, não só "o próximo da lista".
+ 18.  [M5] Suporte a streaming real (`stream=True` agora faz o que promete).
+ 19.  [M6] Detecção de resposta bloqueada por safety (finish_reason).
+ 20.  [M7] Logs estruturados em JSON opcional (via env GEMINI_LOG_JSON=1).
+
+MELHORIAS NOVAS (V6.0)
+ 21.  [N1] Backoff exponencial com jitter COMPLETO (não só +0..0.3s).
+ 22.  [N2] Métricas exportáveis em formato Prometheus (text/plain).
+ 23.  [N3] Circuit breaker por MODELO (não só global) — se gemini-3.8-flash
+           está ruim, isola sem derrubar o serviço todo.
+ 24.  [N4] Cache com write-through para disco opcional (sobrevive restart).
+ 25.  [N5] Suporte a `response_schema` para saída estruturada (JSON mode).
+ 26.  [N6] Guard de tamanho de prompt ANTES de gastar tokens.
+ 27.  [N7] `warmup()` explícito, opt-in, que faz UMA chamada real e só é
+           executado se o usuário pedir (nunca no import).
+ 28.  [N8] Testes de sanidade embutidos em `__main__`.
+ 29.  [N9] `atexit` handler para shutdown graceful sem depender do caller.
+ 30.  [N10] Métricas de latência por percentil (p50/p95/p99).
 ================================================================================
 """
 
+from __future__ import annotations
+
+import atexit
+import asyncio
+import concurrent.futures
+import hashlib
 import json
 import logging
 import os
-import time
-import asyncio
-import hashlib
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple, Set
-from pathlib import Path
-from dataclasses import dataclass, field
-from collections import defaultdict, deque
-from threading import Lock, Thread
-from concurrent.futures import ThreadPoolExecutor
 import random
 import re
 import sys
+import threading
+import time
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any, Deque, Dict, List, Mapping, Optional, Tuple
 
 from dotenv import load_dotenv
 
+__version__ = "6.0.0"
+
 # ==============================================
-# CONFIGURAÇÃO DE LOGGING
+# LOGGING (opcionalmente JSON)
 # ==============================================
 
 logger = logging.getLogger(__name__)
 
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+if os.environ.get("GEMINI_LOG_JSON") == "1":
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(_JsonFormatter())
+    logger.addHandler(_handler)
+
+
 # ==============================================
-# 🔥 SDK CORRETO: google-genai (NÃO google-generativeai)
+# SDK
 # ==============================================
-#
-# Este módulo usa a API baseada em Client (genai.Client(...),
-# client.models.list(), client.models.generate_content(...)), que pertence
-# ao SDK novo e unificado "google-genai" (import: `from google import genai`).
-#
-# O pacote legado "google-generativeai" (import: `import google.generativeai
-# as genai`) usa uma API totalmente diferente (`genai.configure()` +
-# `genai.GenerativeModel(...)`) e NÃO possui `genai.Client`. Se os dois
-# pacotes forem confundidos, `_initialize_client()` falha com
-# `AttributeError: module 'google.generativeai' has no attribute 'Client'`,
-# capturado silenciosamente pelo try/except e reportado apenas como
-# "health_status = FAILED" — ou seja, o serviço parece "configurado errado"
-# mesmo com uma API key válida.
-#
-# Instalação correta:
-#   pip uninstall -y google-generativeai   # opcional, evita confusão futura
-#   pip install -U google-genai
+
 GENAI_SDK_OK = True
 try:
     from google import genai
+    from google.genai import types as genai_types
 except ImportError as e:
     GENAI_SDK_OK = False
     genai = None  # type: ignore[assignment]
+    genai_types = None  # type: ignore[assignment]
     logger.error(
-        "❌ SDK 'google-genai' não encontrado (%s). Instale com: "
-        "pip install -U google-genai — este módulo NÃO funciona com o "
-        "pacote legado 'google-generativeai'.",
+        "SDK 'google-genai' ausente (%s). Instale: pip install -U google-genai",
         e,
     )
 else:
     if not hasattr(genai, "Client"):
-        # Algo no ambiente está fornecendo um módulo `google.genai` sem
-        # `Client` — sinal de instalação corrompida ou conflito de pacotes.
         GENAI_SDK_OK = False
         logger.error(
-            "❌ 'google.genai' foi importado mas não expõe 'Client'. "
-            "Verifique se o pacote instalado é 'google-genai' (novo SDK) e "
-            "não 'google-generativeai' (legado). Reinstale com: "
+            "'google.genai' importado mas sem 'Client'. Reinstale: "
             "pip install -U --force-reinstall google-genai"
         )
 
+
 # ==============================================
-# DATACLASSES PARA ESTRUTURA DE DADOS
+# DATA CLASSES
 # ==============================================
+
 
 @dataclass
 class ModelMetrics:
-    """Métricas de desempenho de um modelo"""
     name: str
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
+    blocked_calls: int = 0
     avg_response_time_ms: float = 0.0
     total_tokens: int = 0
     last_used: Optional[datetime] = None
     error_rate: float = 0.0
     health_score: float = 100.0
+    consecutive_failures: int = 0
+    circuit_open_until: float = 0.0  # [N3] circuit por modelo
+
 
 @dataclass
 class CacheEntry:
-    """Entrada de cache inteligente"""
     value: Any
     timestamp: float
-    ttl: int = 300  # segundos
+    ttl: int = 300
     hits: int = 0
     access_count: int = 0
-    last_access: float = 0
+    last_access: float = 0.0
     frequency: int = 0
+
 
 @dataclass
 class RequestContext:
-    """Contexto de uma requisição"""
     request_id: str
     user_id: Optional[int] = None
     model_used: Optional[str] = None
-    start_time: float = 0
-    end_time: float = 0
+    start_time: float = 0.0
+    end_time: float = 0.0
     tokens_used: int = 0
     cache_hit: bool = False
     retry_count: int = 0
 
+
 # ==============================================
-# CLASSE PRINCIPAL
+# CONFIG (imutável — [M2])
 # ==============================================
 
-class GeminiServiceV5:
+_DEFAULT_CONFIG: Dict[str, Any] = {
+    "timeout_seconds": 60,
+    "max_retries": 3,
+    "retry_base_delay": 1.0,
+    "retry_max_delay": 30.0,
+    "retry_jitter": 0.3,
+    "circuit_breaker_threshold": 5,
+    "circuit_breaker_timeout": 60,
+    "circuit_breaker_half_open_attempts": 2,
+    "rate_limit_calls_per_minute": 60,
+    "rate_limit_burst": 10,
+    "cache_default_ttl": 300,
+    "cache_max_size": 200,
+    "cache_adaptive_ttl": True,
+    "cache_persist_path": None,  # [N4] ex: "/var/cache/gemini_cache.json"
+    "max_prompt_size": 8000,
+    "max_prompt_length": 50000,  # [N6] hard limit
+    "min_prompt_compress": 2000,
+    "max_response_length": 10000,
+    "batch_size": 5,
+    "batch_max_concurrency": 5,  # [G3]
+    "streaming_enabled": True,
+    "streaming_chunk_size": 100,
+    "model_preferences": [
+        "gemini-3.8-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+    ],
+    "health_check_interval": 60,
+    "health_check_timeout": 10,
+    "health_threshold_failures": 3,  # [C7] agora realmente usado
+    "shutdown_timeout_seconds": 10,  # [G4]
+    "enable_prompt_compression": True,
+    "enable_batch_processing": True,
+    "enable_predictive_cache": True,
+    "enable_model_rotation": True,
+    "enable_auto_optimization": True,
+    "sdk_executor_max_workers": 8,  # [C4]
+}
+
+
+def _load_config_overrides() -> Dict[str, Any]:
+    """Permite override via env: GEMINI_CONFIG__timeout_seconds=90, etc."""
+    overrides: Dict[str, Any] = {}
+    for k, v in os.environ.items():
+        if not k.startswith("GEMINI_CONFIG__"):
+            continue
+        key = k[len("GEMINI_CONFIG__"):]
+        if key not in _DEFAULT_CONFIG:
+            continue
+        default = _DEFAULT_CONFIG[key]
+        try:
+            if isinstance(default, bool):
+                overrides[key] = v.lower() in ("1", "true", "yes", "on")
+            elif isinstance(default, int):
+                overrides[key] = int(v)
+            elif isinstance(default, float):
+                overrides[key] = float(v)
+            elif isinstance(default, list):
+                overrides[key] = [x.strip() for x in v.split(",") if x.strip()]
+            else:
+                overrides[key] = v
+        except (ValueError, TypeError):
+            logger.warning("Override inválido para %s=%r — ignorado", key, v)
+    return overrides
+
+
+# ==============================================
+# UTIL
+# ==============================================
+
+
+def _short_hash(s: str, n: int = 8) -> str:
+    return hashlib.md5(s.encode()).hexdigest()[:n]
+
+
+def _mask_secret(s: Optional[str]) -> str:
+    """[G6] Nunca logar a key crua."""
+    if not s:
+        return "<none>"
+    return f"<key:{_short_hash(s)}>"
+
+
+def _percentile(sorted_values: List[float], pct: float) -> float:
+    if not sorted_values:
+        return 0.0
+    k = (len(sorted_values) - 1) * pct
+    f, c = int(k), min(int(k) + 1, len(sorted_values) - 1)
+    if f == c:
+        return sorted_values[f]
+    return sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f)
+
+
+# ==============================================
+# SERVIÇO
+# ==============================================
+
+
+class GeminiServiceV6:
     """
-    🔥 Gemini Service V5.2 - Serviço Inteligente e Auto-Adaptável
-    🔥 PRIORIDADE: gemini-3.8-flash (gratuito e rápido)
-    
-    Características avançadas:
-    - Auto-descoberta de modelos
-    - Circuit breaker com proteção contra falhas
-    - Cache preditivo com TTL adaptativo
-    - Rate limiting inteligente
-    - Otimização automática de performance
-    - ✅ is_healthy() para verificação de saúde
-    - ✅ gemini-3.8-flash como modelo prioritário
+    Serviço Gemini V6 — seguro para import, fork-safe, com circuit breaker
+    por modelo, cache com modelo na chave e shutdown graceful.
     """
-    
-    # ==========================================
-    # CONFIGURAÇÕES INTELIGENTES
-    # ==========================================
-    
-    CONFIG = {
-        "timeout_seconds": 60,
-        "connect_timeout": 10,
-        "read_timeout": 30,
-        "max_retries": 3,
-        "retry_base_delay": 1.0,
-        "retry_max_delay": 30.0,
-        "retry_jitter": 0.3,
-        "circuit_breaker_threshold": 5,
-        "circuit_breaker_timeout": 60,
-        "circuit_breaker_half_open_attempts": 2,
-        "rate_limit_calls_per_minute": 60,
-        "rate_limit_burst": 10,
-        "cache_default_ttl": 300,
-        "cache_max_size": 200,
-        "cache_adaptive_ttl": True,
-        "max_prompt_size": 8000,
-        "min_prompt_compress": 2000,
-        "batch_size": 5,
-        "batch_timeout_ms": 100,
-        "streaming_enabled": True,
-        "streaming_chunk_size": 100,
-        # 🔥 ATUALIZADO: gemini-3.8-flash como PRIORIDADE MÁXIMA
-        "model_preferences": [
-            "gemini-3.8-flash",      # 🔥 NOVO - MAIS RÁPIDO E GRATUITO
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-        ],
-        "health_check_interval": 60,
-        "health_check_timeout": 10,
-        "health_threshold_failures": 3,
-        "max_prompt_length": 50000,
-        "max_response_length": 10000,
-        "enable_prompt_compression": True,
-        "enable_batch_processing": True,
-        "enable_predictive_cache": True,
-        "enable_model_rotation": True,
-        "enable_auto_optimization": True,
-    }
-    
-    # ==========================================
-    # INICIALIZAÇÃO
-    # ==========================================
-    
-    def __init__(self):
-        """Inicializa o serviço com todos os sistemas inteligentes"""
-        
-        # SISTEMA DE MODELOS
+
+    # [M2] MappingProxyType -> imutável em runtime
+    CONFIG: Mapping[str, Any] = MappingProxyType({**_DEFAULT_CONFIG})
+
+    # [M7] marcadores de modelo não-chat
+    _NON_CHAT_MODEL_MARKERS = (
+        "embedding", "aqa", "imagen", "veo", "gecko", "vision-safety",
+    )
+
+    def __init__(self, *, auto_health: bool = True) -> None:
+        # [C2] rastreia PID para detectar fork
+        self._pid: int = os.getpid()
+
+        # estado do client
         self.client = None
-        self.current_model = None
+        self.current_model: Optional[str] = None
         self.available_models: List[str] = []
+
+        # métricas por modelo
         self.model_metrics: Dict[str, ModelMetrics] = {}
-        self.model_rotation_index = 0
-        
-        # SISTEMA DE CACHE
+        self._model_metrics_lock = threading.Lock()
+
+        # cache
         self.response_cache: Dict[str, CacheEntry] = {}
-        self.cache_lock = Lock()
+        self.cache_lock = threading.Lock()
         self.cache_stats = {
-            "hits": 0,
-            "misses": 0,
-            "evictions": 0,
-            "predictive_hits": 0,
+            "hits": 0, "misses": 0, "evictions": 0, "predictive_hits": 0,
         }
-        
-        # CIRCUIT BREAKER
+
+        # circuit breaker global
         self.circuit_state = "CLOSED"
         self.circuit_failure_count = 0
-        self.circuit_last_failure_time = None
+        self.circuit_last_failure_time: Optional[float] = None
         self.circuit_success_count = 0
-        
-        # RATE LIMITING
-        self.rate_limit_cache: Dict[str, deque] = {}
-        self.rate_limit_lock = Lock()
-        
-        # MÉTRICAS
-        self.metrics = {
+
+        # rate limit
+        self.rate_limit_cache: Dict[str, Deque[float]] = {}
+        self.rate_limit_lock = threading.Lock()
+
+        # métricas globais
+        self.metrics: Dict[str, Any] = {
             "total_calls": 0,
             "successful_calls": 0,
             "failed_calls": 0,
+            "blocked_calls": 0,
             "cache_hits": 0,
             "cache_misses": 0,
             "model_switches": 0,
@@ -266,551 +352,512 @@ class GeminiServiceV5:
             "avg_response_time_ms": 0.0,
             "total_tokens": 0,
             "compression_savings": 0,
-            "started_at": datetime.now().isoformat(),
+            "started_at": datetime.utcnow().isoformat() + "Z",
         }
-        
-        # SISTEMA DE BATCH
-        self.batch_queue: deque = deque()
-        self.batch_processing = False
-        self.batch_executor = ThreadPoolExecutor(max_workers=4)
-        
-        # SISTEMA DE SAÚDE
-        self.last_health_check = None
+        self._metrics_lock = threading.Lock()
+
+        # [N10] latências por percentil
+        self._latencies: Deque[float] = deque(maxlen=1000)
+
+        # [C4] executor dedicado para I/O do SDK
+        self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.CONFIG["sdk_executor_max_workers"],
+            thread_name_prefix="gemini-sdk",
+        )
+
+        # saúde
+        self.last_health_check: Optional[datetime] = None
         self.health_status = "UNKNOWN"
         self.health_failures = 0
-        self._last_error = None
-        
-        # ESTATÍSTICAS
-        self.usage_patterns = defaultdict(int)
-        self.prompt_patterns = {}
-        self.token_usage_by_type = defaultdict(int)
-        
-        # THREAD SAFETY
-        self._lock = Lock()
+        self.health_consecutive_failures = 0
+        self._last_error: Optional[str] = None
+
+        # [G3] semáforo para batch
+        self._batch_semaphore: Optional[asyncio.Semaphore] = None
+
+        # thread safety
+        self._lock = threading.Lock()
         self._health_monitoring_active = False
-        self._health_thread: Optional[Thread] = None
-        
-        # INICIALIZAR
+        self._health_thread: Optional[threading.Thread] = None
+        self._health_loop: Optional[asyncio.AbstractEventLoop] = None
+
+        # API key
         self.api_key = self._load_api_key()
-        
-        if self.api_key:
+
+        # Inicialização
+        if self.api_key and GENAI_SDK_OK:
             self._initialize_client()
-            self._start_health_monitoring()
+            if auto_health:
+                self._start_health_monitoring()
         else:
-            self._last_error = "API key não encontrada"
-            logger.error("❌ API key não encontrada")
-    
-    # ==========================================
-    # 🔥 1. LOAD API KEY
-    # ==========================================
-    
+            self._last_error = (
+                "API key não encontrada" if not self.api_key
+                else "SDK google-genai não disponível"
+            )
+            logger.error("Inicialização falhou: %s", self._last_error)
+
+        # [C2] registra cleanup no fork/exit
+        try:
+            if hasattr(os, "register_at_fork"):
+                os.register_at_fork(after_in_child=self._on_fork_child)
+        except Exception:
+            pass
+        atexit.register(self._atexit_cleanup)
+
+    # ------------------------------------------------------------------
+    # [C2] FORK-SAFE
+    # ------------------------------------------------------------------
+
+    def _on_fork_child(self) -> None:
+        """Chamado no processo FILHO após fork. Reinicializa client e threads."""
+        child_pid = os.getpid()
+        if child_pid == self._pid:
+            return
+        logger.info(
+            "Fork detectado (pid %d -> %d): reinicializando client e threads",
+            self._pid, child_pid,
+        )
+        self._pid = child_pid
+
+        # Encerra executor herdado (não funciona após fork)
+        try:
+            self._sdk_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.CONFIG["sdk_executor_max_workers"],
+            thread_name_prefix="gemini-sdk",
+        )
+
+        # Para health monitor herdado
+        self._health_monitoring_active = False
+        self._health_thread = None
+        self._health_loop = None
+
+        # Reinicializa client
+        self.client = None
+        self._initialize_client()
+        if self.client:
+            self._start_health_monitoring()
+
+    def _ensure_pid_consistency(self) -> None:
+        """Guard para chamadas tardias que escapam do register_at_fork."""
+        if os.getpid() != self._pid:
+            self._on_fork_child()
+
+    # ------------------------------------------------------------------
+    # API KEY
+    # ------------------------------------------------------------------
+
     def _load_api_key(self) -> Optional[str]:
-        """Carrega API key de múltiplas fontes com validação"""
-        
-        sources = [
+        sources = (
             self._load_from_env,
             self._load_from_os_environ,
             self._load_from_file,
             self._load_from_settings,
-        ]
-        
+        )
         for source in sources:
             try:
                 key = source()
                 if key and self._validate_key(key):
-                    logger.info(f"✅ API key carregada de: {source.__name__}")
+                    logger.info(
+                        "API key carregada de %s (%s)",
+                        source.__name__, _mask_secret(key),
+                    )
                     return key
             except Exception as e:
-                logger.debug(f"⚠️ Falha ao carregar de {source.__name__}: {e}")
-        
+                logger.debug("Falha em %s: %s", source.__name__, e)
         self._last_error = "Nenhuma API key válida encontrada"
-        logger.error("❌ Nenhuma API key válida encontrada")
+        logger.error(self._last_error)
         return None
-    
+
     def _load_from_env(self) -> Optional[str]:
-        """Carrega do arquivo .env"""
-        env_paths = [
-            Path(__file__).parent.parent / '.env',
-            Path.cwd() / '.env',
-            Path.home() / '.env',
-        ]
-        
-        for path in env_paths:
+        for path in (
+            Path(__file__).parent.parent / ".env",
+            Path.cwd() / ".env",
+            Path.home() / ".env",
+        ):
             if path.exists():
                 load_dotenv(dotenv_path=path, override=True)
-                key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_KEY")
-                if key:
-                    return key.strip()
-        return None
-    
+        return os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_KEY")
+
     def _load_from_os_environ(self) -> Optional[str]:
-        """Carrega do os.environ"""
-        for var in ["GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY"]:
-            key = os.environ.get(var)
-            if key:
-                return key.strip()
+        for var in ("GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY"):
+            k = os.environ.get(var)
+            if k:
+                return k.strip()
         return None
-    
+
     def _load_from_file(self) -> Optional[str]:
-        """Carrega de arquivo .gemini_key"""
-        file_paths = [
-            Path(__file__).parent.parent / '.gemini_key',
-            Path.cwd() / '.gemini_key',
-            Path.home() / '.gemini_key',
-        ]
-        
-        for path in file_paths:
+        for path in (
+            Path(__file__).parent.parent / ".gemini_key",
+            Path.cwd() / ".gemini_key",
+            Path.home() / ".gemini_key",
+        ):
             if path.exists():
                 try:
-                    key = path.read_text().strip()
-                    if key:
-                        return key
-                except Exception:
+                    k = path.read_text().strip()
+                    if k:
+                        return k
+                except OSError:
                     continue
         return None
-    
+
     def _load_from_settings(self) -> Optional[str]:
-        """Carrega do settings.py se disponível"""
+        """[G5] Import circular tratado."""
         try:
-            from backend.config.settings import settings
-            key = getattr(settings, "GEMINI_API_KEY", None)
-            if key:
-                return key
-        except ImportError:
-            pass
-        return None
-    
-    def _validate_key(self, key: str) -> bool:
-        """Validação robusta de API key"""
+            from backend.config.settings import settings  # type: ignore
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug("settings indisponível: %s", e)
+            return None
+        return getattr(settings, "GEMINI_API_KEY", None)
+
+    @staticmethod
+    def _validate_key(key: str) -> bool:
         if not key:
             return False
-        
-        key = str(key).strip().replace('\n', '').replace('\r', '')
-        
-        invalid_values = [None, "", "opcional", "sua_chave_aqui", "your_api_key_here", 
-                          "API_KEY_AQUI", "GEMINI_API_KEY", "AIza", "AQ."]
-        if key in invalid_values or len(key) < 10:
+        k = str(key).strip().replace("\n", "").replace("\r", "")
+        invalid = {
+            "", "opcional", "sua_chave_aqui", "your_api_key_here",
+            "API_KEY_AQUI", "GEMINI_API_KEY", "AIza", "AQ.",
+        }
+        if k in invalid or len(k) < 10:
             return False
-        
-        if not re.match(r'^[A-Za-z0-9\-_]+$', key):
-            return False
-        
-        return True
-    
-    # ==========================================
-    # 🔥 2. INICIALIZAÇÃO DO CLIENTE
-    # ==========================================
-    
-    def _initialize_client(self):
-        """Inicializa o cliente Gemini com validação"""
+        return re.match(r"^[A-Za-z0-9\-_]+$", k) is not None
+
+    # ------------------------------------------------------------------
+    # INICIALIZAÇÃO
+    # ------------------------------------------------------------------
+
+    def _initialize_client(self) -> None:
         if not GENAI_SDK_OK:
             self._last_error = (
-                "SDK 'google-genai' ausente ou inválido — "
-                "instale com: pip install -U google-genai"
+                "SDK 'google-genai' ausente — pip install -U google-genai"
             )
-            logger.error(f"❌ {self._last_error}")
             self.client = None
             self.health_status = "FAILED"
             return
-
         try:
-            logger.info("🔄 Inicializando cliente Gemini...")
-
+            logger.info("Inicializando cliente Gemini (%s)", _mask_secret(self.api_key))
             self.client = genai.Client(api_key=self.api_key)
-
-            # Uma única chamada de listagem — usada tanto para validar a
-            # conexão quanto para popular available_models (antes disso era
-            # feito em duas chamadas separadas: uma aqui, descartada, e
-            # outra em _discover_models()).
-            self._discover_models(raw_models=list(self.client.models.list()))
+            raw = list(self.client.models.list())
+            self._discover_models(raw_models=raw)
             logger.info(
-                f"✅ Cliente conectado! {len(self.available_models)} "
-                "modelos compatíveis disponíveis"
+                "Cliente OK. %d modelos compatíveis", len(self.available_models)
             )
-
-            if self.current_model:
-                logger.info(f"✅ Modelo inicial: {self.current_model}")
-
             self.health_status = "HEALTHY"
+            self.health_consecutive_failures = 0
             self._last_error = None
-
         except Exception as e:
             self._last_error = str(e)
-            logger.error(f"❌ Erro ao inicializar cliente: {e}")
+            logger.exception("Falha ao inicializar cliente")
             self.client = None
             self.health_status = "FAILED"
-    
-    # ==========================================
-    # 🔥 3. AUTO-DESCOBERTA DE MODELOS (ATUALIZADA)
-    # ==========================================
-    
-    # Substrings que identificam modelos que NÃO são de geração de texto de
-    # propósito geral (embeddings, imagem, vídeo, etc.) e não devem entrar
-    # na lista de modelos utilizáveis por generate_content().
-    _NON_CHAT_MODEL_MARKERS = ("embedding", "aqa", "imagen", "veo", "gecko", "vision-safety")
 
-    def _discover_models(self, raw_models: Optional[list] = None):
-        """
-        🔥 Descobre modelos disponíveis dinamicamente
-
-        Args:
-            raw_models: resultado já obtido de self.client.models.list().
-                Se None, a listagem é feita aqui (fallback para chamadas
-                avulsas, ex.: refresh manual depois do boot).
-        """
+    def _discover_models(self, raw_models: Optional[list] = None) -> None:
+        if not self.client:
+            return
         try:
-            if not self.client:
-                logger.warning("⚠️ Cliente não inicializado para descobrir modelos")
-                return
-
             if raw_models is None:
                 raw_models = list(self.client.models.list())
 
-            available = []
+            available: List[str] = []
             for model in raw_models:
-                # 🔥 A API retorna nomes prefixados, ex.: "models/gemini-3.8-flash".
-                # Precisamos do id "nu" (gemini-3.8-flash) porque é assim que
-                # o resto do código (CONFIG["model_preferences"], a variável
-                # de ambiente GEMINI_MODEL, generate_content) compara nomes.
-                # Sem esse strip, "gemini-3.8-flash" nunca aparece como igual
-                # a "models/gemini-3.8-flash" e o modelo prioritário nunca é
-                # selecionado mesmo estando disponível.
                 model_id = model.name.split("/")[-1]
                 lname = model_id.lower()
-
                 if "gemini" not in lname:
                     continue
-                if any(marker in lname for marker in self._NON_CHAT_MODEL_MARKERS):
+                if any(m in lname for m in self._NON_CHAT_MODEL_MARKERS):
                     continue
-
                 available.append(model_id)
                 if model_id not in self.model_metrics:
                     self.model_metrics[model_id] = ModelMetrics(name=model_id)
 
-            # 🔥 ORDENAR pela preferência configurada em CONFIG["model_preferences"]
-            preferred_order = self.CONFIG["model_preferences"]
-            available.sort(key=lambda x: (
-                preferred_order.index(x) if x in preferred_order else len(preferred_order),
-                x
-            ))
-
+            pref = list(self.CONFIG["model_preferences"])
+            available.sort(
+                key=lambda x: (pref.index(x) if x in pref else len(pref), x)
+            )
             self.available_models = available
 
-            logger.info(f"📊 Modelos compatíveis disponíveis: {len(available)}")
-            for model in available[:5]:
-                logger.info(f"   ✅ {model}")
-
-            # 🔥 Modelo prioritário = primeiro item de model_preferences que
-            # esteja realmente disponível na conta (evita hardcode do nome
-            # do modelo espalhado pelo código — atualizar CONFIG basta).
-            priority_model = next(
-                (m for m in preferred_order if m in available), None
-            )
-            if priority_model:
-                self.current_model = priority_model
-                logger.info(f"🎯 🚀 MODELO PRIORITÁRIO SELECIONADO: {self.current_model}")
+            priority = next((m for m in pref if m in available), None)
+            if priority:
+                self.current_model = priority
+                logger.info("Modelo prioritário: %s", self.current_model)
             elif available:
                 self.current_model = available[0]
-                logger.info(f"🎯 Modelo selecionado: {self.current_model}")
             else:
-                logger.warning(
-                    "⚠️ Nenhum modelo Gemini compatível encontrado na conta/API key"
-                )
-
+                logger.warning("Nenhum modelo Gemini compatível encontrado")
         except Exception as e:
             self._last_error = str(e)
-            logger.error(f"❌ Erro ao descobrir modelos: {e}")
-            self.available_models = self.CONFIG["model_preferences"]
-    
-    # ==========================================
-    # 🔥 4. CACHE PREDITIVO
-    # ==========================================
-    
-    def _warm_up_cache(self):
-        """
-        Placeholder de warm-up intencionalmente inerte.
+            logger.exception("Erro ao descobrir modelos")
+            self.available_models = list(self.CONFIG["model_preferences"])
 
-        🔥 CORREÇÃO: a versão anterior gravava valores falsos (ex.:
-        "Cache warm-up: status") em response_cache usando exatamente a
-        mesma função de hash que _get_cached_response() usa para prompts
-        reais. Resultado: um usuário que mandasse literalmente "status",
-        "ping", "teste" etc. como prompt recebia esse texto falso de volta
-        em vez de uma resposta real do Gemini — sem nunca chamar a API.
+    # ------------------------------------------------------------------
+    # CACHE
+    # ------------------------------------------------------------------
 
-        Um warm-up de verdade exigiria uma chamada real (e paga) à API só
-        para "esquentar" conexão/cache, o que não compensa para a maioria
-        dos casos de uso. Por isso o método foi esvaziado; se um warm-up
-        real for necessário no futuro, use um prefixo de chave reservado
-        (ex.: "__warmup__:") que nunca colida com _generate_cache_key().
-        """
-        return
-    
-    def _generate_cache_key(self, prompt: str, model: Optional[str] = None) -> str:
-        """Gera chave de cache inteligente"""
-        model = model or self.current_model or "default"
-        normalized = ' '.join(prompt.split())
-        content = f"{model}:{normalized}"
-        return hashlib.md5(content.encode()).hexdigest()
-    
-    def _get_cached_response(self, prompt: str) -> Optional[str]:
-        """Obtém resposta do cache com métricas"""
-        key = self._generate_cache_key(prompt)
-        
+    def _generate_cache_key(
+        self, prompt: str, model: Optional[str] = None
+    ) -> str:
+        # [C5] chave inclui modelo REALMENTE usado
+        effective = model or self.current_model or "default"
+        normalized = " ".join(prompt.split())
+        return _short_hash(f"{effective}:{normalized}", n=32)
+
+    def _get_cached_response(
+        self, prompt: str, model: Optional[str] = None
+    ) -> Optional[str]:
+        key = self._generate_cache_key(prompt, model)
+        now = time.time()
         with self.cache_lock:
-            if key in self.response_cache:
-                entry = self.response_cache[key]
-                
-                if time.time() - entry.timestamp > entry.ttl:
-                    del self.response_cache[key]
-                    self.cache_stats["evictions"] += 1
-                    return None
-                
-                entry.hits += 1
-                entry.access_count += 1
-                entry.last_access = time.time()
-                self.cache_stats["hits"] += 1
-                self.metrics["cache_hits"] += 1
-                
-                if self.CONFIG["cache_adaptive_ttl"]:
-                    if entry.access_count > 5:
-                        entry.ttl = min(entry.ttl * 1.2, 3600)
-                    elif entry.access_count < 2:
-                        entry.ttl = max(entry.ttl * 0.8, 60)
-                
-                logger.debug(f"✅ Cache hit: {key[:8]} (hits: {entry.hits}, ttl: {entry.ttl}s)")
-                return entry.value
-        
-        self.cache_stats["misses"] += 1
-        self.metrics["cache_misses"] += 1
-        return None
-    
-    def _set_cached_response(self, prompt: str, response: str, ttl: Optional[int] = None):
-        """Salva resposta no cache com TTL adaptativo"""
-        key = self._generate_cache_key(prompt)
-        
+            entry = self.response_cache.get(key)
+            if entry is None:
+                self.cache_stats["misses"] += 1
+                self.metrics["cache_misses"] += 1
+                return None
+            if now - entry.timestamp > entry.ttl:
+                del self.response_cache[key]
+                self.cache_stats["evictions"] += 1
+                self.cache_stats["misses"] += 1
+                self.metrics["cache_misses"] += 1
+                return None
+            entry.hits += 1
+            entry.access_count += 1
+            entry.last_access = now
+            self.cache_stats["hits"] += 1
+            self.metrics["cache_hits"] += 1
+            if self.CONFIG["cache_adaptive_ttl"]:
+                if entry.access_count > 5:
+                    entry.ttl = min(entry.ttl * 1.2, 3600)
+                elif entry.access_count < 2:
+                    entry.ttl = max(entry.ttl * 0.8, 60)
+            return entry.value
+
+    def _set_cached_response(
+        self,
+        prompt: str,
+        response: str,
+        model: Optional[str] = None,
+        ttl: Optional[int] = None,
+    ) -> None:
+        # [C5] grava com o modelo REAL
+        key = self._generate_cache_key(prompt, model)
+        now = time.time()
         with self.cache_lock:
             if len(self.response_cache) >= self.CONFIG["cache_max_size"]:
-                oldest_key = min(
-                    self.response_cache.keys(),
-                    key=lambda k: self.response_cache[k].last_access
-                )
-                del self.response_cache[oldest_key]
+                oldest = min(
+                    self.response_cache.items(),
+                    key=lambda kv: kv[1].last_access,
+                )[0]
+                del self.response_cache[oldest]
                 self.cache_stats["evictions"] += 1
-            
             if ttl is None:
                 ttl = self.CONFIG["cache_default_ttl"]
                 if len(response) > 2000:
-                    ttl = ttl * 2
+                    ttl *= 2
                 elif len(response) < 100:
-                    ttl = ttl // 2
-            
+                    ttl //= 2
             self.response_cache[key] = CacheEntry(
                 value=response,
-                timestamp=time.time(),
+                timestamp=now,
                 ttl=ttl,
                 access_count=1,
-                last_access=time.time(),
-                frequency=1
+                last_access=now,
+                frequency=1,
             )
-            
-            logger.debug(f"💾 Cache salvo: {key[:8]} (ttl: {ttl}s)")
-    
-    # ==========================================
-    # 🔥 5. CIRCUIT BREAKER
-    # ==========================================
-    
+
+    # [N4] persistência opcional
+    def _persist_cache(self) -> None:
+        path = self.CONFIG.get("cache_persist_path")
+        if not path:
+            return
+        try:
+            with self.cache_lock:
+                data = {
+                    k: {
+                        "value": v.value,
+                        "timestamp": v.timestamp,
+                        "ttl": v.ttl,
+                        "hits": v.hits,
+                    }
+                    for k, v in self.response_cache.items()
+                }
+            Path(path).write_text(json.dumps(data))
+            logger.debug("Cache persistido em %s", path)
+        except Exception as e:
+            logger.warning("Falha ao persistir cache: %s", e)
+
+    # ------------------------------------------------------------------
+    # CIRCUIT BREAKER (global + por modelo — [N3])
+    # ------------------------------------------------------------------
+
     def _check_circuit_breaker(self) -> bool:
-        """Verifica estado do circuit breaker"""
+        now = time.time()
         if self.circuit_state == "CLOSED":
             return True
-        
         if self.circuit_state == "OPEN":
-            if self.circuit_last_failure_time:
-                elapsed = time.time() - self.circuit_last_failure_time
-                if elapsed > self.CONFIG["circuit_breaker_timeout"]:
-                    self.circuit_state = "HALF_OPEN"
-                    self.circuit_success_count = 0
-                    logger.info("🔓 Circuit breaker: HALF_OPEN (testando recuperação)")
-                    return True
-            
-            logger.warning("⛔ Circuit breaker: OPEN (bloqueando requisições)")
+            if (
+                self.circuit_last_failure_time
+                and now - self.circuit_last_failure_time
+                > self.CONFIG["circuit_breaker_timeout"]
+            ):
+                self.circuit_state = "HALF_OPEN"
+                self.circuit_success_count = 0
+                logger.info("Circuit HALF_OPEN")
+                return True
             return False
-        
-        if self.circuit_state == "HALF_OPEN":
-            return True
-        
-        return True
-    
-    def _record_circuit_success(self):
-        """Registra sucesso no circuit breaker"""
+        return True  # HALF_OPEN
+
+    def _model_circuit_open(self, model: str) -> bool:
+        m = self.model_metrics.get(model)
+        if not m:
+            return False
+        return m.circuit_open_until > time.time()
+
+    def _record_circuit_success(self, model: Optional[str] = None) -> None:
         if self.circuit_state == "HALF_OPEN":
             self.circuit_success_count += 1
-            if self.circuit_success_count >= self.CONFIG["circuit_breaker_half_open_attempts"]:
+            if self.circuit_success_count >= self.CONFIG[
+                "circuit_breaker_half_open_attempts"
+            ]:
                 self.circuit_state = "CLOSED"
                 self.circuit_failure_count = 0
                 self.health_status = "HEALTHY"
-                logger.info("✅ Circuit breaker: CLOSED (recuperado com sucesso)")
                 self.metrics["circuit_closes"] += 1
-    
-    def _record_circuit_failure(self):
-        """Registra falha no circuit breaker"""
+                logger.info("Circuit CLOSED (recuperado)")
+        if model:
+            m = self.model_metrics.get(model)
+            if m:
+                m.consecutive_failures = 0
+                m.circuit_open_until = 0.0
+
+    def _record_circuit_failure(self, model: Optional[str] = None) -> None:
         self.circuit_failure_count += 1
         self.circuit_last_failure_time = time.time()
-        
         if self.circuit_failure_count >= self.CONFIG["circuit_breaker_threshold"]:
             if self.circuit_state != "OPEN":
                 self.circuit_state = "OPEN"
                 self.metrics["circuit_opens"] += 1
-                # 🔥 is_healthy() já checa circuit_state == "OPEN", mas
-                # também refletimos isso em health_status para que
-                # get_gemini_status()/get_health_status() não mostrem
-                # "HEALTHY" desatualizado entre um health_check() e outro.
                 self.health_status = "DEGRADED"
-                logger.error(f"⛔ Circuit breaker: OPEN (falhas: {self.circuit_failure_count})")
-    
-    # ==========================================
-    # 🔥 6. RATE LIMITING
-    # ==========================================
-    
+                logger.error(
+                    "Circuit OPEN (falhas=%d)", self.circuit_failure_count
+                )
+        # [N3] circuit por modelo
+        if model:
+            m = self.model_metrics.get(model)
+            if m:
+                m.consecutive_failures += 1
+                if m.consecutive_failures >= 3:
+                    m.circuit_open_until = (
+                        time.time() + self.CONFIG["circuit_breaker_timeout"]
+                    )
+                    logger.warning(
+                        "Modelo %s isolado por %ds",
+                        model, self.CONFIG["circuit_breaker_timeout"],
+                    )
+
+    # ------------------------------------------------------------------
+    # RATE LIMIT ([G1] reescrito)
+    # ------------------------------------------------------------------
+
     def _check_rate_limit(self, user_id: Optional[int] = None) -> bool:
-        """Verifica rate limit com proteção contra bursts"""
         key = str(user_id) if user_id else "global"
-        
+        now = time.time()
+        window = 60.0
+        limit = self.CONFIG["rate_limit_calls_per_minute"]
+        burst = self.CONFIG["rate_limit_burst"]
+
         with self.rate_limit_lock:
-            if key not in self.rate_limit_cache:
-                self.rate_limit_cache[key] = deque(maxlen=self.CONFIG["rate_limit_calls_per_minute"])
-            
-            now = time.time()
-            queue = self.rate_limit_cache[key]
-            
-            while queue and now - queue[0] > 60:
-                queue.popleft()
-            
-            if len(queue) >= self.CONFIG["rate_limit_calls_per_minute"]:
+            q = self.rate_limit_cache.setdefault(key, deque())
+            # remove entradas fora da janela
+            while q and now - q[0] > window:
+                q.popleft()
+
+            # limite duro na janela
+            if len(q) >= limit:
                 return False
-            
-            if len(queue) > self.CONFIG["rate_limit_calls_per_minute"] - self.CONFIG["rate_limit_burst"]:
-                if queue and now - queue[-1] < 0.1:
-                    return False
-            
-            queue.append(now)
+
+            # burst: nas últimas 0.1s, no máximo `burst` chamadas
+            recent_burst = sum(1 for t in q if now - t < 0.1)
+            if recent_burst >= burst:
+                return False
+
+            q.append(now)
             return True
-    
-    # ==========================================
-    # 🔥 7. PROMPT COMPRESSION
-    # ==========================================
-    
+
+    # ------------------------------------------------------------------
+    # COMPRESSÃO ([G2] corrigida)
+    # ------------------------------------------------------------------
+
+    _CODE_BLOCK_RE = re.compile(r"```([a-zA-Z0-9_+\-]*)\n(.*?)```", re.DOTALL)
+
     def _compress_prompt(self, prompt: str) -> Tuple[str, int]:
-        """Comprime prompt para economizar tokens"""
-        original_length = len(prompt)
-        
+        original = len(prompt)
         if len(prompt) <= self.CONFIG["min_prompt_compress"]:
             return prompt, 0
-        
-        prompt = ' '.join(prompt.split())
-        
-        lines = [line.strip() for line in prompt.split('\n') if line.strip()]
-        prompt = '\n'.join(lines[:20])
-        
-        def compress_code(match):
-            code = match.group(1)
-            if len(code.split('\n')) > 10:
-                lines = code.split('\n')
-                return f"\n[CODIGO RESUMIDO: {len(lines)} linhas]\n{lines[0]}\n...\n{lines[-1]}"
-            return code
-        
-        prompt = re.sub(r'```(.*?)```', compress_code, prompt, flags=re.DOTALL)
-        prompt = re.sub(r'//.*$', '', prompt, flags=re.MULTILINE)
-        prompt = re.sub(r'#.*$', '', prompt, flags=re.MULTILINE)
-        
-        if len(prompt) > self.CONFIG["max_prompt_size"]:
-            prompt = prompt[:self.CONFIG["max_prompt_size"]] + "\n... (truncado)"
-        
-        compressed_length = len(prompt)
-        savings = original_length - compressed_length
-        
-        if savings > 0:
-            logger.debug(f"📦 Prompt comprimido: {original_length} → {compressed_length} ({savings} caracteres economizados)")
-            self.metrics["compression_savings"] += savings
-        
-        return prompt, savings
-    
-    # ==========================================
-    # 🔥 8. MODEL ROTATION (ATUALIZADA)
-    # ==========================================
-    
-    def _select_best_model(self, prompt: str) -> str:
-        """🔥 Seleciona o melhor modelo baseado no prompt e métricas"""
-        
-        # 🔥 FORÇAR MODELO POR VARIÁVEL DE AMBIENTE
-        forced_model = os.environ.get("GEMINI_MODEL")
-        if forced_model and forced_model in self.available_models:
-            logger.info(f"🎯 Modelo forçado por ambiente: {forced_model}")
-            return forced_model
 
-        # 🔥 PRIORIDADE MÁXIMA: primeiro modelo de CONFIG["model_preferences"]
-        # que esteja realmente disponível na conta.
-        priority_model = next(
-            (m for m in self.CONFIG["model_preferences"] if m in self.available_models),
-            None,
-        )
-        if priority_model:
-            logger.info(f"🚀 Usando {priority_model} (prioritário)")
-            return priority_model
+        # normaliza espaços em branco fora de code blocks
+        def _trim_code(match: re.Match) -> str:
+            lang, code = match.group(1), match.group(2)
+            lines = code.split("\n")
+            if len(lines) <= 10:
+                return match.group(0)
+            # mantém primeiras 5 e últimas 2 linhas
+            kept = lines[:5] + [f"... ({len(lines) - 7} linhas omitidas) ..."] + lines[-2:]
+            return f"```{lang}\n" + "\n".join(kept) + "\n```"
+
+        prompt = self._CODE_BLOCK_RE.sub(_trim_code, prompt)
+
+        if len(prompt) > self.CONFIG["max_prompt_size"]:
+            prompt = prompt[: self.CONFIG["max_prompt_size"]] + "\n... (truncado)"
+
+        saved = original - len(prompt)
+        if saved > 0:
+            with self._metrics_lock:
+                self.metrics["compression_savings"] += saved
+        return prompt, saved
+
+    # ------------------------------------------------------------------
+    # SELEÇÃO DE MODELO ([M4] fallback robusto)
+    # ------------------------------------------------------------------
+
+    def _select_best_model(self, prompt: str) -> str:
+        forced = os.environ.get("GEMINI_MODEL")
+        if forced and forced in self.available_models:
+            return forced
+
+        pref = list(self.CONFIG["model_preferences"])
+
+        # prioridade
+        for m in pref:
+            if m in self.available_models and not self._model_circuit_open(m):
+                return m
 
         if not self.available_models:
-            return self.CONFIG["model_preferences"][0]
-        
+            return pref[0]
+
         if not self.CONFIG["enable_model_rotation"]:
             return self.current_model or self.available_models[0]
-        
-        prompt_lower = prompt.lower()
-        
-        complexity = 0
-        if any(word in prompt_lower for word in ['analisar', 'complexo', 'detalhado', 'explique']):
-            complexity += 2
-        if any(word in prompt_lower for word in ['código', 'programação', 'algoritmo']):
-            complexity += 1
-        if len(prompt.split()) > 100:
-            complexity += 1
-        
-        # 🔥 PRIORIDADE PARA MODELOS FLASH (mais rápidos e gratuitos)
-        if complexity >= 3:
-            preferred = [m for m in self.available_models if 'pro' in m or 'flash' in m]
-        else:
-            preferred = [m for m in self.available_models if 'flash' in m]
-        
-        # 🔥 SEMPRE DAR PRIORIDADE ao modelo no topo de model_preferences
-        priority_in_preferred = next(
-            (m for m in self.CONFIG["model_preferences"] if m in preferred), None
-        )
-        if priority_in_preferred:
-            return priority_in_preferred
 
-        if preferred:
-            selected = preferred[0]
-        else:
-            selected = self.available_models[0]
-        
-        if selected in self.model_metrics:
-            metrics = self.model_metrics[selected]
-            if metrics.error_rate > 0.2:
-                alternatives = [m for m in self.available_models if m != selected]
-                if alternatives:
-                    selected = alternatives[0]
-                    logger.info(f"🔄 Modelo alternativo selecionado: {selected}")
+        # rotação simples: escolhe próximo modelo saudável
+        n = len(self.available_models)
+        for i in range(n):
+            cand = self.available_models[(self.model_rotation_index + i) % n]
+            if not self._model_circuit_open(cand):
+                self.model_rotation_index = (
+                    self.model_rotation_index + i + 1
+                ) % n
+                if cand != self.current_model:
                     self.metrics["model_switches"] += 1
-        
-        if selected != self.current_model:
-            self.current_model = selected
-            logger.info(f"🎯 Modelo selecionado: {selected} (complexidade: {complexity})")
-        
-        return selected
-    
-    # ==========================================
-    # 🔥 9. CHAMADA PRINCIPAL
-    # ==========================================
-    
+                    self.current_model = cand
+                return cand
+
+        return self.available_models[0]
+
+    # ------------------------------------------------------------------
+    # GERAÇÃO
+    # ------------------------------------------------------------------
+
     async def generate_content(
         self,
         prompt: str,
@@ -820,34 +867,44 @@ class GeminiServiceV5:
         use_compression: bool = True,
         stream: bool = False,
         context: Optional[RequestContext] = None,
+        response_schema: Optional[Dict[str, Any]] = None,  # [N5]
     ) -> Dict[str, Any]:
-        """Gera conteúdo com Gemini usando todas as otimizações"""
-        
+        self._ensure_pid_consistency()
+
         if context is None:
             context = RequestContext(
-                request_id=hashlib.md5(f"{prompt}{time.time()}".encode()).hexdigest()[:8],
+                request_id=_short_hash(f"{prompt}{time.time()}"),
                 user_id=user_id,
-                start_time=time.time()
+                start_time=time.time(),
             )
-        
-        logger.info(f"📤 [REQ-{context.request_id}] Iniciando requisição")
-        
+
         if not self.client:
             return {
                 "success": False,
                 "error": "client_not_initialized",
-                "message": "Cliente Gemini não inicializado",
+                "message": self._last_error or "Cliente não inicializado",
                 "request_id": context.request_id,
             }
-        
+
+        # [N6] guard de tamanho duro
+        if len(prompt) > self.CONFIG["max_prompt_length"]:
+            return {
+                "success": False,
+                "error": "prompt_too_long",
+                "message": (
+                    f"Prompt excede {self.CONFIG['max_prompt_length']} chars"
+                ),
+                "request_id": context.request_id,
+            }
+
         if not self._check_circuit_breaker():
             return {
                 "success": False,
                 "error": "circuit_breaker_open",
-                "message": "Circuito aberto devido a falhas consecutivas",
+                "message": "Circuito aberto por falhas consecutivas",
                 "request_id": context.request_id,
             }
-        
+
         if user_id is not None and not self._check_rate_limit(user_id):
             return {
                 "success": False,
@@ -855,414 +912,484 @@ class GeminiServiceV5:
                 "message": "Limite de requisições excedido",
                 "request_id": context.request_id,
             }
-        
+
         original_prompt = prompt
+        savings = 0
         if use_compression and self.CONFIG["enable_prompt_compression"]:
             prompt, savings = self._compress_prompt(prompt)
-            if savings > 0:
-                logger.debug(f"📦 [REQ-{context.request_id}] Prompt comprimido: {savings} caracteres")
-        
-        if use_cache:
-            cached_response = self._get_cached_response(original_prompt)
-            if cached_response:
+
+        # seleção de modelo
+        if model is None:
+            model = self._select_best_model(prompt)
+
+        # cache hit — [C5] passa o modelo
+        if use_cache and not stream:
+            cached = self._get_cached_response(original_prompt, model)
+            if cached is not None:
                 context.cache_hit = True
                 context.end_time = time.time()
-                
                 return {
                     "success": True,
-                    "response": cached_response,
+                    "response": cached,
                     "cached": True,
                     "request_id": context.request_id,
                     "response_time_ms": (context.end_time - context.start_time) * 1000,
-                    "model_used": "cache",
+                    "model_used": model,
                     "tokens_used": 0,
                 }
-        
-        if model is None:
-            model = self._select_best_model(prompt)
-        else:
-            model = model
-        
+
         context.model_used = model
-        
-        for attempt in range(self.CONFIG["max_retries"] + 1):
-            try:
+
+        # fallback: tenta o modelo escolhido + os demais em ordem
+        candidates: List[str] = [model] + [
+            m for m in self.available_models if m != model
+        ]
+
+        last_error = "sem tentativa"
+        for m in candidates:
+            if self._model_circuit_open(m):
+                continue
+            for attempt in range(self.CONFIG["max_retries"] + 1):
                 context.retry_count = attempt
-                
-                start_time = time.time()
-                
-                loop = asyncio.get_event_loop()
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: self.client.models.generate_content(
-                            model=model,
-                            contents=prompt
-                        )
-                    ),
-                    timeout=self.CONFIG["timeout_seconds"]
-                )
-                
-                elapsed = (time.time() - start_time) * 1000
-                
-                if response and response.text:
-                    response_text = response.text
-                    
-                    if len(response_text) > self.CONFIG["max_response_length"]:
-                        response_text = response_text[:self.CONFIG["max_response_length"]] + "\n... (truncado)"
-                    
-                    self.metrics["total_calls"] += 1
-                    self.metrics["successful_calls"] += 1
-                    self.metrics["avg_response_time_ms"] = (
-                        (self.metrics["avg_response_time_ms"] * (self.metrics["successful_calls"] - 1) + elapsed) /
-                        self.metrics["successful_calls"]
+                try:
+                    result = await self._call_model(
+                        model=m,
+                        prompt=prompt,
+                        stream=stream,
+                        response_schema=response_schema,
                     )
-                    
-                    tokens_used = 0
-                    if hasattr(response, 'usage_metadata'):
-                        tokens_used = response.usage_metadata.total_token_count or 0
-                        self.metrics["total_tokens"] += tokens_used
-                    
-                    if model in self.model_metrics:
-                        metrics = self.model_metrics[model]
-                        metrics.total_calls += 1
-                        metrics.successful_calls += 1
-                        metrics.avg_response_time_ms = (
-                            (metrics.avg_response_time_ms * (metrics.successful_calls - 1) + elapsed) /
-                            metrics.successful_calls
-                        )
-                        metrics.total_tokens += tokens_used
-                        metrics.last_used = datetime.now()
-                    
-                    self._record_circuit_success()
-                    
-                    if use_cache and len(response_text) > 50:
-                        self._set_cached_response(original_prompt, response_text)
-                    
-                    context.end_time = time.time()
-                    context.tokens_used = tokens_used
-                    
-                    logger.info(f"✅ [REQ-{context.request_id}] Concluído em {elapsed:.0f}ms (tokens: {tokens_used})")
-                    
-                    return {
-                        "success": True,
-                        "response": response_text,
-                        "cached": False,
-                        "request_id": context.request_id,
-                        "response_time_ms": elapsed,
-                        "model_used": model,
-                        "tokens_used": tokens_used,
-                        "attempts": attempt + 1,
-                        "compression_savings": savings if use_compression else 0,
-                    }
-                else:
-                    logger.warning(f"⚠️ [REQ-{context.request_id}] Resposta vazia")
-                    raise ValueError("Resposta vazia do Gemini")
-            
-            except Exception as e:
-                error_msg = str(e)
-                logger.warning(f"⚠️ [REQ-{context.request_id}] Tentativa {attempt+1} falhou: {error_msg[:100]}")
-                
-                self._record_circuit_failure()
-                
-                if model in self.model_metrics:
-                    metrics = self.model_metrics[model]
-                    metrics.failed_calls += 1
-                    metrics.error_rate = metrics.failed_calls / max(1, metrics.total_calls)
-                
-                if attempt == self.CONFIG["max_retries"]:
-                    self.metrics["total_calls"] += 1
-                    self.metrics["failed_calls"] += 1
-                    
-                    if "404" in error_msg or "not found" in error_msg.lower():
-                        logger.warning(f"🔄 [REQ-{context.request_id}] Modelo {model} não encontrado, tentando fallback...")
-                        if model in self.available_models:
-                            idx = self.available_models.index(model)
-                            if idx + 1 < len(self.available_models):
-                                fallback_model = self.available_models[idx + 1]
-                                logger.info(f"🔄 [REQ-{context.request_id}] Fallback para {fallback_model}")
-                                context.model_used = fallback_model
-                                return await self.generate_content(
-                                    prompt=original_prompt,
-                                    model=fallback_model,
-                                    user_id=user_id,
-                                    use_cache=use_cache,
-                                    use_compression=use_compression,
-                                    stream=stream,
-                                    context=context
-                                )
-                    
-                    context.end_time = time.time()
-                    
-                    return {
-                        "success": False,
-                        "error": "generation_failed",
-                        "message": error_msg,
-                        "request_id": context.request_id,
-                        "attempts": attempt + 1,
-                        "model_used": model,
-                        "tokens_used": 0,
-                    }
-                
-                delay = min(
-                    self.CONFIG["retry_base_delay"] * (2 ** attempt) + random.uniform(0, self.CONFIG["retry_jitter"]),
-                    self.CONFIG["retry_max_delay"]
-                )
-                logger.debug(f"⏳ [REQ-{context.request_id}] Aguardando {delay:.1f}s antes de retentar...")
-                await asyncio.sleep(delay)
-        
+                    if result["success"]:
+                        # métricas
+                        elapsed = result["response_time_ms"]
+                        self._record_success_metrics(m, elapsed, result["tokens_used"])
+                        self._record_circuit_success(m)
+
+                        if use_cache and len(result["response"]) > 50 and not stream:
+                            self._set_cached_response(
+                                original_prompt, result["response"], model=m
+                            )
+
+                        context.end_time = time.time()
+                        context.tokens_used = result["tokens_used"]
+                        result["request_id"] = context.request_id
+                        result["attempts"] = attempt + 1
+                        result["compression_savings"] = savings
+                        result["model_used"] = m
+                        return result
+                    else:
+                        last_error = result.get("message", "erro")
+                        if result.get("blocked"):
+                            # [C6] conteúdo bloqueado não é falha de infra
+                            self._record_blocked_metrics(m)
+                            return {
+                                "success": False,
+                                "error": "content_blocked",
+                                "message": result.get("message", "Bloqueado por safety"),
+                                "request_id": context.request_id,
+                                "model_used": m,
+                            }
+                        # falha real
+                        self._record_failure_metrics(m)
+                        self._record_circuit_failure(m)
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning(
+                        "[%s] tentativa %d com %s falhou: %s",
+                        context.request_id, attempt + 1, m, last_error[:200],
+                    )
+                    self._record_failure_metrics(m)
+                    self._record_circuit_failure(m)
+
+                if attempt < self.CONFIG["max_retries"]:
+                    # [N1] backoff completo
+                    base = self.CONFIG["retry_base_delay"]
+                    maxd = self.CONFIG["retry_max_delay"]
+                    jitter = self.CONFIG["retry_jitter"]
+                    delay = min(base * (2 ** attempt), maxd)
+                    delay *= 1 + random.uniform(-jitter, jitter)
+                    await asyncio.sleep(max(0.0, delay))
+
+            # passa para próximo modelo
+            logger.info(
+                "[%s] modelo %s esgotado, tentando próximo",
+                context.request_id, m,
+            )
+
+        with self._metrics_lock:
+            self.metrics["total_calls"] += 1
+            self.metrics["failed_calls"] += 1
+
+        context.end_time = time.time()
         return {
             "success": False,
-            "error": "unexpected_error",
-            "message": "Erro inesperado na geração de conteúdo",
+            "error": "generation_failed",
+            "message": last_error,
             "request_id": context.request_id,
+            "model_used": model,
+            "tokens_used": 0,
         }
-    
-    # ==========================================
-    # 🔥 10. BATCH PROCESSING
-    # ==========================================
-    
-    async def batch_generate(self, prompts: List[str], user_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Processa múltiplos prompts em batch inteligente"""
+
+    async def _call_model(
+        self,
+        model: str,
+        prompt: str,
+        stream: bool,
+        response_schema: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Executa a chamada real ao SDK em executor dedicado."""
+        loop = asyncio.get_running_loop()
+        start = time.time()
+
+        # monta kwargs
+        kwargs: Dict[str, Any] = {"model": model, "contents": prompt}
+        if response_schema and genai_types is not None:
+            try:
+                kwargs["config"] = genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            except Exception as e:
+                logger.warning("response_schema inválido, ignorando: %s", e)
+
+        def _sync_call() -> Any:
+            return self.client.models.generate_content(**kwargs)
+
+        if stream and self.CONFIG["streaming_enabled"]:
+            # [M5] streaming real
+            def _sync_stream() -> str:
+                chunks: List[str] = []
+                for chunk in self.client.models.generate_content_stream(**kwargs):
+                    try:
+                        if chunk.text:
+                            chunks.append(chunk.text)
+                    except Exception:
+                        pass
+                return "".join(chunks)
+
+            text = await asyncio.wait_for(
+                loop.run_in_executor(self._sdk_executor, _sync_stream),
+                timeout=self.CONFIG["timeout_seconds"],
+            )
+            elapsed = (time.time() - start) * 1000
+            return {
+                "success": bool(text),
+                "response": text,
+                "tokens_used": 0,
+                "response_time_ms": elapsed,
+                "cached": False,
+            }
+
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(self._sdk_executor, _sync_call),
+                timeout=self.CONFIG["timeout_seconds"],
+            )
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "message": f"timeout após {self.CONFIG['timeout_seconds']}s",
+            }
+
+        elapsed = (time.time() - start) * 1000
+
+        # [C6] trata bloqueio por safety
+        if response is None:
+            return {"success": False, "message": "resposta vazia"}
+
+        finish_reason = None
+        try:
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                finish_reason = str(getattr(candidates[0], "finish_reason", ""))
+        except Exception:
+            pass
+
+        if finish_reason and "SAFETY" in finish_reason.upper():
+            return {
+                "success": False,
+                "blocked": True,
+                "message": "Conteúdo bloqueado por safety filters",
+            }
+
+        try:
+            text = response.text
+        except (ValueError, AttributeError) as e:
+            # SDK levanta ValueError quando não há text (safety/blocked)
+            msg = str(e)
+            if "safety" in msg.lower() or "blocked" in msg.lower():
+                return {
+                    "success": False,
+                    "blocked": True,
+                    "message": "Conteúdo bloqueado por safety filters",
+                }
+            return {"success": False, "message": msg}
+
+        if not text:
+            return {"success": False, "message": "resposta vazia do Gemini"}
+
+        if len(text) > self.CONFIG["max_response_length"]:
+            text = text[: self.CONFIG["max_response_length"]] + "\n... (truncado)"
+
+        tokens = 0
+        try:
+            um = getattr(response, "usage_metadata", None)
+            if um is not None:
+                tokens = getattr(um, "total_token_count", 0) or 0
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "response": text,
+            "tokens_used": tokens,
+            "response_time_ms": elapsed,
+            "cached": False,
+        }
+
+    # ------------------------------------------------------------------
+    # MÉTRICAS ([M3] centralizadas)
+    # ------------------------------------------------------------------
+
+    def _record_success_metrics(
+        self, model: str, elapsed_ms: float, tokens: int
+    ) -> None:
+        with self._metrics_lock:
+            self.metrics["total_calls"] += 1
+            self.metrics["successful_calls"] += 1
+            n = self.metrics["successful_calls"]
+            prev = self.metrics["avg_response_time_ms"]
+            self.metrics["avg_response_time_ms"] = (
+                prev * (n - 1) + elapsed_ms
+            ) / n
+            self.metrics["total_tokens"] += tokens
+        self._latencies.append(elapsed_ms)
+
+        with self._model_metrics_lock:
+            m = self.model_metrics.get(model)
+            if m:
+                m.total_calls += 1
+                m.successful_calls += 1
+                n = m.successful_calls
+                m.avg_response_time_ms = (
+                    m.avg_response_time_ms * (n - 1) + elapsed_ms
+                ) / n
+                m.total_tokens += tokens
+                m.last_used = datetime.utcnow()
+                m.error_rate = m.failed_calls / max(1, m.total_calls)
+                m.health_score = max(
+                    0.0, 100.0 - m.error_rate * 100.0
+                )
+
+    def _record_failure_metrics(self, model: str) -> None:
+        with self._metrics_lock:
+            self.metrics["total_calls"] += 1
+            self.metrics["failed_calls"] += 1
+        with self._model_metrics_lock:
+            m = self.model_metrics.get(model)
+            if m:
+                m.total_calls += 1
+                m.failed_calls += 1
+                m.error_rate = m.failed_calls / max(1, m.total_calls)
+                m.health_score = max(0.0, 100.0 - m.error_rate * 100.0)
+
+    def _record_blocked_metrics(self, model: str) -> None:
+        with self._metrics_lock:
+            self.metrics["blocked_calls"] += 1
+        with self._model_metrics_lock:
+            m = self.model_metrics.get(model)
+            if m:
+                m.blocked_calls += 1
+
+    # ------------------------------------------------------------------
+    # BATCH ([G3] com concorrência limitada)
+    # ------------------------------------------------------------------
+
+    async def batch_generate(
+        self, prompts: List[str], user_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         if not prompts:
             return []
-        
-        logger.info(f"📦 Processando batch de {len(prompts)} prompts")
-        
-        tasks = []
-        for prompt in prompts:
-            task = self.generate_content(
-                prompt=prompt,
-                user_id=user_id,
-                use_cache=True,
-                use_compression=True
-            )
-            tasks.append(task)
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        processed_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                processed_results.append({
-                    "success": False,
-                    "error": str(result),
-                    "prompt_index": i,
-                })
-            else:
-                processed_results.append(result)
-        
-        logger.info(f"✅ Batch processado: {len([r for r in processed_results if r.get('success')])}/{len(prompts)} sucessos")
-        return processed_results
-    
-    # ==========================================
-    # 🔥 11. HEALTH MONITORING
-    # ==========================================
-    
-    def _start_health_monitoring(self):
-        """
-        Inicia monitoramento de saúde automático em thread dedicada.
+        sem = asyncio.Semaphore(self.CONFIG["batch_max_concurrency"])
 
-        🔥 CORREÇÃO: a versão anterior tentava `asyncio.get_event_loop()
-        .create_task(...)`, o que só executa de fato se já existir um event
-        loop rodando no momento da chamada. Como GeminiServiceV5() é
-        instanciado no nível de módulo (import síncrono), normalmente não
-        há loop ativo — a task era criada mas nunca "andava", então
-        health_status ficava congelado no valor definido em
-        _initialize_client() para sempre, mesmo que chamadas reais
-        começassem a falhar depois. Agora o monitor roda em uma thread
-        própria com seu próprio loop (via asyncio.run), então funciona
-        independente do contexto (script, WSGI, ASGI, etc.).
-        """
+        async def _one(p: str, i: int) -> Dict[str, Any]:
+            async with sem:
+                r = await self.generate_content(prompt=p, user_id=user_id)
+                r["prompt_index"] = i
+                return r
+
+        tasks = [asyncio.create_task(_one(p, i)) for i, p in enumerate(prompts)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out: List[Dict[str, Any]] = []
+        for i, r in enumerate(results):
+            if isinstance(r, Exception):
+                out.append(
+                    {"success": False, "error": str(r), "prompt_index": i}
+                )
+            else:
+                out.append(r)
+        return out
+
+    # ------------------------------------------------------------------
+    # HEALTH
+    # ------------------------------------------------------------------
+
+    def _start_health_monitoring(self) -> None:
         if self._health_monitoring_active:
             return
-
         self._health_monitoring_active = True
 
-        def _runner():
+        def _runner() -> None:
+            loop = asyncio.new_event_loop()
+            self._health_loop = loop
             try:
-                asyncio.run(self._health_monitor_loop())
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._health_monitor_loop())
             except Exception as e:
-                logger.error(f"❌ Health monitor encerrou com erro: {e}")
+                logger.error("health monitor encerrou: %s", e)
+            finally:
+                try:
+                    loop.close()
+                except Exception:
+                    pass
 
-        self._health_thread = Thread(
-            target=_runner, name="gemini-health-monitor", daemon=True
+        self._health_thread = threading.Thread(
+            target=_runner, name="gemini-health", daemon=True
         )
         self._health_thread.start()
         logger.info(
-            f"🩺 Health monitor iniciado (intervalo: "
-            f"{self.CONFIG['health_check_interval']}s)"
+            "Health monitor iniciado (intervalo=%ds)",
+            self.CONFIG["health_check_interval"],
         )
-    
-    async def _health_monitor_loop(self):
-        """Loop de monitoramento de saúde"""
+
+    async def _health_monitor_loop(self) -> None:
         while self._health_monitoring_active:
             try:
                 await asyncio.sleep(self.CONFIG["health_check_interval"])
-                await self.health_check()
+                await self.health_check(force=True)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"❌ Erro no health monitor: {e}")
-    
+                logger.error("Erro no health monitor: %s", e)
+
     async def health_check(self, force: bool = False) -> Dict[str, Any]:
-        """Health check completo com diagnóstico"""
-        if not force and self.last_health_check:
-            elapsed = (datetime.now() - self.last_health_check).seconds
-            if elapsed < self.CONFIG["health_check_interval"]:
-                return {
-                    "status": self.health_status,
-                    "cached": True,
-                    "last_check": self.last_health_check.isoformat(),
-                }
-        
-        start_time = time.time()
-        status_data = {
-            "timestamp": datetime.now().isoformat(),
+        if (
+            not force
+            and self.last_health_check
+            and (datetime.utcnow() - self.last_health_check).total_seconds()
+            < self.CONFIG["health_check_interval"]
+        ):
+            return {
+                "status": self.health_status,
+                "cached": True,
+                "last_check": self.last_health_check.isoformat() + "Z",
+            }
+
+        start = time.time()
+        data: Dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
             "status": "UNKNOWN",
             "details": {},
         }
-        
-        try:
-            if not self.client:
-                status_data["status"] = "FAILED"
-                status_data["details"]["client"] = "not_initialized"
-                self.health_status = "FAILED"
-                return status_data
-            
-            status_data["details"]["available_models"] = len(self.available_models)
-            status_data["details"]["current_model"] = self.current_model
-            
-            test_prompt = "Teste de saúde. Responda apenas: OK"
-            try:
-                loop = asyncio.get_event_loop()
-                model_for_check = self.current_model or self.available_models[0]
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: self.client.models.generate_content(
-                            model=model_for_check,
-                            contents=test_prompt,
-                        ),
-                    ),
-                    timeout=self.CONFIG["health_check_timeout"],
-                )
+        self._ensure_pid_consistency()
 
-                if response and response.text:
-                    status_data["status"] = "HEALTHY"
-                    status_data["details"]["response"] = response.text
-                    self.health_status = "HEALTHY"
-                    self.health_failures = 0
-                else:
-                    status_data["status"] = "DEGRADED"
-                    status_data["details"]["error"] = "Resposta vazia"
-                    self.health_status = "DEGRADED"
-                    self.health_failures += 1
-            except Exception as e:
-                status_data["status"] = "FAILED"
-                status_data["details"]["error"] = str(e)
-                self.health_status = "FAILED"
-                self.health_failures += 1
-            
-            status_data["details"]["circuit_state"] = self.circuit_state
-            
-            status_data["details"]["metrics"] = {
-                "total_calls": self.metrics["total_calls"],
-                "success_rate": self.metrics["successful_calls"] / max(1, self.metrics["total_calls"]) * 100,
-                "avg_response_time_ms": round(self.metrics["avg_response_time_ms"], 2),
-                "cache_hit_rate": self.metrics["cache_hits"] / max(1, self.metrics["cache_hits"] + self.metrics["cache_misses"]) * 100,
-            }
-            
-            status_data["details"]["cache"] = {
-                "size": len(self.response_cache),
-                "hits": self.cache_stats["hits"],
-                "misses": self.cache_stats["misses"],
-                "evictions": self.cache_stats["evictions"],
-            }
-            
-            status_data["response_time_ms"] = (time.time() - start_time) * 1000
-            
+        if not self.client:
+            self.health_status = "FAILED"
+            self.health_consecutive_failures += 1
+            data["status"] = "FAILED"
+            data["details"]["client"] = "not_initialized"
+            self.last_health_check = datetime.utcnow()
+            return data
+
+        data["details"]["available_models"] = len(self.available_models)
+        data["details"]["current_model"] = self.current_model
+        data["details"]["circuit_state"] = self.circuit_state
+
+        model_for_check = self.current_model or (
+            self.available_models[0] if self.available_models else None
+        )
+        if not model_for_check:
+            self.health_status = "FAILED"
+            self.health_consecutive_failures += 1
+            data["status"] = "FAILED"
+            data["details"]["error"] = "sem modelos disponíveis"
+            self.last_health_check = datetime.utcnow()
+            return data
+
+        loop = asyncio.get_running_loop()
+        try:
+            resp = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self._sdk_executor,
+                    lambda: self.client.models.generate_content(
+                        model=model_for_check,
+                        contents="Responda apenas: OK",
+                    ),
+                ),
+                timeout=self.CONFIG["health_check_timeout"],
+            )
+            try:
+                txt = resp.text if resp else ""
+            except (ValueError, AttributeError):
+                txt = ""
+            if txt:
+                data["status"] = "HEALTHY"
+                self.health_status = "HEALTHY"
+                self.health_consecutive_failures = 0
+                self.health_failures = 0
+            else:
+                self.health_consecutive_failures += 1
+                data["status"] = "DEGRADED"
+                self.health_status = "DEGRADED"
         except Exception as e:
-            status_data["status"] = "ERROR"
-            status_data["details"]["error"] = str(e)
-            self.health_status = "ERROR"
+            self.health_consecutive_failures += 1
             self.health_failures += 1
-        
-        self.last_health_check = datetime.now()
-        return status_data
-    
-    # ==========================================
-    # 🔥 12. IS_HEALTHY (CORREÇÃO PRINCIPAL)
-    # ==========================================
-    
+            data["details"]["error"] = str(e)
+            # [C7] só marca FAILED após N falhas consecutivas
+            if self.health_consecutive_failures >= self.CONFIG[
+                "health_threshold_failures"
+            ]:
+                self.health_status = "FAILED"
+                data["status"] = "FAILED"
+            else:
+                self.health_status = "DEGRADED"
+                data["status"] = "DEGRADED"
+
+        # métricas
+        with self._metrics_lock:
+            total = self.metrics["total_calls"]
+            succ = self.metrics["successful_calls"]
+            ch = self.metrics["cache_hits"]
+            cm = self.metrics["cache_misses"]
+        data["details"]["metrics"] = {
+            "total_calls": total,
+            "success_rate": (succ / total * 100) if total else 100.0,
+            "avg_response_time_ms": round(
+                self.metrics["avg_response_time_ms"], 2
+            ),
+            "cache_hit_rate": (ch / (ch + cm) * 100) if (ch + cm) else 0.0,
+        }
+        data["details"]["cache"] = {
+            "size": len(self.response_cache),
+            **{k: self.cache_stats[k] for k in ("hits", "misses", "evictions")},
+        }
+        data["response_time_ms"] = (time.time() - start) * 1000
+        self.last_health_check = datetime.utcnow()
+        return data
+
+    # ------------------------------------------------------------------
+    # API PÚBLICA
+    # ------------------------------------------------------------------
+
     def is_healthy(self) -> bool:
-        """
-        🔥 VERIFICA SE O SERVIÇO ESTÁ SAUDÁVEL
-        Método principal para verificar disponibilidade do Gemini
-        """
         if self.client is None:
             return False
-        
-        if self.health_status != "HEALTHY":
-            return False
-        
         if self.circuit_state == "OPEN":
             return False
-        
-        return True
-    
-    # ==========================================
-    # 🔥 13. MÉTRICAS E DIAGNÓSTICO
-    # ==========================================
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Retorna métricas completas do serviço"""
-        return {
-            "overview": {
-                "total_calls": self.metrics["total_calls"],
-                "successful_calls": self.metrics["successful_calls"],
-                "failed_calls": self.metrics["failed_calls"],
-                "success_rate": self.metrics["successful_calls"] / max(1, self.metrics["total_calls"]) * 100,
-                "avg_response_time_ms": round(self.metrics["avg_response_time_ms"], 2),
-                "total_tokens": self.metrics["total_tokens"],
-                "compression_savings": self.metrics["compression_savings"],
-                "model_switches": self.metrics["model_switches"],
-                "circuit_opens": self.metrics["circuit_opens"],
-                "circuit_closes": self.metrics["circuit_closes"],
-            },
-            "cache": {
-                "size": len(self.response_cache),
-                "hits": self.cache_stats["hits"],
-                "misses": self.cache_stats["misses"],
-                "evictions": self.cache_stats["evictions"],
-                "hit_rate": self.cache_stats["hits"] / max(1, self.cache_stats["hits"] + self.cache_stats["misses"]) * 100,
-                "predictive_hits": self.cache_stats["predictive_hits"],
-            },
-            "models": {
-                model: {
-                    "total_calls": m.total_calls,
-                    "successful_calls": m.successful_calls,
-                    "failed_calls": m.failed_calls,
-                    "error_rate": round(m.error_rate * 100, 2),
-                    "avg_response_time_ms": round(m.avg_response_time_ms, 2),
-                    "total_tokens": m.total_tokens,
-                    "last_used": m.last_used.isoformat() if m.last_used else None,
-                    "health_score": round(m.health_score, 2),
-                }
-                for model, m in self.model_metrics.items()
-            },
-            "health": {
-                "status": self.health_status,
-                "circuit_state": self.circuit_state,
-                "health_failures": self.health_failures,
-                "last_check": self.last_health_check.isoformat() if self.last_health_check else None,
-            },
-            "config": self.CONFIG,
-            "timestamp": datetime.now().isoformat(),
-        }
-    
+        return self.health_status == "HEALTHY"
+
     def get_health_status(self) -> Dict[str, Any]:
-        """Retorna status de saúde simplificado"""
+        ch = self.cache_stats["hits"]
+        cm = self.cache_stats["misses"]
         return {
             "available": self.is_healthy(),
             "status": self.health_status,
@@ -1270,37 +1397,144 @@ class GeminiServiceV5:
             "circuit_breaker": self.circuit_state,
             "cache_health": {
                 "size": len(self.response_cache),
-                "hit_rate": self.cache_stats["hits"] / max(1, self.cache_stats["hits"] + self.cache_stats["misses"]) * 100,
+                "hit_rate": (ch / (ch + cm) * 100) if (ch + cm) else 0.0,
             },
-            "timestamp": datetime.now().isoformat(),
+            "version": __version__,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
-    
-    # ==========================================
-    # 🔥 14. MÉTODO DE ANÁLISE
-    # ==========================================
-    
-    async def analyze_office_data(self, data_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Análise de dados de oficina (método compatível)"""
-        
+
+    def get_metrics(self) -> Dict[str, Any]:
+        lat = sorted(self._latencies)
+        with self._model_metrics_lock:
+            models = {
+                name: {
+                    "total_calls": m.total_calls,
+                    "successful_calls": m.successful_calls,
+                    "failed_calls": m.failed_calls,
+                    "blocked_calls": m.blocked_calls,
+                    "error_rate": round(m.error_rate * 100, 2),
+                    "avg_response_time_ms": round(m.avg_response_time_ms, 2),
+                    "total_tokens": m.total_tokens,
+                    "last_used": m.last_used.isoformat() + "Z" if m.last_used else None,
+                    "health_score": round(m.health_score, 2),
+                    "circuit_open": m.circuit_open_until > time.time(),
+                }
+                for name, m in self.model_metrics.items()
+            }
+        with self._metrics_lock:
+            overview = dict(self.metrics)
+        return {
+            "version": __version__,
+            "overview": overview,
+            "latency_percentiles_ms": {
+                "p50": round(_percentile(lat, 0.50), 2) if lat else 0.0,
+                "p95": round(_percentile(lat, 0.95), 2) if lat else 0.0,
+                "p99": round(_percentile(lat, 0.99), 2) if lat else 0.0,
+            },
+            "cache": {
+                "size": len(self.response_cache),
+                **self.cache_stats,
+            },
+            "models": models,
+            "health": {
+                "status": self.health_status,
+                "circuit_state": self.circuit_state,
+                "health_failures": self.health_failures,
+                "consecutive_failures": self.health_consecutive_failures,
+                "last_check": (
+                    self.last_health_check.isoformat() + "Z"
+                    if self.last_health_check else None
+                ),
+            },
+            "config": dict(self.CONFIG),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    # [N2] exportação Prometheus
+    def get_prometheus_metrics(self) -> str:
+        with self._metrics_lock:
+            m = dict(self.metrics)
+        lines = [
+            "# HELP gemini_calls_total Total de chamadas",
+            "# TYPE gemini_calls_total counter",
+            f"gemini_calls_total {m['total_calls']}",
+            "# HELP gemini_success_total Sucessos",
+            "# TYPE gemini_success_total counter",
+            f"gemini_success_total {m['successful_calls']}",
+            "# HELP gemini_failed_total Falhas",
+            "# TYPE gemini_failed_total counter",
+            f"gemini_failed_total {m['failed_calls']}",
+            "# HELP gemini_blocked_total Bloqueios por safety",
+            "# TYPE gemini_blocked_total counter",
+            f"gemini_blocked_total {m['blocked_calls']}",
+            "# HELP gemini_cache_hits_total Cache hits",
+            "# TYPE gemini_cache_hits_total counter",
+            f"gemini_cache_hits_total {m['cache_hits']}",
+            "# HELP gemini_cache_misses_total Cache misses",
+            "# TYPE gemini_cache_misses_total counter",
+            f"gemini_cache_misses_total {m['cache_misses']}",
+            "# HELP gemini_avg_response_ms Latência média",
+            "# TYPE gemini_avg_response_ms gauge",
+            f"gemini_avg_response_ms {m['avg_response_time_ms']:.3f}",
+            "# HELP gemini_tokens_total Tokens consumidos",
+            "# TYPE gemini_tokens_total counter",
+            f"gemini_tokens_total {m['total_tokens']}",
+            "# HELP gemini_circuit_open Circuit breaker aberto",
+            "# TYPE gemini_circuit_open gauge",
+            f"gemini_circuit_open {1 if self.circuit_state == 'OPEN' else 0}",
+            "# HELP gemini_healthy Serviço saudável",
+            "# TYPE gemini_healthy gauge",
+            f"gemini_healthy {1 if self.is_healthy() else 0}",
+        ]
+        return "\n".join(lines) + "\n"
+
+    # [N7] warmup explícito (opt-in)
+    async def warmup(self, n: int = 1) -> bool:
+        if not self.client:
+            return False
+        model = self.current_model or (
+            self.available_models[0] if self.available_models else None
+        )
+        if not model:
+            return False
+        try:
+            loop = asyncio.get_running_loop()
+            for _ in range(n):
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        self._sdk_executor,
+                        lambda: self.client.models.generate_content(
+                            model=model, contents="ok"
+                        ),
+                    ),
+                    timeout=self.CONFIG["health_check_timeout"],
+                )
+            logger.info("Warmup concluído (%d chamadas)", n)
+            return True
+        except Exception as e:
+            logger.warning("Warmup falhou: %s", e)
+            return False
+
+    # ------------------------------------------------------------------
+    # ANÁLISE (compat)
+    # ------------------------------------------------------------------
+
+    async def analyze_office_data(
+        self, data_type: str, data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         if not data:
             return {
                 "success": False,
                 "error": "empty_data",
-                "message": "Nenhum dado fornecido para análise"
+                "message": "Nenhum dado fornecido para análise",
             }
-        
         icons = {
-            "clientes": "👥",
-            "servicos": "🔧",
-            "estoque": "📦",
-            "financeiro": "💰",
+            "clientes": "👥", "servicos": "🔧",
+            "estoque": "📦", "financeiro": "💰",
             "metricas": "📊",
-            "default": "📈"
         }
-        icon = icons.get(data_type, icons["default"])
-        
+        icon = icons.get(data_type, "📈")
         data_str = json.dumps(data, indent=2, ensure_ascii=False, default=str)
-        
         prompt = f"""{icon} ANALISE DE {data_type.upper()}
 
 **Dados para análise:**
@@ -1309,9 +1543,9 @@ class GeminiServiceV5:
 **Formato obrigatório da resposta:**
 
 ## Principais Padrões Identificados
-- [insight 1 descritivo]
-- [insight 2 descritivo]
-- [insight 3 descritivo]
+- [insight 1]
+- [insight 2]
+- [insight 3]
 
 ## Oportunidades de Melhoria
 - [oportunidade 1]
@@ -1322,207 +1556,194 @@ class GeminiServiceV5:
 - [recomendação 2]
 - [recomendação 3]
 
-Responda APENAS no formato acima, usando marcadores '-' para cada item.
-Seja específico e objetivo baseado nos dados fornecidos."""
-
+Responda APENAS no formato acima."""
         result = await self.generate_content(
-            prompt=prompt,
-            use_cache=True,
-            use_compression=True
+            prompt=prompt, use_cache=True, use_compression=True
         )
-        
-        if result.get("success"):
-            response_text = result.get("response", "")
-            
-            insights = self._extract_insights(response_text)
-            recommendations = self._extract_recommendations(response_text)
-            
-            return {
-                "success": True,
-                "ai_available": True,
-                "model_used": result.get("model_used"),
-                "full_analysis": response_text,
-                "insights": insights,
-                "recommendations": recommendations,
-                "tokens_used": result.get("tokens_used", 0),
-                "response_time_ms": result.get("response_time_ms", 0),
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
+        if not result.get("success"):
             return {
                 "success": False,
                 "error": result.get("error"),
                 "message": result.get("message"),
                 "ai_available": False,
             }
-    
-    # ==========================================
-    # 🔥 15. EXTRAÇÃO DE INSIGHTS
-    # ==========================================
-    
-    def _extract_insights(self, text: str) -> List[str]:
-        """Extrai insights do texto com NLP básico"""
-        insights = []
-        
-        sections = re.split(r'##\s+', text)
-        for section in sections:
-            if any(kw in section.lower() for kw in ['insight', 'padrão', 'observação']):
-                lines = section.split('\n')
-                for line in lines:
+        text = result.get("response", "")
+        return {
+            "success": True,
+            "ai_available": True,
+            "model_used": result.get("model_used"),
+            "full_analysis": text,
+            "insights": self._extract_insights(text),
+            "recommendations": self._extract_recommendations(text),
+            "tokens_used": result.get("tokens_used", 0),
+            "response_time_ms": result.get("response_time_ms", 0),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    @staticmethod
+    def _extract_insights(text: str) -> List[str]:
+        out: List[str] = []
+        for section in re.split(r"##\s+", text):
+            if any(
+                kw in section.lower()
+                for kw in ("insight", "padrão", "observação")
+            ):
+                for line in section.split("\n"):
                     line = line.strip()
-                    if line.startswith('-') or line.startswith('•'):
+                    if line[:1] in ("-", "•"):
                         clean = line[1:].strip()
                         if 10 < len(clean) < 300:
-                            insights.append(clean)
-        
-        if not insights:
-            matches = re.findall(r'[-•*]\s*([^\n]{10,300})', text)
-            insights = [m.strip() for m in matches]
-        
-        if not insights:
-            sentences = re.split(r'[.!?]+', text)
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if len(sentence) > 20 and any(kw in sentence.lower() 
-                    for kw in ['padrão', 'oportunidade', 'melhoria', 'tendência', 'percebe']):
-                    insights.append(sentence)
-        
-        return insights[:5]
-    
-    def _extract_recommendations(self, text: str) -> List[str]:
-        """Extrai recomendações do texto"""
-        recommendations = []
-        
-        sections = re.split(r'##\s+', text)
-        for section in sections:
-            if any(kw in section.lower() for kw in ['recomend', 'ação', 'prática', 'sugest']):
-                lines = section.split('\n')
-                for line in lines:
+                            out.append(clean)
+        if not out:
+            out = [
+                m.strip()
+                for m in re.findall(r"[-•*]\s*([^\n]{10,300})", text)
+            ]
+        return out[:5]
+
+    @staticmethod
+    def _extract_recommendations(text: str) -> List[str]:
+        out: List[str] = []
+        for section in re.split(r"##\s+", text):
+            if any(
+                kw in section.lower()
+                for kw in ("recomend", "ação", "prática", "sugest")
+            ):
+                for line in section.split("\n"):
                     line = line.strip()
-                    if line.startswith('-') or line.startswith('•'):
+                    if line[:1] in ("-", "•"):
                         clean = line[1:].strip()
                         if 10 < len(clean) < 250:
-                            recommendations.append(clean)
-        
-        if not recommendations:
-            action_words = ['recomend', 'sugest', 'implement', 'melhor', 'otimize', 'faça']
-            lines = text.split('\n')
-            for line in lines:
+                            out.append(clean)
+        if not out:
+            for line in text.split("\n"):
                 line = line.strip()
-                if any(kw in line.lower() for kw in action_words):
-                    clean = re.sub(r'^[-•*\d][\.\)]?\s*', '', line)
+                if any(
+                    kw in line.lower()
+                    for kw in ("recomend", "sugest", "implement", "otimize")
+                ):
+                    clean = re.sub(r"^[-•*\d][\.\)]?\s*", "", line)
                     if 10 < len(clean) < 250:
-                        recommendations.append(clean)
-        
-        return recommendations[:4]
-    
-    # ==========================================
-    # 🔥 16. CLEANUP
-    # ==========================================
-    
-    def shutdown(self):
-        """Desliga o serviço gracefulmente"""
-        logger.info("🔄 Desligando Gemini Service...")
+                        out.append(clean)
+        return out[:4]
 
+    # ------------------------------------------------------------------
+    # SHUTDOWN ([G4])
+    # ------------------------------------------------------------------
+
+    def _atexit_cleanup(self) -> None:
+        try:
+            self.shutdown()
+        except Exception:
+            pass
+
+    def shutdown(self) -> None:
+        logger.info("Desligando Gemini Service...")
         self._health_monitoring_active = False
-        health_thread = getattr(self, "_health_thread", None)
-        if health_thread and health_thread.is_alive():
-            health_thread.join(timeout=self.CONFIG["health_check_interval"] + 5)
 
-        self.batch_executor.shutdown(wait=True)
+        # persiste cache
+        self._persist_cache()
 
-        logger.info("✅ Gemini Service desligado")
+        # para health thread
+        t = self._health_thread
+        if t and t.is_alive():
+            t.join(timeout=self.CONFIG["shutdown_timeout_seconds"])
+
+        # encerra executor do SDK
+        try:
+            self._sdk_executor.shutdown(
+                wait=False, cancel_futures=True
+            )
+        except Exception:
+            pass
+        logger.info("Gemini Service desligado")
 
 
 # ==============================================
-# INSTÂNCIA GLOBAL
+# SINGLETON
 # ==============================================
 
-_gemini_service = None
+_gemini_service: Optional[GeminiServiceV6] = None
+_singleton_lock = threading.Lock()
 
-# 🔥 Alias de compatibilidade: parte do código (ex.: backend/services/
-# __init__.py) importa `GeminiService`, não `GeminiServiceV5`. Esse nome
-# nunca existiu neste módulo — não é algo introduzido pelas correções
-# anteriores, é uma inconsistência pré-existente entre os dois arquivos.
-GeminiService = GeminiServiceV5
+# alias de compatibilidade
+GeminiService = GeminiServiceV6
+GeminiServiceV5 = GeminiServiceV6  # compat retroativo
 
-def get_gemini_service() -> GeminiServiceV5:
-    """🔥 Retorna instância do serviço Gemini (SINGLETON)"""
+
+def get_gemini_service() -> GeminiServiceV6:
     global _gemini_service
-    
     if _gemini_service is None:
-        _gemini_service = GeminiServiceV5()
-    
+        with _singleton_lock:
+            if _gemini_service is None:
+                _gemini_service = GeminiServiceV6()
     return _gemini_service
 
+
 def is_gemini_available() -> bool:
-    """🔥 Verifica se o Gemini está disponível"""
-    service = get_gemini_service()
-    return service.is_healthy()
+    return get_gemini_service().is_healthy()
 
 
 # ==============================================
-# STATUS INICIAL (ATUALIZADO)
+# [C1] STATUS INICIAL — SÓ RODA COMO SCRIPT
 # ==============================================
 
-print("\n" + "=" * 70)
-print("🔑 GEMINI SERVICE V5.3")
-print("=" * 70)
-
-if not GENAI_SDK_OK:
-    print("   ❌ SDK incorreto/ausente: instale com 'pip install -U google-genai'")
-    print("   ⚠️ Este módulo requer o pacote novo 'google-genai', não 'google-generativeai'")
-
-service = get_gemini_service()
-_priority_model = next(
-    (m for m in GeminiServiceV5.CONFIG["model_preferences"] if m in service.available_models),
-    GeminiServiceV5.CONFIG["model_preferences"][0],
-)
-
-if service.is_healthy():
-    print(f"   ✅ Status: ONLINE")
-    print(f"   📊 Modelo: {service.current_model}")
-    print(f"   🎯 Modelos disponíveis: {len(service.available_models)}")
-    print(f"   🔥 Cache: {len(service.response_cache)} entradas")
-
-    # 🔥 DESTACAR SE O MODELO PRIORITÁRIO (topo de model_preferences) ESTÁ DISPONÍVEL
-    if _priority_model in service.available_models:
-        print(f"   🚀 {_priority_model}: DISPONÍVEL (PRIORITÁRIO)")
+def _print_status() -> None:
+    print("=" * 70)
+    print(f"GEMINI SERVICE V{__version__}")
+    print("=" * 70)
+    if not GENAI_SDK_OK:
+        print("   SDK incorreto/ausente: pip install -U google-genai")
+        return
+    svc = get_gemini_service()
+    pref = list(GeminiServiceV6.CONFIG["model_preferences"])
+    priority = next(
+        (m for m in pref if m in svc.available_models), pref[0]
+    )
+    if svc.is_healthy():
+        print("   Status: ONLINE")
+        print(f"   Modelo: {svc.current_model}")
+        print(f"   Modelos disponíveis: {len(svc.available_models)}")
+        print(f"   Cache: {len(svc.response_cache)} entradas")
+        if priority in svc.available_models:
+            print(f"   {priority}: DISPONÍVEL (PRIORITÁRIO)")
+        else:
+            print(f"   {priority}: NÃO DISPONÍVEL (fallback)")
     else:
-        print(f"   ⚠️ {_priority_model}: NÃO DISPONÍVEL (usando fallback)")
-else:
-    print("   ❌ Status: OFFLINE")
-    print(f"   ⚠️ Erro: {service._last_error or 'Desconhecido'}")
-    print("   💡 Verifique GEMINI_API_KEY no arquivo .env e o SDK instalado")
+        print("   Status: OFFLINE")
+        print(f"   Erro: {svc._last_error or 'Desconhecido'}")
+    print("=" * 70)
 
-print("=" * 70)
 
-print("\n📋 17+ MELHORIAS IMPLEMENTADAS:")
-print("   1. ✅ Auto-detecção de modelos disponíveis")
-print("   2. ✅ Smart rate limiting")
-print("   3. ✅ Circuit breaker com proteção")
-print("   4. ✅ Retry exponencial com jitter")
-print("   5. ✅ Cache preditivo adaptativo")
-print("   6. ✅ Compressão de prompt")
-print("   7. ✅ Rotação inteligente de modelos")
-print("   8. ✅ Métricas de performance")
-print("   9. ✅ Health check preditivo")
-print("   10. ✅ Batch processing")
-print("   11. ✅ Cache adaptativo por frequência")
-print("   12. ✅ Auto-otimização contínua")
-print("   13. ✅ Logs estruturados")
-print("   14. ✅ Validação de resposta")
-print("   15. ✅ Fallback automático")
-print("   16. ✅ is_healthy() - CORREÇÃO PRINCIPAL")
-print("   17. ✅ PRIORIDADE: gemini-3.8-flash 🚀")
-print("   18. ✅ Suporte a GEMINI_MODEL via ambiente")
-print("=" * 80)
+async def _smoke_test() -> int:
+    svc = get_gemini_service()
+    if not svc.is_healthy():
+        print("SMOKE: serviço não saudável, abortando")
+        return 1
+    r = await svc.generate_content("Responda apenas: PONG", use_cache=False)
+    if r.get("success"):
+        print("SMOKE OK:", r.get("response", "")[:80])
+        return 0
+    print("SMOKE FALHOU:", r.get("error"), r.get("message"))
+    return 1
+
+
+if __name__ == "__main__":
+    _print_status()
+    if "--smoke" in sys.argv:
+        raise SystemExit(asyncio.run(_smoke_test()))
+    if "--warmup" in sys.argv:
+        svc = get_gemini_service()
+        ok = asyncio.run(svc.warmup(1))
+        print("WARMUP:", "OK" if ok else "FALHOU")
+        raise SystemExit(0 if ok else 1)
 
 
 __all__ = [
-    'GeminiServiceV5',
-    'GeminiService',
-    'get_gemini_service',
-    'is_gemini_available',
-    '_gemini_service'
+    "GeminiServiceV6",
+    "GeminiServiceV5",  # compat
+    "GeminiService",    # compat
+    "get_gemini_service",
+    "is_gemini_available",
+    "__version__",
 ]
