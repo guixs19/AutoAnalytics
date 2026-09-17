@@ -1,20 +1,23 @@
-# backend/ml/multi_analysis.py - VERSÃO 6.3 (GEMINI DINÂMICO + CIRCUIT BREAKER)
+# backend/ml/multi_analysis.py - VERSÃO 7.0 (GEMINI DINÂMICO + FALLBACK DATA-DRIVEN)
 """
-🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V6.3
+🔥 ANÁLISE MÚLTIPLA DE ARQUIVOS - V7.0
 ================================================================================
-✅ NOVIDADES V6.3:
-   - 🔄 GEMINI DINÂMICO: revalidação em tempo real (sem estado congelado)
-   - 🛡️ CIRCUIT BREAKER: proteção contra serviço degradado
-   - 📊 TELEMETRIA: métricas de revalidação e falhas
-   - 🐛 13 BUGS CORRIGIDOS
-   - ⚡ MICRO-CACHE: 10s TTL para evitar overhead
-   - 🎯 LOGGER.EXCEPTION: tracebacks preservados
-   - 🔒 DEEPCOPY no cache: sem mutação acidental
+✅ NOVIDADES V7.0:
+   - 📊 FALLBACK DATA-DRIVEN: frases geradas com números REAIS do usuário
+   - 🎯 Templates condicionais por faixa (margem, risco, ticket, volume, tendência)
+   - 🧠 Cada frase incorpora métricas reais + predições do ML
+   - 💬 Muito mais variações: 3-6 frases por faixa/categoria
+   - 🔥 Combina 3 fontes: métricas do arquivo + ML + séries temporais
+   - 🎲 Determinístico por filename (resultado reprodutível)
+   - 🛡️ Formatação BRL/PCT brasileira (R$ 1.234,56 | 15,2%)
+   - ✅ GEMINI SEMPRE É CHAMADO PRIMEIRO — fallback só se falhar
 
-✅ MANTIDO V6.2:
-   - 🔥 FALLBACK INTELIGENTE (análise rica sem Gemini)
-   - 🔥 ANÁLISE POR ARQUIVO + COMPARAÇÃO + TENDÊNCIA
-   - 🔥 ZERO DADOS INVENTADOS
+✅ MANTIDO V6.3:
+   - 🔄 GEMINI DINÂMICO (revalidação em tempo real)
+   - 🛡️ CIRCUIT BREAKER (proteção contra serviço degradado)
+   - 📊 TELEMETRIA completa
+   - ⚡ MICRO-CACHE 10s TTL
+   - 🔒 DEEPCOPY no cache
 ================================================================================
 """
 
@@ -26,6 +29,7 @@ import json
 import hashlib
 import time
 import re
+import math
 import copy
 from typing import Dict, Any, List, Optional, Tuple, Callable, Union
 from datetime import datetime, timedelta
@@ -71,9 +75,9 @@ class AnalysisStatus(str, Enum):
 
 
 class CircuitState(str, Enum):
-    CLOSED = "closed"        # operacional
-    OPEN = "open"            # bloqueado
-    HALF_OPEN = "half_open"  # testando recuperação
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
 
 
 # ==============================================
@@ -97,7 +101,7 @@ def timing_decorator(func):
 
 
 # ==============================================
-# DATACLASSES (mantidas, com pequenos ajustes)
+# DATACLASSES
 # ==============================================
 
 @dataclass
@@ -212,7 +216,7 @@ class ConsolidatedAnalysis:
                     "recall": round(f.recall, 3),
                     "f1_score": round(f.f1_score, 3),
                     "feature_count": f.feature_count,
-                    "normalization": f.normalization
+                    "normalization": f.normalization,
                 }
                 for f in self.files
             ],
@@ -226,7 +230,7 @@ class ConsolidatedAnalysis:
                 "avg_precision": round(self.ml_results.avg_precision, 3) if self.ml_results else 0,
                 "avg_recall": round(self.ml_results.avg_recall, 3) if self.ml_results else 0,
                 "avg_f1": round(self.ml_results.avg_f1, 3) if self.ml_results else 0,
-                "normalization": self.ml_results.normalization if self.ml_results else "Z-Score"
+                "normalization": self.ml_results.normalization if self.ml_results else "Z-Score",
             } if self.ml_results else {},
             "comparison": {
                 "best_revenue": self.comparison.best_revenue if self.comparison else "",
@@ -234,14 +238,14 @@ class ConsolidatedAnalysis:
                 "best_growth": self.comparison.best_growth if self.comparison else "",
                 "best_efficiency": self.comparison.best_efficiency if self.comparison else "",
                 "highest_risk": self.comparison.highest_risk if self.comparison else "",
-                "lowest_performance": self.comparison.lowest_performance if self.comparison else ""
+                "lowest_performance": self.comparison.lowest_performance if self.comparison else "",
             } if self.comparison else {},
             "trend": {
                 "direction": self.trend.direction.value if self.trend else "estavel",
                 "strength": round(self.trend.strength, 2) if self.trend else 0.5,
                 "confidence": round(self.trend.confidence, 2) if self.trend else 0.7,
                 "description": self.trend.description if self.trend else "",
-                "key_observations": self.trend.key_observations if self.trend else []
+                "key_observations": self.trend.key_observations if self.trend else [],
             } if self.trend else {},
             "total_revenue": round(self.total_revenue, 2),
             "total_profit": round(self.total_profit, 2),
@@ -250,7 +254,7 @@ class ConsolidatedAnalysis:
             "combined_insights": self.combined_insights[:5],
             "combined_recommendations": self.combined_recommendations[:5],
             "chart_data": self.chart_data,
-            "processing_time_ms": round(self.processing_time_ms, 2)
+            "processing_time_ms": round(self.processing_time_ms, 2),
         }
 
 
@@ -277,7 +281,7 @@ class MultiFileAnalysisResult:
     status: str = AnalysisStatus.PENDING.value
     progress: float = 0.0
     normalization: str = "Z-Score"
-    model_version: str = "V6.3"
+    model_version: str = "V7.0"
     feature_count_avg: int = 0
     analysis_source: str = "ml"
 
@@ -306,7 +310,7 @@ class MultiFileAnalysisResult:
             "normalization": self.normalization,
             "model_version": self.model_version,
             "feature_count_avg": self.feature_count_avg,
-            "analysis_source": self.analysis_source
+            "analysis_source": self.analysis_source,
         }
 
     def _comparison_to_dict(self) -> Dict[str, Any]:
@@ -322,7 +326,7 @@ class MultiFileAnalysisResult:
                 "best_efficiency": self.comparison.best_efficiency or "",
                 "highest_risk": self.comparison.highest_risk or "",
                 "lowest_performance": self.comparison.lowest_performance or "",
-                "summary": getattr(self.comparison, 'summary', '')
+                "summary": getattr(self.comparison, 'summary', ''),
             }
         return {}
 
@@ -339,326 +343,479 @@ class MultiFileAnalysisResult:
                 "strength": round(self.trend.strength, 2) if hasattr(self.trend, 'strength') else 0.5,
                 "confidence": round(self.trend.confidence, 2) if hasattr(self.trend, 'confidence') else 0.7,
                 "description": getattr(self.trend, 'description', ''),
-                "key_observations": getattr(self.trend, 'key_observations', [])
+                "key_observations": getattr(self.trend, 'key_observations', []),
             }
         return {}
 
 
 # ==============================================
-# 🔥 MOTOR DE ANÁLISE INTELIGENTE (FALLBACK)
+# 🔥 HELPERS DE FORMATAÇÃO
 # ==============================================
-# (Mantido integralmente da V6.2 — nenhuma alteração aqui,
-#  para preservar comportamento e evitar regressões)
+
+def _fmt_brl(v: float) -> str:
+    """Formata em Real brasileiro: R$ 1.234,56"""
+    try:
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return f"R$ {v:.2f}"
+
+
+def _fmt_pct(v: float, decimals: int = 1) -> str:
+    try:
+        return f"{v:.{decimals}f}%".replace(".", ",")
+    except Exception:
+        return f"{v}%"
+
+
+def _safe_div(a: float, b: float, default: float = 0.0) -> float:
+    try:
+        return a / b if b else default
+    except Exception:
+        return default
+
+
+def _seed_from(s: str) -> int:
+    """Seed determinístico baseado no filename."""
+    return abs(hash(s)) % (2 ** 31)
+
+
+def _pick(pool: List[str], seed: int = 0) -> str:
+    if not pool:
+        return ""
+    return pool[seed % len(pool)]
+
+
+# ==============================================
+# 🔥 FAIXAS (BUCKETS)
+# ==============================================
+
+class MarginBand:
+    NEGATIVE = "negativa"
+    CRITICAL = "critica"
+    LOW      = "baixa"
+    MODERATE = "moderada"
+    HEALTHY  = "saudavel"
+    EXCELLENT= "excelente"
+
+    @staticmethod
+    def of(m: float) -> str:
+        if m < 0: return MarginBand.NEGATIVE
+        if m < 10: return MarginBand.CRITICAL
+        if m < 20: return MarginBand.LOW
+        if m < 30: return MarginBand.MODERATE
+        if m < 45: return MarginBand.HEALTHY
+        return MarginBand.EXCELLENT
+
+
+class RiskBand:
+    LOW      = "baixo"
+    MODERATE = "moderado"
+    HIGH     = "alto"
+    CRITICAL = "critico"
+
+    @staticmethod
+    def of(pct: float) -> str:
+        if pct < 15: return RiskBand.LOW
+        if pct < 30: return RiskBand.MODERATE
+        if pct < 50: return RiskBand.HIGH
+        return RiskBand.CRITICAL
+
+
+class TicketBand:
+    ZERO = "zero"
+    LOW = "baixo"
+    MEDIUM = "medio"
+    HIGH = "alto"
+    PREMIUM = "premium"
+
+    @staticmethod
+    def of(t: float) -> str:
+        if t <= 0: return TicketBand.ZERO
+        if t < 100: return TicketBand.LOW
+        if t < 500: return TicketBand.MEDIUM
+        if t < 2000: return TicketBand.HIGH
+        return TicketBand.PREMIUM
+
+
+class VolumeBand:
+    LOW = "baixo"
+    MEDIUM = "medio"
+    HIGH = "alto"
+    VERY_HIGH = "muito_alto"
+
+    @staticmethod
+    def of(n: int) -> str:
+        if n < 50: return VolumeBand.LOW
+        if n < 200: return VolumeBand.MEDIUM
+        if n < 1000: return VolumeBand.HIGH
+        return VolumeBand.VERY_HIGH
+
+
+class TrendBand:
+    STRONG_UP = "forte_alta"
+    UP = "alta"
+    STABLE = "estavel"
+    DOWN = "queda"
+    STRONG_DOWN = "forte_queda"
+
+    @staticmethod
+    def of(growth_pct: float) -> str:
+        if growth_pct > 30: return TrendBand.STRONG_UP
+        if growth_pct > 10: return TrendBand.UP
+        if growth_pct > -10: return TrendBand.STABLE
+        if growth_pct > -30: return TrendBand.DOWN
+        return TrendBand.STRONG_DOWN
+
+
+# ==============================================
+# 🔥 POOLS DE FRASES DATA-DRIVEN
+# ==============================================
+
+MARGIN_INSIGHTS = {
+    MarginBand.NEGATIVE: [
+        "A margem de {margin_fmt} coloca a operação em prejuízo: cada venda de {ticket_fmt} gera perda líquida de {loss_per_sale}.",
+        "Com margem negativa de {margin_fmt}, o prejuízo acumulado é de {abs_profit_fmt} — precisa ser revertido com urgência.",
+        "Margem de {margin_fmt} significa que a operação paga mais do que arrecada. Ação corretiva é obrigatória.",
+    ],
+    MarginBand.CRITICAL: [
+        "Margem crítica de {margin_fmt} — bem abaixo do piso de 10% que separa saúde de risco operacional.",
+        "Com margem em {margin_fmt}, qualquer oscilação de custo pode transformar o resultado em prejuízo.",
+        "A margem de {margin_fmt} é insuficiente para cobrir imprevistos: o ideal seria pelo menos 20%.",
+    ],
+    MarginBand.LOW: [
+        "Margem de {margin_fmt} está abaixo do ideal: há espaço para ganho de {gap} até o patamar saudável (30%).",
+        "Com {margin_fmt} de margem, o negócio respira mas não acumula reserva. Cada p.p. ganho vale {per_point}.",
+        "Margem baixa de {margin_fmt}: pequenos ajustes de preço/custo podem elevar o lucro de {profit_fmt}.",
+    ],
+    MarginBand.MODERATE: [
+        "Margem moderada de {margin_fmt} — aceitável, mas o teto saudável (30%) está a apenas {gap} de distância.",
+        "Com {margin_fmt} de margem, o negócio é sustentável. Otimizações podem levar ao patamar 'saudável'.",
+        "Margem de {margin_fmt} está dentro do aceitável. O foco agora é eficiência, não sobrevivência.",
+    ],
+    MarginBand.HEALTHY: [
+        "Margem saudável de {margin_fmt}: a operação cobre custos com folga e gera lucro de {profit_fmt}.",
+        "Com {margin_fmt} de margem, o negócio tem margem de manobra para investir ou absorver imprevistos.",
+        "Margem de {margin_fmt} está dentro da zona saudável do setor — boa notícia para a sustentabilidade.",
+    ],
+    MarginBand.EXCELLENT: [
+        "Margem excelente de {margin_fmt} — acima da média do setor. Lucro de {profit_fmt} demonstra forte controle de custos.",
+        "Com {margin_fmt} de margem, a operação é referência: alta eficiência e poder de precificação.",
+        "Margem de {margin_fmt} coloca o negócio no topo do setor. Considere reinvestir o lucro de {profit_fmt}.",
+    ],
+}
+
+RISK_INSIGHTS = {
+    RiskBand.LOW: [
+        "Apenas {high_pct_fmt} dos {n} registros analisados pelo modelo de ML estão em alto risco — base sólida.",
+        "O modelo aponta exposição baixa: {high_pct_fmt} em alto risco e {low_pct_fmt} em baixo risco.",
+        "Risco controlado: das {n} predições, {n_low} são de baixo risco — nenhum sinal de alerta.",
+    ],
+    RiskBand.MODERATE: [
+        "{high_pct_fmt} dos registros estão em alto risco — dentro do tolerável, mas exige monitoramento.",
+        "O ML identificou {n_high} registros em alto risco de {n} totais ({high_pct_fmt}). Atenção contínua.",
+        "Exposição moderada: {high_pct_fmt} em alto risco, {low_pct_fmt} em baixo. Equilíbrio razoável.",
+    ],
+    RiskBand.HIGH: [
+        "Alerta: {high_pct_fmt} dos {n} registros são de alto risco pelo modelo preditivo. Ação preventiva recomendada.",
+        "O ML detectou concentração preocupante: {n_high} casos em alto risco ({high_pct_fmt}).",
+        "Com {high_pct_fmt} em alto risco, a probabilidade de evento adverso sobe — reveja processos.",
+    ],
+    RiskBand.CRITICAL: [
+        "🚨 Situação crítica: {high_pct_fmt} dos {n} registros estão em alto risco segundo o modelo. Intervenção imediata.",
+        "O ML sinaliza colapso iminente: {n_high} de {n} registros em alto risco ({high_pct_fmt}).",
+        "Nível de risco insustentável: {high_pct_fmt} em alto risco. Priorize mitigação agora.",
+    ],
+}
+
+TICKET_INSIGHTS = {
+    TicketBand.ZERO: [
+        "Nenhum valor médio foi extraído dos dados — verifique a coluna de valor/ticket.",
+    ],
+    TicketBand.LOW: [
+        "Ticket médio de {ticket_fmt} é baixo: cada venda contribui pouco para cobrir custos fixos.",
+        "Com ticket de {ticket_fmt}, são necessárias {n_for_10k} vendas para faturar R$ 10.000,00.",
+        "Ticket médio de {ticket_fmt} — oportunidade clara de up-sell e cross-sell.",
+    ],
+    TicketBand.MEDIUM: [
+        "Ticket médio de {ticket_fmt} está na faixa esperada para o setor de serviços.",
+        "Com ticket de {ticket_fmt}, a receita de {revenue_fmt} vem de {n} atendimentos.",
+        "Ticket médio de {ticket_fmt} — patamar saudável. Considere ofertas premium.",
+    ],
+    TicketBand.HIGH: [
+        "Ticket médio alto de {ticket_fmt}: cada atendimento contribui significativamente para a receita.",
+        "Com {ticket_fmt} por atendimento, são necessários apenas {n_for_10k} para R$ 10.000,00.",
+        "Ticket médio de {ticket_fmt} — poder de precificação confirmado.",
+    ],
+    TicketBand.PREMIUM: [
+        "Ticket premium de {ticket_fmt} — operação com foco em valor, não volume.",
+        "Com {ticket_fmt} por atendimento, a base de {n} clientes já gera {revenue_fmt}.",
+        "Ticket de {ticket_fmt} coloca o negócio em patamar premium — fidelização é chave.",
+    ],
+}
+
+VOLUME_INSIGHTS = {
+    VolumeBand.LOW: [
+        "Volume de {n} registros é baixo — a análise estatística tem margem de erro maior.",
+        "Com apenas {n} registros, o modelo preditivo foi treinado com dados limitados.",
+        "Base de {n} registros — considere ampliar o histórico para maior precisão.",
+    ],
+    VolumeBand.MEDIUM: [
+        "Volume de {n} registros é adequado para análises preditivas confiáveis.",
+        "Com {n} registros, o modelo consegue captar padrões com razoável precisão.",
+        "Base de {n} registros — dentro do esperado para análises operacionais.",
+    ],
+    VolumeBand.HIGH: [
+        "Volume robusto de {n} registros — análises estatísticas têm alta confiabilidade.",
+        "Com {n} registros, o modelo preditivo identifica padrões com boa significância.",
+        "Base de {n} registros permite segmentações e análises granulares.",
+    ],
+    VolumeBand.VERY_HIGH: [
+        "Volume muito alto de {n} registros — ideal para modelagem avançada e séries temporais.",
+        "Com {n} registros, a análise tem poder estatístico comparável a benchmarks do setor.",
+        "Base massiva de {n} registros — permite análise por clusters e personas.",
+    ],
+}
+
+TREND_INSIGHTS = {
+    TrendBand.STRONG_UP: [
+        "Crescimento forte de {growth_fmt} no período — tendência clara de expansão.",
+        "Receita cresceu {growth_fmt} entre os meses analisados. Ritmo acelerado de crescimento.",
+        "Tendência fortemente positiva: {growth_fmt} de crescimento. Prepare a operação para escalar.",
+    ],
+    TrendBand.UP: [
+        "Crescimento moderado de {growth_fmt} no período — direção correta.",
+        "Receita avançou {growth_fmt} entre os meses — momentum positivo.",
+        "Tendência de alta: {growth_fmt} de crescimento consistente.",
+    ],
+    TrendBand.STABLE: [
+        "Receita estável: variação de apenas {growth_fmt} no período analisado.",
+        "Tendência lateral com {growth_fmt} de oscilação — negócio em equilíbrio.",
+        "Sem tendência clara: receita variou {growth_fmt} entre os meses.",
+    ],
+    TrendBand.DOWN: [
+        "Queda de {abs_growth_fmt} na receita do período — atenção aos indicadores.",
+        "Tendência de baixa: {abs_growth_fmt} de queda. Reveja estratégias comerciais.",
+        "Receita recuou {abs_growth_fmt} — momento de cautela e revisão de custos.",
+    ],
+    TrendBand.STRONG_DOWN: [
+        "Queda acentuada de {abs_growth_fmt} na receita — situação exige ação imediata.",
+        "Retração forte: {abs_growth_fmt} de queda. Priorize retenção de clientes.",
+        "Receita despencou {abs_growth_fmt} — investigar causas e reverter com urgência.",
+    ],
+}
+
+WEEKLY_CONCENTRATION = {
+    "alta": [
+        "Concentração crítica: {peak_day} responde por {peak_pct_fmt} da receita semanal.",
+        "{peak_pct_fmt} da receita semanal vem de {peak_day} — risco de dependência.",
+        "Dependência de {peak_day}: {peak_pct_fmt} da receita semanal em um único dia.",
+    ],
+    "moderada": [
+        "Concentração moderada em {peak_day} ({peak_pct_fmt} da receita semanal).",
+        "{peak_day} lidera com {peak_pct_fmt} da receita semanal — distribuição razoável.",
+        "Pico em {peak_day} com {peak_pct_fmt} — oportunidade de equilibrar os demais dias.",
+    ],
+    "equilibrada": [
+        "Distribuição equilibrada: nenhum dia passa de {peak_pct_fmt} da receita semanal.",
+        "Receita bem distribuída na semana — pico de apenas {peak_pct_fmt} em {peak_day}.",
+        "Equilíbrio semanal confirmado: {peak_day} lidera com apenas {peak_pct_fmt}.",
+    ],
+}
+
+WEEKLY_WEAK_DAY = [
+    "{weak_day} contribui com apenas {weak_pct_fmt} da receita — dia subutilizado.",
+    "Queda em {weak_day}: apenas {weak_pct_fmt} da receita semanal. Considere promoções.",
+    "{weak_day} é o ponto fraco da semana ({weak_pct_fmt} da receita).",
+]
+
+STRENGTHS_POOL = {
+    "margin": [
+        "Margem de {margin_fmt} acima da média do setor",
+        "Controle de custos eficaz (margem {margin_fmt})",
+        "Operação lucrativa com margem de {margin_fmt}",
+    ],
+    "low_risk": [
+        "Apenas {high_pct_fmt} em alto risco segundo o ML",
+        "Base sólida: {low_pct_fmt} em baixo risco",
+        "Exposição controlada: {n_low} de {n} predições em baixo risco",
+    ],
+    "ticket": [
+        "Ticket médio de {ticket_fmt} acima da média",
+        "Poder de precificação confirmado ({ticket_fmt}/atendimento)",
+        "Receita por cliente elevada: {ticket_fmt}",
+    ],
+    "volume": [
+        "Base robusta de {n} registros",
+        "Volume de {n} registros permite análises confiáveis",
+        "Histórico consistente de {n} registros",
+    ],
+    "trend": [
+        "Crescimento de {growth_fmt} no período",
+        "Tendência positiva consistente ({growth_fmt})",
+        "Momentum de alta: {growth_fmt} de crescimento",
+    ],
+    "distribution": [
+        "Receita bem distribuída na semana",
+        "Baixa dependência de um único dia",
+        "Equilíbrio semanal com pico de {peak_pct_fmt}",
+    ],
+}
+
+WEAKNESSES_POOL = {
+    "margin": [
+        "Margem de apenas {margin_fmt}",
+        "Margem {margin_band_label} ({margin_fmt})",
+        "Margem abaixo do ideal: {margin_fmt}",
+    ],
+    "high_risk": [
+        "{high_pct_fmt} em alto risco (ML)",
+        "Concentração de risco: {n_high} registros críticos",
+        "Exposição elevada: {high_pct_fmt} em alto risco",
+    ],
+    "ticket": [
+        "Ticket médio baixo ({ticket_fmt})",
+        "Receita por atendimento abaixo do ideal ({ticket_fmt})",
+        "Ticket de {ticket_fmt} limita o crescimento",
+    ],
+    "trend": [
+        "Queda de {abs_growth_fmt} no período",
+        "Tendência de baixa ({growth_fmt})",
+        "Receita em retração ({abs_growth_fmt})",
+    ],
+    "concentration": [
+        "{peak_pct_fmt} da receita semanal concentrada em {peak_day}",
+        "Dependência de {peak_day} ({peak_pct_fmt})",
+        "Alta concentração semanal em {peak_day}",
+    ],
+    "volatility": [
+        "Volatilidade mensal de {cv_fmt}",
+        "Receita imprevisível (CV={cv_fmt})",
+        "Alta variação mensal ({cv_fmt})",
+    ],
+}
+
+RECOMMENDATIONS_POOL = {
+    "margin_negative": [
+        "Revisar imediatamente a precificação: cada atendimento a {ticket_fmt} gera prejuízo de {loss_per_sale}.",
+        "Cortar custos operacionais em pelo menos {cut_needed_pct} para reverter a margem de {margin_fmt}.",
+        "Renegociar fornecedores e reavaliar mix de serviços: margem de {margin_fmt} é insustentável.",
+    ],
+    "margin_critical": [
+        "Aumentar preço médio em {price_increase_pct} ou reduzir custo em {cost_cut_pct} para atingir margem saudável.",
+        "Revisar contrato de fornecedores: a margem de {margin_fmt} precisa subir para pelo menos 20%.",
+        "Focar em serviços de maior valor agregado para elevar a margem de {margin_fmt}.",
+    ],
+    "margin_low": [
+        "Otimizar mix de serviços: ganho de {gap} na margem adiciona {additional_profit} ao lucro.",
+        "Negociar com fornecedores: cada 1% de redução de custo adiciona {per_point} ao resultado.",
+        "Aumentar ticket médio em 10% via up-sell para elevar margem de {margin_fmt}.",
+    ],
+    "margin_moderate": [
+        "Explorar serviços premium para elevar margem de {margin_fmt} ao patamar saudável (30%+).",
+        "Automatizar processos para reduzir custo fixo e ganhar {gap} de margem.",
+        "Fidelizar clientes atuais: aumento de 5% na retenção eleva margem em ~2 p.p.",
+    ],
+    "margin_excellent": [
+        "Reinvestir o lucro de {profit_fmt} em expansão ou reserva estratégica.",
+        "Considerar aumento de capacidade para escalar a operação de alta margem ({margin_fmt}).",
+        "Documentar práticas atuais como benchmark interno para outras unidades.",
+    ],
+    "risk_high": [
+        "Priorizar os {n_high} registros em alto risco: ação preventiva sobre os {high_pct_fmt} críticos.",
+        "Criar plano de mitigação focado nos {n_high} casos sinalizados pelo ML.",
+        "Revisar processo operacional: {high_pct_fmt} dos registros em alto risco indica falha sistêmica.",
+    ],
+    "risk_moderate": [
+        "Monitorar continuamente os {n_high} registros em alto risco ({high_pct_fmt}).",
+        "Criar alertas automáticos para os casos com score > 0.7.",
+        "Investigar correlação entre os {n_high} casos de alto risco para achar causa raiz.",
+    ],
+    "risk_low": [
+        "Manter monitoramento padrão: risco controlado em {high_pct_fmt}.",
+        "Aproveitar a base sólida para investir em crescimento.",
+        "Documentar práticas que mantêm o risco baixo para replicar.",
+    ],
+    "ticket_low": [
+        "Oferecer combos/up-sell: elevar ticket de {ticket_fmt} em 20% aumenta receita em {ticket_gain_20pct}.",
+        "Treinar equipe em técnicas de venda adicional.",
+        "Criar pacotes de serviços com preço premium.",
+    ],
+    "ticket_medium": [
+        "Introduzir serviços premium para elevar o ticket médio acima de R$ 1.000,00.",
+        "Oferecer planos de manutenção recorrente para estabilizar a receita.",
+        "Investir em marketing de relacionamento para aumentar frequência de visita.",
+    ],
+    "trend_down": [
+        "Investigar causa da queda de {abs_growth_fmt}: preço, demanda ou concorrência?",
+        "Reforçar marketing para reverter tendência de baixa.",
+        "Reativar clientes inativos para recuperar receita.",
+    ],
+    "trend_up": [
+        "Preparar operação para absorver crescimento de {growth_fmt} — capacidade, equipe, estoque.",
+        "Documentar o que gerou o crescimento para replicar.",
+        "Considerar investimento em expansão aproveitando o momentum.",
+    ],
+    "concentration": [
+        "Diversificar receita: reduzir dependência de {peak_day} ({peak_pct_fmt} da receita).",
+        "Criar promoções em {weak_day} (apenas {weak_pct_fmt} da receita).",
+        "Equilibrar demanda semanal com campanhas segmentadas por dia.",
+    ],
+    "volatility": [
+        "Reduzir volatilidade de {cv_fmt} com contratos recorrentes ou assinaturas.",
+        "Criar reserva de caixa para absorver meses fracos.",
+        "Estabilizar receita com serviços recorrentes (manutenção preventiva).",
+    ],
+}
+
+
+# ==============================================
+# 🔥 MOTOR DE ANÁLISE INTELIGENTE DATA-DRIVEN (V7.0)
+# ==============================================
 
 class IntelligentAnalyzer:
+    """
+    🔥 V7.0 DATA-DRIVEN: cada frase usa métricas REAIS do arquivo + predições do ML.
+    """
+
     MARGIN_CRITICAL = 10.0
     MARGIN_WARNING = 20.0
     MARGIN_GOOD = 30.0
     MARGIN_EXCELLENT = 45.0
     RISK_HIGH_THRESHOLD = 0.7
     RISK_LOW_THRESHOLD = 0.3
-    CONCENTRATION_THRESHOLD = 0.4
+
+    # -------------- API PÚBLICA --------------
 
     @staticmethod
     def analyze_file(file_metrics: FileMetrics) -> Dict[str, Any]:
-        insights, strengths, weaknesses, recommendations = [], [], [], []
-        metrics_extra: Dict[str, Any] = {}
+        ctx = IntelligentAnalyzer._build_context(file_metrics)
+        seed = _seed_from(file_metrics.filename)
 
-        margin = file_metrics.margin
-        revenue = file_metrics.total_revenue
-        profit = file_metrics.profit
+        insights: List[str] = []
+        strengths: List[str] = []
+        weaknesses: List[str] = []
+        recommendations: List[Dict[str, Any]] = []
 
-        metrics_extra['margin_class'] = IntelligentAnalyzer._classify_margin(margin)
-        metrics_extra['revenue_class'] = IntelligentAnalyzer._classify_revenue(revenue)
-        metrics_extra['profit_class'] = 'positivo' if profit > 0 else 'negativo' if profit < 0 else 'neutro'
+        IntelligentAnalyzer._fill_margin(ctx, seed, insights, strengths, weaknesses, recommendations)
+        IntelligentAnalyzer._fill_risk(ctx, seed, insights, strengths, weaknesses, recommendations)
+        IntelligentAnalyzer._fill_ticket(ctx, seed, insights, strengths, weaknesses, recommendations)
+        IntelligentAnalyzer._fill_volume(ctx, seed, insights, strengths)
+        IntelligentAnalyzer._fill_trend(ctx, seed, insights, strengths, weaknesses, recommendations)
+        IntelligentAnalyzer._fill_weekly(ctx, seed, insights, strengths, weaknesses, recommendations)
+        IntelligentAnalyzer._fill_volatility(ctx, seed, insights, weaknesses, recommendations)
 
-        if margin < 0:
-            insights.append(f"⚠️ Margem negativa ({margin:.1f}%): operação está no prejuízo.")
-            weaknesses.append(f"Margem negativa de {margin:.1f}%")
-            recommendations.append({
-                'priority': 'alta', 'category': 'financeiro',
-                'description': f'Margem de {margin:.1f}% indica prejuízo. Ação imediata: revisar precificação, cortar custos ou renegociar fornecedores.',
-                'expected_impact': 'Crítico', 'effort': 'alto'
-            })
-        elif margin < IntelligentAnalyzer.MARGIN_CRITICAL:
-            insights.append(f"🔴 Margem crítica ({margin:.1f}%): abaixo do mínimo saudável de {IntelligentAnalyzer.MARGIN_CRITICAL}%.")
-            weaknesses.append(f"Margem crítica de {margin:.1f}%")
-            recommendations.append({
-                'priority': 'alta', 'category': 'financeiro',
-                'description': f'Margem de {margin:.1f}% está abaixo do ideal. Reveja estrutura de custos e considere ajuste de preços.',
-                'expected_impact': 'Alto', 'effort': 'medio'
-            })
-        elif margin < IntelligentAnalyzer.MARGIN_WARNING:
-            insights.append(f"🟡 Margem moderada ({margin:.1f}%): há espaço para otimização.")
-            recommendations.append({
-                'priority': 'media', 'category': 'financeiro',
-                'description': f'Margem de {margin:.1f}% é aceitável, mas pode chegar a {IntelligentAnalyzer.MARGIN_GOOD}% com ajustes.',
-                'expected_impact': 'Médio', 'effort': 'medio'
-            })
-        elif margin < IntelligentAnalyzer.MARGIN_GOOD:
-            insights.append(f"🟢 Margem saudável ({margin:.1f}%): dentro do esperado para o setor.")
-            strengths.append(f"Margem saudável de {margin:.1f}%")
-        else:
-            insights.append(f"💎 Margem excelente ({margin:.1f}%): performance acima da média do setor.")
-            strengths.append(f"Margem excelente de {margin:.1f}%")
-            recommendations.append({
-                'priority': 'baixa', 'category': 'financeiro',
-                'description': f'Margem de {margin:.1f}% é excelente. Considere reinvestir em expansão ou reserva estratégica.',
-                'expected_impact': 'Alto', 'effort': 'baixo'
-            })
-
-        predictions = file_metrics.predictions or []
-        if predictions:
-            high_risk_count = sum(1 for p in predictions if p > IntelligentAnalyzer.RISK_HIGH_THRESHOLD)
-            low_risk_count = sum(1 for p in predictions if p < IntelligentAnalyzer.RISK_LOW_THRESHOLD)
-            total = len(predictions)
-
-            metrics_extra['high_risk_count'] = high_risk_count
-            metrics_extra['low_risk_count'] = low_risk_count
-            metrics_extra['predictions_count'] = total
-
-            high_pct = (high_risk_count / total) * 100 if total > 0 else 0
-            low_pct = (low_risk_count / total) * 100 if total > 0 else 0
-
-            metrics_extra['high_risk_pct'] = high_pct
-            metrics_extra['low_risk_pct'] = low_pct
-
-            if high_pct > 50:
-                insights.append(f"🚨 Alta concentração de risco: {high_pct:.1f}% dos registros são de alto risco.")
-                weaknesses.append(f"{high_pct:.1f}% em alto risco")
-                recommendations.append({
-                    'priority': 'alta', 'category': 'operacional',
-                    'description': f'{high_pct:.1f}% dos registros são de alto risco. Ação preventiva urgente.',
-                    'expected_impact': 'Alto', 'effort': 'alto'
-                })
-            elif high_pct > 25:
-                insights.append(f"⚠️ {high_pct:.1f}% dos registros são de alto risco — monitorar de perto.")
-                recommendations.append({
-                    'priority': 'media', 'category': 'operacional',
-                    'description': f'{high_pct:.1f}% em alto risco requer monitoramento contínuo.',
-                    'expected_impact': 'Médio', 'effort': 'medio'
-                })
-            else:
-                insights.append(f"✅ Baixa exposição a risco: apenas {high_pct:.1f}% em alto risco.")
-                strengths.append(f"Baixa exposição a risco ({high_pct:.1f}%)")
-
-            if low_pct > 60:
-                strengths.append(f"{low_pct:.1f}% em baixo risco — base sólida")
-
-        rows = file_metrics.total_rows
-        metrics_extra['rows_class'] = IntelligentAnalyzer._classify_volume(rows)
-
-        if rows > 0:
-            revenue_per_row = revenue / rows
-            metrics_extra['revenue_per_row'] = revenue_per_row
-
-            if revenue_per_row < 50:
-                insights.append(f"📉 Ticket médio baixo (R$ {revenue_per_row:.2f} por registro).")
-                recommendations.append({
-                    'priority': 'media', 'category': 'comercial',
-                    'description': f'Ticket médio de R$ {revenue_per_row:.2f} pode ser aumentado com up-sell e cross-sell.',
-                    'expected_impact': 'Médio', 'effort': 'baixo'
-                })
-            elif revenue_per_row > 500:
-                strengths.append(f"Ticket médio alto (R$ {revenue_per_row:.2f})")
-            else:
-                insights.append(f"💰 Ticket médio de R$ {revenue_per_row:.2f} — dentro do esperado.")
-
-        chart_data = file_metrics.chart_data or {}
-        weekly = chart_data.get('weekly', {})
-        weekly_revenue = weekly.get('revenue', [])
-
-        if weekly_revenue and len(weekly_revenue) >= 3:
-            total_week = sum(weekly_revenue)
-            if total_week > 0:
-                max_day_idx = weekly_revenue.index(max(weekly_revenue))
-                min_day_idx = weekly_revenue.index(min(weekly_revenue))
-                days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
-                max_pct = (weekly_revenue[max_day_idx] / total_week) * 100
-                min_pct = (weekly_revenue[min_day_idx] / total_week) * 100
-
-                metrics_extra['peak_day'] = days[max_day_idx]
-                metrics_extra['peak_day_pct'] = max_pct
-                metrics_extra['weak_day'] = days[min_day_idx]
-                metrics_extra['weak_day_pct'] = min_pct
-
-                if max_pct > 40:
-                    insights.append(f"📊 Concentração em {days[max_day_idx]}: {max_pct:.1f}% da receita semanal.")
-                    recommendations.append({
-                        'priority': 'media', 'category': 'operacional',
-                        'description': f'{max_pct:.1f}% da receita vem de {days[max_day_idx]}. Diversifique.',
-                        'expected_impact': 'Médio', 'effort': 'medio'
-                    })
-                elif max_pct < 20:
-                    insights.append(f"✅ Distribuição equilibrada: nenhum dia passa de {max_pct:.1f}% da receita.")
-                    strengths.append("Distribuição equilibrada na semana")
-
-                if min_pct < 5:
-                    insights.append(f"⚠️ {days[min_day_idx]} tem apenas {min_pct:.1f}% da receita — dia subutilizado.")
-                    recommendations.append({
-                        'priority': 'baixa', 'category': 'comercial',
-                        'description': f'{days[min_day_idx]} tem baixo movimento ({min_pct:.1f}%). Considere promoções.',
-                        'expected_impact': 'Baixo', 'effort': 'baixo'
-                    })
-
-                sazonalidade = max_pct - min_pct
-                metrics_extra['sazonalidade_weekly'] = sazonalidade
-                if sazonalidade > 50:
-                    weaknesses.append(f"Alta variação semanal ({sazonalidade:.1f} p.p.)")
-
-        monthly = chart_data.get('monthly', {})
-        monthly_revenue = monthly.get('revenue', [])
-
-        if monthly_revenue and len(monthly_revenue) >= 3:
-            valid_months = [(i, v) for i, v in enumerate(monthly_revenue) if v > 0]
-            if len(valid_months) >= 3:
-                values = [v for _, v in valid_months]
-                n = len(values)
-                x = list(range(n))
-                x_mean = sum(x) / n
-                y_mean = sum(values) / n
-                numerator = sum((x[i] - x_mean) * (values[i] - y_mean) for i in range(n))
-                denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
-                slope = numerator / denominator if denominator != 0 else 0
-
-                growth = ((values[-1] - values[0]) / values[0] * 100) if values[0] > 0 else 0
-                metrics_extra['monthly_growth_pct'] = growth
-
-                if growth > 20:
-                    insights.append(f"📈 Crescimento mensal de {growth:.1f}% no período analisado.")
-                    strengths.append(f"Crescimento de {growth:.1f}%")
-                elif growth > 5:
-                    insights.append(f"📈 Crescimento moderado de {growth:.1f}%.")
-                elif growth < -20:
-                    insights.append(f"📉 Queda de {abs(growth):.1f}% — atenção aos indicadores.")
-                    weaknesses.append(f"Queda de {abs(growth):.1f}%")
-                    recommendations.append({
-                        'priority': 'alta', 'category': 'operacional',
-                        'description': f'Queda de {abs(growth):.1f}% na receita mensal. Analise causas.',
-                        'expected_impact': 'Alto', 'effort': 'alto'
-                    })
-                elif growth < -5:
-                    insights.append(f"📉 Leve queda de {abs(growth):.1f}% — monitorar.")
-                else:
-                    insights.append(f"➡️ Estabilidade mensal (variação de {growth:.1f}%).")
-
-                mean_v = sum(values) / n
-                variance = sum((v - mean_v) ** 2 for v in values) / n
-                std_v = variance ** 0.5
-                cv = (std_v / mean_v * 100) if mean_v > 0 else 0
-                metrics_extra['monthly_cv'] = cv
-
-                if cv > 50:
-                    weaknesses.append(f"Alta volatilidade mensal (CV={cv:.1f}%)")
-                    insights.append(f"⚠️ Volatilidade alta ({cv:.1f}%) — receita imprevisível.")
-
-        file_summary = IntelligentAnalyzer._generate_file_summary(
-            file_metrics, metrics_extra, strengths, weaknesses
-        )
-        file_score = IntelligentAnalyzer._calculate_file_score(file_metrics, metrics_extra)
+        summary = IntelligentAnalyzer._build_file_summary(ctx)
+        score = IntelligentAnalyzer._calculate_file_score(ctx)
 
         return {
-            'insights': insights, 'strengths': strengths, 'weaknesses': weaknesses,
-            'recommendations': recommendations, 'metrics_extra': metrics_extra,
-            'summary': file_summary, 'score': file_score
+            "insights": insights,
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "recommendations": recommendations,
+            "metrics_extra": ctx,
+            "summary": summary,
+            "score": score,
         }
-
-    @staticmethod
-    def _classify_margin(margin: float) -> str:
-        if margin < 0: return 'negativa'
-        if margin < 10: return 'critica'
-        if margin < 20: return 'baixa'
-        if margin < 30: return 'moderada'
-        if margin < 45: return 'saudavel'
-        return 'excelente'
-
-    @staticmethod
-    def _classify_revenue(revenue: float) -> str:
-        if revenue <= 0: return 'sem_receita'
-        if revenue < 5000: return 'baixa'
-        if revenue < 20000: return 'media'
-        if revenue < 100000: return 'alta'
-        return 'muito_alta'
-
-    @staticmethod
-    def _classify_volume(rows: int) -> str:
-        if rows < 50: return 'baixo'
-        if rows < 200: return 'medio'
-        if rows < 1000: return 'alto'
-        return 'muito_alto'
-
-    @staticmethod
-    def _generate_file_summary(file_metrics, metrics_extra, strengths, weaknesses) -> str:
-        parts = []
-        parts.append(
-            f"O arquivo '{file_metrics.filename}' contém {file_metrics.total_rows} registros "
-            f"com receita total de R$ {file_metrics.total_revenue:,.2f} e lucro de R$ {file_metrics.profit:,.2f}."
-        )
-        margin = file_metrics.margin
-        margin_class = metrics_extra.get('margin_class', 'moderada')
-        margin_descriptions = {
-            'negativa': f"A margem negativa de {margin:.1f}% exige ação corretiva imediata.",
-            'critica': f"A margem crítica de {margin:.1f}% está bem abaixo do ideal.",
-            'baixa': f"A margem de {margin:.1f}% está abaixo do esperado para o setor.",
-            'moderada': f"A margem de {margin:.1f}% é aceitável, com espaço para otimização.",
-            'saudavel': f"A margem saudável de {margin:.1f}% indica boa gestão financeira.",
-            'excelente': f"A margem excelente de {margin:.1f}% demonstra performance superior."
-        }
-        parts.append(margin_descriptions.get(margin_class, ""))
-        rows_class = metrics_extra.get('rows_class', 'medio')
-        volume_desc = {
-            'baixo': "O volume de dados é baixo, o que pode limitar a precisão.",
-            'medio': "O volume de dados é adequado para análises confiáveis.",
-            'alto': "O volume de dados é robusto, permitindo análises sólidas.",
-            'muito_alto': "O volume de dados é muito alto, ideal para modelagem avançada."
-        }
-        parts.append(volume_desc.get(rows_class, ""))
-        high_pct = metrics_extra.get('high_risk_pct', 0)
-        if high_pct > 50:
-            parts.append(f"Preocupação: {high_pct:.1f}% dos registros são de alto risco.")
-        elif high_pct < 15:
-            parts.append(f"Base sólida: apenas {high_pct:.1f}% em alto risco.")
-        peak_day = metrics_extra.get('peak_day')
-        peak_pct = metrics_extra.get('peak_day_pct', 0)
-        if peak_day and peak_pct > 35:
-            parts.append(f"Há concentração em {peak_day} ({peak_pct:.1f}% da receita semanal).")
-        growth = metrics_extra.get('monthly_growth_pct', 0)
-        if growth > 15:
-            parts.append(f"Tendência mensal positiva (+{growth:.1f}%).")
-        elif growth < -15:
-            parts.append(f"Tendência mensal negativa ({growth:.1f}%).")
-        if strengths:
-            parts.append(f"Pontos fortes: {'; '.join(strengths[:3])}.")
-        if weaknesses:
-            parts.append(f"Pontos de atenção: {'; '.join(weaknesses[:3])}.")
-        return " ".join(p for p in parts if p)
-
-    @staticmethod
-    def _calculate_file_score(file_metrics, metrics_extra) -> float:
-        score = 5.0
-        margin = file_metrics.margin
-        if margin >= 45: score += 3.0
-        elif margin >= 30: score += 2.0
-        elif margin >= 20: score += 1.0
-        elif margin >= 10: score += 0.0
-        elif margin >= 0: score -= 1.5
-        else: score -= 3.0
-        high_pct = metrics_extra.get('high_risk_pct', 0)
-        if high_pct < 15: score += 2.0
-        elif high_pct < 30: score += 1.0
-        elif high_pct < 50: score -= 1.0
-        else: score -= 2.0
-        growth = metrics_extra.get('monthly_growth_pct', 0)
-        if growth > 20: score += 1.5
-        elif growth > 5: score += 0.75
-        elif growth < -20: score -= 1.5
-        elif growth < -5: score -= 0.75
-        cv = metrics_extra.get('monthly_cv', 0)
-        if cv < 20: score += 1.0
-        elif cv < 40: score += 0.5
-        elif cv > 60: score -= 1.0
-        return max(0, min(10, score))
 
     @staticmethod
     def analyze_multiple_files(consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
@@ -666,138 +823,578 @@ class IntelligentAnalyzer:
         if not files:
             return IntelligentAnalyzer._empty_analysis()
 
-        per_file_analysis = {f.filename: IntelligentAnalyzer.analyze_file(f) for f in files}
+        per_file = {f.filename: IntelligentAnalyzer.analyze_file(f) for f in files}
 
-        file_scores = [a['score'] for a in per_file_analysis.values()]
-        avg_score = sum(file_scores) / len(file_scores) if file_scores else 5.0
+        scores = [a["score"] for a in per_file.values()]
+        avg_score = sum(scores) / len(scores) if scores else 5.0
 
-        comparison_data = {}
-        if len(files) > 1:
-            comparison_data = IntelligentAnalyzer._compare_files(files)
-
-        trend_data = IntelligentAnalyzer._analyze_aggregate_trend(files)
+        comparison_data = (
+            IntelligentAnalyzer._compare_files(files, consolidated)
+            if len(files) > 1 else {}
+        )
+        trend_data = IntelligentAnalyzer._aggregate_trend(files, consolidated)
 
         all_recommendations = []
-        seen_descriptions = set()
-        for filename, analysis in per_file_analysis.items():
-            for rec in analysis['recommendations']:
-                desc_key = rec['description'][:80]
-                if desc_key not in seen_descriptions:
-                    seen_descriptions.add(desc_key)
-                    if len(files) > 1:
-                        rec_copy = rec.copy()
-                        rec_copy['source_file'] = filename
-                        all_recommendations.append(rec_copy)
-                    else:
-                        all_recommendations.append(rec)
+        seen = set()
+        for fname, analysis in per_file.items():
+            for rec in analysis["recommendations"]:
+                key = rec["description"][:80]
+                if key in seen:
+                    continue
+                seen.add(key)
+                rec_copy = dict(rec)
+                if len(files) > 1:
+                    rec_copy["source_file"] = fname
+                all_recommendations.append(rec_copy)
 
-        priority_order = {'alta': 0, 'media': 1, 'baixa': 2}
-        all_recommendations.sort(key=lambda r: priority_order.get(r.get('priority', 'media'), 1))
-        all_recommendations = all_recommendations[:8]
+        priority_order = {"alta": 0, "media": 1, "baixa": 2}
+        all_recommendations.sort(
+            key=lambda r: priority_order.get(r.get("priority", "media"), 1)
+        )
+        all_recommendations = all_recommendations[:10]
 
-        executive_score = IntelligentAnalyzer._build_executive_score(consolidated, per_file_analysis, avg_score)
-        executive_summary = IntelligentAnalyzer._build_executive_summary(consolidated, per_file_analysis, comparison_data)
-        forecast = IntelligentAnalyzer._build_forecast(consolidated, per_file_analysis, trend_data)
-        conclusion = IntelligentAnalyzer._build_conclusion(consolidated, per_file_analysis, avg_score)
+        executive_score = IntelligentAnalyzer._build_executive_score(
+            consolidated, per_file, avg_score
+        )
+        executive_summary = IntelligentAnalyzer._build_executive_summary(
+            consolidated, per_file, comparison_data
+        )
+        forecast = IntelligentAnalyzer._build_forecast(consolidated, trend_data)
+        conclusion = IntelligentAnalyzer._build_conclusion(
+            consolidated, per_file, avg_score
+        )
 
         combined_insights = []
-        for filename, analysis in per_file_analysis.items():
-            for insight in analysis['insights'][:3]:
-                if len(files) > 1:
-                    combined_insights.append(f"[{filename}] {insight}")
-                else:
-                    combined_insights.append(insight)
+        for fname, analysis in per_file.items():
+            for ins in analysis["insights"][:3]:
+                combined_insights.append(f"[{fname}] {ins}" if len(files) > 1 else ins)
 
         return {
-            'success': True,
-            'executive_score': executive_score,
-            'executive_summary': executive_summary,
-            'comparison': comparison_data,
-            'trend': trend_data,
-            'recommendations': all_recommendations,
-            'forecast': forecast,
-            'conclusion': conclusion,
-            'combined_insights': combined_insights[:10],
-            'per_file_analysis': per_file_analysis,
-            'model_used': 'intelligent_fallback',
-            'tokens_used': 0,
-            'response_time_ms': 0,
-            'fallback_used': True,
-            'full_analysis': executive_summary + "\n\n" + conclusion
+            "success": True,
+            "executive_score": executive_score,
+            "executive_summary": executive_summary,
+            "comparison": comparison_data,
+            "trend": trend_data,
+            "recommendations": all_recommendations,
+            "forecast": forecast,
+            "conclusion": conclusion,
+            "combined_insights": combined_insights[:12],
+            "per_file_analysis": per_file,
+            "model_used": "intelligent_fallback_v7",
+            "tokens_used": 0,
+            "response_time_ms": 0,
+            "fallback_used": True,
+            "full_analysis": executive_summary + "\n\n" + conclusion,
         }
 
+    # -------------- CONTEXTO --------------
+
     @staticmethod
-    def _compare_files(files):
+    def _build_context(f: FileMetrics) -> Dict[str, Any]:
+        predictions = list(f.predictions or [])
+        n = len(predictions)
+
+        if predictions:
+            avg_score = sum(predictions) / n
+            high_risk = [p for p in predictions if p > 0.7]
+            low_risk = [p for p in predictions if p < 0.3]
+            n_high = len(high_risk)
+            n_low = len(low_risk)
+            high_pct = (n_high / n) * 100
+            low_pct = (n_low / n) * 100
+            variance = sum((p - avg_score) ** 2 for p in predictions) / n
+            std_score = math.sqrt(variance)
+        else:
+            avg_score = 0.5; std_score = 0.0
+            n_high = n_low = 0
+            high_pct = low_pct = 0.0
+
+        revenue = float(f.total_revenue or 0)
+        cost = float(f.total_costs or 0)
+        profit = float(f.profit or 0)
+        margin = float(f.margin or 0)
+        rows = int(f.total_rows or 0)
+
+        ticket = _safe_div(revenue, rows, 0)
+        cost_per_row = _safe_div(cost, rows, 0)
+        profit_per_row = _safe_div(profit, rows, 0)
+
+        chart = f.chart_data or {}
+        monthly_rev = chart.get("monthly", {}).get("revenue", [])
+        valid_months = [float(v) for v in monthly_rev if v and v > 0]
+        growth = 0.0
+        cv = 0.0
+        if len(valid_months) >= 2:
+            growth = _safe_div((valid_months[-1] - valid_months[0]) * 100, valid_months[0], 0)
+        if len(valid_months) >= 3:
+            mean_v = sum(valid_months) / len(valid_months)
+            var = sum((v - mean_v) ** 2 for v in valid_months) / len(valid_months)
+            std_v = math.sqrt(var)
+            cv = _safe_div(std_v * 100, mean_v, 0)
+
+        weekly_rev = chart.get("weekly", {}).get("revenue", [])
+        days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+        peak_day = weak_day = "-"
+        peak_pct = weak_pct = 0.0
+        if weekly_rev and sum(weekly_rev) > 0:
+            total_week = sum(weekly_rev)
+            max_i = max(range(len(weekly_rev)), key=lambda i: weekly_rev[i])
+            min_i = min(range(len(weekly_rev)), key=lambda i: weekly_rev[i])
+            peak_day = days[max_i] if max_i < len(days) else f"Dia {max_i+1}"
+            weak_day = days[min_i] if min_i < len(days) else f"Dia {min_i+1}"
+            peak_pct = weekly_rev[max_i] / total_week * 100
+            weak_pct = weekly_rev[min_i] / total_week * 100
+
+        # Derivados
+        margin_gap = max(0.0, 30 - margin) if margin < 30 else 0.0
+        per_point_margin = revenue * 0.01 if revenue else 0
+        loss_per_sale = max(0.0, cost_per_row - ticket)
+        abs_profit = abs(profit)
+        price_increase_pct = 0.0
+        cut_needed_pct = 0.0
+        if revenue > 0 and profit < 0:
+            price_increase_pct = abs(profit) / revenue * 100
+            cut_needed_pct = price_increase_pct
+        cost_cut_pct = 0.0
+        if revenue > 0:
+            cost_cut_pct = max(0.0, (cost / revenue * 100) - 70)  # p/ 30% margem
+        additional_profit = revenue * 0.10
+        ticket_gain_20pct = ticket * 0.20 * rows
+        n_for_10k = int(10000 / ticket) if ticket > 0 else 0
+
+        # Label da banda de margem (para weakness)
+        band_labels = {
+            MarginBand.NEGATIVE: "negativa",
+            MarginBand.CRITICAL: "crítica",
+            MarginBand.LOW: "baixa",
+            MarginBand.MODERATE: "moderada",
+            MarginBand.HEALTHY: "saudável",
+            MarginBand.EXCELLENT: "excelente",
+        }
+
+        return {
+            "filename": f.filename,
+            "rows": rows,
+            "n": n,
+            "revenue": revenue,
+            "revenue_fmt": _fmt_brl(revenue),
+            "cost": cost,
+            "cost_fmt": _fmt_brl(cost),
+            "profit": profit,
+            "profit_fmt": _fmt_brl(profit),
+            "abs_profit_fmt": _fmt_brl(abs_profit),
+            "margin": margin,
+            "margin_fmt": _fmt_pct(margin),
+            "ticket": ticket,
+            "ticket_fmt": _fmt_brl(ticket),
+            "cost_per_row": cost_per_row,
+            "profit_per_row": profit_per_row,
+
+            "avg_score": avg_score,
+            "std_score": std_score,
+            "high_pct": high_pct,
+            "high_pct_fmt": _fmt_pct(high_pct),
+            "low_pct": low_pct,
+            "low_pct_fmt": _fmt_pct(low_pct),
+            "n_high": n_high,
+            "n_low": n_low,
+
+            "growth": growth,
+            "growth_fmt": _fmt_pct(growth),
+            "abs_growth": abs(growth),
+            "abs_growth_fmt": _fmt_pct(abs(growth)),
+            "cv": cv,
+            "cv_fmt": _fmt_pct(cv),
+
+            "peak_day": peak_day,
+            "peak_pct": peak_pct,
+            "peak_pct_fmt": _fmt_pct(peak_pct),
+            "weak_day": weak_day,
+            "weak_pct": weak_pct,
+            "weak_pct_fmt": _fmt_pct(weak_pct),
+
+            "gap": _fmt_pct(margin_gap, 1),
+            "gap_num": margin_gap,
+            "per_point": _fmt_brl(per_point_margin),
+            "loss_per_sale": _fmt_brl(loss_per_sale),
+            "price_increase_pct": _fmt_pct(price_increase_pct),
+            "cost_cut_pct": _fmt_pct(cost_cut_pct),
+            "cut_needed_pct": _fmt_pct(cut_needed_pct),
+            "additional_profit": _fmt_brl(additional_profit),
+            "ticket_gain_20pct": _fmt_brl(ticket_gain_20pct),
+            "n_for_10k": n_for_10k,
+            "margin_band_label": band_labels.get(MarginBand.of(margin), "moderada"),
+
+            "margin_band": MarginBand.of(margin),
+            "risk_band": RiskBand.of(high_pct),
+            "ticket_band": TicketBand.of(ticket),
+            "volume_band": VolumeBand.of(rows),
+            "trend_band": TrendBand.of(growth),
+        }
+
+    # -------------- FILLERS --------------
+
+    @staticmethod
+    def _safe_format(template: str, ctx: Dict[str, Any]) -> str:
+        try:
+            return template.format(**ctx)
+        except (KeyError, IndexError):
+            return template
+
+    @staticmethod
+    def _fill_margin(ctx, seed, insights, strengths, weaknesses, recommendations):
+        band = ctx["margin_band"]
+        pool = MARGIN_INSIGHTS.get(band, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed), ctx))
+
+        if band == MarginBand.NEGATIVE:
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["margin"], seed), ctx))
+            recommendations.append({
+                "priority": "alta", "category": "financeiro",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["margin_negative"], seed), ctx),
+                "expected_impact": "Crítico", "effort": "alto",
+            })
+        elif band == MarginBand.CRITICAL:
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["margin"], seed), ctx))
+            recommendations.append({
+                "priority": "alta", "category": "financeiro",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["margin_critical"], seed), ctx),
+                "expected_impact": "Alto", "effort": "alto",
+            })
+        elif band == MarginBand.LOW:
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["margin"], seed), ctx))
+            recommendations.append({
+                "priority": "media", "category": "financeiro",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["margin_low"], seed), ctx),
+                "expected_impact": "Médio", "effort": "medio",
+            })
+        elif band == MarginBand.MODERATE:
+            recommendations.append({
+                "priority": "media", "category": "financeiro",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["margin_moderate"], seed), ctx),
+                "expected_impact": "Médio", "effort": "medio",
+            })
+        elif band in (MarginBand.HEALTHY, MarginBand.EXCELLENT):
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["margin"], seed), ctx))
+            if band == MarginBand.EXCELLENT:
+                recommendations.append({
+                    "priority": "baixa", "category": "financeiro",
+                    "description": IntelligentAnalyzer._safe_format(
+                        _pick(RECOMMENDATIONS_POOL["margin_excellent"], seed), ctx),
+                    "expected_impact": "Alto", "effort": "baixo",
+                })
+
+    @staticmethod
+    def _fill_risk(ctx, seed, insights, strengths, weaknesses, recommendations):
+        if ctx["n"] == 0:
+            return
+        band = ctx["risk_band"]
+        pool = RISK_INSIGHTS.get(band, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed + 1), ctx))
+
+        if band == RiskBand.LOW:
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["low_risk"], seed + 1), ctx))
+            recommendations.append({
+                "priority": "baixa", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["risk_low"], seed + 1), ctx),
+                "expected_impact": "Baixo", "effort": "baixo",
+            })
+        elif band == RiskBand.MODERATE:
+            recommendations.append({
+                "priority": "media", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["risk_moderate"], seed + 1), ctx),
+                "expected_impact": "Médio", "effort": "medio",
+            })
+        elif band in (RiskBand.HIGH, RiskBand.CRITICAL):
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["high_risk"], seed + 1), ctx))
+            recommendations.append({
+                "priority": "alta", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["risk_high"], seed + 2), ctx),
+                "expected_impact": "Alto", "effort": "alto",
+            })
+
+    @staticmethod
+    def _fill_ticket(ctx, seed, insights, strengths, weaknesses, recommendations):
+        band = ctx["ticket_band"]
+        pool = TICKET_INSIGHTS.get(band, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed + 2), ctx))
+
+        if band in (TicketBand.HIGH, TicketBand.PREMIUM):
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["ticket"], seed + 2), ctx))
+        elif band == TicketBand.LOW:
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["ticket"], seed + 2), ctx))
+            recommendations.append({
+                "priority": "media", "category": "comercial",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["ticket_low"], seed + 2), ctx),
+                "expected_impact": "Médio", "effort": "baixo",
+            })
+        elif band == TicketBand.MEDIUM:
+            recommendations.append({
+                "priority": "baixa", "category": "comercial",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["ticket_medium"], seed + 3), ctx),
+                "expected_impact": "Médio", "effort": "medio",
+            })
+
+    @staticmethod
+    def _fill_volume(ctx, seed, insights, strengths):
+        band = ctx["volume_band"]
+        pool = VOLUME_INSIGHTS.get(band, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed + 3), ctx))
+        if band in (VolumeBand.HIGH, VolumeBand.VERY_HIGH):
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["volume"], seed + 3), ctx))
+
+    @staticmethod
+    def _fill_trend(ctx, seed, insights, strengths, weaknesses, recommendations):
+        if not ctx.get("growth"):
+            return
+        band = ctx["trend_band"]
+        pool = TREND_INSIGHTS.get(band, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed + 4), ctx))
+
+        if band in (TrendBand.STRONG_UP, TrendBand.UP):
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["trend"], seed + 4), ctx))
+            recommendations.append({
+                "priority": "baixa", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["trend_up"], seed + 4), ctx),
+                "expected_impact": "Alto", "effort": "medio",
+            })
+        elif band in (TrendBand.DOWN, TrendBand.STRONG_DOWN):
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["trend"], seed + 4), ctx))
+            recommendations.append({
+                "priority": "alta", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["trend_down"], seed + 5), ctx),
+                "expected_impact": "Alto", "effort": "alto",
+            })
+
+    @staticmethod
+    def _fill_weekly(ctx, seed, insights, strengths, weaknesses, recommendations):
+        if ctx.get("peak_day") in (None, "-") or not ctx.get("peak_pct"):
+            return
+        peak_pct = ctx["peak_pct"]
+
+        if peak_pct > 40:
+            conc = "alta"
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["concentration"], seed + 5), ctx))
+        elif peak_pct > 25:
+            conc = "moderada"
+        else:
+            conc = "equilibrada"
+            strengths.append(IntelligentAnalyzer._safe_format(
+                _pick(STRENGTHS_POOL["distribution"], seed + 5), ctx))
+
+        pool = WEEKLY_CONCENTRATION.get(conc, [])
+        if pool:
+            insights.append(IntelligentAnalyzer._safe_format(_pick(pool, seed + 5), ctx))
+
+        if 0 < ctx["weak_pct"] < 5:
+            insights.append(IntelligentAnalyzer._safe_format(
+                _pick(WEEKLY_WEAK_DAY, seed + 6), ctx))
+
+        if conc == "alta":
+            recommendations.append({
+                "priority": "media", "category": "operacional",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["concentration"], seed + 6), ctx),
+                "expected_impact": "Médio", "effort": "medio",
+            })
+
+    @staticmethod
+    def _fill_volatility(ctx, seed, insights, weaknesses, recommendations):
+        cv = ctx.get("cv", 0)
+        if cv and cv > 50:
+            weaknesses.append(IntelligentAnalyzer._safe_format(
+                _pick(WEAKNESSES_POOL["volatility"], seed + 7), ctx))
+            recommendations.append({
+                "priority": "media", "category": "financeiro",
+                "description": IntelligentAnalyzer._safe_format(
+                    _pick(RECOMMENDATIONS_POOL["volatility"], seed + 7), ctx),
+                "expected_impact": "Médio", "effort": "alto",
+            })
+
+    # -------------- SUMÁRIO --------------
+
+    @staticmethod
+    def _build_file_summary(ctx: Dict[str, Any]) -> str:
+        parts = []
+        parts.append(
+            f"O arquivo '{ctx['filename']}' contém {ctx['rows']} registros "
+            f"com receita total de {ctx['revenue_fmt']} e lucro de {ctx['profit_fmt']}."
+        )
+
+        margin_desc = {
+            MarginBand.NEGATIVE: f"A margem negativa de {ctx['margin_fmt']} exige ação corretiva imediata.",
+            MarginBand.CRITICAL: f"A margem crítica de {ctx['margin_fmt']} está bem abaixo do ideal.",
+            MarginBand.LOW: f"A margem de {ctx['margin_fmt']} está abaixo do esperado para o setor.",
+            MarginBand.MODERATE: f"A margem de {ctx['margin_fmt']} é aceitável, com espaço para otimização.",
+            MarginBand.HEALTHY: f"A margem saudável de {ctx['margin_fmt']} indica boa gestão financeira.",
+            MarginBand.EXCELLENT: f"A margem excelente de {ctx['margin_fmt']} demonstra performance superior.",
+        }
+        parts.append(margin_desc.get(ctx["margin_band"], ""))
+
+        vol_desc = {
+            VolumeBand.LOW: "O volume de dados é baixo, o que pode limitar a precisão.",
+            VolumeBand.MEDIUM: "O volume de dados é adequado para análises confiáveis.",
+            VolumeBand.HIGH: "O volume de dados é robusto, permitindo análises sólidas.",
+            VolumeBand.VERY_HIGH: "O volume de dados é muito alto, ideal para modelagem avançada.",
+        }
+        parts.append(vol_desc.get(ctx["volume_band"], ""))
+
+        if ctx["n"] > 0:
+            if ctx["high_pct"] > 50:
+                parts.append(f"Preocupação: {ctx['high_pct_fmt']} dos registros são de alto risco pelo ML.")
+            elif ctx["high_pct"] < 15:
+                parts.append(f"Base sólida: apenas {ctx['high_pct_fmt']} em alto risco.")
+
+        if ctx["peak_pct"] > 35 and ctx["peak_day"] != "-":
+            parts.append(f"Concentração em {ctx['peak_day']} ({ctx['peak_pct_fmt']} da receita semanal).")
+
+        if ctx["growth"] > 15:
+            parts.append(f"Tendência mensal positiva (+{ctx['growth_fmt']}).")
+        elif ctx["growth"] < -15:
+            parts.append(f"Tendência mensal negativa ({ctx['growth_fmt']}).")
+
+        return " ".join(p for p in parts if p)
+
+    # -------------- SCORE --------------
+
+    @staticmethod
+    def _calculate_file_score(ctx: Dict[str, Any]) -> float:
+        score = 5.0
+        margin = ctx["margin"]
+        if margin >= 45: score += 3.0
+        elif margin >= 30: score += 2.0
+        elif margin >= 20: score += 1.0
+        elif margin >= 10: score += 0.0
+        elif margin >= 0: score -= 1.5
+        else: score -= 3.0
+
+        high_pct = ctx["high_pct"]
+        if high_pct < 15: score += 2.0
+        elif high_pct < 30: score += 1.0
+        elif high_pct < 50: score -= 1.0
+        else: score -= 2.0
+
+        growth = ctx["growth"]
+        if growth > 20: score += 1.5
+        elif growth > 5: score += 0.75
+        elif growth < -20: score -= 1.5
+        elif growth < -5: score -= 0.75
+
+        cv = ctx["cv"]
+        if cv and cv < 20: score += 1.0
+        elif cv and cv < 40: score += 0.5
+        elif cv and cv > 60: score -= 1.0
+
+        return max(0.0, min(10.0, score))
+
+    # -------------- COMPARAÇÃO --------------
+
+    @staticmethod
+    def _compare_files(files: List[FileMetrics], consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
         if len(files) < 2:
             return {}
+
         by_revenue = sorted(files, key=lambda f: f.total_revenue, reverse=True)
         by_profit = sorted(files, key=lambda f: f.profit, reverse=True)
         by_margin = sorted(files, key=lambda f: f.margin, reverse=True)
         by_risk = sorted(files, key=lambda f: f.high_risk_percentage)
-        summary_parts = []
-        if len(files) >= 2:
-            best = by_revenue[0]
-            worst = by_revenue[-1]
-            diff_pct = ((best.total_revenue - worst.total_revenue) / worst.total_revenue * 100) if worst.total_revenue > 0 else 0
-            summary_parts.append(
-                f"'{best.filename}' lidera com R$ {best.total_revenue:,.2f} "
-                f"({diff_pct:.1f}% acima de '{worst.filename}')."
-            )
+
+        parts = []
+        best = by_revenue[0]; worst = by_revenue[-1]
+        diff_pct = _safe_div(
+            (best.total_revenue - worst.total_revenue) * 100,
+            worst.total_revenue, 0,
+        )
+        parts.append(
+            f"'{best.filename}' lidera com {_fmt_brl(best.total_revenue)} "
+            f"({_fmt_pct(diff_pct)} acima de '{worst.filename}')."
+        )
         riskiest = max(files, key=lambda f: f.high_risk_percentage)
         if riskiest.high_risk_percentage > 30:
-            summary_parts.append(f"'{riskiest.filename}' tem {riskiest.high_risk_percentage:.1f}% de alto risco.")
+            parts.append(
+                f"'{riskiest.filename}' tem {_fmt_pct(riskiest.high_risk_percentage)} de alto risco."
+            )
         best_margin = by_margin[0]
-        summary_parts.append(f"Melhor margem: '{best_margin.filename}' com {best_margin.margin:.1f}%.")
+        parts.append(f"Melhor margem: '{best_margin.filename}' com {_fmt_pct(best_margin.margin)}.")
+
         return {
-            'best_revenue': by_revenue[0].filename if by_revenue else '',
-            'best_profit': by_profit[0].filename if by_profit else '',
-            'best_growth': by_margin[0].filename if by_margin else '',
-            'best_efficiency': by_margin[0].filename if by_margin else '',
-            'highest_risk': riskiest.filename if riskiest else '',
-            'lowest_performance': by_revenue[-1].filename if by_revenue else '',
-            'summary': ' '.join(summary_parts),
-            'ranking_revenue': [f.filename for f in by_revenue],
-            'ranking_profit': [f.filename for f in by_profit],
-            'ranking_margin': [f.filename for f in by_margin]
+            "best_revenue": by_revenue[0].filename if by_revenue else "",
+            "best_profit": by_profit[0].filename if by_profit else "",
+            "best_growth": by_margin[0].filename if by_margin else "",
+            "best_efficiency": by_margin[0].filename if by_margin else "",
+            "highest_risk": riskiest.filename if riskiest else "",
+            "lowest_performance": by_revenue[-1].filename if by_revenue else "",
+            "summary": " ".join(parts),
+            "ranking_revenue": [f.filename for f in by_revenue],
+            "ranking_profit": [f.filename for f in by_profit],
+            "ranking_margin": [f.filename for f in by_margin],
         }
 
     @staticmethod
-    def _analyze_aggregate_trend(files):
+    def _aggregate_trend(files: List[FileMetrics], consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
         if len(files) < 2:
             return {
-                'direction': 'estavel', 'strength': 0.5, 'confidence': 0.5,
-                'description': 'Dados insuficientes para análise de tendência.',
-                'key_observations': []
+                "direction": "estavel", "strength": 0.5, "confidence": 0.5,
+                "description": "Dados insuficientes para análise de tendência.",
+                "key_observations": [],
             }
         sorted_files = sorted(files, key=lambda f: f.filename)
         revenues = [f.total_revenue for f in sorted_files]
-        if len(revenues) >= 2 and revenues[0] > 0:
-            growth = (revenues[-1] - revenues[0]) / revenues[0] * 100
-        else:
-            growth = 0
+        growth = _safe_div((revenues[-1] - revenues[0]) * 100, revenues[0], 0) if revenues[0] > 0 else 0
+
         if growth > 10:
-            direction = 'crescente'
-            description = f"Tendência de crescimento de {growth:.1f}% entre os arquivos."
-            strength = min(1.0, growth / 50)
-            observations = [f"Receita cresceu {growth:.1f}%"]
+            return {
+                "direction": "crescente", "strength": round(min(1.0, growth / 50), 2),
+                "confidence": 0.75,
+                "description": f"Tendência de crescimento de {_fmt_pct(growth)} entre os arquivos.",
+                "key_observations": [f"Receita cresceu {_fmt_pct(growth)}"],
+            }
         elif growth < -10:
-            direction = 'decrescente'
-            description = f"Tendência de queda de {abs(growth):.1f}% entre os arquivos."
-            strength = min(1.0, abs(growth) / 50)
-            observations = [f"Receita caiu {abs(growth):.1f}%"]
+            return {
+                "direction": "decrescente", "strength": round(min(1.0, abs(growth) / 50), 2),
+                "confidence": 0.75,
+                "description": f"Tendência de queda de {_fmt_pct(abs(growth))} entre os arquivos.",
+                "key_observations": [f"Receita caiu {_fmt_pct(abs(growth))}"],
+            }
         else:
-            direction = 'estavel'
-            description = f"Estabilidade no período (variação de {growth:.1f}%)."
-            strength = 0.5
-            observations = ["Receita estável"]
-        return {
-            'direction': direction, 'strength': round(strength, 2),
-            'confidence': 0.75, 'description': description,
-            'key_observations': observations
-        }
+            return {
+                "direction": "estavel", "strength": 0.5, "confidence": 0.75,
+                "description": f"Estabilidade no período (variação de {_fmt_pct(growth)}).",
+                "key_observations": ["Receita estável"],
+            }
+
+    # -------------- EXECUTIVE --------------
 
     @staticmethod
-    def _build_executive_score(consolidated, per_file_analysis, avg_score):
+    def _build_executive_score(consolidated, per_file, avg_score):
         margin = consolidated.avg_margin
         if margin < 0: saude = 1.0
         elif margin < 10: saude = 3.0
@@ -805,7 +1402,9 @@ class IntelligentAnalyzer:
         elif margin < 30: saude = 7.0
         elif margin < 45: saude = 8.5
         else: saude = 10.0
+
         eficiencia = min(10.0, avg_score)
+
         if consolidated.total_revenue > 0:
             cost_ratio = (consolidated.total_revenue - consolidated.total_profit) / consolidated.total_revenue
             if cost_ratio < 0.5: controle = 9.0
@@ -815,42 +1414,43 @@ class IntelligentAnalyzer:
             else: controle = 1.0
         else:
             controle = 5.0
+
         growth = 5.0
+        nivel = "Moderado"
         if consolidated.ml_results and consolidated.ml_results.total_predictions > 0:
-            high_risk = consolidated.ml_results.risk_distribution.get('alto', 0)
-            if high_risk < 15: growth = 8.0
-            elif high_risk < 30: growth = 6.0
-            elif high_risk < 50: growth = 4.0
-            else: growth = 2.0
-        if consolidated.ml_results:
-            high_risk = consolidated.ml_results.risk_distribution.get('alto', 0)
-            if high_risk < 15: nivel = 'Baixo'
-            elif high_risk < 35: nivel = 'Moderado'
-            else: nivel = 'Alto'
-        else:
-            nivel = 'Moderado'
+            high_risk = consolidated.ml_results.risk_distribution.get("alto", 0)
+            if high_risk < 15: growth = 8.0; nivel = "Baixo"
+            elif high_risk < 30: growth = 6.0; nivel = "Moderado"
+            elif high_risk < 50: growth = 4.0; nivel = "Moderado"
+            else: growth = 2.0; nivel = "Alto"
+
         nota_geral = (saude + eficiencia + controle + growth) / 4
         return {
-            'saude_financeira': round(saude, 1), 'eficiencia': round(eficiencia, 1),
-            'controle_custos': round(controle, 1), 'crescimento': round(growth, 1),
-            'nivel_risco': nivel, 'nota_geral': round(nota_geral, 1)
+            "saude_financeira": round(saude, 1),
+            "eficiencia": round(eficiencia, 1),
+            "controle_custos": round(controle, 1),
+            "crescimento": round(growth, 1),
+            "nivel_risco": nivel,
+            "nota_geral": round(nota_geral, 1),
         }
 
     @staticmethod
-    def _build_executive_summary(consolidated, per_file_analysis, comparison_data):
+    def _build_executive_summary(consolidated, per_file, comparison_data):
         parts = []
         n_files = consolidated.processed_files
         total_rows = sum(f.total_rows for f in consolidated.files)
+
         if n_files == 1:
-            f = consolidated.files[0]
-            parts.append(f"Análise completa de '{f.filename}' com {total_rows} registros processados.")
+            parts.append(f"Análise completa de '{consolidated.files[0].filename}' com {total_rows} registros.")
         else:
             parts.append(f"Análise comparativa de {n_files} arquivos com {total_rows} registros no total.")
+
         parts.append(
-            f"Receita total de R$ {consolidated.total_revenue:,.2f}, "
-            f"lucro de R$ {consolidated.total_profit:,.2f} "
-            f"e margem média de {consolidated.avg_margin:.1f}%."
+            f"Receita total de {_fmt_brl(consolidated.total_revenue)}, "
+            f"lucro de {_fmt_brl(consolidated.total_profit)} "
+            f"e margem média de {_fmt_pct(consolidated.avg_margin)}."
         )
+
         margin = consolidated.avg_margin
         if margin >= 45: parts.append("A margem está em nível excelente, acima da média do setor.")
         elif margin >= 30: parts.append("A margem é saudável e sustentável.")
@@ -858,34 +1458,37 @@ class IntelligentAnalyzer:
         elif margin >= 10: parts.append("A margem é baixa — atenção aos custos operacionais.")
         elif margin >= 0: parts.append("A margem é crítica — ação corretiva necessária.")
         else: parts.append("A operação está em prejuízo — intervenção imediata requerida.")
-        if comparison_data and comparison_data.get('summary'):
-            parts.append(comparison_data['summary'])
+
+        if comparison_data and comparison_data.get("summary"):
+            parts.append(comparison_data["summary"])
+
         if consolidated.ml_results:
-            high_risk = consolidated.ml_results.risk_distribution.get('alto', 0)
-            if high_risk > 40:
-                parts.append(f"Alerta: {high_risk:.1f}% dos registros em alto risco.")
-            elif high_risk < 15:
-                parts.append(f"Base sólida: apenas {high_risk:.1f}% em alto risco.")
+            high = consolidated.ml_results.risk_distribution.get("alto", 0)
+            if high > 40:
+                parts.append(f"Alerta: {_fmt_pct(high)} dos registros em alto risco pelo ML.")
+            elif high < 15:
+                parts.append(f"Base sólida: apenas {_fmt_pct(high)} em alto risco.")
+
         return " ".join(parts)
 
     @staticmethod
-    def _build_forecast(consolidated, per_file_analysis, trend_data):
+    def _build_forecast(consolidated, trend):
         margin = consolidated.avg_margin
-        direction = trend_data.get('direction', 'estavel')
-        if margin >= 30 and direction == 'crescente':
+        direction = trend.get("direction", "estavel")
+
+        if margin >= 30 and direction == "crescente":
             return ("Cenário otimista: com margem saudável e tendência de crescimento, "
-                    "espera-se expansão sustentada nos próximos períodos. "
-                    "Recomenda-se preparar estrutura para absorver aumento de demanda.")
-        elif margin >= 20 and direction == 'crescente':
+                    "espera-se expansão sustentada. Prepare a estrutura para absorver aumento de demanda.")
+        elif margin >= 20 and direction == "crescente":
             return ("Cenário positivo: margem aceitável combinada com crescimento. "
-                    "Mantenha o foco em eficiência operacional para consolidar a expansão.")
-        elif margin >= 30 and direction == 'estavel':
+                    "Mantenha o foco em eficiência para consolidar a expansão.")
+        elif margin >= 30 and direction == "estavel":
             return ("Cenário estável: margem saudável com receita consistente. "
                     "Boa base para investimentos em crescimento planejado.")
-        elif margin < 10 and direction == 'decrescente':
+        elif margin < 10 and direction == "decrescente":
             return ("Cenário de atenção: margem baixa com tendência de queda. "
-                    "Ação corretiva urgente necessária para reverter o quadro.")
-        elif margin < 20 and direction == 'decrescente':
+                    "Ação corretiva urgente para reverter o quadro.")
+        elif margin < 20 and direction == "decrescente":
             return ("Cenário de cautela: margem sob pressão e receita em queda. "
                     "Revisar precificação e estrutura de custos.")
         elif margin < 10:
@@ -896,63 +1499,67 @@ class IntelligentAnalyzer:
                     "Manter monitoramento contínuo e buscar oportunidades de otimização.")
 
     @staticmethod
-    def _build_conclusion(consolidated, per_file_analysis, avg_score):
+    def _build_conclusion(consolidated, per_file, avg_score):
         parts = []
         if avg_score >= 8: parts.append(f"Desempenho geral excelente (score {avg_score:.1f}/10).")
         elif avg_score >= 6: parts.append(f"Desempenho geral bom (score {avg_score:.1f}/10).")
         elif avg_score >= 4: parts.append(f"Desempenho geral regular (score {avg_score:.1f}/10).")
         else: parts.append(f"Desempenho geral abaixo do esperado (score {avg_score:.1f}/10).")
-        if len(per_file_analysis) > 1:
-            scores = {name: a['score'] for name, a in per_file_analysis.items()}
+
+        if len(per_file) > 1:
+            scores = {name: a["score"] for name, a in per_file.items()}
             best = max(scores.items(), key=lambda x: x[1])
             worst = min(scores.items(), key=lambda x: x[1])
-            parts.append(
-                f"Melhor desempenho: '{best[0]}' ({best[1]:.1f}/10). "
-                f"Ponto de atenção: '{worst[0]}' ({worst[1]:.1f}/10)."
-            )
-        elif len(per_file_analysis) == 1:
-            name, analysis = list(per_file_analysis.items())[0]
+            parts.append(f"Melhor desempenho: '{best[0]}' ({best[1]:.1f}/10). "
+                         f"Ponto de atenção: '{worst[0]}' ({worst[1]:.1f}/10).")
+        elif len(per_file) == 1:
+            name, analysis = list(per_file.items())[0]
             parts.append(f"Score do arquivo: {analysis['score']:.1f}/10.")
-            if analysis['strengths']:
+            if analysis["strengths"]:
                 parts.append(f"Principais forças: {'; '.join(analysis['strengths'][:2])}.")
-            if analysis['weaknesses']:
+            if analysis["weaknesses"]:
                 parts.append(f"Principais fragilidades: {'; '.join(analysis['weaknesses'][:2])}.")
+
         return " ".join(parts)
 
     @staticmethod
     def _empty_analysis():
         return {
-            'success': False,
-            'executive_score': {
-                'saude_financeira': 5.0, 'eficiencia': 5.0,
-                'controle_custos': 5.0, 'crescimento': 5.0,
-                'nivel_risco': 'Moderado', 'nota_geral': 5.0
+            "success": False,
+            "executive_score": {
+                "saude_financeira": 5.0, "eficiencia": 5.0,
+                "controle_custos": 5.0, "crescimento": 5.0,
+                "nivel_risco": "Moderado", "nota_geral": 5.0,
             },
-            'executive_summary': 'Análise indisponível.',
-            'comparison': {},
-            'trend': {'direction': 'estavel', 'strength': 0.5, 'confidence': 0.5,
-                     'description': 'Sem dados.', 'key_observations': []},
-            'recommendations': [],
-            'forecast': 'Sem dados suficientes para previsão.',
-            'conclusion': 'Análise não pôde ser concluída.',
-            'combined_insights': [],
-            'per_file_analysis': {},
-            'model_used': 'intelligent_fallback',
-            'tokens_used': 0,
-            'response_time_ms': 0,
-            'fallback_used': True,
-            'full_analysis': 'Análise indisponível.'
+            "executive_summary": "Análise indisponível.",
+            "comparison": {},
+            "trend": {
+                "direction": "estavel", "strength": 0.5, "confidence": 0.5,
+                "description": "Sem dados.", "key_observations": [],
+            },
+            "recommendations": [],
+            "forecast": "Sem dados suficientes para previsão.",
+            "conclusion": "Análise não pôde ser concluída.",
+            "combined_insights": [],
+            "per_file_analysis": {},
+            "model_used": "intelligent_fallback_v7",
+            "tokens_used": 0, "response_time_ms": 0,
+            "fallback_used": True,
+            "full_analysis": "Análise indisponível.",
         }
 
 
 # ==============================================
-# CLASSE PRINCIPAL - ANALISADOR V6.3
+# CLASSE PRINCIPAL - ANALISADOR V7.0
 # ==============================================
 
 class MultiFileAnalyzerV6:
     """
-    🔥 Analisador de múltiplos arquivos - V6.3
-    Com GEMINI DINÂMICO + CIRCUIT BREAKER + FALLBACK INTELIGENTE.
+    🔥 Analisador de múltiplos arquivos - V7.0
+    Com GEMINI DINÂMICO + CIRCUIT BREAKER + FALLBACK DATA-DRIVEN.
+
+    ⚠️ IMPORTANTE: O Gemini é SEMPRE chamado primeiro.
+    O fallback só entra em ação se o Gemini falhar/estiver indisponível.
     """
 
     MAX_FILES = 3
@@ -961,10 +1568,9 @@ class MultiFileAnalyzerV6:
     TIMEOUT_SECONDS = 60
     NORMALIZATION = "Z-Score"
 
-    # Configuração do circuit breaker do Gemini
-    GEMINI_CHECK_TTL = 10.0           # micro-cache da checagem
-    GEMINI_CIRCUIT_THRESHOLD = 3      # falhas consecutivas p/ abrir
-    GEMINI_CIRCUIT_COOLDOWN = 30.0    # segundos em OPEN antes de HALF_OPEN
+    GEMINI_CHECK_TTL = 10.0
+    GEMINI_CIRCUIT_THRESHOLD = 3
+    GEMINI_CIRCUIT_COOLDOWN = 30.0
 
     def __init__(self):
         self._executor = ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT)
@@ -977,16 +1583,12 @@ class MultiFileAnalyzerV6:
         self._chart_cache: Dict[str, Dict[str, Any]] = {}
         self._chart_cache_ttl = 300
 
-        # ==========================================
-        # Estado do Gemini (NÃO CONGELADO)
-        # ==========================================
         self.gemini = None
-        self.is_gemini_available = False          # hint atualizado dinamicamente
+        self.is_gemini_available = False
         self._gemini_last_check = 0.0
         self._gemini_last_result = False
         self._gemini_lock = asyncio.Lock()
 
-        # Circuit breaker
         self._gemini_circuit_state = CircuitState.CLOSED
         self._gemini_failure_count = 0
         self._gemini_circuit_opened_at = 0.0
@@ -1028,23 +1630,22 @@ class MultiFileAnalyzerV6:
         self._load_predictor()
 
         logger.info("=" * 60)
-        logger.info("✅ MultiFileAnalyzerV6.3 inicializado (GEMINI DINÂMICO)")
+        logger.info("✅ MultiFileAnalyzerV7.0 inicializado (FALLBACK DATA-DRIVEN)")
         logger.info("=" * 60)
         logger.info(f"   📁 Máximo de arquivos: {self.MAX_FILES}")
         logger.info(f"   💾 Cache TTL: {self.CACHE_TTL}s")
         logger.info(f"   🔄 Processamento paralelo: {self.MAX_CONCURRENT}")
         logger.info(f"   📊 Normalização: {self.NORMALIZATION}")
         logger.info(f"   🔥 Predictor V7.0: {'✅' if self.predictor else '❌'}")
-        logger.info(f"   🤖 Gemini (estado inicial): {'✅' if self.is_gemini_available else '⚠️'}")
-        logger.info(f"   🛡️  Circuit breaker: threshold={self.GEMINI_CIRCUIT_THRESHOLD}, cooldown={self.GEMINI_CIRCUIT_COOLDOWN}s")
+        logger.info(f"   🤖 Gemini: {'✅' if self.is_gemini_available else '⚠️'}")
+        logger.info(f"   🎯 Fallback: DATA-DRIVEN (frases com números reais)")
         logger.info("=" * 60)
 
     # ==========================================
-    # 🔄 GEMINI: REVALIDAÇÃO DINÂMICA + CIRCUIT BREAKER
+    # 🔄 GEMINI: DINÂMICO + CIRCUIT BREAKER
     # ==========================================
 
     def _load_dependencies(self):
-        """Carrega pipeline ML. Gemini NÃO é congelado — só dica inicial."""
         try:
             from backend.preprocessing import pipeline, process_file_content
             self.pipeline = pipeline
@@ -1055,16 +1656,13 @@ class MultiFileAnalyzerV6:
             self.pipeline = None
             self.process_file = None
 
-        # Gemini: apenas hint — revalidação acontece sob demanda
         try:
             from backend.gemini import get_gemini_service
             self.gemini = get_gemini_service()
-            # Checagem única, mas NÃO congelante
             try:
                 self.is_gemini_available = self._gemini_check_impl()
             except Exception:
-                logger.exception("   ⚠️ Erro no health check inicial do Gemini "
-                                 "(será revalidado dinamicamente)")
+                logger.exception("   ⚠️ Erro no health check inicial do Gemini")
                 self.is_gemini_available = False
         except ImportError:
             logger.exception("   ⚠️ Módulo Gemini não importável (usará fallback)")
@@ -1087,12 +1685,9 @@ class MultiFileAnalyzerV6:
             logger.exception("   ⚠️ Predictor V7.0 não disponível")
             self.predictor = None
 
-    # ---------- Circuit breaker ----------
-
     def _circuit_is_open(self) -> bool:
         if self._gemini_circuit_state != CircuitState.OPEN:
             return False
-        # Cooldown expirado? Transiciona para HALF_OPEN
         if (time.time() - self._gemini_circuit_opened_at) >= self.GEMINI_CIRCUIT_COOLDOWN:
             self._gemini_circuit_state = CircuitState.HALF_OPEN
             logger.info("🛡️  Circuit breaker Gemini → HALF_OPEN (testando recuperação)")
@@ -1105,7 +1700,6 @@ class MultiFileAnalyzerV6:
         self._stats["gemini_errors"] += 1
 
         if self._gemini_circuit_state == CircuitState.HALF_OPEN:
-            # Falhou no teste → reabre
             self._gemini_circuit_state = CircuitState.OPEN
             self._gemini_circuit_opened_at = time.time()
             self._stats["gemini_circuit_opens"] += 1
@@ -1127,7 +1721,6 @@ class MultiFileAnalyzerV6:
         self._gemini_last_error = None
 
     def _reset_gemini_circuit(self):
-        """Reset manual (útil para /admin/health/reset)."""
         self._gemini_circuit_state = CircuitState.CLOSED
         self._gemini_failure_count = 0
         self._gemini_circuit_opened_at = 0.0
@@ -1136,13 +1729,7 @@ class MultiFileAnalyzerV6:
         self._gemini_last_result = False
         logger.info("🛡️  Circuit breaker Gemini resetado manualmente")
 
-    # ---------- Checagem dinâmica ----------
-
     def _gemini_check_impl(self) -> bool:
-        """
-        Implementação pura da checagem. Não usa micro-cache.
-        Levanta exceções? Não — sempre retorna bool e loga com exception.
-        """
         try:
             from backend.gemini import get_gemini_service, is_gemini_available as gemini_available_fn
 
@@ -1175,27 +1762,17 @@ class MultiFileAnalyzerV6:
             return False
 
     def _gemini_is_ready(self, force: bool = False) -> bool:
-        """
-        Verifica dinamicamente se o Gemini está disponível.
-        - Usa micro-cache de GEMINI_CHECK_TTL segundos (evita overhead em bursts)
-        - Respeita o circuit breaker (bloqueia se OPEN)
-        - `force=True` ignora micro-cache (usado em /health e chamadas críticas)
-        """
         self._stats["gemini_check_calls"] += 1
 
-        # Circuit breaker aberto? Bloqueia
         if self._circuit_is_open():
             self.is_gemini_available = False
             self._gemini_last_result = False
             return False
 
         now = time.time()
-
-        # Micro-cache
         if not force and (now - self._gemini_last_check) < self.GEMINI_CHECK_TTL:
             return self._gemini_last_result
 
-        # Revalida
         result = self._gemini_check_impl()
         self._gemini_last_check = now
         self._gemini_last_result = result
@@ -1212,7 +1789,6 @@ class MultiFileAnalyzerV6:
         return result
 
     def invalidate_gemini_cache(self):
-        """Força revalidação na próxima chamada."""
         self._gemini_last_check = 0.0
 
     # ==========================================
@@ -1270,7 +1846,7 @@ class MultiFileAnalyzerV6:
         progress_callback: Optional[Callable] = None,
         db_session=None,
         process_id: int = None,
-        normalize: bool = True
+        normalize: bool = True,
     ) -> MultiFileAnalysisResult:
         start_time = time.time()
 
@@ -1384,7 +1960,6 @@ class MultiFileAnalyzerV6:
 
         tasks = [process_single_with_semaphore(f) for f in files]
 
-        # BUGFIX #9: clamp de timeout
         total_timeout = min(self.TIMEOUT_SECONDS * len(files), self.TIMEOUT_SECONDS * 3)
         try:
             results = await asyncio.wait_for(
@@ -1458,7 +2033,7 @@ class MultiFileAnalyzerV6:
                 'error': result.get('error'),
                 'precision': 0.0, 'recall': 0.0, 'f1_score': 0.0, 'roc_auc': 0.0,
                 'feature_count': feature_count,
-                'normalization': self.NORMALIZATION if normalize else "None"
+                'normalization': self.NORMALIZATION if normalize else "None",
             }
         except asyncio.TimeoutError:
             logger.error(f"❌ Timeout processando {filename}")
@@ -1593,12 +2168,13 @@ class MultiFileAnalyzerV6:
         )
 
     def _generate_comparison_summary(self, files: List[FileMetrics]) -> str:
-        if len(files) < 2: return ""
+        if len(files) < 2:
+            return ""
         best = max(files, key=lambda x: x.total_revenue)
         worst = min(files, key=lambda x: x.total_revenue)
         return (f"'{best.filename}' apresentou a maior receita "
-                f"(R$ {best.total_revenue:,.2f}), enquanto '{worst.filename}' "
-                f"teve o menor desempenho (R$ {worst.total_revenue:,.2f}).")
+                f"({_fmt_brl(best.total_revenue)}), enquanto '{worst.filename}' "
+                f"teve o menor desempenho ({_fmt_brl(worst.total_revenue)}).")
 
     def _analyze_trend(self, files: List[FileMetrics]) -> TrendResults:
         if len(files) < 2:
@@ -1609,16 +2185,16 @@ class MultiFileAnalyzerV6:
         growth_rate = (revenues[-1] - revenues[0]) / revenues[0] if revenues[0] > 0 else 0
         if growth_rate > 0.05:
             direction = TrendDirection.CRESCENTE
-            description = f"Tendência de crescimento de {growth_rate*100:.1f}%."
+            description = f"Tendência de crescimento de {_fmt_pct(growth_rate*100)}."
         elif growth_rate < -0.05:
             direction = TrendDirection.DECRESCENTE
-            description = f"Tendência de queda de {abs(growth_rate)*100:.1f}%."
+            description = f"Tendência de queda de {_fmt_pct(abs(growth_rate)*100)}."
         else:
             direction = TrendDirection.ESTAVEL
             description = "Estabilidade no período."
         observations = []
         if abs(growth_rate) > 0.1:
-            observations.append(f"Variação significativa: {growth_rate*100:.1f}%")
+            observations.append(f"Variação significativa: {_fmt_pct(growth_rate*100)}")
         if not observations:
             observations.append("Dados consistentes.")
         return TrendResults(
@@ -1693,24 +2269,28 @@ class MultiFileAnalyzerV6:
         }
 
     # ==========================================
-    # 🔥 GEMINI + FALLBACK (AGORA DINÂMICO)
+    # 🔥 GEMINI + FALLBACK DATA-DRIVEN
     # ==========================================
 
     async def _generate_gemini_analysis(self, consolidated: ConsolidatedAnalysis) -> Dict[str, Any]:
+        """
+        ⚠️ IMPORTANTE: Gemini é SEMPRE chamado PRIMEIRO.
+        O fallback DATA-DRIVEN só entra em ação se o Gemini falhar.
+        """
         logger.info("=" * 60)
         logger.info("🤖 INICIANDO ANÁLISE")
 
-        # ✅ ÚNICA VERIFICAÇÃO (não mais triple-check)
+        # ✅ Verifica se Gemini está pronto (dinâmico)
         gemini_ok = self._gemini_is_ready()
 
         if not gemini_ok:
-            logger.warning("⚠️ Gemini indisponível - usando FALLBACK INTELIGENTE")
+            logger.warning("⚠️ Gemini indisponível - usando FALLBACK DATA-DRIVEN")
             self._stats["fallback_used_count"] += 1
             return IntelligentAnalyzer.analyze_multiple_files(consolidated)
 
-        # Tentar Gemini
+        # 🔥 GEMINI PRIMEIRO — só cai no fallback se falhar
         try:
-            logger.info("📤 Enviando para Gemini...")
+            logger.info("📤 Enviando para Gemini (tentativa principal)...")
             start_time = time.time()
             analysis_data = consolidated.to_dict()
             analysis_data['analysis_type'] = 'analise_avancada'
@@ -1725,14 +2305,14 @@ class MultiFileAnalyzerV6:
             logger.info(f"⏱️ Gemini respondeu em {elapsed:.0f}ms")
 
             if not response or not response.get('success', False):
-                logger.warning("⚠️ Gemini falhou - usando FALLBACK")
+                logger.warning("⚠️ Gemini falhou - usando FALLBACK DATA-DRIVEN")
                 self._mark_gemini_failure(RuntimeError("Resposta sem sucesso"))
                 self.invalidate_gemini_cache()
                 return IntelligentAnalyzer.analyze_multiple_files(consolidated)
 
             full_text = response.get('full_analysis', '')
             if not full_text or len(full_text) < 50:
-                logger.warning("⚠️ Resposta Gemini muito curta - usando FALLBACK")
+                logger.warning("⚠️ Resposta Gemini muito curta - usando FALLBACK DATA-DRIVEN")
                 self._mark_gemini_failure(RuntimeError("Resposta muito curta"))
                 self.invalidate_gemini_cache()
                 return IntelligentAnalyzer.analyze_multiple_files(consolidated)
@@ -1752,23 +2332,23 @@ class MultiFileAnalyzerV6:
                 'model_used': response.get('model_used', 'gemini'),
                 'tokens_used': response.get('tokens_used', 0),
                 'response_time_ms': elapsed,
-                'fallback_used': False
+                'fallback_used': False,
             }
 
         except asyncio.TimeoutError:
-            logger.warning("⚠️ Timeout do Gemini - usando FALLBACK")
+            logger.warning("⚠️ Timeout do Gemini - usando FALLBACK DATA-DRIVEN")
             self._stats["gemini_timeouts"] += 1
             self._mark_gemini_failure(asyncio.TimeoutError("Timeout 60s"))
             self.invalidate_gemini_cache()
             return IntelligentAnalyzer.analyze_multiple_files(consolidated)
         except Exception as e:
-            logger.exception("⚠️ Erro no Gemini - usando FALLBACK")
+            logger.exception("⚠️ Erro no Gemini - usando FALLBACK DATA-DRIVEN")
             self._mark_gemini_failure(e)
             self.invalidate_gemini_cache()
             return IntelligentAnalyzer.analyze_multiple_files(consolidated)
 
     # ==========================================
-    # PARSERS DO GEMINI (com regex melhoradas)
+    # PARSERS DO GEMINI
     # ==========================================
 
     def _parse_executive_score(self, text: str) -> Dict[str, Any]:
@@ -1777,7 +2357,6 @@ class MultiFileAnalyzerV6:
             'controle_custos': 5.0, 'crescimento': 5.0,
             'nivel_risco': 'Moderado', 'nota_geral': 5.0
         }
-        # BUGFIX #5: regex mais tolerante (aceita "/10", "de 10", etc.)
         patterns = {
             'saude_financeira': r'Sa[úu]de Financeira[^\d]{0,10}(\d+(?:[.,]\d+)?)',
             'eficiencia': r'Efici[êe]ncia[^\d]{0,10}(\d+(?:[.,]\d+)?)',
@@ -1905,7 +2484,7 @@ class MultiFileAnalyzerV6:
         return 'medio'
 
     # ==========================================
-    # BUILD RESULT (com fallback em vez de RuntimeError)
+    # BUILD RESULT
     # ==========================================
 
     def _build_result(
@@ -1914,9 +2493,8 @@ class MultiFileAnalyzerV6:
     ) -> MultiFileAnalysisResult:
         success_count = sum(1 for r in processed_results if r.get('success'))
 
-        # BUGFIX #8: não crashar se gemini_analysis inválido — usa fallback
         if not gemini_analysis or not gemini_analysis.get('success', False):
-            logger.warning("⚠️ gemini_analysis inválido — aplicando fallback local")
+            logger.warning("⚠️ gemini_analysis inválido — aplicando fallback DATA-DRIVEN")
             gemini_analysis = IntelligentAnalyzer.analyze_multiple_files(consolidated)
 
         encodings_used = [r['encoding_used'] for r in processed_results if r.get('encoding_used')]
@@ -1951,7 +2529,7 @@ class MultiFileAnalyzerV6:
             processing_time_ms=processing_time_ms, cache_hit=False,
             encodings_used=list(set(encodings_used)),
             normalization=self.NORMALIZATION if normalize else "None",
-            model_version="V6.3", feature_count_avg=int(avg_feature_count),
+            model_version="V7.0", feature_count_avg=int(avg_feature_count),
             analysis_source=analysis_source
         )
 
@@ -1976,7 +2554,6 @@ class MultiFileAnalyzerV6:
         if isinstance(trend_data, TrendResults): return trend_data
         if isinstance(trend_data, dict):
             direction_str = str(trend_data.get('direction', 'estavel')).lower()
-            # BUGFIX #6: validação robusta
             try:
                 direction = TrendDirection(direction_str)
             except ValueError:
@@ -1991,7 +2568,7 @@ class MultiFileAnalyzerV6:
         return fallback_trend
 
     # ==========================================
-    # CACHE (com deepcopy)
+    # CACHE
     # ==========================================
 
     def _get_cache_key(self, files, user_id=None) -> str:
@@ -2012,7 +2589,6 @@ class MultiFileAnalyzerV6:
                 self._cache[key] = (data, timestamp, hits + 1)
                 self._cache_hits += 1
                 self._stats["cache_hits"] += 1
-                # BUGFIX #7: deepcopy evita mutação acidental
                 return copy.deepcopy(data)
             else:
                 del self._cache[key]
@@ -2037,13 +2613,12 @@ class MultiFileAnalyzerV6:
         logger.info(f"🧹 Cache cleared: {size} entries")
 
     def _error_result(self, error: str) -> MultiFileAnalysisResult:
-        # BUGFIX #10: campos preenchidos
         return MultiFileAnalysisResult(
             success=False, status=AnalysisStatus.FAILED.value,
             progress=1.0, total_files=0, processed_files=0,
             failed_files=0, error=error,
             timestamp=datetime.now().isoformat(),
-            model_version="V6.3"
+            model_version="V7.0"
         )
 
     def _error_file_result(self, filename: str, error: str) -> Dict[str, Any]:
@@ -2061,7 +2636,6 @@ class MultiFileAnalyzerV6:
 
     def get_stats(self) -> Dict[str, Any]:
         uptime = (datetime.now() - datetime.fromisoformat(self._stats["started_at"])).total_seconds()
-        # Usa micro-cache para não forçar revalidação a cada chamada
         gemini_ok = self._gemini_is_ready(force=False)
         return {
             **self._stats,
@@ -2079,11 +2653,12 @@ class MultiFileAnalyzerV6:
             "predictor_available": self.predictor is not None,
             "max_concurrent": self.MAX_CONCURRENT,
             "cache_ttl": self.CACHE_TTL,
-            "normalization": self.NORMALIZATION
+            "normalization": self.NORMALIZATION,
+            "fallback_engine": "intelligent_fallback_v7_data_driven",
+            "model_version": "V7.0"
         }
 
     def get_health_status(self) -> Dict[str, Any]:
-        # Force=True: sempre revalida (endpoint de health)
         gemini_ok = self._gemini_is_ready(force=True)
         return {
             "status": "healthy" if self.pipeline else "degraded",
@@ -2106,7 +2681,8 @@ class MultiFileAnalyzerV6:
             "gemini_circuit_opens": self._stats["gemini_circuit_opens"],
             "fallback_used_count": self._stats["fallback_used_count"],
             "normalization": self.NORMALIZATION,
-            "model_version": "V6.3",
+            "model_version": "V7.0",
+            "fallback_engine": "intelligent_fallback_v7_data_driven",
             "timestamp": datetime.now().isoformat()
         }
 
@@ -2145,12 +2721,12 @@ async def analyze_multiple_files(
 
 
 # ==============================================
-# TESTE (com teste específico de revalidação)
+# TESTES
 # ==============================================
 
 async def test_multi_analysis():
     print("\n" + "=" * 70)
-    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V6.3 (GEMINI DINÂMICO)")
+    print("🧪 TESTANDO ANÁLISE MÚLTIPLA V7.0 (FALLBACK DATA-DRIVEN)")
     print("=" * 70)
 
     from io import BytesIO
@@ -2193,7 +2769,7 @@ async def test_multi_analysis():
         print(f"   📁 Total: {result['total_files']}")
         print(f"   ✅ Processados: {result['processed_files']}")
         print(f"   ⏱️ Tempo: {result['processing_time_ms']:.0f}ms")
-        print(f"\n📝 RESUMO: {result.get('executive_summary', '')[:200]}")
+        print(f"\n📝 RESUMO: {result.get('executive_summary', '')[:300]}")
         print("\n✅ Teste concluído!")
         return result
     except Exception as e:
@@ -2204,36 +2780,29 @@ async def test_multi_analysis():
 
 
 async def test_gemini_revalidation():
-    """Testa especificamente a revalidação dinâmica do Gemini."""
     print("\n" + "=" * 70)
     print("🧪 TESTANDO REVALIDAÇÃO DINÂMICA DO GEMINI")
     print("=" * 70)
     analyzer = get_multi_analyzer()
 
-    # Estado inicial
     print(f"\n1️⃣ Estado inicial: is_gemini_available={analyzer.is_gemini_available}")
 
-    # Força estado "congelado" (simula V6.2)
     analyzer.is_gemini_available = False
     analyzer.invalidate_gemini_cache()
     print(f"2️⃣ Após forçar False: is_gemini_available={analyzer.is_gemini_available}")
 
-    # Revalida
     ready = analyzer._gemini_is_ready(force=True)
     print(f"3️⃣ Após revalidação: ready={ready}, is_gemini_available={analyzer.is_gemini_available}")
 
-    # Health
     health = analyzer.get_health_status()
     print(f"4️⃣ Health status: gemini={health['gemini']}, circuit={health['gemini_circuit_state']}")
 
-    # Testa circuit breaker
     print("\n5️⃣ Testando circuit breaker (3 falhas simuladas)...")
     for i in range(3):
         analyzer._mark_gemini_failure(RuntimeError(f"falha_simulada_{i}"))
     print(f"   Estado do circuit: {analyzer._gemini_circuit_state.value}")
     print(f"   Deve bloquear: {analyzer._gemini_is_ready(force=True)}")
 
-    # Reset manual
     print("\n6️⃣ Reset manual do circuit...")
     analyzer._reset_gemini_circuit()
     print(f"   Estado após reset: {analyzer._gemini_circuit_state.value}")
