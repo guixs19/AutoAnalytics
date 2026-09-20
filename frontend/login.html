@@ -91,7 +91,7 @@
         }
 
         /* ==============================================
-           BOLHAS DECORATIVAS (AZUL)
+           BOLHAS DECORATIVAS
            ============================================== */
         .bubble {
             position: fixed;
@@ -791,7 +791,7 @@
                 <strong>Dica da Ayla:</strong> envie sua planilha e receba insights em segundos.
             </div>
 
-            <button class="welcome-btn" onclick="closeWelcomeModal()">
+            <button type="button" class="welcome-btn" id="welcomeStartBtn">
                 <i class="fas fa-rocket"></i>
                 Vamos começar!
             </button>
@@ -1066,7 +1066,6 @@
             document.querySelectorAll('.auth-tab').forEach(function(tabBtn) {
                 tabBtn.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const tabName = this.getAttribute('data-tab');
                     document.querySelectorAll('.auth-tab').forEach(function(b) {
                         b.classList.remove('active');
                         b.setAttribute('aria-selected', 'false');
@@ -1298,59 +1297,94 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE BOAS-VINDAS INTELIGENTE -->
+    <!-- 🔥 SISTEMA DE BOAS-VINDAS INTELIGENTE (CORRIGIDO) -->
     <!-- ============================================== -->
     <script>
     (function() {
         'use strict';
 
-        console.log('👋 [Welcome] Sistema de boas-vindas inicializado');
+        console.log('👋 [Welcome] Sistema de boas-vindas inicializado (CORRIGIDO)');
+
+        let welcomeShown = false;
+        let isRedirecting = false;
+
+        // ==============================================
+        // 🔥 REDIRECIONAR PARA DASHBOARD
+        // ==============================================
+        function goToDashboard() {
+            if (isRedirecting) return;
+            isRedirecting = true;
+
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                console.warn('⚠️ [Welcome] Sem token! Redirecionando para login...');
+                window.location.replace('/login');
+                return;
+            }
+
+            console.log('🚀 [Welcome] Redirecionando para /dashboard...');
+            // Pequeno delay pra garantir que localStorage foi gravado
+            setTimeout(() => {
+                window.location.replace('/dashboard');
+            }, 150);
+        }
 
         // ==============================================
         // 🔥 MOSTRAR MODAL DE BOAS-VINDAS
         // ==============================================
         window.showWelcomeModal = function(userData) {
-            if (!userData) return;
+            if (!userData) {
+                goToDashboard();
+                return;
+            }
 
             const modal = document.getElementById('welcomeModal');
-            if (!modal) return;
+            if (!modal) {
+                console.warn('⚠️ [Welcome] Modal não encontrado! Redirecionando...');
+                goToDashboard();
+                return;
+            }
 
+            // Saudação por horário
             const hour = new Date().getHours();
             let greeting = 'Bem-vindo de volta!';
             let greetingIcon = 'fa-user-check';
-
-            if (hour >= 5 && hour < 12) {
-                greeting = 'Bom dia!';
-                greetingIcon = 'fa-sun';
-            } else if (hour >= 12 && hour < 18) {
-                greeting = 'Boa tarde!';
-                greetingIcon = 'fa-cloud-sun';
-            } else {
-                greeting = 'Boa noite!';
-                greetingIcon = 'fa-moon';
-            }
+            if (hour >= 5 && hour < 12) { greeting = 'Bom dia!'; greetingIcon = 'fa-sun'; }
+            else if (hour >= 12 && hour < 18) { greeting = 'Boa tarde!'; greetingIcon = 'fa-cloud-sun'; }
+            else { greeting = 'Boa noite!'; greetingIcon = 'fa-moon'; }
 
             const firstName = (userData.name || 'Usuário').split(' ')[0];
 
-            document.getElementById('welcomeGreeting').textContent = greeting;
-            document.getElementById('welcomeName').textContent = firstName;
-            document.getElementById('welcomeIcon').innerHTML = `<i class="fas ${greetingIcon}"></i>`;
-            document.getElementById('welcomeWorkshop').textContent = userData.workshop_name || 'Minha Oficina';
+            const elGreeting = document.getElementById('welcomeGreeting');
+            const elName = document.getElementById('welcomeName');
+            const elIcon = document.getElementById('welcomeIcon');
+            const elWorkshop = document.getElementById('welcomeWorkshop');
+            const elCredits = document.getElementById('welcomeCredits');
+            const elPlan = document.getElementById('welcomePlan');
+            const elLastLogin = document.getElementById('welcomeLastLogin');
+            const elTip = document.getElementById('welcomeTip');
+
+            if (elGreeting) elGreeting.textContent = greeting;
+            if (elName) elName.textContent = firstName;
+            if (elIcon) elIcon.innerHTML = `<i class="fas ${greetingIcon}"></i>`;
+            if (elWorkshop) elWorkshop.textContent = userData.workshop_name || 'Minha Oficina';
 
             const credits = userData.credits !== undefined ? userData.credits : 0;
             const isAdmin = userData.is_admin === true;
             const isPremium = userData.is_premium === true || userData.plan === 'premium_mensal';
             const creditsDisplay = isAdmin ? '∞' : (isPremium ? `${credits}/3` : String(credits));
-            document.getElementById('welcomeCredits').textContent = creditsDisplay;
+            if (elCredits) elCredits.textContent = creditsDisplay;
 
             let planLabel = 'Grátis';
-            let planColor = 'var(--branco)';
+            let planColor = '#ffffff';
             if (isAdmin) { planLabel = '👑 Admin'; planColor = '#f5a623'; }
             else if (isPremium) { planLabel = '⭐ Premium'; planColor = '#48bb78'; }
-            const planEl = document.getElementById('welcomePlan');
-            planEl.textContent = planLabel;
-            planEl.style.color = planColor;
+            if (elPlan) {
+                elPlan.textContent = planLabel;
+                elPlan.style.color = planColor;
+            }
 
+            // Último acesso
             let lastLoginText = 'Agora';
             try {
                 const lastLogin = localStorage.getItem('last_login');
@@ -1365,53 +1399,60 @@
                     else lastLoginText = `${days}d atrás`;
                 }
             } catch (e) {}
-            document.getElementById('welcomeLastLogin').textContent = lastLoginText;
+            if (elLastLogin) elLastLogin.textContent = lastLoginText;
             localStorage.setItem('last_login', String(Date.now()));
 
+            // Dica personalizada
             let tip = '';
-            if (isAdmin) {
-                tip = 'Você é <strong>Admin</strong>! Tem acesso ilimitado a todas as análises da Ayla.';
-            } else if (isPremium && credits === 0) {
-                tip = 'Você é <strong>Premium</strong>! Receba seu crédito diário na tela principal.';
-            } else if (isPremium) {
-                tip = `Você tem <strong>${credits} crédito(s)</strong>! A Ayla está pronta para analisar seus dados.`;
-            } else if (credits === 0) {
-                tip = 'Seus créditos acabaram! Assine o <strong>Premium</strong> para continuar analisando.';
-            } else {
-                tip = `Você tem <strong>${credits} crédito(s)</strong>! Envie sua planilha e receba insights da Ayla.`;
-            }
-            document.getElementById('welcomeTip').innerHTML = `<i class="fas fa-lightbulb"></i> <strong>Dica da Ayla:</strong> ${tip}`;
+            if (isAdmin) tip = 'Você é <strong>Admin</strong>! Tem acesso ilimitado a todas as análises da Ayla.';
+            else if (isPremium && credits === 0) tip = 'Você é <strong>Premium</strong>! Receba seu crédito diário na tela principal.';
+            else if (isPremium) tip = `Você tem <strong>${credits} crédito(s)</strong>! A Ayla está pronta para analisar seus dados.`;
+            else if (credits === 0) tip = 'Seus créditos acabaram! Assine o <strong>Premium</strong> para continuar analisando.';
+            else tip = `Você tem <strong>${credits} crédito(s)</strong>! Envie sua planilha e receba insights da Ayla.`;
+            if (elTip) elTip.innerHTML = `<i class="fas fa-lightbulb"></i> <strong>Dica da Ayla:</strong> ${tip}`;
 
             modal.classList.add('show');
             document.body.style.overflow = 'hidden';
 
-            console.log('✅ [Welcome] Modal de boas-vindas exibido para:', firstName);
+            console.log('✅ [Welcome] Modal exibido para:', firstName);
         };
 
         // ==============================================
-        // 🔥 FECHAR MODAL
+        // 🔥 FECHAR MODAL E IR PARA DASHBOARD
         // ==============================================
-        window.closeWelcomeModal = function() {
+        function closeModal() {
             const modal = document.getElementById('welcomeModal');
             if (modal) {
-                modal.style.animation = 'fadeOut 0.3s ease forwards';
-                setTimeout(() => {
-                    modal.classList.remove('show');
-                    modal.style.animation = '';
-                    document.body.style.overflow = '';
-                    console.log('👋 [Welcome] Redirecionando para /dashboard...');
-                    window.location.href = '/dashboard';
-                }, 300);
-            } else {
-                window.location.href = '/dashboard';
+                modal.classList.remove('show');
+                document.body.style.overflow = '';
             }
-        };
+            goToDashboard();
+        }
+
+        // Expõe globalmente
+        window.closeWelcomeModal = closeModal;
+
+        // ==============================================
+        // 🔥 BOTÃO "VAMOS COMEÇAR!" (CORRIGIDO)
+        // ==============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            const startBtn = document.getElementById('welcomeStartBtn');
+            if (startBtn) {
+                startBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🎯 [Welcome] Botão "Vamos começar!" clicado!');
+                    closeModal();
+                });
+                console.log('✅ [Welcome] Botão "Vamos começar!" configurado');
+            } else {
+                console.warn('⚠️ [Welcome] Botão #welcomeStartBtn não encontrado');
+            }
+        });
 
         // ==============================================
         // 🔥 INTERCEPTAR LOGIN BEM-SUCEDIDO
         // ==============================================
-        let welcomeShown = false;
-
         window.addEventListener('authLoginSuccess', function(e) {
             if (welcomeShown) return;
             welcomeShown = true;
@@ -1435,7 +1476,9 @@
             }, 300);
         });
 
-        // Fallback: interceptar clique no botão de login
+        // ==============================================
+        // 🔥 FALLBACK: interceptar clique no botão de login
+        // ==============================================
         document.addEventListener('DOMContentLoaded', function() {
             const loginBtn = document.getElementById('loginBtn');
             if (loginBtn) {
@@ -1466,36 +1509,29 @@
                     }, 500);
                 });
             }
-        });
 
-        // ==============================================
-        // 🔥 FECHAR COM ESC
-        // ==============================================
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                const modal = document.getElementById('welcomeModal');
-                if (modal && modal.classList.contains('show')) {
-                    window.closeWelcomeModal();
+            // Fechar com ESC → vai pro dashboard
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    const modal = document.getElementById('welcomeModal');
+                    if (modal && modal.classList.contains('show')) {
+                        closeModal();
+                    }
                 }
+            });
+
+            // Clicar fora do modal → vai pro dashboard
+            const overlay = document.getElementById('welcomeModal');
+            if (overlay) {
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) {
+                        closeModal();
+                    }
+                });
             }
         });
 
-        // ==============================================
-        // 🔥 EVITAR REDIRECIONAMENTO AUTOMÁTICO DURANTE MODAL
-        // ==============================================
-        const originalSetTimeout = window.setTimeout;
-        window.setTimeout = function(fn, delay, ...args) {
-            if (welcomeShown && delay <= 1000) {
-                const fnStr = fn.toString();
-                if (fnStr.includes('dashboard') || fnStr.includes('location.href')) {
-                    console.log('🛑 [Welcome] Redirecionamento automático bloqueado');
-                    return originalSetTimeout(() => {}, delay);
-                }
-            }
-            return originalSetTimeout(fn, delay, ...args);
-        };
-
-        console.log('✅ [Welcome] Sistema pronto!');
+        console.log('✅ [Welcome] Sistema pronto! (sem bloqueio de redirecionamento)');
     })();
     </script>
 
@@ -1589,7 +1625,8 @@
                 button.classList.remove('loading');
                 const originalText = type === 'login' ? 'Entrar no Sistema' : 'Criar Minha Conta';
                 const icon = type === 'login' ? 'fa-sign-in-alt' : 'fa-user-plus';
-                button.querySelector('.btn-text').innerHTML = `<i class="fas ${icon}"></i> ${originalText}`;
+                const btnText = button.querySelector('.btn-text');
+                if (btnText) btnText.innerHTML = `<i class="fas ${icon}"></i> ${originalText}`;
             }
             const intervalKey = '_rateLimitTimer_' + type;
             if (window[intervalKey]) { clearInterval(window[intervalKey]); window[intervalKey] = null; }
@@ -1602,7 +1639,8 @@
     <script>
         console.log('✅ Login page Ayla Mechanic carregada!');
         console.log('   🎨 Paleta: Azul #00B4FF + Preto #000000');
-        console.log('   👋 Sistema de boas-vindas inteligente ativo');
+        console.log('   👋 Sistema de boas-vindas: BOTÃO "VAMOS COMEÇAR!" CORRIGIDO');
+        console.log('   🚀 Redirecionamento: /dashboard via window.location.replace');
         console.log('   🔐 Autenticação sincronizada com backend');
     </script>
 
