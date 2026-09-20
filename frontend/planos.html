@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoAnalytics - Planos e Suporte</title>
-    
+
     <!-- ============================================== -->
     <!-- 🔥 SEGURANÇA E BLOQUEIO (MODO PASSIVO) -->
     <!-- ============================================== -->
@@ -14,25 +14,20 @@
             transition: opacity 0.3s ease;
             min-height: 100vh;
         }
-        body.app-ready {
-            opacity: 1;
-        }
+        body.app-ready { opacity: 1; }
         body.loading-state::before {
             content: '🔄 Carregando...';
             position: fixed;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             font-family: 'Inter', sans-serif;
             font-size: 1.2rem;
             color: rgba(255, 255, 255, 0.5);
             z-index: 9999;
         }
-        body.app-ready::before {
-            display: none;
-        }
+        body.app-ready::before { display: none; }
     </style>
-    
+
     <!-- ============================================== -->
     <!-- 🔥 BIBLIOTECAS -->
     <!-- ============================================== -->
@@ -41,601 +36,427 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
-    
-    <!-- 🔥 QRCode.js para geração local de QR Code -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    
+
     <style>
         /* ===== RESET E BASE ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --azul-principal: #00B4FF;
+            --azul-claro: #4FC3F7;
+            --azul-escuro: #0A1628;
+            --preto: #000000;
+            --preto-suave: #050A14;
+            --cinza-texto: #94A3B8;
+            --branco: #FFFFFF;
+            --borda-azul: rgba(0, 180, 255, 0.25);
+            --glow-azul: rgba(0, 180, 255, 0.4);
+        }
+
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            background: #000000;
+            background-image:
+                radial-gradient(circle at 20% 0%, rgba(0, 180, 255, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 80% 100%, rgba(0, 180, 255, 0.08) 0%, transparent 50%);
             min-height: 100vh;
-            color: #ffffff;
+            color: var(--branco);
             overflow-x: hidden;
         }
 
         /* ===== NAVBAR ===== */
         .navbar-modern {
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(20px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-            padding: 0.6rem 0;
-            position: fixed;
-            width: 100%;
-            top: 0;
-            z-index: 1000;
-            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
+            padding: 0.7rem 0;
+            position: fixed; width: 100%; top: 0; z-index: 1000;
+            border-bottom: 1px solid var(--borda-azul);
         }
         .brand-text {
-            font-size: 1.5rem;
-            font-weight: 900;
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-decoration: none;
+            font-size: 1.35rem; font-weight: 900;
+            text-decoration: none; letter-spacing: -0.5px;
+            display: flex; align-items: center; gap: 0.5rem;
         }
-        .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
-        .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
+        .brand-text .brand-icon {
+            width: 30px; height: 30px;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 0.9rem;
+            box-shadow: 0 0 20px var(--glow-azul);
+        }
+        .brand-text .brand-strong { color: var(--branco); }
+        .brand-text .brand-blue { color: var(--azul-principal); }
 
         .credits-badge {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            padding: 0.4rem 1.2rem;
-            border-radius: 50px;
-            color: white;
-            font-weight: 700;
-            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
-            transition: all 0.3s;
-            cursor: pointer;
-            border: none;
-            font-size: 0.85rem;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            padding: 0.4rem 1.1rem; border-radius: 50px;
+            color: white; font-weight: 700;
+            box-shadow: 0 4px 15px var(--glow-azul);
+            transition: all 0.3s; cursor: pointer; border: none;
+            font-size: 0.8rem;
         }
         .credits-badge:hover {
             transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.6);
+            box-shadow: 0 8px 30px var(--glow-azul);
         }
         .user-name-display {
-            font-weight: 600;
-            color: #2d3748;
-            font-size: 0.9rem;
+            font-weight: 600; color: rgba(255,255,255,0.85);
+            font-size: 0.85rem;
         }
-        .user-name-display i { color: #ff6b35; }
+        .user-name-display i { color: var(--azul-principal); }
         .btn-voltar {
-            background: transparent;
-            border: 2px solid rgba(255,255,255,0.2);
+            background: transparent; border: 1px solid var(--borda-azul);
             color: rgba(255,255,255,0.7);
-            padding: 0.3rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-            text-decoration: none;
+            padding: 0.35rem 1rem; border-radius: 50px;
+            font-weight: 600; font-size: 0.78rem;
+            transition: all 0.3s; text-decoration: none;
         }
         .btn-voltar:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
+            background: rgba(0, 180, 255, 0.1);
+            color: var(--azul-principal);
+            border-color: var(--azul-principal);
             transform: translateY(-2px);
         }
         .btn-sair {
-            background: transparent;
-            border: 2px solid #e53e3e;
-            color: #e53e3e;
-            padding: 0.3rem 1rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-            text-decoration: none;
+            background: transparent; border: 1px solid rgba(229, 62, 62, 0.5);
+            color: #fc8181;
+            padding: 0.35rem 1rem; border-radius: 50px;
+            font-weight: 600; font-size: 0.78rem;
+            transition: all 0.3s; text-decoration: none;
         }
         .btn-sair:hover {
-            background: #e53e3e;
-            color: white;
+            background: #e53e3e; color: white; border-color: #e53e3e;
             transform: translateY(-2px);
         }
 
         /* ===== BADGES REATIVAS ===== */
-        .auth-required { display: none; }
-        .auth-required.show { display: inline-block; }
-        .guest-only { display: none; }
-        .guest-only.show { display: inline-block; }
-        .admin-only { display: none; }
-        .admin-only.show { display: inline-block; }
-        .premium-only { display: none; }
-        .premium-only.show { display: inline-block; }
-        .premium-days-badge { display: none; }
-        .premium-days-badge.show { display: inline-block; }
+        .auth-required, .guest-only, .admin-only, .premium-only, .premium-days-badge { display: none; }
+        .auth-required.show, .guest-only.show, .admin-only.show,
+        .premium-only.show, .premium-days-badge.show { display: inline-block; }
 
         /* ===== CONTEÚDO ===== */
-        .hero-section { padding: 100px 0 40px; min-height: 100vh; }
+        .hero-section { padding: 95px 0 40px; min-height: 100vh; }
 
         .glass-card {
-            background: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(20px);
-            border-radius: 24px;
+            border-radius: 20px;
             padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             color: white;
         }
 
         /* ===== NAVEGAÇÃO POR ABAS ===== */
         .tab-navigation {
-            display: flex;
-            gap: 0.5rem;
-            background: rgba(255,255,255,0.05);
-            border-radius: 16px;
-            padding: 0.5rem;
+            display: flex; gap: 0.5rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 14px; padding: 0.4rem;
             border: 1px solid rgba(255,255,255,0.06);
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-            justify-content: center;
+            margin-bottom: 1.75rem;
+            flex-wrap: wrap; justify-content: center;
+            max-width: 420px; margin-left: auto; margin-right: auto;
         }
         .tab-btn {
-            padding: 0.7rem 2rem;
-            border: none;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            cursor: pointer;
-            background: transparent;
-            color: rgba(255,255,255,0.5);
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            flex: 1;
-            justify-content: center;
-            min-width: 140px;
+            padding: 0.65rem 1.8rem; border: none; border-radius: 10px;
+            font-weight: 600; font-size: 0.9rem;
+            transition: all 0.3s ease; cursor: pointer;
+            background: transparent; color: rgba(255,255,255,0.45);
+            display: flex; align-items: center; gap: 0.5rem;
+            flex: 1; justify-content: center; min-width: 130px;
         }
-        .tab-btn:hover {
-            color: rgba(255,255,255,0.8);
-            background: rgba(255,255,255,0.05);
-        }
+        .tab-btn:hover { color: rgba(255,255,255,0.8); background: rgba(0,180,255,0.05); }
         .tab-btn.active {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
-            transform: translateY(-2px);
+            box-shadow: 0 6px 20px var(--glow-azul);
         }
 
-        .tab-content {
-            display: none;
-            animation: tabFadeIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
+        .tab-content { display: none; animation: tabFadeIn 0.4s ease; }
         .tab-content.active { display: block; }
 
         @keyframes tabFadeIn {
-            from { opacity: 0; transform: translateY(20px) scale(0.98); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         /* ============================================== */
-        /* 🔥 ESTILOS DO PLANO - CARD PRINCIPAL */
+        /* 🔥 CARD DO PLANO - VERSÃO COMPACTA E PREMIUM */
         /* ============================================== */
-        
-        .bronze-card {
-            background: linear-gradient(145deg, rgba(44, 26, 10, 0.95) 0%, rgba(61, 38, 20, 0.95) 100%);
-            border-radius: 40px;
-            padding: 3rem;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(205, 127, 50, 0.3);
+        .plan-card {
+            background: linear-gradient(160deg, #0A1628 0%, #050A14 100%);
+            border-radius: 24px;
+            padding: 1.75rem;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6),
+                        0 0 0 1px var(--borda-azul),
+                        0 0 80px rgba(0, 180, 255, 0.08);
             position: relative;
             overflow: hidden;
-            max-width: 680px;
+            max-width: 520px;
             margin: 0 auto;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            border: 1px solid #cd7f32;
+            transition: all 0.4s ease;
         }
-        .bronze-card::before {
+        .plan-card::before {
             content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle, rgba(205, 127, 50, 0.08) 0%, transparent 70%);
+            position: absolute; top: -50%; right: -50%;
+            width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(0, 180, 255, 0.1) 0%, transparent 70%);
             pointer-events: none;
         }
-        .bronze-card::after {
+        .plan-card::after {
             content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, transparent, #cd7f32, #f5a623, #cd7f32, transparent);
-            opacity: 0.5;
+            position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--azul-principal), transparent);
+            opacity: 0.8;
         }
-        .bronze-card:hover {
-            transform: translateY(-8px) scale(1.01);
-            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(205, 127, 50, 0.5);
+        .plan-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.7),
+                        0 0 0 1px var(--azul-principal),
+                        0 0 100px rgba(0, 180, 255, 0.15);
         }
 
-        .bronze-card.premium-active {
-            background: linear-gradient(145deg, rgba(26, 71, 42, 0.95) 0%, rgba(45, 106, 79, 0.95) 100%);
-            border: 2px solid #48bb78;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(72, 187, 120, 0.3);
+        .plan-card.premium-active {
+            background: linear-gradient(160deg, #0A2818 0%, #051410 100%);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6),
+                        0 0 0 2px rgba(72, 187, 120, 0.5),
+                        0 0 80px rgba(72, 187, 120, 0.15);
         }
-        .bronze-card.premium-active .bronze-badge {
-            background: linear-gradient(135deg, #48bb78, #2d6a4f);
-        }
-
-        .bronze-card.admin-card {
-            border: 2px solid #f5a623;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(245, 166, 35, 0.3);
-        }
-        .bronze-card.admin-card .bronze-badge {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
+        .plan-card.premium-active::after {
+            background: linear-gradient(90deg, transparent, #48bb78, transparent);
         }
 
-        .bronze-badge {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: linear-gradient(135deg, #cd7f32, #b8681e);
+        .plan-card.admin-card {
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6),
+                        0 0 0 2px rgba(245, 166, 35, 0.5),
+                        0 0 80px rgba(245, 166, 35, 0.15);
+        }
+
+        /* ===== BADGE DO PLANO ===== */
+        .plan-badge {
+            position: absolute; top: 14px; right: 14px;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
-            padding: 0.5rem 1.2rem;
-            border-radius: 50px;
-            font-weight: 700;
-            font-size: 0.85rem;
+            padding: 0.35rem 0.9rem; border-radius: 50px;
+            font-weight: 700; font-size: 0.68rem;
             z-index: 10;
-            box-shadow: 0 4px 20px rgba(205, 127, 50, 0.4);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            box-shadow: 0 4px 20px var(--glow-azul);
+            display: flex; align-items: center; gap: 0.4rem;
+            text-transform: uppercase; letter-spacing: 0.5px;
             animation: badgePulse 2s ease-in-out infinite;
-            transition: all 0.5s ease;
         }
         @keyframes badgePulse {
-            0%, 100% { box-shadow: 0 4px 20px rgba(205, 127, 50, 0.4); }
-            50% { box-shadow: 0 4px 40px rgba(205, 127, 50, 0.7); }
+            0%, 100% { box-shadow: 0 4px 20px var(--glow-azul); }
+            50% { box-shadow: 0 4px 35px rgba(0, 180, 255, 0.8); }
         }
 
-        .bronze-title {
+        /* ===== TÍTULO DO PLANO ===== */
+        .plan-title {
             text-align: center;
-            margin-bottom: 1.5rem;
-            position: relative;
-            z-index: 1;
+            margin-bottom: 0.85rem;
+            position: relative; z-index: 1;
         }
-        .bronze-title .icon-big {
-            font-size: 3.5rem;
-            display: block;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .plan-title .icon-big {
+            font-size: 2.2rem; display: block; margin-bottom: 0.25rem;
+            color: var(--azul-principal);
+            text-shadow: 0 0 30px var(--glow-azul);
         }
-        .bronze-title h2 {
-            font-size: 2.8rem;
-            font-weight: 900;
-            background: linear-gradient(135deg, #f5a623, #cd7f32);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.3rem;
-            letter-spacing: -1px;
+        .plan-title h2 {
+            font-size: 1.7rem; font-weight: 900;
+            color: var(--branco); margin-bottom: 0.15rem;
+            letter-spacing: -0.5px;
         }
-        .bronze-title .subtitle {
-            color: rgba(255,255,255,0.4);
-            font-size: 0.95rem;
-            font-weight: 400;
+        .plan-title .subtitle {
+            color: var(--cinza-texto);
+            font-size: 0.8rem; font-weight: 400;
         }
 
+        /* ===== PREÇO ===== */
         .price-container {
             text-align: center;
-            margin: 1rem 0 1.5rem;
-            position: relative;
-            z-index: 1;
+            margin: 0.6rem 0 0.9rem;
+            position: relative; z-index: 1;
         }
         .old-price {
             text-decoration: line-through;
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 1.4rem;
-            display: block;
-            font-weight: 400;
+            color: rgba(255, 255, 255, 0.25);
+            font-size: 0.9rem; display: block; font-weight: 400;
         }
         .price-tag {
-            font-size: 4.5rem;
-            font-weight: 900;
-            color: #f5a623;
-            line-height: 1;
-            margin: 0.2rem 0;
-            text-shadow: 0 0 40px rgba(245, 166, 35, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.3rem;
+            font-size: 2.8rem; font-weight: 900;
+            color: var(--azul-principal);
+            line-height: 1; margin: 0.15rem 0;
+            text-shadow: 0 0 40px var(--glow-azul);
+            display: flex; align-items: baseline;
+            justify-content: center; gap: 0.15rem;
         }
-        .price-tag .currency {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #cd7f32;
-        }
-        .price-tag .cents {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #cd7f32;
-        }
-        .price-tag small {
-            font-size: 1rem;
-            font-weight: 400;
-            color: rgba(255, 255, 255, 0.4);
-        }
+        .price-tag .currency { font-size: 1.1rem; font-weight: 700; color: var(--azul-claro); }
+        .price-tag .cents { font-size: 1.1rem; font-weight: 700; color: var(--azul-claro); }
+        .price-tag small { font-size: 0.78rem; font-weight: 400; color: var(--cinza-texto); margin-left: 0.3rem; }
+
         .economy-badge {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
-            color: white;
-            padding: 0.3rem 1.2rem;
-            border-radius: 50px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            display: inline-block;
-            margin-top: 0.5rem;
-            box-shadow: 0 4px 15px rgba(245, 166, 35, 0.3);
-            transition: all 0.5s ease;
+            background: rgba(0, 180, 255, 0.12);
+            color: var(--azul-principal);
+            padding: 0.25rem 0.85rem; border-radius: 50px;
+            font-size: 0.68rem; font-weight: 700;
+            display: inline-block; margin-top: 0.35rem;
+            border: 1px solid var(--borda-azul);
         }
 
-        .bronze-features {
-            position: relative;
-            z-index: 1;
-            margin: 1.5rem 0;
-        }
-        .bronze-feature {
-            display: flex;
-            align-items: center;
-            padding: 0.7rem 0;
-            border-bottom: 1px solid rgba(205, 127, 50, 0.12);
-            color: rgba(255, 255, 255, 0.85);
-            transition: all 0.3s;
-        }
-        .bronze-feature:hover {
-            padding-left: 0.5rem;
-            border-bottom-color: rgba(205, 127, 50, 0.3);
-        }
-        .bronze-feature:last-child { border-bottom: none; }
-        .bronze-feature i { 
-            color: #f5a623; 
-            width: 32px; 
-            font-size: 1.1rem;
-            text-align: center;
-        }
-        .bronze-feature strong { color: #f5a623; }
-        .bronze-feature .check {
-            color: #48bb78;
-            margin-right: 0.5rem;
-        }
-
-        .plan-info {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 20px;
-            padding: 1.2rem;
-            margin: 1.5rem 0;
-            border: 1px solid rgba(205, 127, 50, 0.2);
-            position: relative;
-            z-index: 1;
-        }
-        .plan-info .row { text-align: center; }
-        .plan-info .col-4 {
-            border-right: 1px solid rgba(205, 127, 50, 0.15);
-            padding: 0.3rem 0;
-        }
-        .plan-info .col-4:last-child { border-right: none; }
-        .plan-info .number {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: #f5a623;
-            display: block;
-            line-height: 1.2;
-        }
-        .plan-info .label {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.4);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* ============================================== */
-        /* 🔥 VAGAS - ESTRATÉGIA DE ESCASSEZ */
-        /* ============================================== */
-        
+        /* ===== VAGAS ===== */
         .vagas-container {
             background: rgba(0, 0, 0, 0.4);
-            border-radius: 60px;
-            padding: 1.2rem 1.8rem;
-            margin: 1.5rem 0;
-            border: 1px solid rgba(205, 127, 50, 0.3);
-            position: relative;
-            z-index: 1;
+            border-radius: 14px;
+            padding: 0.8rem 1rem;
+            margin: 0.9rem 0;
+            border: 1px solid var(--borda-azul);
+            position: relative; z-index: 1;
             transition: all 0.5s ease;
         }
         .vagas-container.urgent {
             border-color: #f5a623;
             animation: urgentPulse 1.5s ease-in-out infinite;
-            box-shadow: 0 0 40px rgba(245, 166, 35, 0.1);
         }
         .vagas-container.sold-out {
             border-color: #dc3545;
-            background: rgba(220, 53, 69, 0.1);
+            background: rgba(220, 53, 69, 0.08);
         }
-        .vagas-container.sold-out .vagas-number {
-            color: #dc3545;
-        }
-
         @keyframes urgentPulse {
-            0%, 100% { 
-                border-color: rgba(245, 166, 35, 0.3);
-                box-shadow: 0 0 20px rgba(245, 166, 35, 0.05);
-            }
-            50% { 
-                border-color: rgba(245, 166, 35, 0.8);
-                box-shadow: 0 0 40px rgba(245, 166, 35, 0.2);
-            }
+            0%, 100% { box-shadow: 0 0 15px rgba(245, 166, 35, 0.05); }
+            50% { box-shadow: 0 0 30px rgba(245, 166, 35, 0.15); }
         }
-
         .vagas-number {
-            font-size: 2.8rem;
-            font-weight: 900;
-            color: #f5a623;
-            display: inline-block;
-            line-height: 1;
-            transition: all 0.3s ease;
-            min-width: 50px;
+            font-size: 1.6rem; font-weight: 900;
+            color: var(--azul-principal);
+            display: inline-block; line-height: 1;
+            transition: all 0.3s ease; min-width: 40px;
         }
-        .vagas-number.pulse {
-            animation: numberPulse 0.5s ease;
-        }
-
+        .vagas-number.pulse { animation: numberPulse 0.5s ease; }
         @keyframes numberPulse {
             0% { transform: scale(1); }
-            40% { transform: scale(1.5); color: #ff6b35; }
+            40% { transform: scale(1.4); color: var(--azul-claro); }
             100% { transform: scale(1); }
         }
-
-        .vagas-total {
-            font-size: 0.9rem;
-            color: rgba(255, 255, 255, 0.25);
-        }
-        .vagas-percent {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.2);
-        }
+        .vagas-total { font-size: 0.75rem; color: rgba(255, 255, 255, 0.3); }
+        .vagas-percent { font-size: 0.6rem; color: rgba(255, 255, 255, 0.25); }
 
         .vagas-progress {
-            height: 6px;
-            background: rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            margin-top: 0.8rem;
-            overflow: hidden;
-            position: relative;
+            height: 5px; background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px; margin-top: 0.55rem; overflow: hidden;
         }
         .vagas-progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, #cd7f32, #f5a623);
+            background: linear-gradient(90deg, var(--azul-principal), var(--azul-claro));
             border-radius: 10px;
             transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
         }
-        .vagas-progress-bar.urgent {
-            background: linear-gradient(90deg, #f5a623, #e67e22);
-            animation: progressPulse 1.5s ease-in-out infinite;
-        }
-        .vagas-progress-bar.sold-out {
-            background: linear-gradient(90deg, #dc3545, #c0392b);
-        }
-
-        @keyframes progressPulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
+        .vagas-progress-bar.urgent { background: linear-gradient(90deg, #f5a623, #e67e22); }
+        .vagas-progress-bar.sold-out { background: linear-gradient(90deg, #dc3545, #c0392b); }
 
         .vagas-alert {
-            margin-top: 0.8rem;
-            padding: 0.6rem 1rem;
-            border-radius: 50px;
-            text-align: center;
-            font-weight: 600;
-            font-size: 0.85rem;
-            display: none;
-            animation: slideDown 0.5s ease;
+            margin-top: 0.55rem; padding: 0.45rem 0.85rem;
+            border-radius: 50px; text-align: center;
+            font-weight: 600; font-size: 0.72rem;
+            display: none; animation: slideDown 0.5s ease;
         }
         .vagas-alert.show { display: block; }
-
         @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
         .vagas-alert.urgent {
-            background: rgba(245, 166, 35, 0.12);
+            background: rgba(245, 166, 35, 0.1);
             border: 1px solid rgba(245, 166, 35, 0.3);
             color: #f5a623;
         }
-        .vagas-alert.urgent i {
-            animation: alertPulse 1s ease-in-out infinite;
-        }
         .vagas-alert.sold-out {
-            background: rgba(220, 53, 69, 0.12);
+            background: rgba(220, 53, 69, 0.1);
             border: 1px solid rgba(220, 53, 69, 0.3);
             color: #dc3545;
         }
-
-        @keyframes alertPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-        }
-
         .vagas-counter-text {
-            font-size: 0.55rem;
-            color: rgba(255, 255, 255, 0.12);
-            text-align: center;
-            margin-top: 0.5rem;
+            font-size: 0.5rem; color: rgba(255, 255, 255, 0.12);
+            text-align: center; margin-top: 0.35rem;
             letter-spacing: 0.5px;
         }
 
-        /* ============================================== */
-        /* 🔥 BOTÕES */
-        /* ============================================== */
+        /* ===== FEATURES ===== */
+        .plan-features { position: relative; z-index: 1; margin: 0.85rem 0; }
+        .plan-feature {
+            display: flex; align-items: center;
+            padding: 0.45rem 0;
+            border-bottom: 1px solid rgba(0, 180, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.82rem;
+            transition: all 0.3s;
+        }
+        .plan-feature:hover {
+            padding-left: 0.4rem;
+            border-bottom-color: rgba(0, 180, 255, 0.2);
+        }
+        .plan-feature:last-child { border-bottom: none; }
+        .plan-feature i { color: var(--azul-principal); width: 22px; font-size: 0.85rem; }
+        .plan-feature strong { color: var(--branco); }
 
+        /* ===== STATS ===== */
+        .plan-stats {
+            background: rgba(0, 180, 255, 0.04);
+            border-radius: 12px;
+            padding: 0.8rem 0.5rem;
+            margin: 0.85rem 0;
+            border: 1px solid var(--borda-azul);
+            position: relative; z-index: 1;
+        }
+        .plan-stats .row { text-align: center; margin: 0; }
+        .plan-stats .col-4 {
+            border-right: 1px solid rgba(0, 180, 255, 0.15);
+            padding: 0.25rem 0;
+        }
+        .plan-stats .col-4:last-child { border-right: none; }
+        .plan-stats .number {
+            font-size: 1.3rem; font-weight: 800;
+            color: var(--azul-principal);
+            display: block; line-height: 1.2;
+        }
+        .plan-stats .label {
+            font-size: 0.58rem; color: var(--cinza-texto);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        /* ===== BOTÕES ===== */
         .btn-upgrade {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
-            color: white;
-            border: none;
-            padding: 1.2rem 2rem;
-            border-radius: 60px;
-            font-weight: 800;
-            font-size: 1.2rem;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 10px 40px rgba(245, 166, 35, 0.4);
-            width: 100%;
-            position: relative;
-            z-index: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.8rem;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            color: white; border: none;
+            padding: 0.9rem 1.5rem; border-radius: 50px;
+            font-weight: 800; font-size: 0.95rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 40px var(--glow-azul);
+            width: 100%; position: relative; z-index: 1;
+            display: flex; align-items: center; justify-content: center;
+            gap: 0.4rem; flex-direction: column;
         }
         .btn-upgrade:hover {
-            transform: translateY(-3px) scale(1.01);
-            box-shadow: 0 15px 50px rgba(245, 166, 35, 0.6);
+            transform: translateY(-3px);
+            box-shadow: 0 15px 50px rgba(0, 180, 255, 0.6);
             color: white;
         }
-        .btn-upgrade:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-        }
+        .btn-upgrade:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
         .btn-upgrade.sold-out {
             background: linear-gradient(135deg, #6c757d, #495057);
             box-shadow: none;
         }
-        .btn-upgrade.sold-out:hover {
-            transform: none;
-        }
-        .btn-upgrade.loading {
-            opacity: 0.7;
-            pointer-events: none;
-        }
-        .btn-upgrade.loading .spinner {
-            display: inline-block;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .btn-upgrade.loading { opacity: 0.7; pointer-events: none; }
 
         .btn-premium-active {
             background: linear-gradient(135deg, #28a745, #20c997);
-            color: white;
-            border: none;
-            padding: 1.2rem 2rem;
-            border-radius: 60px;
-            font-weight: 800;
-            font-size: 1.2rem;
-            width: 100%;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            gap: 0.8rem;
+            color: white; border: none;
+            padding: 0.9rem 1.5rem; border-radius: 50px;
+            font-weight: 800; font-size: 0.95rem;
+            width: 100%; display: none;
+            align-items: center; justify-content: center;
+            gap: 0.4rem; flex-direction: column;
             box-shadow: 0 10px 40px rgba(40, 167, 69, 0.4);
             cursor: default;
         }
@@ -643,260 +464,229 @@
 
         .btn-admin {
             background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-            border: none;
-            padding: 1.2rem 2rem;
-            border-radius: 60px;
-            font-weight: 800;
-            font-size: 1.2rem;
-            width: 100%;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            gap: 0.8rem;
+            color: white; border: none;
+            padding: 0.9rem 1.5rem; border-radius: 50px;
+            font-weight: 800; font-size: 0.95rem;
+            width: 100%; display: none;
+            align-items: center; justify-content: center;
+            gap: 0.4rem; flex-direction: column;
             box-shadow: 0 10px 40px rgba(243, 156, 18, 0.4);
             cursor: default;
         }
         .btn-admin.show { display: flex; }
 
-        /* ===== OUTROS ===== */
-        .limit-warning {
-            background: rgba(245, 166, 35, 0.06);
-            border-left: 4px solid #f5a623;
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            margin-top: 1rem;
-            font-size: 0.85rem;
-            color: rgba(255, 255, 255, 0.6);
-        }
-        .limit-warning i { color: #f5a623; margin-right: 0.5rem; }
+        .btn-small { font-size: 0.68rem; font-weight: 400; opacity: 0.9; }
 
-        .credits-explanation {
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: 16px;
-            padding: 1.25rem;
-            margin-top: 1.5rem;
-            border: 1px solid rgba(205, 127, 50, 0.15);
+        /* ===== INFO / SEALS ===== */
+        .limit-warning {
+            background: rgba(0, 180, 255, 0.06);
+            border-left: 3px solid var(--azul-principal);
+            padding: 0.6rem 0.85rem;
+            border-radius: 10px; margin-top: 0.8rem;
+            font-size: 0.75rem; color: rgba(255, 255, 255, 0.65);
         }
-        .credits-explanation .step {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.75rem;
-            padding: 0.4rem 0;
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 0.85rem;
-        }
-        .credits-explanation .step i {
-            color: #f5a623;
-            font-size: 1rem;
-            margin-top: 0.15rem;
-            min-width: 20px;
-        }
-        .credits-explanation .step strong { color: #f5a623; }
-        .credits-explanation .highlight-box {
-            background: rgba(245, 166, 35, 0.06);
-            border-radius: 12px;
-            padding: 0.75rem 1rem;
-            margin-top: 0.75rem;
-            border-left: 3px solid #f5a623;
-        }
+        .limit-warning i { color: var(--azul-principal); margin-right: 0.4rem; }
+        .limit-warning strong { color: var(--azul-principal); }
 
         .security-seals {
-            display: flex;
-            gap: 0.8rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 1rem;
+            display: flex; gap: 0.5rem;
+            justify-content: center; flex-wrap: wrap;
+            margin-top: 0.8rem;
         }
         .security-seals .seal {
-            background: rgba(255,255,255,0.04);
-            color: rgba(255,255,255,0.4);
-            padding: 0.3rem 0.8rem;
-            border-radius: 50px;
-            font-size: 0.6rem;
-            border: 1px solid rgba(255,255,255,0.04);
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
+            background: rgba(0, 180, 255, 0.05);
+            color: rgba(255, 255, 255, 0.5);
+            padding: 0.25rem 0.7rem; border-radius: 50px;
+            font-size: 0.58rem;
+            border: 1px solid var(--borda-azul);
+            display: flex; align-items: center; gap: 0.35rem;
         }
-        .security-seals .seal i { color: #48bb78; }
+        .security-seals .seal i { color: var(--azul-principal); }
+
+        /* ===== SEÇÃO COMO FUNCIONA ===== */
+        .step-card {
+            background: rgba(0, 180, 255, 0.03);
+            border-radius: 16px;
+            padding: 1.25rem 1rem;
+            border: 1px solid var(--borda-azul);
+            text-align: center;
+            height: 100%;
+            transition: all 0.3s ease;
+        }
+        .step-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--azul-principal);
+            background: rgba(0, 180, 255, 0.06);
+        }
+        .step-number {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; font-size: 1.1rem;
+            color: white; margin: 0 auto 0.75rem;
+            box-shadow: 0 0 20px var(--glow-azul);
+        }
+        .step-card h6 {
+            font-weight: 700; color: var(--branco);
+            font-size: 0.95rem; margin-bottom: 0.4rem;
+        }
+        .step-card p {
+            color: var(--cinza-texto);
+            font-size: 0.78rem; margin: 0;
+            line-height: 1.5;
+        }
+
+        /* ===== SEÇÃO O QUE ANALISA ===== */
+        .analyze-item {
+            background: rgba(0, 180, 255, 0.03);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+            border: 1px solid var(--borda-azul);
+            display: flex; align-items: center; gap: 0.75rem;
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        .analyze-item:hover {
+            background: rgba(0, 180, 255, 0.08);
+            transform: translateX(4px);
+        }
+        .analyze-item i {
+            color: var(--azul-principal);
+            font-size: 1.1rem;
+            min-width: 24px; text-align: center;
+        }
+        .analyze-item span {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.82rem; font-weight: 500;
+        }
 
         /* ===== SUPORTE ===== */
         .support-card {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(20px);
-            border-radius: 24px;
-            padding: 2rem;
-            border: 1px solid rgba(255,255,255,0.08);
-            color: white;
-            transition: all 0.4s;
+            border-radius: 20px; padding: 1.75rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: white; transition: all 0.3s;
         }
         .support-card:hover {
             transform: translateY(-4px);
-            background: rgba(255,255,255,0.09);
-            border-color: rgba(255, 107, 53, 0.2);
+            background: rgba(0, 180, 255, 0.04);
+            border-color: var(--borda-azul);
         }
         .support-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.5rem;
-            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+            width: 60px; height: 60px;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.5rem;
+            box-shadow: 0 10px 30px var(--glow-azul);
         }
         .support-email-link {
-            color: #f5a623;
-            text-decoration: none;
-            font-size: 1.2rem;
-            font-weight: 600;
-            transition: all 0.3s;
+            color: var(--azul-principal); text-decoration: none;
+            font-size: 1.05rem; font-weight: 600;
+            transition: all 0.3s; word-break: break-all;
         }
         .support-email-link:hover {
-            color: #ff6b35;
-            text-decoration: underline;
+            color: var(--azul-claro); text-decoration: underline;
         }
 
         .faq-item {
-            border-left: 3px solid rgba(255,255,255,0.08);
-            transition: all 0.3s;
-            padding: 0.8rem 1rem;
-            border-radius: 12px;
+            border-left: 3px solid rgba(0, 180, 255, 0.15);
+            transition: all 0.3s; padding: 0.7rem 0.9rem;
+            border-radius: 10px;
             background: rgba(255,255,255,0.02);
-            margin-bottom: 0.5rem;
-            cursor: pointer;
+            margin-bottom: 0.5rem; cursor: pointer;
         }
         .faq-item:hover {
-            border-left-color: #f5a623;
-            background: rgba(255,107,53,0.05);
+            border-left-color: var(--azul-principal);
+            background: rgba(0, 180, 255, 0.05);
         }
         .faq-question {
-            font-weight: 600;
-            transition: all 0.3s;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            font-weight: 600; transition: all 0.3s;
+            display: flex; justify-content: space-between; align-items: center;
             color: rgba(255,255,255,0.85);
+            font-size: 0.88rem;
         }
-        .faq-question:hover { color: #f5a623; }
+        .faq-question:hover { color: var(--azul-principal); }
         .faq-answer {
-            display: none;
-            margin-top: 0.5rem;
+            display: none; margin-top: 0.5rem;
             color: rgba(255,255,255,0.6);
-            font-size: 0.9rem;
-            line-height: 1.6;
+            font-size: 0.82rem; line-height: 1.6;
         }
         .faq-answer.open { display: block; }
 
         .quick-contact-form {
-            background: rgba(255,255,255,0.04);
-            border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(0, 180, 255, 0.03);
+            border-radius: 14px; padding: 1.25rem;
+            border: 1px solid var(--borda-azul);
         }
         .quick-contact-form .form-control,
         .quick-contact-form .form-select {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
-            color: white;
-            border-radius: 12px;
-            padding: 0.75rem 1rem;
+            color: white; border-radius: 10px;
+            padding: 0.65rem 0.9rem;
         }
         .quick-contact-form .form-control:focus,
         .quick-contact-form .form-select:focus {
-            background: rgba(255,255,255,0.1);
-            border-color: #f5a623;
-            box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.15);
+            background: rgba(0, 180, 255, 0.08);
+            border-color: var(--azul-principal);
+            box-shadow: 0 0 0 3px rgba(0, 180, 255, 0.15);
             color: white;
         }
-        .quick-contact-form .form-control::placeholder {
-            color: rgba(255,255,255,0.3);
-        }
-        .quick-contact-form .form-select option {
-            background: #1a1a2e;
-            color: white;
-        }
+        .quick-contact-form .form-control::placeholder { color: rgba(255,255,255,0.3); }
+        .quick-contact-form .form-select option { background: #0A1628; color: white; }
         .btn-support {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-            border: none;
-            padding: 0.75rem;
-            border-radius: 12px;
-            font-weight: 700;
-            transition: all 0.3s;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            color: white; border: none;
+            padding: 0.7rem; border-radius: 10px;
+            font-weight: 700; transition: all 0.3s;
         }
         .btn-support:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
+            box-shadow: 0 8px 30px var(--glow-azul);
             color: white;
         }
 
         .format-badge {
             display: inline-block;
-            background: rgba(255,255,255,0.06);
-            padding: 0.5rem 1rem;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(0, 180, 255, 0.05);
+            padding: 0.6rem 1rem; border-radius: 12px;
+            border: 1px solid var(--borda-azul);
             color: rgba(255,255,255,0.7);
         }
-        .format-badge i { color: #48bb78; margin-right: 0.5rem; }
-
-        .admin-badge {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
-            color: white;
-            padding: 0.3rem 0.8rem;
-            border-radius: 50px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            display: none;
-        }
-        .admin-badge.show { display: inline-block; }
+        .format-badge i { color: var(--azul-principal); margin-right: 0.5rem; }
 
         .premium-days-badge {
-            background: linear-gradient(135deg, #f5a623, #e67e22);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
-            padding: 0.15rem 0.6rem;
-            border-radius: 50px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            display: none;
+            padding: 0.2rem 0.7rem; border-radius: 50px;
+            font-size: 0.65rem; font-weight: 600;
         }
-        .premium-days-badge.show { display: inline-block; }
 
         .rate-limit-indicator {
-            display: none;
-            margin-top: 10px;
-            padding: 10px 12px;
-            border-radius: 12px;
+            display: none; margin-top: 10px;
+            padding: 10px 12px; border-radius: 12px;
             font-size: 0.85rem;
             background: rgba(229, 62, 62, 0.15);
             color: #fc8181;
             border: 1px solid rgba(229, 62, 62, 0.2);
-            align-items: center;
-            gap: 10px;
+            align-items: center; gap: 10px;
         }
         .rate-limit-indicator.show { display: flex; }
         .rate-limit-indicator .timer {
-            font-weight: 700;
-            font-family: monospace;
-            font-size: 1.1rem;
-            color: #fc8181;
+            font-weight: 700; font-family: monospace;
+            font-size: 1.1rem; color: #fc8181;
         }
 
         .pow-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0.15rem 0.6rem;
-            border-radius: 50px;
-            font-size: 0.6rem;
-            font-weight: 700;
-            background: rgba(72, 187, 120, 0.15);
-            border: 1px solid rgba(72, 187, 120, 0.3);
-            color: #48bb78;
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.15rem 0.6rem; border-radius: 50px;
+            font-size: 0.6rem; font-weight: 700;
+            background: rgba(0, 180, 255, 0.1);
+            border: 1px solid var(--borda-azul);
+            color: var(--azul-principal);
             cursor: default;
         }
         .pow-status.loading {
@@ -915,52 +705,46 @@
             50% { opacity: 0.5; }
         }
 
-        /* ===== TOAST PERSONALIZADO ===== */
+        /* ===== TOAST ===== */
         .toast-custom {
-            background: rgba(0,0,0,0.8) !important;
+            background: rgba(0,0,0,0.9) !important;
             backdrop-filter: blur(10px) !important;
-            border: 1px solid rgba(255,107,53,0.3) !important;
+            border: 1px solid var(--borda-azul) !important;
             color: white !important;
         }
-        .toast-custom .toast-title {
-            color: #ff6b35 !important;
-        }
+        .toast-custom .toast-title { color: var(--azul-principal) !important; }
 
         /* ===== RESPONSIVIDADE ===== */
         @media (max-width: 992px) {
             .hero-section { padding: 90px 0 30px; }
-            .bronze-card { padding: 2rem; }
-            .price-tag { font-size: 3.5rem; }
-            .vagas-number { font-size: 2.2rem; }
+            .plan-card { padding: 1.5rem; max-width: 480px; }
+            .price-tag { font-size: 2.5rem; }
         }
         @media (max-width: 768px) {
-            .navbar-modern .container { flex-wrap: wrap; gap: 0.5rem; }
+            .navbar-modern .container { flex-wrap: wrap; gap: 0.4rem; }
             .brand-text { font-size: 1.1rem; }
             .tab-btn { padding: 0.5rem 1rem; font-size: 0.8rem; min-width: 100px; }
-            .bronze-card { padding: 1.5rem; margin: 0 0.5rem; }
-            .bronze-title h2 { font-size: 2rem; }
-            .price-tag { font-size: 3rem; }
-            .vagas-number { font-size: 1.8rem; }
-            .vagas-container { padding: 1rem 1.2rem; }
-            .plan-info .number { font-size: 1.4rem; }
-            .bronze-badge { font-size: 0.7rem; padding: 0.3rem 0.8rem; top: 12px; right: 12px; }
+            .plan-card { padding: 1.25rem; margin: 0 0.5rem; }
+            .plan-title h2 { font-size: 1.5rem; }
+            .price-tag { font-size: 2.3rem; }
+            .vagas-number { font-size: 1.4rem; }
+            .plan-stats .number { font-size: 1.15rem; }
+            .plan-badge { font-size: 0.6rem; padding: 0.28rem 0.7rem; top: 10px; right: 10px; }
         }
         @media (max-width: 480px) {
             .hero-section { padding: 80px 0 20px; }
             .glass-card { padding: 1rem; }
-            .tab-btn { padding: 0.4rem 0.6rem; font-size: 0.7rem; min-width: 70px; gap: 0.3rem; }
+            .tab-btn { padding: 0.4rem 0.6rem; font-size: 0.72rem; min-width: 80px; gap: 0.3rem; }
             .tab-btn i { font-size: 0.8rem; }
-            .bronze-card { padding: 1rem; border-radius: 28px; }
-            .bronze-title h2 { font-size: 1.6rem; }
-            .price-tag { font-size: 2.4rem; }
-            .price-tag .currency { font-size: 1.2rem; }
-            .price-tag .cents { font-size: 1.2rem; }
-            .vagas-number { font-size: 1.5rem; }
-            .vagas-container { padding: 0.8rem 1rem; }
-            .btn-upgrade { font-size: 1rem; padding: 0.8rem 1.2rem; }
-            .plan-info .number { font-size: 1.2rem; }
-            .bronze-feature { font-size: 0.85rem; padding: 0.5rem 0; }
-            .bronze-badge { font-size: 0.6rem; padding: 0.2rem 0.6rem; top: 10px; right: 10px; }
+            .plan-card { padding: 1rem; border-radius: 20px; }
+            .plan-title h2 { font-size: 1.3rem; }
+            .plan-title .icon-big { font-size: 1.8rem; }
+            .price-tag { font-size: 2rem; }
+            .price-tag .currency, .price-tag .cents { font-size: 0.9rem; }
+            .vagas-number { font-size: 1.3rem; }
+            .btn-upgrade, .btn-premium-active, .btn-admin { font-size: 0.85rem; padding: 0.75rem 1rem; }
+            .plan-stats .number { font-size: 1rem; }
+            .plan-feature { font-size: 0.75rem; padding: 0.4rem 0; }
         }
     </style>
 </head>
@@ -971,32 +755,32 @@
     <!-- ============================================== -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
-            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap">
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
                 <a class="brand-text text-decoration-none" href="/dashboard">
-                    <i class="fas fa-wrench me-2"></i>
-                    Auto<span>Analytics</span>
+                    <span class="brand-icon"><i class="fas fa-chart-line"></i></span>
+                    <span><span class="brand-strong">Auto</span><span class="brand-blue">Analytics</span></span>
                 </a>
-                
+
                 <div class="d-flex align-items-center gap-2 gap-md-3 flex-wrap">
                     <span class="user-name-display">
                         <i class="fas fa-user-circle"></i>
                         <span id="userName">Carregando...</span>
                     </span>
-                    
+
                     <div class="credits-badge" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
                         <i class="fas fa-coins me-1"></i>
                         <span id="creditsCount">0</span>
                     </div>
-                    
+
                     <span class="pow-status loading" id="powStatus" title="Proof of Work">
                         <i class="fas fa-shield-alt"></i>
                         <span id="powStatusText">⚡ Pronto</span>
                     </span>
-                    
+
                     <a href="/dashboard" class="btn-voltar">
                         <i class="fas fa-arrow-left me-1"></i> Voltar
                     </a>
-                    
+
                     <a href="#" class="btn-sair" id="logoutBtn">
                         <i class="fas fa-sign-out-alt me-1"></i> Sair
                     </a>
@@ -1010,18 +794,18 @@
     <!-- ============================================== -->
     <section class="hero-section">
         <div class="container">
-            
+
             <!-- ===== HEADER ===== -->
             <div class="row mb-4">
                 <div class="col-12 text-center" data-aos="fade-down">
-                    <span class="highlight-badge" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.2rem 0.8rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
-                        <i class="fas fa-crown me-1"></i> Plano Bronze - Edição Limitada
+                    <span style="display:inline-block; background:rgba(0,180,255,0.12); color:var(--azul-principal); border:1px solid var(--borda-azul); padding:0.35rem 1rem; border-radius:50px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px;">
+                        <i class="fas fa-crown me-1"></i> AutoAnalytics + Ayla
                     </span>
-                    <h1 class="display-4 fw-bold mt-2" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                        Escolha o melhor para sua oficina
+                    <h1 class="display-5 fw-bold mt-3" style="color: var(--branco); letter-spacing: -1px;">
+                        Transforme os dados da sua oficina em <span style="color: var(--azul-principal);">decisões mais claras</span>.
                     </h1>
-                    <p class="lead" style="color: rgba(255,255,255,0.6); max-width: 600px; margin: 0 auto;">
-                        Apenas <strong style="color: #f5a623;" id="vagasHeaderText">100</strong> vagas com preço especial. Garanta a sua antes que acabe!
+                    <p class="lead" style="color: var(--cinza-texto); max-width: 680px; margin: 0 auto; font-size: 1rem;">
+                        A Ayla analisa os dados da sua oficina e ajuda você a entender o que está acontecendo com o seu negócio.
                     </p>
                 </div>
             </div>
@@ -1046,7 +830,7 @@
             <div class="tab-content active" id="tab-planos">
                 <div class="row justify-content-center">
                     <div class="col-lg-8 text-center mb-3" data-aos="fade-up">
-                        <span id="userStatusBadge" class="badge" style="background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.8rem;">
+                        <span id="userStatusBadge" class="badge" style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); padding: 0.4rem 1.2rem; border-radius: 50px; font-size:0.78rem;">
                             <i class="fas fa-user me-1"></i> Plano Grátis
                         </span>
                         <span class="premium-days-badge" id="premiumDaysBadge">
@@ -1059,69 +843,65 @@
                 <!-- 🔥 CARD DO PLANO -->
                 <div class="row justify-content-center" id="plans-container" data-aos="fade-up" data-aos-duration="800">
                     <div class="col-lg-8 mx-auto">
-                        <div class="bronze-card" id="planCard">
-                            
-                            <div class="bronze-badge" id="planBadge">
+                        <div class="plan-card" id="planCard">
+
+                            <div class="plan-badge" id="planBadge">
                                 <i class="fas fa-fire"></i> <span id="planBadgeText">🔥 CARREGANDO VAGAS...</span>
                             </div>
-                            
-                            <div class="bronze-title">
+
+                            <div class="plan-title">
                                 <span class="icon-big"><i class="fas fa-crown"></i></span>
-                                <h2>Plano Bronze</h2>
-                                <p class="subtitle">O plano ideal para sua oficina crescer com IA</p>
+                                <h2>Plano Premium</h2>
+                                <p class="subtitle">Inteligência artificial a favor da sua oficina</p>
                             </div>
-                            
+
                             <div class="price-container" id="priceContainer">
-                                <span class="old-price" id="oldPrice">De R$ 149,90</span>
+                                <span class="old-price" id="oldPrice">De R$ 149,00</span>
                                 <div class="price-tag" id="priceTag">
                                     R$ <span id="currentPrice">97</span><span class="cents">,00</span>
-                                    <small>à vista</small>
+                                    <small>/mês</small>
                                 </div>
                                 <span class="economy-badge" id="economyBadge">
                                     <i class="fas fa-tag"></i> Economia de 35%
                                 </span>
                             </div>
-                            
+
                             <!-- 🔥 VAGAS -->
                             <div class="vagas-container" id="vagasContainer">
-                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                     <div style="flex:1;">
-                                        <div style="font-size: 0.65rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;">
-                                            <i class="fas fa-ticket-alt me-1" style="color: #f5a623;"></i> VAGAS PROMOCIONAIS
+                                        <div style="font-size: 0.6rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;">
+                                            <i class="fas fa-ticket-alt me-1" style="color: var(--azul-principal);"></i> VAGAS PROMOCIONAIS
                                         </div>
-                                        <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center gap-2">
                                             <span class="vagas-number" id="vagasRestantes">--</span>
                                             <span class="vagas-total">de <span id="vagasTotal">100</span></span>
-                                            <span class="vagas-percent" id="vagasPercentText">0% preenchidas</span>
+                                            <span class="vagas-percent" id="vagasPercentText">0%</span>
                                         </div>
                                     </div>
                                     <div style="flex:1.5; min-width:80px;">
                                         <div class="vagas-progress">
                                             <div class="vagas-progress-bar" id="vagasProgress" style="width: 0%;"></div>
                                         </div>
-                                        <div class="d-flex justify-content-between mt-1">
-                                            <span style="color: rgba(255,255,255,0.15); font-size: 0.45rem;">Disponíveis</span>
-                                            <span style="color: rgba(255,255,255,0.15); font-size: 0.45rem;">Esgotadas</span>
-                                        </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="vagas-alert urgent" id="vagasUrgentAlert">
                                     <i class="fas fa-exclamation-triangle me-2"></i>
-                                    ⚡ <strong>ÚLTIMAS <span id="vagasUrgentCount">0</span> VAGAS!</strong> Corra antes que acabe!
+                                    ⚡ <strong>ÚLTIMAS <span id="vagasUrgentCount">0</span> VAGAS!</strong>
                                 </div>
-                                
+
                                 <div class="vagas-alert sold-out" id="vagasSoldOutAlert">
                                     <i class="fas fa-times-circle me-2"></i>
-                                    ❌ <strong>PROMOÇÃO ESGOTADA!</strong> O preço voltou para R$ 149,90
+                                    ❌ <strong>PROMOÇÃO ESGOTADA!</strong> Voltou para R$ 149,90
                                 </div>
-                                
+
                                 <div class="vagas-counter-text">
                                     <i class="fas fa-sync-alt me-1"></i> Atualizado em tempo real
                                 </div>
                             </div>
-                            
-                            <div class="plan-info">
+
+                            <div class="plan-stats">
                                 <div class="row">
                                     <div class="col-4">
                                         <span class="number">30</span>
@@ -1129,7 +909,7 @@
                                     </div>
                                     <div class="col-4">
                                         <span class="number">3</span>
-                                        <span class="label">Arquivos/vez</span>
+                                        <span class="label">Arquivos</span>
                                     </div>
                                     <div class="col-4">
                                         <span class="number">∞</span>
@@ -1137,100 +917,66 @@
                                     </div>
                                 </div>
                             </div>
-                            
-                            <div class="bronze-features">
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
+
+                            <div class="plan-features">
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
                                     <span><strong>30 créditos</strong> para análises completas</span>
                                 </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
-                                    <span><strong>Análise com IA</strong> (Google Gemini)</span>
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span><strong>Análise com IA</strong> (Ayla + Google Gemini)</span>
                                 </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
                                     <span><strong>Até 3 arquivos</strong> por análise (CSV/Excel)</span>
                                 </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
                                     <span>📊 <strong>Dashboard completo</strong> com métricas</span>
                                 </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
                                     <span>📄 <strong>Relatórios em PDF</strong> automáticos</span>
                                 </div>
-                                <div class="bronze-feature">
-                                    <i class="fas fa-check-circle check"></i>
+                                <div class="plan-feature">
+                                    <i class="fas fa-check-circle"></i>
                                     <span><strong>Suporte prioritário</strong> por email</span>
                                 </div>
                             </div>
-                            
+
                             <!-- 🔥 BOTÕES REATIVOS -->
-                            <div class="d-grid gap-3 mt-4">
-                                
+                            <div class="d-grid gap-2 mt-3">
                                 <button class="btn-upgrade" id="btnUpgrade">
-                                    <i class="fas fa-bolt me-2"></i>
-                                    🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
-                                    <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                                    <span><i class="fas fa-bolt me-2"></i> 🔥 GARANTIR PREÇO FUNDADOR R$ 97,00</span>
+                                    <small class="btn-small">Pagamento seguro via PIX</small>
                                 </button>
-                                
+
                                 <button class="btn-premium-active" id="btnPremiumActive">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    ✅ PLANO ATIVO
-                                    <small class="d-block fs-10">Aproveite todos os benefícios</small>
+                                    <span><i class="fas fa-check-circle me-2"></i> ✅ PLANO ATIVO</span>
+                                    <small class="btn-small">Aproveite todos os benefícios</small>
                                 </button>
-                                
+
                                 <button class="btn-admin" id="btnAdmin">
-                                    <i class="fas fa-crown me-2"></i>
-                                    👑 ADMIN - ACESSO ILIMITADO
-                                    <small class="d-block fs-10">Você tem créditos infinitos</small>
+                                    <span><i class="fas fa-crown me-2"></i> 👑 ADMIN - ACESSO ILIMITADO</span>
+                                    <small class="btn-small">Você tem créditos infinitos</small>
                                 </button>
-                                
                             </div>
-                            
+
                             <div class="limit-warning">
                                 <i class="fas fa-info-circle"></i>
-                                <span>Este é um <strong>plano vitalício</strong> com preço especial para os primeiros <strong>100 clientes</strong>. Após esgotar, o preço volta para R$ 149,90.</span>
+                                <span>Plano <strong>sem contrato de fidelidade</strong>. Preço especial para os primeiros <strong>100 usuários</strong>. Após esgotar, volta para R$ 149,90.</span>
                             </div>
-                            
-                            <div class="credits-explanation">
-                                <div class="step">
-                                    <i class="fas fa-coins"></i>
-                                    <span><strong>Como funcionam os créditos:</strong></span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-plus-circle"></i>
-                                    <span>Você começa com <strong>3 créditos grátis</strong></span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-gem"></i>
-                                    <span>Com o <strong>Plano Bronze</strong>, você ganha <strong>30 créditos</strong> para usar quando quiser</span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-chart-line"></i>
-                                    <span>Cada análise consome <strong>1 crédito</strong> por arquivo</span>
-                                </div>
-                                <div class="step">
-                                    <i class="fas fa-calendar-day"></i>
-                                    <span><strong>⭐ Premium:</strong> 1 crédito novo por dia (até o limite de 3)</span>
-                                </div>
-                                <div class="highlight-box">
-                                    <span>
-                                        <i class="fas fa-bolt" style="color:#f5a623;"></i>
-                                        <strong>Dica:</strong> Use seus créditos estrategicamente para análises mais importantes e maximize o ROI da sua oficina!
-                                    </span>
-                                </div>
-                            </div>
-                            
+
                             <div class="security-seals">
                                 <span class="seal"><i class="fas fa-lock"></i> Pagamento Seguro</span>
                                 <span class="seal"><i class="fas fa-shield-alt"></i> PoW Protegido</span>
                                 <span class="seal"><i class="fas fa-credit-card"></i> PIX</span>
                             </div>
-                            
-                            <p class="text-center small mt-4 mb-0" style="color: rgba(255,255,255,0.6);">
-                                <i class="fas fa-check-circle text-warning me-1"></i>
-                                Após o pagamento, você receberá 1 crédito por dia durante 30 dias
+
+                            <p class="text-center small mt-3 mb-0" style="color: rgba(255,255,255,0.5); font-size:0.72rem;">
+                                <i class="fas fa-check-circle" style="color: var(--azul-principal);"></i>
+                                Você fornece os dados. A Ayla ajuda você a entender o negócio.
                             </p>
                         </div>
                     </div>
@@ -1240,8 +986,148 @@
                 <div class="row justify-content-center mt-3" id="rateLimitContainer">
                     <div class="col-lg-8">
                         <div class="rate-limit-indicator" id="rateLimitIndicator">
-                            <span><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></span>
+                            <span><i class="fas fa-exclamation-triangle"></i></span>
                             <span id="rateLimitMessage">Muitas tentativas. Aguarde <span class="timer" id="rateLimitTimer">60</span>s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 🔥 SEÇÃO: O QUE A AYLA ANALISA -->
+                <!-- ============================================== -->
+                <div class="row justify-content-center mt-5" data-aos="fade-up">
+                    <div class="col-lg-9">
+                        <div class="text-center mb-4">
+                            <h2 class="fw-bold" style="color: var(--branco); font-size: 1.6rem;">
+                                <i class="fas fa-brain me-2" style="color: var(--azul-principal);"></i>
+                                O que a Ayla analisa para você
+                            </h2>
+                            <p style="color: var(--cinza-texto); font-size: 0.9rem;">
+                                Você envia sua planilha e a Ayla organiza as informações para mostrar pontos importantes.
+                            </p>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-dollar-sign"></i>
+                                    <span>Faturamento e lucro</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-percentage"></i>
+                                    <span>Custos e margem</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-wrench"></i>
+                                    <span>Serviços e desempenho da oficina</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <span>Riscos e pontos de atenção</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Crescimento e tendências</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="analyze-item">
+                                    <i class="fas fa-eye"></i>
+                                    <span>Indicadores que passam despercebidos</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="glass-card mt-4 text-center" style="background: rgba(0,180,255,0.04); border: 1px solid var(--borda-azul);">
+                            <i class="fas fa-file-alt fa-2x mb-2" style="color: var(--azul-principal);"></i>
+                            <p class="mb-0" style="color: rgba(255,255,255,0.75); font-size: 0.88rem;">
+                                Depois da análise, você recebe um <strong style="color: var(--azul-principal);">diagnóstico da sua oficina</strong>,
+                                com gráficos, informações importantes e recomendações para ajudar na tomada de decisões.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 🔥 SEÇÃO: COMO FUNCIONA -->
+                <!-- ============================================== -->
+                <div class="row justify-content-center mt-5" data-aos="fade-up">
+                    <div class="col-lg-10">
+                        <div class="text-center mb-4">
+                            <h2 class="fw-bold" style="color: var(--branco); font-size: 1.6rem;">
+                                <i class="fas fa-cogs me-2" style="color: var(--azul-principal);"></i>
+                                Como funciona?
+                            </h2>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="step-card">
+                                    <div class="step-number">1</div>
+                                    <h6>Cadastre-se</h6>
+                                    <p>Crie sua conta e receba seus créditos iniciais.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="step-card">
+                                    <div class="step-number">2</div>
+                                    <h6>Envie sua planilha</h6>
+                                    <p>Você envia os dados da sua oficina em poucos passos.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="step-card">
+                                    <div class="step-number">3</div>
+                                    <h6>Deixe a Ayla analisar</h6>
+                                    <p>A Ayla processa os dados e identifica os principais pontos do seu negócio.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="step-card">
+                                    <div class="step-number">4</div>
+                                    <h6>Veja o resultado</h6>
+                                    <p>Confira os indicadores, gráficos, riscos e oportunidades encontrados.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="step-card">
+                                    <div class="step-number">5</div>
+                                    <h6>Baixe seu relatório</h6>
+                                    <p>Tenha as informações organizadas em um relatório para consultar quando precisar.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 🔥 SEÇÃO: PLANO PREMIUM -->
+                <!-- ============================================== -->
+                <div class="row justify-content-center mt-5" data-aos="fade-up">
+                    <div class="col-lg-9">
+                        <div class="glass-card" style="background: rgba(0,180,255,0.04); border: 1px solid var(--borda-azul); text-align: center;">
+                            <i class="fas fa-crown fa-2x mb-3" style="color: var(--azul-principal);"></i>
+                            <h3 class="fw-bold mb-3" style="color: var(--branco); font-size: 1.4rem;">Plano Premium</h3>
+                            <p style="color: rgba(255,255,255,0.75); font-size: 0.9rem; max-width: 600px; margin: 0 auto 1rem;">
+                                Com o Premium, você pode continuar utilizando as análises da Ayla para acompanhar os dados da sua oficina e transformar suas informações em decisões mais claras.
+                            </p>
+                            <div class="d-flex flex-wrap justify-content-center gap-2">
+                                <span class="badge" style="background:rgba(0,180,255,0.12); color:var(--azul-principal); padding:0.5rem 1rem; border:1px solid var(--borda-azul); font-weight:600;">
+                                    <i class="fas fa-tag me-1"></i> De R$149 por R$97/mês
+                                </span>
+                                <span class="badge" style="background:rgba(0,180,255,0.12); color:var(--azul-principal); padding:0.5rem 1rem; border:1px solid var(--borda-azul); font-weight:600;">
+                                    <i class="fas fa-users me-1"></i> Primeiros 100 usuários
+                                </span>
+                                <span class="badge" style="background:rgba(0,180,255,0.12); color:var(--azul-principal); padding:0.5rem 1rem; border:1px solid var(--borda-azul); font-weight:600;">
+                                    <i class="fas fa-check-circle me-1"></i> Sem fidelidade
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1250,32 +1136,32 @@
                 <div class="row justify-content-center mt-4" data-aos="fade-up" data-aos-delay="200">
                     <div class="col-lg-8">
                         <div class="glass-card">
-                            <h5 class="card-title mb-3">
-                                <i class="fas fa-upload"></i> Formatos suportados
+                            <h5 class="card-title mb-3" style="font-size: 1rem;">
+                                <i class="fas fa-upload me-2" style="color: var(--azul-principal);"></i> Formatos suportados
                             </h5>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <div class="format-badge d-flex align-items-center">
+                                    <div class="format-badge d-flex align-items-center w-100">
                                         <i class="fas fa-file-csv fa-2x me-3"></i>
                                         <div>
-                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos CSV</h6>
+                                            <h6 class="fw-bold mb-0" style="color:white; font-size:0.9rem;">Arquivos CSV</h6>
                                             <small style="color:rgba(255,255,255,0.4);">Delimitados por vírgula</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="format-badge d-flex align-items-center">
+                                    <div class="format-badge d-flex align-items-center w-100">
                                         <i class="fas fa-file-excel fa-2x me-3"></i>
                                         <div>
-                                            <h6 class="fw-bold mb-0" style="color:white;">Arquivos Excel</h6>
+                                            <h6 class="fw-bold mb-0" style="color:white; font-size:0.9rem;">Arquivos Excel</h6>
                                             <small style="color:rgba(255,255,255,0.4);">.xlsx e .xls</small>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="mt-3 text-center small" style="color:rgba(255,255,255,0.3);">
+                            <div class="mt-3 text-center small" style="color:rgba(255,255,255,0.3); font-size:0.72rem;">
                                 <i class="fas fa-layer-group me-1"></i>
-                                Máximo de 3 arquivos por vez | <strong style="color:#48bb78;">Limite de 200KB por arquivo</strong>
+                                Máximo de 3 arquivos por vez | <strong style="color: var(--azul-principal);">Limite de 200KB por arquivo</strong>
                             </div>
                         </div>
                     </div>
@@ -1283,7 +1169,7 @@
             </div>
 
             <!-- ============================================== -->
-            <!-- 🔥 ABA 2: ATENDIMENTO AO CLIENTE -->
+            <!-- 🔥 ABA 2: ATENDIMENTO -->
             <!-- ============================================== -->
             <div class="tab-content" id="tab-suporte">
                 <div class="row justify-content-center">
@@ -1292,52 +1178,50 @@
                             <div class="support-icon mx-auto mb-3" style="width:70px; height:70px; font-size:2rem;">
                                 <i class="fas fa-headset"></i>
                             </div>
-                            <h2 class="fw-bold" style="color:white;">Precisa de Ajuda?</h2>
-                            <p style="color:rgba(255,255,255,0.5);">Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!</p>
+                            <h2 class="fw-bold" style="color:white; font-size:1.5rem;">Precisa de Ajuda?</h2>
+                            <p style="color:rgba(255,255,255,0.5); font-size:0.9rem;">
+                                Estamos aqui para ajudar sua oficina a ter sucesso com o AutoAnalytics!
+                            </p>
                         </div>
                         <div class="row g-4">
                             <div class="col-md-6">
                                 <div class="support-card h-100">
                                     <div class="d-flex align-items-start mb-3">
-                                        <i class="fas fa-envelope fa-2x me-3" style="color:#f5a623;"></i>
+                                        <i class="fas fa-envelope fa-2x me-3" style="color: var(--azul-principal);"></i>
                                         <div>
-                                            <h5 class="fw-bold mb-1" style="color:white;">Email de Suporte</h5>
-                                            <a href="mailto:autonalytics@gmail.com" class="support-email-link">
-                                                autonalytics@gmail.com
+                                            <h5 class="fw-bold mb-1" style="color:white; font-size:1.05rem;">Email de Suporte</h5>
+                                            <a href="mailto:autoanalyticss@gmail.com" class="support-email-link">
+                                                autoanalyticss@gmail.com
                                             </a>
-                                            <p class="mt-2 small" style="color:rgba(255,255,255,0.4);">
+                                            <p class="mt-2 small" style="color:rgba(255,255,255,0.4); font-size:0.78rem;">
                                                 <i class="fas fa-clock me-1"></i>
                                                 Respondemos em até 24h úteis
                                             </p>
                                         </div>
                                     </div>
                                     <div class="mt-3 pt-2">
-                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
-                                            <i class="fas fa-check-circle text-success me-2"></i> Dúvidas sobre o plano Bronze
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.85rem;">
+                                            <i class="fas fa-check-circle me-2" style="color: var(--azul-principal);"></i> Dúvidas sobre o plano Premium
                                         </div>
-                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
-                                            <i class="fas fa-check-circle text-success me-2"></i> Problemas com pagamento
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.85rem;">
+                                            <i class="fas fa-check-circle me-2" style="color: var(--azul-principal);"></i> Problemas com pagamento
                                         </div>
-                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
-                                            <i class="fas fa-check-circle text-success me-2"></i> Suporte técnico para análises
+                                        <div class="d-flex align-items-center mb-2" style="color:rgba(255,255,255,0.7); font-size:0.85rem;">
+                                            <i class="fas fa-check-circle me-2" style="color: var(--azul-principal);"></i> Suporte técnico para análises
                                         </div>
-                                        <div class="d-flex align-items-center" style="color:rgba(255,255,255,0.7); font-size:0.9rem;">
-                                            <i class="fas fa-check-circle text-success me-2"></i> Sugestões e feedbacks
+                                        <div class="d-flex align-items-center" style="color:rgba(255,255,255,0.7); font-size:0.85rem;">
+                                            <i class="fas fa-check-circle me-2" style="color: var(--azul-principal);"></i> Sugestões e feedbacks
                                         </div>
                                     </div>
                                     <div class="mt-4 pt-3 border-top" style="border-color:rgba(255,255,255,0.06);">
                                         <div class="d-flex flex-wrap gap-2 justify-content-center">
-                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
-                                                <i class="fas fa-calendar-alt me-1" style="color:#f5a623;"></i>
+                                            <span class="badge" style="background:rgba(0,180,255,0.08); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem; font-size:0.68rem;">
+                                                <i class="fas fa-calendar-alt me-1" style="color:var(--azul-principal);"></i>
                                                 Segunda a Sexta
                                             </span>
-                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
-                                                <i class="fas fa-clock me-1" style="color:#f5a623;"></i>
+                                            <span class="badge" style="background:rgba(0,180,255,0.08); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem; font-size:0.68rem;">
+                                                <i class="fas fa-clock me-1" style="color:var(--azul-principal);"></i>
                                                 9h às 18h
-                                            </span>
-                                            <span class="badge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); padding:0.4rem 0.8rem;">
-                                                <i class="fas fa-tachometer-alt me-1" style="color:#f5a623;"></i>
-                                                Resposta em até 24h
                                             </span>
                                         </div>
                                     </div>
@@ -1345,59 +1229,60 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="support-card h-100">
-                                    <h5 class="fw-bold mb-3" style="color:white;">
-                                        <i class="fas fa-question-circle me-2" style="color:#f5a623;"></i>
+                                    <h5 class="fw-bold mb-3" style="color:white; font-size:1.05rem;">
+                                        <i class="fas fa-question-circle me-2" style="color: var(--azul-principal);"></i>
                                         Perguntas Frequentes
                                     </h5>
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
-                                            <span><i class="fas fa-coins me-2" style="color:#f5a623;"></i>Como funcionam os créditos?</span>
+                                            <span><i class="fas fa-coins me-2" style="color:var(--azul-principal);"></i>Como funcionam os créditos?</span>
                                             <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
                                         <div class="faq-answer">
-                                            Cada análise consome 1 crédito. Gratuito começa com 3 créditos. Premium recebe <strong style="color:#f5a623;">1 crédito NOVO por dia</strong>!
+                                            Cada análise consome 1 crédito. Gratuito começa com 3 créditos. Premium recebe <strong style="color:var(--azul-principal);">1 crédito novo por dia</strong>!
                                         </div>
                                     </div>
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
-                                            <span><i class="fas fa-chart-line me-2" style="color:#f5a623;"></i>O que acontece quando os créditos acabam?</span>
+                                            <span><i class="fas fa-chart-line me-2" style="color:var(--azul-principal);"></i>O que acontece quando os créditos acabam?</span>
                                             <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
                                         <div class="faq-answer">
-                                            Assine o plano Bronze (R$ 97,00) e receba <strong style="color:#f5a623;">30 créditos totais</strong> para usar quando quiser!
+                                            Assine o Plano Premium (R$ 97,00) e receba <strong style="color:var(--azul-principal);">30 créditos totais</strong> para usar quando quiser!
                                         </div>
                                     </div>
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
-                                            <span><i class="fas fa-credit-card me-2" style="color:#f5a623;"></i>Como comprar o plano?</span>
+                                            <span><i class="fas fa-credit-card me-2" style="color:var(--azul-principal);"></i>Como comprar o plano?</span>
                                             <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
                                         <div class="faq-answer">
-                                            Clique em <strong style="color:#f5a623;">"Garantir Preço Fundador"</strong>, informe seu CPF e finalize com PIX. Fácil e seguro!
+                                            Clique em <strong style="color:var(--azul-principal);">"Garantir Preço Fundador"</strong>, informe seu CPF e finalize com PIX. Fácil e seguro!
                                         </div>
                                     </div>
                                     <div class="faq-item" onclick="toggleFaq(this)">
                                         <div class="faq-question">
-                                            <span><i class="fas fa-mobile-alt me-2" style="color:#f5a623;"></i>Posso usar no celular?</span>
+                                            <span><i class="fas fa-mobile-alt me-2" style="color:var(--azul-principal);"></i>Posso usar no celular?</span>
                                             <i class="fas fa-chevron-down" style="color:rgba(255,255,255,0.3); transition:transform 0.3s;"></i>
                                         </div>
                                         <div class="faq-answer">
-                                            Sim! O sistema é <strong style="color:#f5a623;">100% responsivo</strong> e funciona perfeitamente em qualquer dispositivo.
+                                            Sim! O sistema é <strong style="color:var(--azul-principal);">100% responsivo</strong> e funciona perfeitamente em qualquer dispositivo.
                                         </div>
                                     </div>
+
                                     <div class="quick-contact-form mt-4">
-                                        <h6 class="fw-bold mb-3" style="color:white;">
-                                            <i class="fas fa-paper-plane me-2" style="color:#f5a623;"></i>
+                                        <h6 class="fw-bold mb-3" style="color:white; font-size:0.95rem;">
+                                            <i class="fas fa-paper-plane me-2" style="color:var(--azul-principal);"></i>
                                             Mensagem Rápida
                                         </h6>
                                         <form id="quickSupportForm">
-                                            <div class="mb-3">
+                                            <div class="mb-2">
                                                 <input type="text" class="form-control" id="supportName" placeholder="Seu nome" required>
                                             </div>
-                                            <div class="mb-3">
+                                            <div class="mb-2">
                                                 <input type="email" class="form-control" id="supportEmail" placeholder="Seu email" required>
                                             </div>
-                                            <div class="mb-3">
+                                            <div class="mb-2">
                                                 <select class="form-select" id="supportSubject">
                                                     <option value="Dúvida sobre o plano">Dúvida sobre o plano</option>
                                                     <option value="Problema no pagamento">Problema no pagamento</option>
@@ -1414,7 +1299,7 @@
                                             </button>
                                         </form>
                                         <div class="text-center mt-3">
-                                            <small style="color:rgba(255,255,255,0.3);">
+                                            <small style="color:rgba(255,255,255,0.3); font-size:0.72rem;">
                                                 <i class="fas fa-lock me-1"></i>
                                                 Suas informações são seguras
                                             </small>
@@ -1430,9 +1315,9 @@
             <!-- ===== RODAPÉ ===== -->
             <div class="row mt-5">
                 <div class="col-12 text-center">
-                    <p style="color: rgba(255,255,255,0.12); font-size: 0.7rem;">
-                        <i class="fas fa-wrench me-1"></i>
-                        AutoAnalytics v3.7 - Planos e Suporte
+                    <p style="color: rgba(255,255,255,0.15); font-size: 0.7rem;">
+                        <i class="fas fa-chart-line me-1"></i>
+                        AutoAnalytics v3.8 — Planos e Suporte
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt me-1"></i>
                         Protegido por PoW
@@ -1453,30 +1338,31 @@
     <!-- Template: Modal CPF -->
     <template id="cpfModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #f5a623;">
+            <div class="modal-content" style="background: linear-gradient(135deg, #0A1628 0%, #050A14 100%); border: 1px solid var(--azul-principal);">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color: #f5a623;">
+                    <h5 class="modal-title" style="color: var(--azul-principal);">
                         <i class="fas fa-id-card me-2"></i>Confirme seu CPF
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white-50 mb-3">
-                        <i class="fas fa-shield-alt me-2"></i> 
+                    <p class="text-white-50 mb-3" style="font-size:0.9rem;">
+                        <i class="fas fa-shield-alt me-2" style="color:var(--azul-principal);"></i>
                         CPF obrigatório para gerar PIX e proteger sua compra.
                     </p>
                     <div class="mb-3">
-                        <label class="form-label text-white">CPF</label>
-                        <input type="text" class="form-control form-control-lg" 
-                               id="cpfInput" placeholder="000.000.000-00" maxlength="14" 
-                               style="background: rgba(255,255,255,0.1); border-color: #f5a623; color: white; border-radius:12px;">
-                        <div class="form-text text-white-50">Apenas números (11 dígitos)</div>
+                        <label class="form-label text-white" style="font-size:0.85rem;">CPF</label>
+                        <input type="text" class="form-control form-control-lg"
+                               id="cpfInput" placeholder="000.000.000-00" maxlength="14"
+                               autocomplete="off"
+                               style="background: rgba(255,255,255,0.05); border-color: var(--azul-principal); color: white; border-radius:12px;">
+                        <div class="form-text text-white-50" style="font-size:0.75rem;">Apenas números (11 dígitos)</div>
                     </div>
                     <div id="cpfError" class="alert alert-danger d-none" role="alert"></div>
                 </div>
                 <div class="modal-footer border-0">
                     <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.6); border:none; border-radius:50px; padding:0.5rem 1.5rem;" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-bronze" id="cpfConfirmBtn" style="background: linear-gradient(135deg, #f5a623, #e67e22); color: white; border: none; border-radius:50px; padding:0.5rem 1.5rem; font-weight:700;">
+                    <button type="button" class="btn" id="cpfConfirmBtn" style="background: linear-gradient(135deg, var(--azul-principal), #0077B6); color: white; border: none; border-radius:50px; padding:0.5rem 1.5rem; font-weight:700;">
                         <i class="fas fa-arrow-right me-2"></i>Continuar para PIX
                     </button>
                 </div>
@@ -1487,50 +1373,50 @@
     <!-- Template: Modal PIX -->
     <template id="pixModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(205,127,50,0.3);">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h5 class="modal-title" style="color: #f5a623;">
+            <div class="modal-content" style="background: linear-gradient(135deg, #0A1628 0%, #050A14 100%); border: 1px solid var(--borda-azul);">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <h5 class="modal-title" style="color: var(--azul-principal);">
                         <i class="fas fa-qrcode me-2"></i> Pagamento via PIX
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center py-4">
-                    <div class="alert alert-success mb-3 text-center" style="background: rgba(40, 167, 69, 0.15); border-color: #28a745; color: #48bb78;">
+                    <div class="alert mb-3 text-center" style="background: rgba(0, 180, 255, 0.1); border:1px solid var(--borda-azul); color: var(--azul-claro);">
                         <i class="fas fa-gem me-2"></i>
                         <strong id="pixPromoText">🎉 VOCÊ GARANTIU O PREÇO FUNDADOR!</strong><br>
                         <small id="pixPriceText">R$ 97,00 - Preço bloqueado VITALÍCIO!</small>
                     </div>
-                    
-                    <h6 class="mb-3" style="color: rgba(255,255,255,0.7);">Escaneie o QR Code com seu banco</h6>
-                    
+
+                    <h6 class="mb-3" style="color: rgba(255,255,255,0.7); font-size:0.9rem;">Escaneie o QR Code com seu banco</h6>
+
                     <div class="text-center mb-3">
                         <div class="p-3 d-inline-block" style="background: white; border-radius: 16px;">
                             <img id="pixQrCode" src="" alt="QR Code PIX" style="max-width: 200px; border-radius: 8px; display: none;">
                             <div id="pixQrPlaceholder" style="width:200px; height:200px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:8px; color:#999; font-size:14px;">QR Code indisponível</div>
                         </div>
                     </div>
-                    
+
                     <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.05); word-break: break-all;">
-                        <code id="pixCodeText" class="small" style="color: #f5a623;">autonalytics@gmail.com</code>
+                        <code id="pixCodeText" class="small" style="color: var(--azul-principal);">autoanalyticss@gmail.com</code>
                     </div>
-                    
-                    <button class="btn w-100 mb-3" onclick="window.copyPixCode()" 
-                            style="background: rgba(255,255,255,0.06); color: #f5a623; border: 1px solid rgba(205,127,50,0.3); border-radius: 12px; padding: 0.75rem;">
+
+                    <button class="btn w-100 mb-3" onclick="window.copyPixCode()"
+                            style="background: rgba(0,180,255,0.08); color: var(--azul-principal); border: 1px solid var(--borda-azul); border-radius: 12px; padding: 0.75rem;">
                         <i class="fas fa-copy me-2"></i> Copiar Chave PIX
                     </button>
-                    
-                    <div class="alert alert-info small" style="background: rgba(245, 166, 35, 0.08); border-color: rgba(205,127,50,0.2); color: rgba(255,255,255,0.7);">
-                        <i class="fas fa-info-circle me-2"></i>
+
+                    <div class="alert small" style="background: rgba(0, 180, 255, 0.05); border:1px solid var(--borda-azul); color: rgba(255,255,255,0.7);">
+                        <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);"></i>
                         <strong>Informações do pagamento:</strong><br>
-                        <strong id="pixPlanText">Plano Bronze</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
-                        <span class="text-success" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
-                        <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">30:00</strong> minutos.</span>
+                        <strong id="pixPlanText">Plano Premium</strong> - Valor: <span id="pixAmountText">R$ 97,00</span><br>
+                        <span style="color: var(--azul-claro);" id="pixPromoBadge">✅ Preço de fundador garantido para sempre!</span><br>
+                        <span style="color: rgba(255,255,255,0.5);">⏰ Expira em <strong id="countdownTimer">02:00</strong> minutos.</span>
                     </div>
-                    
+
                     <div id="paymentStatus" class="mt-2"></div>
                 </div>
                 <div class="modal-footer border-0 justify-content-center" style="border-top: 1px solid rgba(255,255,255,0.06);">
-                    <button type="button" class="btn w-100" id="pixVerifyBtn" 
+                    <button type="button" class="btn w-100" id="pixVerifyBtn"
                             style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); border: none; border-radius: 50px; padding: 0.75rem;">
                         <i class="fas fa-check-circle me-2"></i> Já realizei o pagamento / Atualizar
                     </button>
@@ -1544,30 +1430,30 @@
     <!-- ============================================== -->
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%) !important; border:1px solid rgba(255,107,53,0.3) !important; color:white;">
-                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <div class="modal-content" style="background:linear-gradient(135deg,#0A1628 0%,#050A14 100%) !important; border:1px solid var(--borda-azul) !important; color:white;">
+                <div class="modal-header border-0" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
                     <h5 class="modal-title">
-                        <i class="fas fa-coins me-2" style="color: #ff6b35;"></i>
+                        <i class="fas fa-coins me-2" style="color: var(--azul-principal);"></i>
                         Meus Créditos
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body text-center py-4">
-                    <i class="fas fa-coins fa-4x mb-3" style="color: #ff6b35;"></i>
-                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: #ff6b35;">0</div>
+                    <i class="fas fa-coins fa-4x mb-3" style="color: var(--azul-principal);"></i>
+                    <div class="display-4 fw-bold" id="modalCreditsCount" style="color: var(--azul-principal);">0</div>
                     <p class="mb-3" style="color: rgba(255,255,255,0.5);">créditos disponíveis</p>
-                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.08) !important; border-color:rgba(255,107,53,0.15) !important; color:rgba(255,255,255,0.85) !important;">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong style="color: #ff6b35;">Como funcionam:</strong><br>
-                        • Você começa com <strong style="color: #ff6b35;">3 créditos grátis</strong><br>
+                    <div class="alert small" style="background:rgba(0,180,255,0.05) !important; border:1px solid var(--borda-azul) !important; color:rgba(255,255,255,0.85) !important;">
+                        <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);"></i>
+                        <strong style="color: var(--azul-principal);">Como funcionam:</strong><br>
+                        • Você começa com <strong style="color: var(--azul-principal);">3 créditos grátis</strong><br>
                         • ⭐ Premium ganha 1 crédito por dia<br>
                         • Cada análise consome 1 crédito<br>
                         • 📁 Até 3 arquivos por vez (máx 200KB cada)<br>
                         • 🔥 Limite máximo de 3 créditos acumulados
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.1);">
-                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; border: none; padding: 0.75rem; border-radius: 50px; font-weight: 700;">
+                <div class="modal-footer border-0" style="border-top: 1px solid rgba(255,255,255,0.08);">
+                    <a href="/planos" class="btn w-100" style="background: linear-gradient(135deg, var(--azul-principal), #0077B6); color: white; border: none; padding: 0.75rem; border-radius: 50px; font-weight: 700;">
                         <i class="fas fa-credit-card me-2"></i> Comprar mais créditos
                     </a>
                 </div>
@@ -1578,37 +1464,37 @@
     <!-- ============================================== -->
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
-    
+
     <!-- 1️⃣ JQUERY -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    
+
     <!-- 2️⃣ TOASTR -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    
+
     <!-- 3️⃣ BOOTSTRAP -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    
+
     <!-- 4️⃣ AOS -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SCRIPTS PRÓPRIOS (APP PRIMEIRO - ORDEM CRÍTICA) -->
+    <!-- 🔥 SCRIPTS PRÓPRIOS (ORDEM CRÍTICA - MANTIDA) -->
     <!-- ============================================== -->
-    
-    <!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL - DEVE CARREGAR PRIMEIRO) -->
+
+    <!-- 1️⃣ APP - v7.0 (ORQUESTRADOR CENTRAL) -->
     <script src="/static/js/app.js?ver=7.0.0"></script>
-    
-    <!-- 2️⃣ POW - v3.3 (DEPENDE DO APP) -->
+
+    <!-- 2️⃣ POW - v3.3 -->
     <script src="/static/js/pow-client.js?ver=3.3.0"></script>
-    
-    <!-- 3️⃣ AUTH - v3.1 (DEPENDE DO APP) -->
+
+    <!-- 3️⃣ AUTH - v3.1 -->
     <script src="/static/js/auth.js?ver=3.1.0"></script>
-    
-    <!-- 4️⃣ PAYMENT - v7.4 (CORREÇÃO QR CODE + GERADOR LOCAL) -->
-    <script src="/static/js/payment.js?ver=7.4.0"></script>
+
+    <!-- 4️⃣ PAYMENT - v7.5 (NÃO MUDAR - ele busca #btnUpgrade, #vagasRestantes, etc.) -->
+    <script src="/static/js/payment.js?ver=7.5.0"></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (PASSIVO) -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (MANTIDO) -->
     <!-- ============================================== -->
     <script>
         (function() {
@@ -1622,69 +1508,47 @@
 
             function isAppReady() {
                 var app = getApp();
-                if (app && typeof app.isReady === 'function') {
-                    return app.isReady();
-                }
+                if (app && typeof app.isReady === 'function') return app.isReady();
                 return !!window._appReadyFired;
             }
 
             function redirectToLogin() {
-                console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
+                console.warn('🔐 Fallback: Redirecionando para login');
                 window.location.replace('/login');
             }
 
             function checkAuth() {
                 if (isAppReady()) {
-                    console.log('🔐 App pronto - verificando autenticação...');
                     var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
+                    var isAuth = app && typeof app.isAuthenticated === 'function'
+                        ? app.isAuthenticated()
                         : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    
-                    if (!isAuth) {
-                        redirectToLogin();
-                        return false;
-                    }
-                    
+
+                    if (!isAuth) { redirectToLogin(); return false; }
+
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
                     return true;
                 }
 
-                console.log('🔐 Aguardando app:ready...');
-                document.addEventListener('app:ready', function handler(e) {
+                document.addEventListener('app:ready', function handler() {
                     document.removeEventListener('app:ready', handler);
-                    console.log('🔐 app:ready recebido - verificando autenticação...');
-                    
                     var app = getApp();
-                    var isAuth = app && typeof app.isAuthenticated === 'function' 
-                        ? app.isAuthenticated() 
+                    var isAuth = app && typeof app.isAuthenticated === 'function'
+                        ? app.isAuthenticated()
                         : (localStorage.getItem('access_token') && localStorage.getItem('access_token').length > 10);
-                    
-                    if (!isAuth) {
-                        redirectToLogin();
-                        return;
-                    }
-                    
+
+                    if (!isAuth) { redirectToLogin(); return; }
+
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
-                    console.log('🔐 Autenticação verificada com sucesso!');
                 });
 
                 var timeoutId = setTimeout(function() {
-                    document.removeEventListener('app:ready', function() {});
-                    console.warn('🔐 Timeout: app não respondeu, verificando token...');
-                    
                     var token = localStorage.getItem('access_token');
-                    if (!token || token.length <= 10) {
-                        redirectToLogin();
-                        return;
-                    }
-                    
+                    if (!token || token.length <= 10) { redirectToLogin(); return; }
                     document.body.classList.add('app-ready');
                     document.body.classList.remove('loading-state');
-                    console.log('🔐 Acesso liberado por fallback (token presente)');
                 }, 5000);
 
                 document.addEventListener('app:ready', function() {
@@ -1695,54 +1559,34 @@
             }
 
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function() {
-                    setTimeout(checkAuth, 100);
-                });
+                document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
             } else {
                 setTimeout(checkAuth, 100);
             }
 
-            window._authFallback = {
-                check: checkAuth,
-                redirectToLogin: redirectToLogin,
-                isAppReady: isAppReady
-            };
-
-            console.log('✅ Fallback de autenticação carregado!');
-            console.log('   🔐 Modo passivo - aguarda app:ready');
-            console.log('   ⏰ Timeout de segurança: 5s');
-
+            window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady };
         })();
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 INICIALIZAÇÃO E SINCRONIZAÇÃO V3.7 (CORRIGIDA) -->
+    <!-- 🔥 INICIALIZAÇÃO (MANTIDA E SINCRONIZADA) -->
     <!-- ============================================== -->
     <script>
         (function() {
             'use strict';
 
-            console.log('🚀 AutoAnalytics - Planos v3.7 (Sincronizado com payment.js v7.4)');
+            console.log('🚀 AutoAnalytics - Planos v3.8 (Visual Azul/Preto)');
 
-            // ==============================================
-            // 🔥 VARIÁVEIS DE CONTROLE - PREVENIR MÚLTIPLOS CLIQUES
-            // ==============================================
-            
             var _upgradeInProgress = false;
             var _cpfModalOpen = false;
 
-            // ==============================================
-            // 🔥 FUNÇÃO PARA REABILITAR O BOTÃO
-            // ==============================================
-            
             window.resetUpgradeButton = function() {
                 var btn = document.getElementById('btnUpgrade');
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = `
-                        <i class="fas fa-bolt me-2"></i>
-                        🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
-                        <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                        <span><i class="fas fa-bolt me-2"></i> 🔥 GARANTIR PREÇO FUNDADOR R$ 97,00</span>
+                        <small class="btn-small">Pagamento seguro via PIX</small>
                     `;
                     btn.classList.remove('loading');
                 }
@@ -1750,17 +1594,9 @@
                 _cpfModalOpen = false;
             };
 
-            // ==============================================
-            // 🔥 FUNÇÃO GETAPP
-            // ==============================================
-
             function getApp() {
                 return window.App || window.app || window.autoAnalytics;
             }
-
-            // ==============================================
-            // 🔥 WAIT FOR APP
-            // ==============================================
 
             function waitForApp(maxAttempts) {
                 maxAttempts = maxAttempts || 30;
@@ -1769,31 +1605,16 @@
                     var check = function() {
                         attempts++;
                         var app = getApp();
-                        if (app && typeof app.isReady === 'function' && app.isReady()) {
-                            resolve(true);
-                            return;
-                        }
-                        if (window._appReadyFired) {
-                            resolve(true);
-                            return;
-                        }
-                        if (attempts >= maxAttempts) {
-                            resolve(false);
-                            return;
-                        }
+                        if (app && typeof app.isReady === 'function' && app.isReady()) { resolve(true); return; }
+                        if (window._appReadyFired) { resolve(true); return; }
+                        if (attempts >= maxAttempts) { resolve(false); return; }
                         setTimeout(check, 200);
                     };
                     check();
                 });
             }
 
-            // ==============================================
-            // 🔥 FUNÇÃO: ATUALIZAR VAGAS UI
-            // ==============================================
-
             function updateVagasUI(data) {
-                console.log('📊 Atualizando UI de vagas:', data);
-
                 var remaining = data.remaining_slots || 0;
                 var total = data.total_slots || 100;
                 var isSoldOut = remaining <= 0;
@@ -1824,9 +1645,8 @@
                         vagasEl.classList.add('pulse');
                     }
                 }
-
                 if (totalEl) totalEl.textContent = total;
-                if (percentEl) percentEl.textContent = Math.round(percent) + '% preenchidas';
+                if (percentEl) percentEl.textContent = Math.round(percent) + '%';
                 if (headerEl) headerEl.textContent = remaining;
 
                 if (progressEl) {
@@ -1835,29 +1655,19 @@
                     if (isSoldOut) progressEl.classList.add('sold-out');
                     else if (isUrgent) progressEl.classList.add('urgent');
                 }
-
                 if (containerEl) {
                     containerEl.classList.remove('urgent', 'sold-out');
                     if (isSoldOut) containerEl.classList.add('sold-out');
                     else if (isUrgent) containerEl.classList.add('urgent');
                 }
-
                 if (urgentAlert && urgentCount) {
-                    if (isUrgent) {
-                        urgentAlert.classList.add('show');
-                        urgentCount.textContent = remaining;
-                    } else {
-                        urgentAlert.classList.remove('show');
-                    }
+                    if (isUrgent) { urgentAlert.classList.add('show'); urgentCount.textContent = remaining; }
+                    else urgentAlert.classList.remove('show');
                 }
                 if (soldOutAlert) {
-                    if (isSoldOut) {
-                        soldOutAlert.classList.add('show');
-                    } else {
-                        soldOutAlert.classList.remove('show');
-                    }
+                    if (isSoldOut) soldOutAlert.classList.add('show');
+                    else soldOutAlert.classList.remove('show');
                 }
-
                 if (badgeText) {
                     if (isSoldOut) {
                         badgeText.textContent = '❌ PROMOÇÃO ESGOTADA';
@@ -1865,26 +1675,23 @@
                     } else if (isUrgent) {
                         badgeText.textContent = '🔥 ÚLTIMAS ' + remaining + ' VAGAS!';
                         badgeText.style.color = '#f5a623';
-                        badgeText.style.animation = 'badgePulse 0.8s ease-in-out infinite';
                     } else {
                         badgeText.textContent = '🔥 ' + remaining + ' VAGAS DISPONÍVEIS';
                         badgeText.style.color = '#ffffff';
-                        badgeText.style.animation = 'badgePulse 2s ease-in-out infinite';
                     }
                 }
-
                 if (isSoldOut) {
                     if (priceTag) priceTag.textContent = '149.90';
                     if (oldPrice) oldPrice.style.display = 'none';
                     if (economyBadge) {
                         economyBadge.textContent = '❌ PROMOÇÃO ESGOTADA';
-                        economyBadge.style.background = 'linear-gradient(135deg, #dc3545, #c0392b)';
+                        economyBadge.style.background = 'rgba(220, 53, 69, 0.15)';
+                        economyBadge.style.color = '#dc3545';
                     }
                     if (btnUpgrade) {
                         btnUpgrade.innerHTML = `
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            COMPRAR POR R$ 149,90
-                            <small class="d-block fs-10">Promoção encerrada</small>
+                            <span><i class="fas fa-exclamation-triangle me-2"></i> COMPRAR POR R$ 149,90</span>
+                            <small class="btn-small">Promoção encerrada</small>
                         `;
                         btnUpgrade.classList.add('sold-out');
                     }
@@ -1892,21 +1699,15 @@
                     if (btnUpgrade) {
                         btnUpgrade.classList.remove('sold-out');
                         btnUpgrade.innerHTML = `
-                            <i class="fas fa-bolt me-2"></i>
-                            🔥 GARANTIR PREÇO FUNDADOR R$ 97,00
-                            <small class="d-block fs-10">Pagamento seguro via PIX</small>
+                            <span><i class="fas fa-bolt me-2"></i> 🔥 GARANTIR PREÇO FUNDADOR R$ 97,00</span>
+                            <small class="btn-small">Pagamento seguro via PIX</small>
                         `;
                     }
                 }
-
                 window.dispatchEvent(new CustomEvent('vagas:ui_updated', {
                     detail: { remaining: remaining, total: total, isSoldOut: isSoldOut, isUrgent: isUrgent, percent: percent }
                 }));
             }
-
-            // ==============================================
-            // 🔥 FUNÇÃO: ATUALIZAR UI DO USUÁRIO
-            // ==============================================
 
             function updateUserUI(state) {
                 var app = getApp();
@@ -1928,8 +1729,8 @@
                         statusBadge.style.color = 'white';
                     } else {
                         statusBadge.innerHTML = '<i class="fas fa-user me-1"></i> Plano Grátis';
-                        statusBadge.style.background = 'rgba(255,255,255,0.08)';
-                        statusBadge.style.color = 'rgba(255,255,255,0.5)';
+                        statusBadge.style.background = 'rgba(255,255,255,0.06)';
+                        statusBadge.style.color = 'rgba(255,255,255,0.6)';
                     }
                 }
 
@@ -1939,9 +1740,7 @@
                     if (isPremium && daysLeft > 0) {
                         daysBadge.classList.add('show');
                         daysCount.textContent = daysLeft;
-                    } else {
-                        daysBadge.classList.remove('show');
-                    }
+                    } else daysBadge.classList.remove('show');
                 }
 
                 var planCard = document.getElementById('planCard');
@@ -1978,16 +1777,8 @@
                 if (nameEl && user && user.name) nameEl.textContent = user.name;
             }
 
-            // ==============================================
-            // 🔥 HANDLE UPGRADE - CORRIGIDO COM PREVENÇÃO DE MÚLTIPLOS CLIQUES
-            // ==============================================
-
             window.handleUpgrade = function() {
-                console.log('🛒 Iniciando upgrade...');
-                
-                // 🔥 PREVENIR MÚLTIPLOS CLIQUES
                 if (_upgradeInProgress) {
-                    console.warn('⚠️ Upgrade já em andamento. Aguarde...');
                     var app = getApp();
                     if (app && typeof app.showNotification === 'function') {
                         app.showNotification('⏳ Aguarde o processamento atual...', 'warning');
@@ -2000,67 +1791,43 @@
                 var isAdmin = app && typeof app.isAdmin === 'function' ? app.isAdmin() : false;
 
                 if (isAdmin) {
-                    if (app && typeof app.showNotification === 'function') {
-                        app.showNotification('👑 Admin tem acesso ilimitado!', 'info');
-                    }
+                    if (app && typeof app.showNotification === 'function') app.showNotification('👑 Admin tem acesso ilimitado!', 'info');
                     return;
                 }
-
                 if (isPremium) {
-                    if (app && typeof app.showNotification === 'function') {
-                        app.showNotification('✅ Você já possui um plano ativo!', 'success');
-                    }
+                    if (app && typeof app.showNotification === 'function') app.showNotification('✅ Você já possui um plano ativo!', 'success');
                     window.location.href = '/dashboard';
                     return;
                 }
 
-                // 🔥 DESABILITAR BOTÃO IMEDIATAMENTE
                 var btn = document.getElementById('btnUpgrade');
                 if (btn) {
                     btn.disabled = true;
-                    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processando...';
+                    btn.innerHTML = '<span><i class="fas fa-spinner fa-spin me-2"></i> Processando...</span>';
                     btn.classList.add('loading');
                 }
-
-                // 🔥 MARCAR COMO EM ANDAMENTO
                 _upgradeInProgress = true;
 
-                // 🔥 Verifica se o payment.js v7.4 está disponível
                 if (typeof window.openCpfModal === 'function') {
                     window.openCpfModal('premium_mensal');
                 } else {
-                    console.error('❌ payment.js v7.4 não carregado!');
+                    console.error('❌ payment.js não carregado!');
                     if (app && typeof app.showNotification === 'function') {
                         app.showNotification('Sistema de pagamento indisponível. Recarregue a página.', 'error');
                     }
-                    // 🔥 REABILITAR BOTÃO EM CASO DE ERRO
                     window.resetUpgradeButton();
                 }
             };
 
-            // ==============================================
-            // 🔥 ESCUTA EVENTOS
-            // ==============================================
-
-            document.addEventListener('vagas:updated', function(e) {
-                var data = e.detail || {};
-                updateVagasUI(data);
-            });
-
+            document.addEventListener('vagas:updated', function(e) { updateVagasUI(e.detail || {}); });
             document.addEventListener('app:state_changed', function(e) {
                 var detail = e.detail || {};
-                var state = detail.state || detail || {};
-                updateUserUI(state);
+                updateUserUI(detail.state || detail || {});
             });
-
             document.addEventListener('app:ready', function(e) {
-                var detail = e.detail || {};
-                updateUserUI(detail);
-                if (typeof AOS !== 'undefined') {
-                    setTimeout(function() { AOS.refresh(); }, 300);
-                }
+                updateUserUI(e.detail || {});
+                if (typeof AOS !== 'undefined') setTimeout(function() { AOS.refresh(); }, 300);
             });
-
             document.addEventListener('creditsUpdated', function(e) {
                 var data = e.detail || {};
                 var app = getApp();
@@ -2072,7 +1839,6 @@
                     if (el) el.textContent = displayText;
                 });
             });
-
             document.addEventListener('premiumStatusUpdated', function(e) {
                 var data = e.detail || {};
                 if (data.isPremium && data.daysLeft > 0) {
@@ -2083,42 +1849,18 @@
                 }
                 updateUserUI(data);
             });
-
-            // 🔥 Evento para quando o payment.js v7.4 estiver pronto
-            document.addEventListener('paymentReady', function(e) {
-                console.log('✅ payment.js v7.4 está pronto!');
-                var detail = e.detail || {};
-                if (detail.version) {
-                    console.log('   📦 Versão:', detail.version);
-                }
-                if (detail.integrated) {
-                    console.log('   🔗 Integrado com app.js');
-                }
-            });
-
-            // 🔥 Evento para quando o modal PIX for fechado
-            document.addEventListener('paymentModalClosed', function() {
-                window.resetUpgradeButton();
-            });
-
-            // ==============================================
-            // 🔥 INICIALIZAÇÃO
-            // ==============================================
+            document.addEventListener('paymentModalClosed', function() { window.resetUpgradeButton(); });
 
             function updatePowStatus() {
                 try {
                     var powStatusEl = document.getElementById('powStatus');
                     var powTextEl = document.getElementById('powStatusText');
                     if (!powStatusEl || !powTextEl) return;
-                    
                     var app = getApp();
                     var stats = null;
-                    if (app && typeof app.getPowStats === 'function') {
-                        stats = app.getPowStats();
-                    } else if (window.powClient && typeof window.powClient.getStats === 'function') {
-                        stats = window.powClient.getStats();
-                    }
-                    
+                    if (app && typeof app.getPowStats === 'function') stats = app.getPowStats();
+                    else if (window.powClient && typeof window.powClient.getStats === 'function') stats = window.powClient.getStats();
+
                     if (stats && stats.available !== false) {
                         var solutionsReady = stats.solutionsReady || 0;
                         if (solutionsReady > 0) {
@@ -2137,46 +1879,30 @@
 
             async function init() {
                 var ready = await waitForApp(30);
-                
                 if (ready) {
                     var app = getApp();
                     var state = app && app.State ? app.State : window.__APP_STATE || {};
                     updateUserUI(state);
                 }
-
                 setTimeout(updatePowStatus, 1500);
                 setInterval(updatePowStatus, 30000);
-
-                if (typeof AOS !== 'undefined') {
-                    AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
-                }
-
-                if (window.VagasSystem && typeof window.VagasSystem.updateVagas === 'function') {
-                    window.VagasSystem.updateVagas();
-                }
-
-                console.log('✅ planos.html v3.7 carregado com sucesso!');
-                console.log('   🔥 Sincronizado com payment.js v7.4');
-                console.log('   🔥 PREVENÇÃO DE MÚLTIPLOS CLIQUES ATIVA');
-                console.log('   🔥 Vagas em tempo real via evento');
-                console.log('   🔥 UI reativa sincronizada');
-                console.log('   🔐 Autenticação unificada via app.js');
-                console.log('   📱 QR Code com geração local fallback');
-                console.log('   ⏰ Expiração PIX: 2 minutos');
+                if (typeof AOS !== 'undefined') AOS.init({ once: true, duration: 800, offset: 50, easing: 'ease-in-out' });
+                if (window.VagasSystem && typeof window.VagasSystem.updateVagas === 'function') window.VagasSystem.updateVagas();
+                console.log('✅ planos.html v3.8 carregado!');
             }
 
             document.addEventListener('DOMContentLoaded', function() {
                 if (typeof toastr !== 'undefined') {
                     toastr.options = {
-                        closeButton: true,
-                        progressBar: true,
+                        closeButton: true, progressBar: true,
                         positionClass: "toast-top-right",
-                        timeOut: 5000,
-                        extendedTimeOut: 1000,
-                        escapeHtml: true
+                        timeOut: 5000, extendedTimeOut: 1000, escapeHtml: true
                     };
                 }
 
+                // 🔥 FORM DE SUPORTE -> AGORA ENVIA PARA O BACKEND
+                // Endpoint: POST /api/support/send
+                // (você vai criar esse endpoint no backend para enviar via Gmail)
                 var form = document.getElementById('quickSupportForm');
                 if (form) {
                     form.addEventListener('submit', function(e) {
@@ -2185,17 +1911,49 @@
                         var email = document.getElementById('supportEmail').value;
                         var subject = document.getElementById('supportSubject').value;
                         var message = document.getElementById('supportMessage').value;
-                        var mailtoLink = 'mailto:autonalytics@gmail.com?subject=' + encodeURIComponent(subject + ' - ' + name) + '&body=' + encodeURIComponent(
-                            'Nome: ' + name + '\nEmail: ' + email + '\nAssunto: ' + subject + '\n\nMensagem:\n' + message + '\n\n---\nEnviado via AutoAnalytics Planos e Suporte'
-                        );
+
+                        var submitBtn = form.querySelector('button[type="submit"]');
+                        var originalHtml = submitBtn.innerHTML;
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Enviando...';
+
                         var app = getApp();
-                        if (app && typeof app.showNotification === 'function') {
-                            app.showNotification('📧 Abrindo seu email...', 'success');
-                        }
-                        document.getElementById('supportName').value = '';
-                        document.getElementById('supportEmail').value = '';
-                        document.getElementById('supportMessage').value = '';
-                        window.location.href = mailtoLink;
+                        var fetchFn = (window.fetchWithAuth) ? window.fetchWithAuth : fetch;
+
+                        fetchFn('/api/support/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: name,
+                                email: email,
+                                subject: subject,
+                                message: message
+                            })
+                        })
+                        .then(function(resp) {
+                            if (!resp.ok) throw new Error('Erro ' + resp.status);
+                            return resp.json().catch(function() { return {}; });
+                        })
+                        .then(function() {
+                            if (app && typeof app.showNotification === 'function') {
+                                app.showNotification('📧 Mensagem enviada! Responderemos em breve.', 'success');
+                            } else if (typeof toastr !== 'undefined') {
+                                toastr.success('📧 Mensagem enviada!');
+                            }
+                            form.reset();
+                        })
+                        .catch(function(err) {
+                            console.error('Erro ao enviar suporte:', err);
+                            if (app && typeof app.showNotification === 'function') {
+                                app.showNotification('❌ Erro ao enviar. Tente novamente.', 'error');
+                            } else if (typeof toastr !== 'undefined') {
+                                toastr.error('❌ Erro ao enviar. Tente novamente.');
+                            }
+                        })
+                        .finally(function() {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalHtml;
+                        });
                     });
                 }
 
@@ -2204,38 +1962,25 @@
                     logoutBtn.addEventListener('click', function(e) {
                         e.preventDefault();
                         var app = getApp();
-                        if (app && typeof app.logout === 'function') {
-                            app.logout();
-                        } else {
-                            localStorage.clear();
-                            window.location.replace('/login');
-                        }
+                        if (app && typeof app.logout === 'function') app.logout();
+                        else { localStorage.clear(); window.location.replace('/login'); }
                     });
                 }
 
-                // 🔥 Adicionar listener para o botão de upgrade
                 var upgradeBtn = document.getElementById('btnUpgrade');
-                if (upgradeBtn) {
-                    upgradeBtn.addEventListener('click', window.handleUpgrade);
-                }
+                if (upgradeBtn) upgradeBtn.addEventListener('click', window.handleUpgrade);
 
                 init();
             });
 
             window.switchTab = function(tabId) {
-                document.querySelectorAll('.tab-btn').forEach(function(btn) {
-                    btn.classList.remove('active');
-                });
-                document.querySelectorAll('.tab-content').forEach(function(content) {
-                    content.classList.remove('active');
-                });
+                document.querySelectorAll('.tab-btn').forEach(function(btn) { btn.classList.remove('active'); });
+                document.querySelectorAll('.tab-content').forEach(function(content) { content.classList.remove('active'); });
                 var btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
                 if (btn) btn.classList.add('active');
                 var content = document.getElementById('tab-' + tabId);
                 if (content) content.classList.add('active');
-                setTimeout(function() {
-                    if (typeof AOS !== 'undefined') AOS.refresh();
-                }, 100);
+                setTimeout(function() { if (typeof AOS !== 'undefined') AOS.refresh(); }, 100);
             };
 
             window.toggleFaq = function(element) {
@@ -2243,21 +1988,13 @@
                 var icon = element.querySelector('.faq-question i.fa-chevron-down, .faq-question i.fa-chevron-up');
                 if (answer) {
                     var isOpen = answer.classList.contains('open');
-                    document.querySelectorAll('.faq-answer').forEach(function(a) {
-                        if (a !== answer) a.classList.remove('open');
-                    });
+                    document.querySelectorAll('.faq-answer').forEach(function(a) { if (a !== answer) a.classList.remove('open'); });
                     if (isOpen) {
                         answer.classList.remove('open');
-                        if (icon) {
-                            icon.className = 'fas fa-chevron-down';
-                            icon.style.color = 'rgba(255,255,255,0.3)';
-                        }
+                        if (icon) { icon.className = 'fas fa-chevron-down'; icon.style.color = 'rgba(255,255,255,0.3)'; }
                     } else {
                         answer.classList.add('open');
-                        if (icon) {
-                            icon.className = 'fas fa-chevron-up';
-                            icon.style.color = '#f5a623';
-                        }
+                        if (icon) { icon.className = 'fas fa-chevron-up'; icon.style.color = 'var(--azul-principal)'; }
                     }
                 }
             };
