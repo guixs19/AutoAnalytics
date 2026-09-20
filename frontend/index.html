@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoAnalytics - IA para Mecânicos</title>
-    
+    <title>Ayla Mechanic — AutoAnalytics</title>
+
     <!-- ============================================== -->
     <!-- 🔥 PRÉ-CONEXÃO COM CDNs (Performance) -->
     <!-- ============================================== -->
@@ -14,7 +14,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-    
+
     <!-- ============================================== -->
     <!-- 🔥 CDN BIBLIOTECAS -->
     <!-- ============================================== -->
@@ -23,15 +23,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
-    
+
     <style>
         /* ==============================================
-                   RESET E BASE
-                ============================================== */
+           🎨 PALETA AZUL + PRETO (mesma do planos.html)
+           ============================================== */
+        :root {
+            --azul-principal: #00B4FF;
+            --azul-claro: #4FC3F7;
+            --azul-escuro: #0A1628;
+            --preto: #000000;
+            --preto-suave: #050A14;
+            --cinza-texto: #94A3B8;
+            --branco: #FFFFFF;
+            --borda-azul: rgba(0, 180, 255, 0.25);
+            --glow-azul: rgba(0, 180, 255, 0.4);
+        }
+
+        /* ==============================================
+           RESET E BASE
+           ============================================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            background: #000000;
+            background-image:
+                radial-gradient(circle at 20% 0%, rgba(0, 180, 255, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 80% 100%, rgba(0, 180, 255, 0.08) 0%, transparent 50%);
             color: #ffffff;
             overflow-x: hidden;
             opacity: 0;
@@ -40,16 +59,19 @@
         }
         body.app-ready { opacity: 1; }
 
+        /* ==============================================
+           NAVBAR
+           ============================================== */
         .navbar-modern {
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(20px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
             padding: 0.6rem 0;
             position: fixed;
             width: 100%;
             top: 0;
             z-index: 1000;
-            border-bottom: 3px solid rgba(255, 107, 53, 0.3);
+            border-bottom: 1px solid var(--borda-azul);
         }
         .navbar-modern .container {
             display: flex;
@@ -59,15 +81,39 @@
             gap: 0.5rem;
         }
         .brand-text {
-            font-size: 1.4rem;
+            font-size: 1.35rem;
             font-weight: 900;
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
             text-decoration: none;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: white;
         }
-        .brand-text i { -webkit-text-fill-color: initial; color: #ff6b35; }
-        .brand-text span { -webkit-text-fill-color: initial; color: #2d3748; }
+        .brand-text:hover { color: white; }
+        .brand-icon {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.9rem;
+            box-shadow: 0 0 20px var(--glow-azul);
+        }
+        .brand-strong { color: var(--branco); }
+        .brand-blue { color: var(--azul-principal); }
+        .brand-sub {
+            font-size: 0.55rem;
+            font-weight: 600;
+            letter-spacing: 2.5px;
+            color: var(--azul-principal);
+            text-transform: uppercase;
+            margin-left: 0.2rem;
+            opacity: 0.85;
+        }
 
         .nav-right {
             display: flex;
@@ -77,22 +123,22 @@
         }
         .user-name-display {
             font-weight: 600;
-            color: #2d3748;
+            color: rgba(255, 255, 255, 0.85);
             font-size: 0.85rem;
             display: flex;
             align-items: center;
             gap: 0.3rem;
         }
-        .user-name-display i { color: #ff6b35; }
+        .user-name-display i { color: var(--azul-principal); }
 
         .credits-badge-nav {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             padding: 0.3rem 1rem;
             border-radius: 50px;
             color: white;
             font-weight: 700;
             font-size: 0.8rem;
-            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.35);
+            box-shadow: 0 4px 15px var(--glow-azul);
             transition: all 0.3s;
             cursor: pointer;
             border: none;
@@ -102,11 +148,11 @@
         }
         .credits-badge-nav:hover {
             transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.5);
+            box-shadow: 0 8px 30px var(--glow-azul);
         }
 
         .btn-planos-nav {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
             border: none;
             padding: 0.3rem 1rem;
@@ -121,14 +167,14 @@
         }
         .btn-planos-nav:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.35);
+            box-shadow: 0 8px 25px var(--glow-azul);
             color: white;
         }
 
         .btn-sair-nav {
             background: transparent;
-            border: 2px solid #e53e3e;
-            color: #e53e3e;
+            border: 1px solid rgba(229, 62, 62, 0.5);
+            color: #fc8181;
             padding: 0.25rem 0.8rem;
             border-radius: 50px;
             font-weight: 600;
@@ -136,30 +182,30 @@
             transition: all 0.3s;
             text-decoration: none;
         }
-        .btn-sair-nav:hover { background: #e53e3e; color: white; transform: translateY(-2px); }
+        .btn-sair-nav:hover { background: #e53e3e; color: white; border-color: #e53e3e; transform: translateY(-2px); }
 
         /* ==============================================
-                   CONTEÚDO PRINCIPAL
-                ============================================== */
-        .hero-section { padding: 85px 0 25px; min-height: 100vh; }
+           CONTEÚDO PRINCIPAL
+           ============================================== */
+        .hero-section { padding: 90px 0 25px; min-height: 100vh; }
 
         /* ==============================================
-                   CARDS
-                ============================================== */
+           CARDS
+           ============================================== */
         .glass-card {
-            background: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(20px);
             border-radius: 20px;
             padding: 1.2rem;
             border: 1px solid rgba(255, 255, 255, 0.06);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: all 0.4s ease;
             color: white;
             height: 100%;
         }
         .glass-card:hover {
             transform: translateY(-4px);
-            background: rgba(255, 255, 255, 0.09);
-            border-color: rgba(255, 107, 53, 0.2);
+            background: rgba(0, 180, 255, 0.04);
+            border-color: var(--borda-azul);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         .glass-card .card-title {
@@ -169,13 +215,13 @@
             margin-bottom: 0.8rem;
         }
         .glass-card .card-title i {
-            color: #ff6b35;
+            color: var(--azul-principal);
             margin-right: 0.4rem;
         }
 
         /* ==============================================
-                   MÉTRICAS
-                ============================================== */
+           MÉTRICAS
+           ============================================== */
         .metric-row {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -189,11 +235,11 @@
             text-align: center;
             transition: all 0.3s;
         }
-        .metric-card:hover { background: rgba(255,107,53,0.08); border-color: rgba(255,107,53,0.15); }
+        .metric-card:hover { background: rgba(0,180,255,0.08); border-color: var(--borda-azul); }
         .metric-value {
             font-size: 1.5rem;
             font-weight: 800;
-            color: #ff6b35;
+            color: var(--azul-principal);
             line-height: 1.2;
         }
         .metric-label {
@@ -205,20 +251,20 @@
         }
         .metric-value.credits-highlight {
             font-size: 1.7rem;
-            color: #f5a623;
+            color: var(--azul-claro);
         }
 
         /* ==============================================
-                   UPLOAD
-                ============================================== */
+           UPLOAD
+           ============================================== */
         .upload-area {
-            border: 2px dashed rgba(255, 107, 53, 0.4);
+            border: 2px dashed var(--borda-azul);
             border-radius: 18px;
             padding: 1.8rem 1.2rem;
             text-align: center;
             cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            background: rgba(255, 107, 53, 0.04);
+            transition: all 0.4s ease;
+            background: rgba(0, 180, 255, 0.04);
             min-height: 160px;
             display: flex;
             flex-direction: column;
@@ -226,8 +272,8 @@
             align-items: center;
         }
         .upload-area:hover {
-            border-color: rgba(255, 107, 53, 0.8);
-            background: rgba(255, 107, 53, 0.08);
+            border-color: var(--azul-principal);
+            background: rgba(0, 180, 255, 0.08);
             transform: scale(1.01);
         }
         .upload-area.dragover {
@@ -237,7 +283,7 @@
         }
         .upload-area .upload-icon {
             font-size: 2.8rem;
-            color: #ff6b35;
+            color: var(--azul-principal);
             margin-bottom: 0.4rem;
             display: block;
         }
@@ -246,7 +292,7 @@
         .upload-area h4 { color: white; font-weight: 700; font-size: 1rem; }
         .upload-area p { color: rgba(255,255,255,0.45); font-size: 0.8rem; margin-bottom: 0.5rem; }
         .upload-area .btn-select {
-            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
             border: none;
             padding: 0.5rem 1.5rem;
@@ -254,11 +300,11 @@
             font-weight: 700;
             font-size: 0.85rem;
             transition: all 0.3s;
-            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.25);
+            box-shadow: 0 4px 20px var(--glow-azul);
         }
         .upload-area .btn-select:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.4);
+            box-shadow: 0 8px 30px var(--glow-azul);
             color: white;
         }
         .upload-area .file-hint {
@@ -270,23 +316,23 @@
             justify-content: center;
             flex-wrap: wrap;
         }
-        .upload-area .file-hint i { color: #ff6b35; }
-        .upload-area.uploading { border-color: #f5a623; background: rgba(245,166,35,0.08); pointer-events: none; }
+        .upload-area .file-hint i { color: var(--azul-principal); }
+        .upload-area.uploading { border-color: var(--azul-claro); background: rgba(0,180,255,0.08); pointer-events: none; }
         .upload-area.uploading .upload-icon i { animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .upload-area.success { border-color: #48bb78; background: rgba(72,187,120,0.08); }
         .upload-area.error { border-color: #dc3545; background: rgba(220,53,69,0.08); }
 
         /* ==============================================
-                   FILE PREVIEW
-                ============================================== */
+           FILE PREVIEW
+           ============================================== */
         .file-preview-container {
             max-height: 120px;
             overflow-y: auto;
             margin: 0.3rem 0 0.4rem;
         }
         .file-preview-container::-webkit-scrollbar { width: 3px; }
-        .file-preview-container::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
+        .file-preview-container::-webkit-scrollbar-thumb { background: var(--borda-azul); border-radius: 10px; }
 
         .file-preview-item {
             display: flex;
@@ -326,15 +372,15 @@
         .file-preview-item .file-remove:hover { color: #e53e3e; background: rgba(229,62,62,0.15); }
 
         /* ==============================================
-                   STATUS
-                ============================================== */
+           STATUS
+           ============================================== */
         .analysis-status {
             display: none;
             padding: 0.5rem;
             border-radius: 12px;
             text-align: center;
-            background: rgba(245, 166, 35, 0.06);
-            border: 1px solid rgba(245, 166, 35, 0.1);
+            background: rgba(0, 180, 255, 0.06);
+            border: 1px solid var(--borda-azul);
             margin-top: 0.5rem;
         }
         .analysis-status.show { display: block; animation: fadeUp 0.3s ease-out; }
@@ -350,7 +396,7 @@
         }
         .analysis-status .status-progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            background: linear-gradient(90deg, var(--azul-principal), var(--azul-claro));
             width: 0%;
             transition: width 0.5s ease;
             border-radius: 10px;
@@ -358,23 +404,21 @@
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* ==============================================
-                   RELATÓRIO DA IA - NOVO ESTILO
-                ============================================== */
+           RELATÓRIO DA IA
+           ============================================== */
         .ai-report-card {
             background: rgba(0, 0, 0, 0.15);
             border-radius: 12px;
             padding: 1rem;
-            border: 1px solid rgba(255, 107, 53, 0.08);
+            border: 1px solid var(--borda-azul);
             max-height: 200px;
             overflow-y: auto;
             transition: all 0.3s ease;
         }
-        .ai-report-card:hover {
-            border-color: rgba(255, 107, 53, 0.15);
-        }
+        .ai-report-card:hover { border-color: var(--azul-principal); }
         .ai-report-card::-webkit-scrollbar { width: 4px; }
         .ai-report-card::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
-        .ai-report-card::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 10px; }
+        .ai-report-card::-webkit-scrollbar-thumb { background: var(--borda-azul); border-radius: 10px; }
 
         .ai-report-content {
             color: rgba(255, 255, 255, 0.7);
@@ -382,10 +426,7 @@
             line-height: 1.6;
             white-space: pre-wrap;
         }
-        .ai-report-content .highlight {
-            color: #ff6b35;
-            font-weight: 600;
-        }
+        .ai-report-content .highlight { color: var(--azul-principal); font-weight: 600; }
         .ai-report-content .success-text { color: #48bb78; }
         .ai-report-content .warning-text { color: #f5a623; }
         .ai-report-content .danger-text { color: #f56565; }
@@ -404,12 +445,12 @@
         }
 
         /* ==============================================
-                   RESULTADO
-                ============================================== */
+           RESULTADO
+           ============================================== */
         #resultCard {
-            background: rgba(255, 255, 255, 0.08) !important;
-            border: 2px solid rgba(255, 107, 53, 0.25) !important;
-            box-shadow: 0 0 60px rgba(255, 107, 53, 0.08), inset 0 0 60px rgba(255, 107, 53, 0.03) !important;
+            background: rgba(0, 180, 255, 0.03) !important;
+            border: 2px solid var(--borda-azul) !important;
+            box-shadow: 0 0 60px rgba(0, 180, 255, 0.08), inset 0 0 60px rgba(0, 180, 255, 0.03) !important;
             position: relative;
             overflow: hidden;
         }
@@ -421,7 +462,7 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background: radial-gradient(circle at 30% 50%, rgba(255, 107, 53, 0.05), transparent 60%);
+            background: radial-gradient(circle at 30% 50%, rgba(0, 180, 255, 0.05), transparent 60%);
             pointer-events: none;
             animation: shimmer 8s ease-in-out infinite;
         }
@@ -433,15 +474,9 @@
 
         #resultCard .card-title {
             font-size: 1.1rem !important;
-            color: #ff6b35 !important;
-            border-bottom: 1px solid rgba(255, 107, 53, 0.15);
+            color: var(--azul-principal) !important;
+            border-bottom: 1px solid var(--borda-azul);
             padding-bottom: 0.5rem;
-        }
-
-        #resultCard .card-title i {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
         }
 
         .result-container {
@@ -453,7 +488,6 @@
         }
         .result-container.show { display: block; }
 
-        /* 🔥 SELETOR DE ARQUIVOS (dinâmico) */
         #analysisSelector {
             display: none;
             padding: 0.2rem 0.5rem;
@@ -471,9 +505,9 @@
             gap: 0.4rem;
             margin-bottom: 0.8rem;
             padding: 0.5rem 1rem;
-            background: rgba(255, 107, 53, 0.06);
+            background: rgba(0, 180, 255, 0.06);
             border-radius: 12px;
-            border: 1px solid rgba(255, 107, 53, 0.08);
+            border: 1px solid var(--borda-azul);
         }
         .result-header .result-title {
             font-size: 1rem;
@@ -483,10 +517,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        .result-header .result-title i {
-            color: #48bb78;
-            font-size: 1.2rem;
-        }
+        .result-header .result-title i { color: #48bb78; font-size: 1.2rem; }
         .result-header .result-badge {
             padding: 0.2rem 1rem;
             border-radius: 50px;
@@ -502,7 +533,6 @@
             box-shadow: 0 0 20px rgba(72, 187, 120, 0.1);
         }
 
-        /* Métricas */
         .result-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -518,14 +548,14 @@
             transition: all 0.3s;
         }
         .result-stat:hover {
-            background: rgba(255, 107, 53, 0.06);
-            border-color: rgba(255, 107, 53, 0.1);
+            background: rgba(0, 180, 255, 0.06);
+            border-color: var(--borda-azul);
             transform: translateY(-2px);
         }
         .result-stat .stat-value {
             font-size: 1.4rem;
             font-weight: 800;
-            color: #ff6b35;
+            color: var(--azul-principal);
             line-height: 1.2;
         }
         .result-stat .stat-label {
@@ -546,7 +576,7 @@
             padding: 0.6rem 0.8rem;
             background: rgba(0,0,0,0.15);
             border-radius: 10px;
-            border-left: 3px solid #ff6b35;
+            border-left: 3px solid var(--azul-principal);
         }
         .result-insight {
             color: rgba(255,255,255,0.75);
@@ -555,10 +585,7 @@
             padding: 0.15rem 0;
         }
         .result-insight:last-child { margin-bottom: 0; }
-        .result-insight .insight-icon {
-            margin-right: 0.4rem;
-            color: #ff6b35;
-        }
+        .result-insight .insight-icon { margin-right: 0.4rem; color: var(--azul-principal); }
 
         .result-actions {
             display: flex;
@@ -580,13 +607,13 @@
             gap: 0.4rem;
         }
         .result-actions .btn-result-primary {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
             color: white;
-            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
+            box-shadow: 0 4px 20px var(--glow-azul);
         }
         .result-actions .btn-result-primary:hover {
             transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 8px 35px rgba(255, 107, 53, 0.45);
+            box-shadow: 0 8px 35px var(--glow-azul);
             color: white;
         }
         .result-actions .btn-result-secondary {
@@ -600,7 +627,6 @@
             transform: translateY(-2px);
         }
 
-        /* Placeholder do resultado */
         #resultPlaceholder {
             text-align: center;
             padding: 2rem 0 1.5rem;
@@ -613,6 +639,7 @@
             opacity: 0.3;
             display: block;
             margin-bottom: 0.5rem;
+            color: var(--azul-principal);
         }
         #resultPlaceholder p {
             font-size: 0.85rem;
@@ -625,8 +652,8 @@
         }
 
         /* ==============================================
-                   GRÁFICOS
-                ============================================== */
+           GRÁFICOS
+           ============================================== */
         .chart-container {
             background: rgba(0,0,0,0.12);
             border-radius: 10px;
@@ -634,31 +661,11 @@
             border: 1px solid rgba(255,255,255,0.03);
             height: 100%;
         }
-        .chart-container .chart-title {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2px;
-        }
-        .chart-container .chart-title span {
-            color: rgba(255,255,255,0.35);
-            font-size: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-        }
-        .chart-container .chart-title .badge-chart {
-            background: rgba(255,107,53,0.15);
-            color: #ff6b35;
-            font-size: 0.45rem;
-            padding: 0.05rem 0.4rem;
-            border-radius: 50px;
-        }
         .chart-container canvas { width: 100% !important; max-height: 100px; }
-        .chart-container-sm canvas { max-height: 70px; }
 
         /* ==============================================
-                   EXPLICAÇÃO
-                ============================================== */
+           EXPLICAÇÃO
+           ============================================== */
         .site-explanation {
             background: rgba(0,0,0,0.2);
             border-radius: 10px;
@@ -677,17 +684,17 @@
             color: rgba(255,255,255,0.45);
             font-size: 0.6rem;
         }
-        .site-explanation .exp-item i { color: #ff6b35; font-size: 0.65rem; width: 1rem; text-align: center; }
+        .site-explanation .exp-item i { color: var(--azul-principal); font-size: 0.65rem; width: 1rem; text-align: center; }
         .site-explanation .exp-item strong { color: rgba(255,255,255,0.7); }
 
         /* ==============================================
-                   LOADING
-                ============================================== */
+           LOADING
+           ============================================== */
         .loading-overlay {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(15, 12, 41, 0.92);
+            background: rgba(0, 0, 0, 0.92);
             backdrop-filter: blur(12px);
             z-index: 9999;
             justify-content: center;
@@ -696,9 +703,9 @@
         }
         .loading-overlay.show { display: flex; }
         .loading-overlay .loading-container { text-align: center; padding: 2rem; max-width: 450px; }
-        .loading-overlay .loading-icon { font-size: 3rem; margin-bottom: 0.6rem; animation: pulse 1.5s ease-in-out infinite; }
+        .loading-overlay .loading-icon { font-size: 3rem; margin-bottom: 0.6rem; animation: pulse 1.5s ease-in-out infinite; color: var(--azul-principal); }
         @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
-        .loading-overlay .loading-title { color: #ff6b35; font-weight: 800; font-size: 1.2rem; }
+        .loading-overlay .loading-title { color: var(--azul-principal); font-weight: 800; font-size: 1.2rem; }
         .loading-overlay .loading-subtitle { color: rgba(255,255,255,0.5); font-size: 0.8rem; }
         .loading-overlay .loading-progress { margin-top: 1rem; }
         .loading-overlay .progress {
@@ -709,15 +716,15 @@
         }
         .loading-overlay .progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            background: linear-gradient(90deg, var(--azul-principal), var(--azul-claro));
             transition: width 0.3s ease;
             border-radius: 10px;
         }
         .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.6rem; margin-top: 0.3rem; }
 
         /* ==============================================
-                   MENSAGENS (Container vazio - apenas para o MessageGuide do dashboard)
-                ============================================== */
+           MENSAGENS (MessageGuide)
+           ============================================== */
         #messageContainer {
             position: fixed;
             top: 75px;
@@ -729,33 +736,33 @@
         }
         #messageContainer .message-banner { pointer-events: auto; }
         .message-banner {
-            background: linear-gradient(145deg, rgba(26, 26, 46, 0.98) 0%, rgba(22, 33, 62, 0.98) 100%);
+            background: linear-gradient(145deg, rgba(10, 22, 40, 0.98) 0%, rgba(5, 10, 20, 0.98) 100%);
             border-radius: 10px;
             padding: 10px 14px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-            border-left: 4px solid #6c757d;
+            border-left: 4px solid var(--azul-principal);
             transform: translateX(30px);
             opacity: 0;
             transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             margin-bottom: 6px;
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.06);
+            border: 1px solid var(--borda-azul);
         }
         .message-banner.message-visible { transform: translateX(0); opacity: 1; }
         .message-banner.message-success { border-left-color: #28a745; }
         .message-banner.message-warning { border-left-color: #ffc107; }
-        .message-banner.message-info { border-left-color: #17a2b8; }
+        .message-banner.message-info { border-left-color: var(--azul-principal); }
         .message-banner.message-danger { border-left-color: #dc3545; }
         .message-content { display: flex; align-items: flex-start; gap: 8px; }
         .message-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
         .message-success .message-icon { color: #28a745; }
         .message-warning .message-icon { color: #ffc107; }
-        .message-info .message-icon { color: #17a2b8; }
+        .message-info .message-icon { color: var(--azul-principal); }
         .message-danger .message-icon { color: #dc3545; }
         .message-text { flex: 1; min-width: 0; }
         .message-title { font-weight: 700; font-size: 0.8rem; margin-bottom: 1px; color: #ffffff; }
         .message-body { font-size: 0.7rem; color: rgba(255,255,255,0.6); line-height: 1.4; }
-        .message-body strong { color: #f5a623; }
+        .message-body strong { color: var(--azul-principal); }
         .message-action { margin-top: 3px; }
         .message-action .btn { font-size: 0.6rem; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
         .message-dismiss {
@@ -772,21 +779,27 @@
         .message-dismiss:hover { opacity: 1; }
 
         /* ==============================================
-                   MODAIS
-                ============================================== */
+           MODAIS
+           ============================================== */
         .modal-content-custom {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
-            border: 1px solid rgba(255,107,53,0.3) !important;
+            background: linear-gradient(135deg, #0A1628 0%, #050A14 100%) !important;
+            border: 1px solid var(--borda-azul) !important;
             color: white;
+        }
+        .modal-header-custom {
+            border-bottom: 1px solid var(--borda-azul) !important;
+        }
+        .modal-footer-custom {
+            border-top: 1px solid var(--borda-azul) !important;
         }
 
         /* ==============================================
-                   RESPONSIVIDADE
-                ============================================== */
+           RESPONSIVIDADE
+           ============================================== */
         @media (max-width: 768px) {
             .navbar-modern .container { flex-direction: column; align-items: stretch; gap: 0.3rem; }
             .nav-right { justify-content: center; flex-wrap: wrap; }
-            .brand-text { font-size: 1.1rem; text-align: center; }
+            .brand-text { font-size: 1.1rem; text-align: center; justify-content: center; }
             .hero-section { padding: 100px 0 15px; }
             .upload-area { min-height: 120px; padding: 0.8rem; }
             .upload-area .upload-icon { font-size: 2rem; }
@@ -795,7 +808,6 @@
             .metric-value { font-size: 1.1rem; }
             .result-grid { grid-template-columns: repeat(2, 1fr); gap: 0.3rem; }
             .result-stat .stat-value { font-size: 1.1rem; }
-            .chart-container canvas { max-height: 70px; }
             #messageContainer { top: 95px; right: 10px; left: 10px; max-width: none; }
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
@@ -807,7 +819,6 @@
             .upload-area { padding: 0.6rem; min-height: 100px; }
             .upload-area .upload-icon { font-size: 1.6rem; }
             .upload-area .btn-select { padding: 0.3rem 0.8rem; font-size: 0.65rem; }
-            .chart-container canvas { max-height: 60px; }
             .site-explanation .exp-grid { grid-template-columns: 1fr; }
             .result-header { flex-direction: column; text-align: center; }
             .result-actions { justify-content: center; }
@@ -816,8 +827,8 @@
         }
 
         /* ==============================================
-                   PDF BUTTON - ESTILO ESPECIAL
-                ============================================== */
+           PDF BUTTON
+           ============================================== */
         .btn-pdf {
             background: linear-gradient(135deg, #dc3545, #c0392b) !important;
             color: white !important;
@@ -828,9 +839,7 @@
             box-shadow: 0 8px 35px rgba(220, 53, 69, 0.45) !important;
             color: white !important;
         }
-        .btn-pdf i {
-            color: white !important;
-        }
+        .btn-pdf i { color: white !important; }
     </style>
 </head>
 <body class="loading-state">
@@ -841,25 +850,29 @@
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
             <a class="brand-text text-decoration-none" href="/dashboard">
-                <i class="fas fa-wrench me-2"></i>
-                Auto<span>Analytics</span>
+                <span class="brand-icon"><i class="fas fa-chart-line"></i></span>
+                <span>
+                    <span class="brand-strong">Ayla</span>
+                    <span class="brand-blue">Mechanic</span>
+                    <span class="brand-sub">AUTOANALYTICS</span>
+                </span>
             </a>
-            
+
             <div class="nav-right">
                 <span class="user-name-display">
                     <i class="fas fa-user-circle"></i>
                     <span id="userName">Carregando...</span>
                 </span>
-                
+
                 <button class="credits-badge-nav" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
                     <i class="fas fa-coins"></i>
                     <span id="creditsCount">0</span>
                 </button>
-                
+
                 <a href="/planos" class="btn-planos-nav" id="planosLink">
                     <i class="fas fa-crown"></i> Planos
                 </a>
-                
+
                 <a href="#" class="btn-sair-nav" onclick="event.preventDefault(); window.logout();">
                     <i class="fas fa-sign-out-alt"></i> Sair
                 </a>
@@ -868,7 +881,7 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- 🔥 MENSAGENS (Container para o MessageGuide do dashboard) -->
+    <!-- 🔥 MENSAGENS (MessageGuide do dashboard.js) -->
     <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
 
@@ -879,7 +892,7 @@
         <div class="loading-container text-center">
             <div class="loading-icon"><i class="fas fa-robot"></i></div>
             <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
-            <p class="loading-subtitle" id="loadingSubtitle">A IA está analisando seus dados</p>
+            <p class="loading-subtitle" id="loadingSubtitle">A Ayla está analisando seus dados</p>
             <div class="loading-progress">
                 <div class="progress"><div class="progress-bar" id="loadingProgressBar" style="width:0%;"></div></div>
                 <div class="loading-percent" id="loadingPercent">0%</div>
@@ -892,28 +905,28 @@
     <!-- ============================================== -->
     <section class="hero-section">
         <div class="container">
-            
+
             <!-- INTRO -->
             <div class="row mb-3">
-                <div class="col-12 text-center">
-                    <span class="highlight-badge mb-1" style="display:inline-block; background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; padding:0.1rem 0.6rem; border-radius:50px; font-size:0.55rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
-                        <i class="fas fa-robot me-1"></i> IA para Mecânicos
+                <div class="col-12 text-center" data-aos="fade-down">
+                    <span style="display:inline-block; background:rgba(0,180,255,0.12); color:var(--azul-principal); border:1px solid var(--borda-azul); padding:0.25rem 0.8rem; border-radius:50px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;">
+                        <i class="fas fa-robot me-1"></i> Ayla Mechanic · IA para Oficinas
                     </span>
-                    <h1 class="display-6 fw-bold mt-1" style="background: linear-gradient(135deg, #ffffff 0%, #ff6b35 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size:1.8rem;">
-                        Transforme dados em resultados
+                    <h1 class="display-6 fw-bold mt-2" style="color: #ffffff; font-size:1.85rem; letter-spacing:-0.5px;">
+                        Transforme os dados da sua oficina em <span style="color: var(--azul-principal);">decisões mais claras</span>
                     </h1>
-                    <p class="lead" style="color: rgba(255,255,255,0.4); max-width: 500px; margin: 0 auto; font-size:0.85rem;">
-                        Analise dados da sua oficina com IA e obtenha insights em segundos
+                    <p class="lead" style="color: var(--cinza-texto); max-width: 560px; margin: 0 auto; font-size:0.88rem;">
+                        Envie sua planilha e a Ayla organiza as informações para mostrar pontos importantes do seu negócio.
                     </p>
                 </div>
             </div>
 
             <div class="row g-3">
-                
+
                 <!-- COLUNA ESQUERDA -->
                 <div class="col-lg-4">
                     <div class="row g-3">
-                        
+
                         <!-- MÉTRICAS -->
                         <div class="col-12">
                             <div class="glass-card">
@@ -927,14 +940,14 @@
                                         <div class="metric-value" id="analisesHoje">0</div>
                                         <div class="metric-label">Hoje</div>
                                     </div>
-                                    <div class="metric-card" style="border-color: rgba(255,107,53,0.15);">
+                                    <div class="metric-card" style="border-color: var(--borda-azul);">
                                         <div class="metric-value credits-highlight" id="creditsDisplay">0</div>
-                                        <div class="metric-label" style="color:#f5a623;">Créditos</div>
+                                        <div class="metric-label" style="color:var(--azul-principal);">Créditos</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- EXPLICAÇÃO -->
                         <div class="col-12">
                             <div class="glass-card">
@@ -942,7 +955,7 @@
                                 <div class="site-explanation">
                                     <div class="exp-grid">
                                         <div class="exp-item"><i class="fas fa-upload"></i> Envie <strong>CSV/Excel</strong></div>
-                                        <div class="exp-item"><i class="fas fa-robot"></i> IA analisa os <strong>dados</strong></div>
+                                        <div class="exp-item"><i class="fas fa-robot"></i> Ayla analisa os <strong>dados</strong></div>
                                         <div class="exp-item"><i class="fas fa-chart-line"></i> Receba <strong>insights</strong></div>
                                         <div class="exp-item"><i class="fas fa-coins"></i> <strong>1 crédito</strong>/análise</div>
                                     </div>
@@ -951,27 +964,27 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- COLUNA DIREITA: UPLOAD -->
                 <div class="col-lg-8">
                     <div class="row g-3">
                         <div class="col-12">
-                            <div class="glass-card" style="border-color: rgba(255,107,53,0.15);">
+                            <div class="glass-card" style="border-color: var(--borda-azul);">
                                 <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
                                     <h5 class="card-title mb-0"><i class="fas fa-cloud-upload-alt"></i> Upload</h5>
-                                    <span class="badge" style="background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; padding:0.15rem 0.6rem; font-size:0.6rem;">
+                                    <span class="badge" style="background: linear-gradient(135deg, var(--azul-principal), #0077B6); color: white; padding:0.15rem 0.6rem; font-size:0.6rem;">
                                         <i class="fas fa-coins me-1"></i> <span id="uploadCredits">0</span>
                                     </span>
                                 </div>
-                                
-                                <div style="background:rgba(0,0,0,0.15); border-radius:6px; padding:0.15rem 0.5rem; margin-bottom:0.4rem; text-align:center; font-size:0.55rem; color:rgba(255,255,255,0.3);">
+
+                                <div style="background:rgba(0,180,255,0.04); border-radius:6px; padding:0.15rem 0.5rem; margin-bottom:0.4rem; text-align:center; font-size:0.55rem; color:rgba(255,255,255,0.4); border: 1px solid var(--borda-azul);">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-2">
-                                        <span><i class="fas fa-hard-drive"></i> <strong style="color:#ff6b35;">200 KB</strong>/arquivo</span>
-                                        <span><i class="fas fa-layer-group"></i> <strong style="color:#ff6b35;">3</strong> arquivos/vez</span>
-                                        <span><i class="fas fa-coins"></i> <strong style="color:#ff6b35;">1</strong> crédito/arquivo</span>
+                                        <span><i class="fas fa-hard-drive"></i> <strong style="color:var(--azul-principal);">200 KB</strong>/arquivo</span>
+                                        <span><i class="fas fa-layer-group"></i> <strong style="color:var(--azul-principal);">3</strong> arquivos/vez</span>
+                                        <span><i class="fas fa-coins"></i> <strong style="color:var(--azul-principal);">1</strong> crédito/arquivo</span>
                                     </div>
                                 </div>
-                                
+
                                 <form id="uploadForm">
                                     <div class="upload-area" id="dropArea">
                                         <span class="upload-icon"><i class="fas fa-file-excel"></i></span>
@@ -989,13 +1002,13 @@
                                             <span><i class="fas fa-coins"></i> 1 crédito</span>
                                         </div>
                                     </div>
-                                    
+
                                     <div class="file-preview-container" id="filePreviewContainer"></div>
-                                    
+
                                     <div class="analysis-status" id="analysisStatus">
                                         <div class="status-icon" id="statusIcon">⏳</div>
                                         <div class="status-text" id="statusText">Processando...</div>
-                                        <div class="status-sub" id="statusSub">A IA está analisando</div>
+                                        <div class="status-sub" id="statusSub">A Ayla está analisando</div>
                                         <div class="status-progress"><div class="status-progress-bar" id="statusProgressBar"></div></div>
                                     </div>
                                 </form>
@@ -1003,29 +1016,27 @@
                         </div>
                     </div>
                 </div>
-                
+
             </div>
 
-            <!-- 🔥 RESULTADO - COM RELATÓRIO DA IA -->
+            <!-- 🔥 RESULTADO -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
                         <h5 class="card-title">
-                            <i class="fas fa-robot" style="color:#ff6b35;"></i> 
-                            Relatório da IA
+                            <i class="fas fa-robot"></i>
+                            Relatório da Ayla
                             <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.15); margin-left:0.5rem;">
                                 <i class="fas fa-brain me-1"></i> Análise em linguagem natural
                             </span>
                         </h5>
-                        
-                        <!-- 🔥 SELETOR DE ARQUIVOS (dinâmico) -->
+
                         <div id="analysisSelector" style="display: none;"></div>
-                        
+
                         <div class="result-container" id="resultContainer">
-                            <!-- Cabeçalho -->
                             <div class="result-header">
                                 <div class="result-title">
-                                    <i class="fas fa-check-circle" style="color:#48bb78;"></i>
+                                    <i class="fas fa-check-circle"></i>
                                     Análise concluída com sucesso
                                 </div>
                                 <span class="result-badge success">
@@ -1033,10 +1044,8 @@
                                 </span>
                             </div>
 
-                            <!-- 📊 MÉTRICAS -->
                             <div class="result-grid" id="resultMetrics"></div>
 
-                            <!-- 📝 RELATÓRIO DA IA -->
                             <div class="ai-report-card">
                                 <div id="aiReportContent" class="ai-report-content">
                                     <div class="ai-report-placeholder">
@@ -1046,10 +1055,8 @@
                                 </div>
                             </div>
 
-                            <!-- 💡 INSIGHTS -->
                             <div class="result-insights" id="resultInsights"></div>
 
-                            <!-- 🔥 AÇÕES -->
                             <div class="result-actions">
                                 <button class="btn-result btn-pdf" id="downloadPdfBtn">
                                     <i class="fas fa-file-pdf"></i> Baixar Relatório PDF
@@ -1060,22 +1067,21 @@
                             </div>
                         </div>
 
-                        <!-- Placeholder -->
                         <div id="resultPlaceholder">
                             <i class="fas fa-brain"></i>
-                            <p>🤖 Aguardando análise da IA</p>
+                            <p>🤖 Aguardando análise da Ayla</p>
                             <span class="placeholder-sub">Faça upload de um arquivo CSV/Excel para gerar o relatório</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 🔥 GRÁFICO PRINCIPAL - RECEITA VS CUSTOS -->
+            <!-- 🔥 GRÁFICO PRINCIPAL -->
             <div class="row mt-3">
                 <div class="col-12">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-chart-bar" style="color:#ff6b35;"></i> 
+                            <i class="fas fa-chart-bar"></i>
                             Receita vs Custos (Semanal)
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
                                 <i class="fas fa-chart-line me-1"></i> Análise financeira
@@ -1093,7 +1099,7 @@
                 <div class="col-md-6">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-tasks" style="color:#4a9eff;"></i> 
+                            <i class="fas fa-tasks"></i>
                             Desempenho Semanal
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
                                 <i class="fas fa-wrench me-1"></i> Serviços
@@ -1107,7 +1113,7 @@
                 <div class="col-md-6">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-calendar-alt" style="color:#f5a623;"></i> 
+                            <i class="fas fa-calendar-alt"></i>
                             Evolução Mensal
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
                                 <i class="fas fa-chart-line me-1"></i> Receita
@@ -1120,13 +1126,13 @@
                 </div>
             </div>
 
-            <!-- 🔥 GPSA - PERFORMANCE DA OFICINA -->
+            <!-- 🔥 GPSA -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card">
                         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
                             <h5 class="card-title mb-0">
-                                <i class="fas fa-heartbeat" style="color:#ff6b35;"></i> 
+                                <i class="fas fa-heartbeat"></i>
                                 GPSA - Performance da Oficina
                                 <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
                                     <i class="fas fa-chart-line me-1"></i> Score • Serviços • Financeiro
@@ -1137,27 +1143,20 @@
                                 Carregando...
                             </div>
                         </div>
-                        
-                        <!-- 🔥 ABAS DINÂMICAS -->
+
                         <div id="gpsaTabsContainer">
-                            <ul class="nav nav-tabs" id="gpsaTabs" role="tablist" style="border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.8rem;">
-                                <!-- As abas serão geradas dinamicamente pelo JS -->
-                            </ul>
-                            
-                            <div class="tab-content" id="gpsaTabContent">
-                                <!-- Os conteúdos das abas serão gerados dinamicamente pelo JS -->
-                            </div>
+                            <ul class="nav nav-tabs" id="gpsaTabs" role="tablist" style="border-bottom: 1px solid var(--borda-azul); margin-bottom: 0.8rem;"></ul>
+                            <div class="tab-content" id="gpsaTabContent"></div>
                         </div>
-                        
-                        <!-- Placeholder quando não há análises -->
+
                         <div id="gpsaPlaceholder" style="text-align:center; padding:2rem 0; color:rgba(255,255,255,0.1);">
                             <i class="fas fa-chart-line fa-3x mb-3" style="opacity:0.2;"></i>
                             <p style="font-size:0.85rem; color:rgba(255,255,255,0.2);">Faça upload de arquivos para ver os gráficos GPSA</p>
                         </div>
-                        
+
                         <div class="mt-2 text-center">
                             <small style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
-                                <i class="fas fa-info-circle me-1"></i> 
+                                <i class="fas fa-info-circle me-1"></i>
                                 Passe o mouse para ver detalhes • Picos e vales são destacados automaticamente
                             </small>
                         </div>
@@ -1168,10 +1167,13 @@
             <!-- RODAPÉ -->
             <div class="row mt-3">
                 <div class="col-12 text-center">
-                    <p style="color:rgba(255,255,255,0.05); font-size:0.5rem;">
-                        AutoAnalytics v9.0 - IA para Mecânicos
+                    <p style="color:rgba(255,255,255,0.1); font-size:0.55rem;">
+                        <i class="fas fa-chart-line me-1" style="color:var(--azul-principal);"></i>
+                        Ayla Mechanic · AutoAnalytics v9.0
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt"></i> PoW
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-database"></i> Dados criptografados
                     </p>
                 </div>
             </div>
@@ -1182,29 +1184,29 @@
     <!-- ============================================== -->
     <!-- 🔥 MODAIS -->
     <!-- ============================================== -->
-    
+
     <div class="modal fade" id="creditsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content modal-content-custom">
                 <div class="modal-header modal-header-custom">
-                    <h5 class="modal-title"><i class="fas fa-coins me-2" style="color:#ff6b35;"></i> Meus Créditos</h5>
+                    <h5 class="modal-title"><i class="fas fa-coins me-2" style="color:var(--azul-principal);"></i> Meus Créditos</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body text-center py-3">
-                    <i class="fas fa-coins fa-3x mb-2" style="color:#ff6b35;"></i>
-                    <div class="display-5 fw-bold" id="modalCreditsCount" style="color:#ff6b35;">0</div>
+                    <i class="fas fa-coins fa-3x mb-2" style="color:var(--azul-principal);"></i>
+                    <div class="display-5 fw-bold" id="modalCreditsCount" style="color:var(--azul-principal);">0</div>
                     <p class="text-muted mb-2" style="color:rgba(255,255,255,0.4); font-size:0.8rem;">créditos disponíveis</p>
-                    <div class="alert alert-info small" style="background:rgba(255,107,53,0.06) !important; border-color:rgba(255,107,53,0.1) !important; color:rgba(255,255,255,0.7) !important; font-size:0.65rem; text-align:left;">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong style="color:#ff6b35;">Como funciona:</strong><br>
-                        • <strong style="color:#ff6b35;">3 créditos grátis</strong> ao começar<br>
+                    <div class="alert alert-info small" style="background:rgba(0,180,255,0.06) !important; border-color:var(--borda-azul) !important; color:rgba(255,255,255,0.7) !important; font-size:0.65rem; text-align:left;">
+                        <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);"></i>
+                        <strong style="color:var(--azul-principal);">Como funciona:</strong><br>
+                        • <strong style="color:var(--azul-principal);">3 créditos grátis</strong> ao começar<br>
                         • ⭐ Premium ganha 1 crédito/dia<br>
                         • Cada análise consome 1 crédito<br>
                         • 📁 Até 3 arquivos por vez (200KB cada)
                     </div>
                 </div>
                 <div class="modal-footer modal-footer-custom">
-                    <a href="/planos" class="btn w-100" style="background:linear-gradient(135deg,#ff6b35,#f7931e); color:white; border:none; padding:0.4rem; border-radius:50px; font-weight:700; font-size:0.75rem;">
+                    <a href="/planos" class="btn w-100" style="background:linear-gradient(135deg,var(--azul-principal),#0077B6); color:white; border:none; padding:0.4rem; border-radius:50px; font-weight:700; font-size:0.75rem;">
                         <i class="fas fa-credit-card me-2"></i> Comprar créditos
                     </a>
                 </div>
@@ -1216,12 +1218,12 @@
         <div class="modal-dialog modal-dialog-centered modal-xl">
             <div class="modal-content modal-content-custom">
                 <div class="modal-header modal-header-custom">
-                    <h5 class="modal-title"><i class="fas fa-chart-line me-2" style="color:#ff6b35;"></i> GPSA - Impacto no Negócio</h5>
+                    <h5 class="modal-title"><i class="fas fa-chart-line me-2" style="color:var(--azul-principal);"></i> GPSA - Impacto no Negócio</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
                 </div>
                 <div class="modal-body" id="gpsaModalBody">
                     <div class="text-center py-3">
-                        <div class="spinner-border text-warning" role="status" style="color:#ff6b35;">
+                        <div class="spinner-border" role="status" style="color:var(--azul-principal);">
                             <span class="visually-hidden">Carregando...</span>
                         </div>
                         <p class="mt-2" style="color:rgba(255,255,255,0.3); font-size:0.8rem;">Carregando análise...</p>
@@ -1236,23 +1238,23 @@
     <!-- ============================================== -->
     <template id="cpfModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); border:1px solid #f5a623;">
+            <div class="modal-content" style="background:linear-gradient(135deg,#0A1628 0%,#050A14 100%); border:1px solid var(--azul-principal);">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color:#f5a623;"><i class="fas fa-id-card me-2"></i>Confirme seu CPF</h5>
+                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-id-card me-2"></i>Confirme seu CPF</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white-50 mb-2" style="font-size:0.8rem;"><i class="fas fa-shield-alt me-2"></i> CPF obrigatório para gerar PIX.</p>
+                    <p class="text-white-50 mb-2" style="font-size:0.8rem;"><i class="fas fa-shield-alt me-2" style="color:var(--azul-principal);"></i> CPF obrigatório para gerar PIX.</p>
                     <div class="mb-2">
                         <label class="form-label text-white" style="font-size:0.75rem;">CPF</label>
-                        <input type="text" class="form-control" id="cpfInput" placeholder="000.000.000-00" maxlength="14" style="background:rgba(255,255,255,0.08); border-color:#f5a623; color:white; border-radius:8px; font-size:0.9rem;">
+                        <input type="text" class="form-control" id="cpfInput" placeholder="000.000.000-00" maxlength="14" style="background:rgba(255,255,255,0.08); border-color:var(--azul-principal); color:white; border-radius:8px; font-size:0.9rem;">
                         <div class="form-text text-white-50" style="font-size:0.6rem;">Apenas números (11 dígitos)</div>
                     </div>
                     <div id="cpfError" class="alert alert-danger d-none"></div>
                 </div>
                 <div class="modal-footer border-0">
                     <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.3rem 1.2rem; font-size:0.7rem;" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn" id="cpfConfirmBtn" style="background:linear-gradient(135deg,#f5a623,#e67e22); color:white; border:none; border-radius:50px; padding:0.3rem 1.2rem; font-weight:700; font-size:0.7rem;">
+                    <button type="button" class="btn" id="cpfConfirmBtn" style="background:linear-gradient(135deg,var(--azul-principal),#0077B6); color:white; border:none; border-radius:50px; padding:0.3rem 1.2rem; font-weight:700; font-size:0.7rem;">
                         <i class="fas fa-arrow-right me-2"></i>Continuar
                     </button>
                 </div>
@@ -1262,13 +1264,13 @@
 
     <template id="pixModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); border:1px solid rgba(205,127,50,0.3);">
+            <div class="modal-content" style="background:linear-gradient(135deg,#0A1628 0%,#050A14 100%); border:1px solid var(--borda-azul);">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color:#f5a623;"><i class="fas fa-qrcode me-2"></i> Pagamento PIX</h5>
+                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-qrcode me-2"></i> Pagamento PIX</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center py-3">
-                    <div class="alert alert-success mb-2 text-center" style="background:rgba(40,167,69,0.1); border-color:#28a745; color:#48bb78; font-size:0.75rem;">
+                    <div class="alert alert-success mb-2 text-center" style="background:rgba(0,180,255,0.08); border-color:var(--borda-azul); color:var(--azul-principal); font-size:0.75rem;">
                         <strong id="pixPromoText">🎉 PREÇO FUNDADOR!</strong><br>
                         <small id="pixPriceText">R$ 97,00</small>
                     </div>
@@ -1280,15 +1282,15 @@
                         </div>
                     </div>
                     <div class="p-2 rounded-2 mb-2" style="background:rgba(255,255,255,0.05); word-break:break-all;">
-                        <code id="pixCodeText" style="color:#f5a623; font-size:0.65rem;">autonalytics@gmail.com</code>
+                        <code id="pixCodeText" style="color:var(--azul-principal); font-size:0.65rem;">autoanalyticss@gmail.com</code>
                     </div>
-                    <button class="btn w-100 mb-2" onclick="window.copyPixCode()" style="background:rgba(255,255,255,0.06); color:#f5a623; border:1px solid rgba(205,127,50,0.2); border-radius:8px; padding:0.4rem; font-size:0.7rem;">
+                    <button class="btn w-100 mb-2" onclick="window.copyPixCode()" style="background:rgba(0,180,255,0.06); color:var(--azul-principal); border:1px solid var(--borda-azul); border-radius:8px; padding:0.4rem; font-size:0.7rem;">
                         <i class="fas fa-copy me-2"></i> Copiar Chave
                     </button>
-                    <div class="alert alert-info small" style="background:rgba(245,166,35,0.05); border-color:rgba(205,127,50,0.1); color:rgba(255,255,255,0.5); font-size:0.6rem; text-align:left;">
-                        <strong id="pixPlanText">Plano Bronze</strong> - <span id="pixAmountText">R$ 97,00</span><br>
-                        <span class="text-success" id="pixPromoBadge">✅ Preço vitalício</span><br>
-                        <span style="color:rgba(255,255,255,0.3);">⏰ <strong id="countdownTimer">30:00</strong> min</span>
+                    <div class="alert alert-info small" style="background:rgba(0,180,255,0.05); border-color:var(--borda-azul); color:rgba(255,255,255,0.5); font-size:0.6rem; text-align:left;">
+                        <strong id="pixPlanText">Plano Premium</strong> - <span id="pixAmountText">R$ 97,00</span><br>
+                        <span style="color:var(--azul-claro);" id="pixPromoBadge">✅ Preço vitalício</span><br>
+                        <span style="color:rgba(255,255,255,0.3);">⏰ <strong id="countdownTimer">02:00</strong> min</span>
                     </div>
                     <div id="paymentStatus"></div>
                 </div>
@@ -1304,7 +1306,7 @@
     <!-- ============================================== -->
     <!-- 🔥 SCRIPTS -->
     <!-- ============================================== -->
-    
+
     <!-- 1️⃣ BIBLIOTECAS -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer></script>
@@ -1319,7 +1321,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
-    <!-- 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRETA -->
+    <!-- 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRETA (MANTIDA) -->
     <script src="/static/js/app.js?ver=7.8.0" defer></script>
     <script src="/static/js/auth.js?ver=4.3.0" defer></script>
     <script src="/static/js/pow-client.js?ver=5.2" defer></script>
@@ -1329,51 +1331,39 @@
     <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO CORRIGIDO (v3) -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (MANTIDO) -->
     <!-- ============================================== -->
     <script>
     (function() {
         'use strict';
         console.log('🔐 Inicializando fallback de autenticação v3...');
-        
+
         function getApp() { return window.App || window.app || window.autoAnalytics; }
-        
+
         function isAppReady() {
             var app = getApp();
             if (app && typeof app.isReady === 'function') { return app.isReady(); }
             return !!window._appReadyFired;
         }
-        
+
         function redirectToLogin() {
             console.warn('🔐 Fallback: Redirecionando para login (token inválido)');
             window.location.replace('/login');
         }
-        
+
         function isAuthenticated() {
             try {
                 if (window.appAuth) {
-                    if (typeof window.appAuth.isAuthenticated === 'boolean') {
-                        return window.appAuth.isAuthenticated;
-                    }
-                    if (typeof window.appAuth.isAuthenticated === 'function') {
-                        return window.appAuth.isAuthenticated();
-                    }
-                    if (window.appAuth.userData && window.appAuth.userData.email) {
-                        return true;
-                    }
+                    if (typeof window.appAuth.isAuthenticated === 'boolean') { return window.appAuth.isAuthenticated; }
+                    if (typeof window.appAuth.isAuthenticated === 'function') { return window.appAuth.isAuthenticated(); }
+                    if (window.appAuth.userData && window.appAuth.userData.email) { return true; }
                 }
                 var app = getApp();
                 if (app) {
-                    if (typeof app.isAuthenticated === 'boolean') {
-                        return app.isAuthenticated;
-                    }
-                    if (typeof app.isAuthenticated === 'function') {
-                        return app.isAuthenticated();
-                    }
+                    if (typeof app.isAuthenticated === 'boolean') { return app.isAuthenticated; }
+                    if (typeof app.isAuthenticated === 'function') { return app.isAuthenticated(); }
                 }
-                if (window.__APP_STATE && window.__APP_STATE.tokenValid === true) {
-                    return true;
-                }
+                if (window.__APP_STATE && window.__APP_STATE.tokenValid === true) { return true; }
                 var token = localStorage.getItem('access_token');
                 return token && token.length > 10;
             } catch (e) {
@@ -1381,7 +1371,7 @@
                 return false;
             }
         }
-        
+
         function checkAuth() {
             if (isAppReady()) {
                 console.log('🔐 App pronto - verificando autenticação...');
@@ -1391,7 +1381,7 @@
                 console.log('🔐 Autenticação verificada com sucesso!');
                 return true;
             }
-            
+
             console.log('🔐 Aguardando app:ready...');
             document.addEventListener('app:ready', function handler(e) {
                 document.removeEventListener('app:ready', handler);
@@ -1401,7 +1391,7 @@
                 document.body.classList.remove('loading-state');
                 console.log('🔐 Autenticação verificada com sucesso!');
             });
-            
+
             var timeoutId = setTimeout(function() {
                 document.removeEventListener('app:ready', function() {});
                 console.warn('🔐 Timeout: app não respondeu, verificando token...');
@@ -1413,19 +1403,14 @@
             document.addEventListener('app:ready', function() { clearTimeout(timeoutId); }, { once: true });
             return null;
         }
-        
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() { setTimeout(checkAuth, 100); });
         } else {
             setTimeout(checkAuth, 100);
         }
-        
-        window._authFallback = { 
-            check: checkAuth, 
-            redirectToLogin: redirectToLogin, 
-            isAppReady: isAppReady,
-            isAuthenticated: isAuthenticated
-        };
+
+        window._authFallback = { check: checkAuth, redirectToLogin: redirectToLogin, isAppReady: isAppReady, isAuthenticated: isAuthenticated };
         console.log('✅ Fallback de autenticação v3 carregado!');
     })();
     </script>
@@ -1437,10 +1422,10 @@
     (function() {
         'use strict';
         console.log('🔧 [Emergency Fix] Aplicando correção para appAuth.isAuthenticated...');
-        
+
         function fixAppAuth() {
             if (!window.appAuth) { return false; }
-            
+
             if (typeof window.appAuth.isAuthenticated === 'function') {
                 try {
                     var currentValue = window.appAuth.isAuthenticated();
@@ -1458,20 +1443,20 @@
                     return false;
                 }
             }
-            
+
             if (typeof window.appAuth.isAuthenticated === 'boolean') {
                 console.log('✅ [Fix] appAuth.isAuthenticated já é uma propriedade booleana');
                 return true;
             }
-            
+
             return false;
         }
-        
+
         if (fixAppAuth()) return;
-        
+
         document.addEventListener('authReady', function() { fixAppAuth(); });
         document.addEventListener('app:ready', function() { fixAppAuth(); });
-        
+
         var attempts = 0;
         var maxAttempts = 20;
         var interval = setInterval(function() {
@@ -1483,7 +1468,7 @@
                 }
             }
         }, 500);
-        
+
         console.log('🔧 [Fix] Correção de emergência instalada!');
     })();
     </script>
@@ -1498,23 +1483,17 @@
 
         async function forceSyncCredits() {
             console.log('🔄 [Sync] Forçando sincronização de créditos...');
-            
+
             try {
                 if (window.appAuth && typeof window.appAuth.loadUserCredits === 'function') {
                     await window.appAuth.loadUserCredits();
-                    console.log('✅ [Sync] appAuth sincronizado');
                 }
-                
                 if (window.__dashboard && typeof window.__dashboard.syncCredits === 'function') {
                     await window.__dashboard.syncCredits();
-                    console.log('✅ [Sync] dashboard sincronizado');
                 }
-                
                 if (window.App && typeof window.App.syncCredits === 'function') {
                     await window.App.syncCredits();
-                    console.log('✅ [Sync] App sincronizado');
                 }
-                
                 if (window.App && typeof window.App.updateCredits === 'function') {
                     window.App.updateCredits();
                 }
@@ -1524,11 +1503,9 @@
                 if (window.App && typeof window.App.updateNavbar === 'function') {
                     window.App.updateNavbar();
                 }
-                
                 if (window.checkEligibility) {
                     await window.checkEligibility(true);
                 }
-                
                 console.log('✅ [Sync] Sincronização concluída!');
                 return true;
             } catch (e) {
@@ -1537,23 +1514,14 @@
             }
         }
 
-        document.addEventListener('analysis:success', function() {
-            setTimeout(forceSyncCredits, 500);
-        });
-
-        document.addEventListener('upload:completed', function() {
-            setTimeout(forceSyncCredits, 500);
-        });
-
+        document.addEventListener('analysis:success', function() { setTimeout(forceSyncCredits, 500); });
+        document.addEventListener('upload:completed', function() { setTimeout(forceSyncCredits, 500); });
         document.addEventListener('credits:consumed', function(e) {
             const data = e.detail || {};
             console.log(`💰 [Sync] Créditos consumidos: ${data.amount}, saldo: ${data.balance}`);
             setTimeout(forceSyncCredits, 300);
         });
-
-        document.addEventListener('authLoginSuccess', function() {
-            setTimeout(forceSyncCredits, 300);
-        });
+        document.addEventListener('authLoginSuccess', function() { setTimeout(forceSyncCredits, 300); });
 
         let syncInterval = setInterval(function() {
             var isAuth = false;
@@ -1564,28 +1532,20 @@
                     isAuth = window.appAuth.isAuthenticated();
                 }
             }
-            if (isAuth) {
-                forceSyncCredits();
-            }
+            if (isAuth) { forceSyncCredits(); }
         }, 15000);
 
         window.addEventListener('beforeunload', function() {
-            if (syncInterval) {
-                clearInterval(syncInterval);
-                syncInterval = null;
-            }
+            if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
         });
 
         window.forceSyncCredits = forceSyncCredits;
-
         console.log('✅ [Sync] Sistema de sincronização v4 carregado!');
-        console.log('   🔄 Use window.forceSyncCredits() para sincronizar manualmente');
-        console.log('   ⏰ Sincronização automática a cada 15 segundos');
     })();
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 BOTÃO DE SINCRONIZAÇÃO (FLUTUANTE - DEBUG) -->
+    <!-- 🔥 BOTÃO DE SINCRONIZAÇÃO (DEBUG) -->
     <!-- ============================================== -->
     <style>
         #syncDebugBtn {
@@ -1593,10 +1553,10 @@
             bottom: 20px;
             right: 20px;
             z-index: 9999;
-            background: rgba(255,107,53,0.15);
+            background: rgba(0, 180, 255, 0.15);
             backdrop-filter: blur(10px);
-            color: #ff6b35;
-            border: 1px solid rgba(255,107,53,0.2);
+            color: var(--azul-principal);
+            border: 1px solid var(--borda-azul);
             border-radius: 50px;
             padding: 6px 14px;
             font-size: 11px;
@@ -1609,17 +1569,12 @@
         }
         #syncDebugBtn:hover {
             opacity: 1;
-            background: rgba(255,107,53,0.25);
+            background: rgba(0, 180, 255, 0.25);
             transform: scale(1.05);
         }
         #syncDebugBtn i { margin-right: 4px; }
         @media (max-width: 768px) {
-            #syncDebugBtn {
-                bottom: 15px;
-                right: 15px;
-                padding: 4px 10px;
-                font-size: 9px;
-            }
+            #syncDebugBtn { bottom: 15px; right: 15px; padding: 4px 10px; font-size: 9px; }
         }
     </style>
     <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos">
