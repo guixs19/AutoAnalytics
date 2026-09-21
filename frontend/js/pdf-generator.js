@@ -1,12 +1,16 @@
-// frontend/js/pdf-generator.js - VERSÃO 7.0 (PREVIEW + AYLA)
+// frontend/js/pdf-generator.js - VERSÃO 8.0 (BLOB-FIRST + PREVIEW)
 /**
- * 🔥 PDF Generator - AutoAnalytics v7.0
+ * 🔥 PDF Generator - AutoAnalytics v8.0
  * 
- * ✅ NOVIDADES v7.0:
- * - 🔥 PDFPreview: renderiza o PDF no iframe da div "Relatório da Ayla"
- * - 🔥 "Ayla" substitui TODAS as menções a "ML", "modelo", "IA"
- * - 🔥 Zoom, fullscreen e download instantâneo
- * - 🔥 Blob URL (sem salvar arquivo até o usuário clicar em baixar)
+ * ✅ NOVIDADES v8.0:
+ * - 🔥 generatePDFBlob(): retorna Blob SEM baixar (não bloqueia)
+ * - 🔥 PDFPreview.renderFromBlob(): renderiza Blob já pronto
+ * - 🔥 PDFPreview.download(): download instantâneo via Blob
+ * - 🔥 Fluxo "PDF-first": PDF aparece antes da IA terminar
+ * 
+ * ✅ MANTIDO v7.0:
+ * - "Ayla" substitui TODAS as menções a ML/modelo/IA
+ * - Zoom, fullscreen, preview no iframe
  * 
  * ✅ MANTIDO v6.0:
  * - Extração correta de per_file_analysis
@@ -19,7 +23,7 @@
 (function() {
     'use strict';
 
-    console.log('📄 PDF Generator v7.0 - Preview + Ayla');
+    console.log('📄 PDF Generator v8.0 - Blob-First + Preview + Ayla');
 
     // ==============================================
     // 🔥 SANITIZADOR (mantém acentos pt-BR)
@@ -69,12 +73,12 @@
     };
 
     // ==============================================
-    // 🔥 GERADOR DE PDF V7.0
+    // 🔥 GERADOR DE PDF V8.0
     // ==============================================
 
     class PDFGenerator {
         constructor() {
-            console.log('✅ PDFGenerator v7.0');
+            console.log('✅ PDFGenerator v8.0');
         }
         
         async generate(options = {}) {
@@ -103,6 +107,52 @@
             console.log(`📊 [PDF] ${metrics.totalRegistros} registros, score ${(metrics.scoreMedio*100).toFixed(0)}%`);
             
             return this._generateReport(metrics, data, options);
+        }
+        
+        // ==============================================
+        // 🔥 NOVO v8.0: Gera Blob sem baixar
+        // ==============================================
+        
+        /**
+         * 🔥 Gera o PDF e retorna um Blob (SEM baixar, SEM bloquear)
+         * Ideal para pré-visualização imediata
+         */
+        async generatePDFBlob(options = {}) {
+            console.log('📦 [PDF Blob] Gerando Blob (sem download)...');
+            
+            const data = this._collectData();
+            
+            if (!data) {
+                console.warn('⚠️ [PDF Blob] Sem dados');
+                return null;
+            }
+            
+            const metrics = this._extractMetrics(data);
+            
+            if (metrics.totalRegistros === 0 && metrics.totalRevenue === 0) {
+                console.warn('⚠️ [PDF Blob] Sem dados reais');
+                return null;
+            }
+            
+            // 🔥 Gera o doc SEM salvar
+            const doc = this._generateReport(metrics, data, {
+                ...options,
+                _returnDoc: true,
+                _previewMode: true
+            });
+            
+            if (!doc) return null;
+            
+            // 🔥 Retorna Blob (não URL ainda)
+            const blob = doc.output('blob');
+            console.log('✅ [PDF Blob] Gerado:', blob.size, 'bytes');
+            
+            // Guarda o doc para download direto
+            if (window.PDFPreview) {
+                window.PDFPreview._lastDoc = doc;
+            }
+            
+            return blob;
         }
         
         _collectData() {
@@ -759,7 +809,7 @@
                 doc.setTextColor(C.lightGray[0], C.lightGray[1], C.lightGray[2]);
                 doc.setFontSize(7);
                 doc.setFont('helvetica', 'normal');
-                doc.text('Ayla Mechanic v7.0 - Relatório gerado automaticamente pela Ayla', M.MARGIN_LEFT, 290);
+                doc.text('Ayla Mechanic v8.0 - Relatório gerado automaticamente pela Ayla', M.MARGIN_LEFT, 290);
                 doc.text(`Página ${i}/${pageCount}`, 180, 290);
             }
             
@@ -811,14 +861,31 @@
         }
     };
 
+    /**
+     * 🔥 NOVO v8.0: Gera o PDF e retorna um Blob (sem baixar)
+     * Uso: const blob = await window.generatePDFBlob();
+     */
+    window.generatePDFBlob = async function(options = {}) {
+        try {
+            return await pdfGenerator.generatePDFBlob(options);
+        } catch (error) {
+            console.error('❌ [PDF Blob] Erro:', error);
+            if (window.toastr) {
+                window.toastr.error('Erro ao gerar PDF: ' + error.message);
+            }
+            return null;
+        }
+    };
+
     // ==============================================
-    // 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO v7.0)
+    // 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF (v8.0)
     // ==============================================
 
     const PDFPreview = {
         _currentBlobUrl: null,
         _zoomLevel: 100,
         _lastDoc: null,
+        _lastBlob: null,   // 🔥 NOVO: guarda o Blob para download instantâneo
 
         /**
          * Gera o PDF em memória e retorna o Blob URL (sem salvar)
@@ -851,6 +918,9 @@
             const blob = doc.output('blob');
             const blobUrl = URL.createObjectURL(blob);
 
+            // 🔥 Guarda o Blob também
+            this._lastBlob = blob;
+
             // Limpa URL anterior para evitar memory leak
             if (this._currentBlobUrl) {
                 URL.revokeObjectURL(this._currentBlobUrl);
@@ -862,7 +932,7 @@
         },
 
         /**
-         * Renderiza o PDF na div de preview
+         * Renderiza o PDF na div de preview (gera do zero)
          */
         async render() {
             const wrapper = document.getElementById('pdfPreviewWrapper');
@@ -909,6 +979,60 @@
         },
 
         /**
+         * 🔥 NOVO v8.0: Renderiza um Blob já existente (sem gerar de novo)
+         * Ideal para quando o PDF já foi gerado em outro lugar
+         */
+        renderFromBlob(blob) {
+            const wrapper = document.getElementById('pdfPreviewWrapper');
+            const frame = document.getElementById('pdfPreviewFrame');
+            const loading = document.getElementById('pdfPreviewLoading');
+            const fallback = document.getElementById('pdfPreviewFallback');
+
+            if (!wrapper || !frame) {
+                console.warn('⚠️ [PDF Preview] Elementos não encontrados');
+                return false;
+            }
+
+            if (!blob) {
+                console.warn('⚠️ [PDF Preview] Blob inválido');
+                return false;
+            }
+
+            console.log('👁️ [PDF Preview] Renderizando Blob:', blob.size, 'bytes');
+
+            // Mostra wrapper
+            wrapper.style.display = 'block';
+            if (fallback) fallback.style.display = 'none';
+            if (loading) loading.style.display = 'flex';
+
+            // Limpa URL anterior (evita memory leak)
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+                this._currentBlobUrl = null;
+            }
+
+            // 🔥 Guarda o Blob para download posterior
+            this._lastBlob = blob;
+
+            // 🔥 Cria URL do Blob e injeta no iframe
+            this._currentBlobUrl = URL.createObjectURL(blob);
+
+            frame.onload = () => {
+                if (loading) loading.style.display = 'none';
+                console.log('✅ [PDF Preview] Blob renderizado no iframe');
+            };
+
+            frame.src = this._currentBlobUrl;
+
+            // Timeout de segurança
+            setTimeout(() => {
+                if (loading) loading.style.display = 'none';
+            }, 2000);
+
+            return true;
+        },
+
+        /**
          * Aplica zoom no iframe (via CSS transform)
          */
         applyZoom(level) {
@@ -928,16 +1052,34 @@
         },
 
         /**
-         * Download do PDF (mesmo já estando em preview)
+         * 🔥 Download do PDF (usa Blob se disponível, senão o doc)
          */
         download() {
+            // 🔥 Prioridade 1: Blob já gerado (download instantâneo)
+            if (this._lastBlob) {
+                const url = URL.createObjectURL(this._lastBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'Relatorio_Ayla_' + Date.now() + '.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                console.log('✅ [PDF Preview] Download via Blob (instantâneo)');
+                return;
+            }
+            
+            // 🔥 Prioridade 2: doc jsPDF em memória
             if (this._lastDoc) {
                 const filename = 'Relatorio_Ayla_' + Date.now() + '.pdf';
                 this._lastDoc.save(filename);
-                console.log('✅ [PDF Preview] Download iniciado:', filename);
-            } else {
-                window.generatePDF();
+                console.log('✅ [PDF Preview] Download via doc');
+                return;
             }
+            
+            // 🔥 Fallback: gera do zero e baixa
+            console.warn('⚠️ [PDF Preview] Sem PDF em memória, gerando...');
+            window.generatePDF();
         },
 
         /**
@@ -963,6 +1105,7 @@
                 this._currentBlobUrl = null;
             }
             this._lastDoc = null;
+            this._lastBlob = null;   // 🔥 Limpa também o Blob
         }
     };
 
@@ -1098,11 +1241,12 @@
                 this.innerHTML = '⏳ Baixando...';
 
                 try {
-                    // 🔥 Se já temos preview em memória, apenas baixa
-                    if (PDFPreview._lastDoc) {
+                    // 🔥 Prioridade 1: Blob em memória (instantâneo)
+                    if (PDFPreview._lastBlob || PDFPreview._lastDoc) {
                         PDFPreview.download();
                     } else {
-                        // Senão, gera e baixa
+                        // Fallback: gera do zero e baixa
+                        console.log('⚠️ [PDF] Sem PDF em memória, gerando...');
                         await window.generatePDF();
                     }
                 } catch (error) {
@@ -1115,15 +1259,16 @@
         }
     });
 
-    console.log('✅ PDF Generator v7.0 carregado!');
-    console.log('   📄 window.generatePDF()     - gera e BAIXA o PDF');
-    console.log('   👁️ window.previewPDF()       - gera e PRÉ-VISUALIZA o PDF');
-    console.log('   🧪 window.testPDF()         - testa com dados de exemplo');
-    console.log('   🔍 window.diagnosticarPDF() - debug dos dados');
-    console.log('   🔥 NOVIDADES v7.0:');
-    console.log('      ✅ PDFPreview: renderiza na div "Relatório da Ayla"');
-    console.log('      ✅ Zoom, fullscreen e download instantâneo');
-    console.log('      ✅ Blob URL (sem salvar até clicar em baixar)');
-    console.log('      ✅ "Ayla" substitui TODAS as menções a ML/modelo/IA');
+    console.log('✅ PDF Generator v8.0 carregado!');
+    console.log('   📄 window.generatePDF()       - gera e BAIXA o PDF');
+    console.log('   📦 window.generatePDFBlob()    - gera e retorna BLOB (sem baixar)');
+    console.log('   👁️ window.previewPDF()         - gera e PRÉ-VISUALIZA');
+    console.log('   ⚡ PDFPreview.download()       - baixa INSTANTÂNEO do Blob');
+    console.log('   🧪 window.testPDF()           - testa com dados de exemplo');
+    console.log('   🔍 window.diagnosticarPDF()   - debug dos dados');
+    console.log('   🔥 NOVIDADES v8.0:');
+    console.log('      ✅ Fluxo PDF-first: não bloqueia a IA');
+    console.log('      ✅ Blob guardado em memória para download instantâneo');
+    console.log('      ✅ renderFromBlob() para uso externo');
 
 })();

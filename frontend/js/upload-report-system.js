@@ -1,10 +1,24 @@
-// frontend/js/upload-report-system.js - v2.7 (CORRIGIDO - SEM FALLBACK /upload-auto)
+// frontend/js/upload-report-system.js - v3.0 (PDF-FIRST + AYLA)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
+/**
+ * 🔥 NOVIDADES v3.0:
+ * - 🔥 PDF-FIRST: PDF aparece em ~1s, antes da IA
+ * - 🔥 IA roda em PARALELO (não bloqueia)
+ * - 🔥 Download INSTANTÂNEO via Blob
+ * - 🔥 "Ayla" substitui TODAS as menções a ML/modelo/IA
+ * - 🔥 Insights aparecem quando prontos
+ * 
+ * ✅ MANTIDO v2.7:
+ * - PoW renovado corretamente
+ * - Headers completos
+ * - Sem fallback /upload-auto
+ * - Não permite upload sem PoW
+ */
 
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v2.7...');
+    console.log('📊 Inicializando UploadReportSystem v3.0 (PDF-First + Ayla)...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -18,7 +32,6 @@
         MAX_POLLING_ATTEMPTS: 300,
         API_BASE: '/api',
         UPLOAD_ENDPOINT: '/upload-multi-analyze',
-        // 🔴 BUGFIX v2.7: REMOVIDO FALLBACK /upload-auto (evitava consumo duplo de PoW)
         UPLOAD_RETRY_ATTEMPTS: 3,
         UPLOAD_RETRY_DELAY: 2000,
         GLOBAL_TIMEOUT: 600000,
@@ -28,7 +41,7 @@
             '/analysis/',
             '/analyses/',
         ],
-        POW_MAX_AGE: 600000,  // 🔴 BUGFIX v2.7: sincronizado com backend (600s)
+        POW_MAX_AGE: 600000,
         POW_RETRY_ATTEMPTS: 2,
         MAX_RETRY_BACKOFF: 10000,
         HEALTH_CHECK_INTERVAL: 30000,
@@ -55,6 +68,9 @@
         errorCount: 0,
         isRecovering: false,
         chartData: null,
+        pdfBlob: null,        // 🔥 NOVO: guarda o Blob do PDF
+        pdfReady: false,      // 🔥 NOVO: flag se o PDF já está pronto
+        aiReportDone: false,  // 🔥 NOVO: flag se a IA já terminou
     };
 
     // ==============================================
@@ -214,6 +230,23 @@
         const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
         const patterns = ['crédito', 'credits', '402', 'payment', 'insufficient'];
         return patterns.some(p => errorStr.toLowerCase().includes(p));
+    }
+
+    /**
+     * 🔥 Substitui menções a ML/IA/modelo por "Ayla"
+     */
+    function aylify(text) {
+        if (!text) return '';
+        return String(text)
+            .replace(/\bML\b/g, 'Ayla')
+            .replace(/\bml\b/g, 'Ayla')
+            .replace(/modelo de machine learning/gi, 'Ayla')
+            .replace(/machine learning/gi, 'Ayla')
+            .replace(/\bmodelo preditivo\b/gi, 'Ayla')
+            .replace(/\bmodelo\b/gi, 'Ayla')
+            .replace(/\bIA\b/g, 'Ayla')
+            .replace(/\bInteligência Artificial\b/gi, 'Ayla')
+            .replace(/Análise por Ayla/g, 'Análise por Ayla');
     }
 
     // ==============================================
@@ -412,42 +445,48 @@
     }
 
     // ==============================================
-    // 🔥 RESULT DISPLAY
+    // 🔥 RESULT DISPLAY (PDF-FIRST v3.0)
     // ==============================================
 
-    function showResult(data) {
+    /**
+     * 🔥 NOVO v3.0: Mostra resultado com PDF PRIMEIRO
+     * 
+     * ORDEM CORRETA:
+     * 1. Métricas resumidas (síncrono, instantâneo)
+     * 2. Gráficos Chart.js (paralelo)
+     * 3. PDF Blob + preview (RÁPIDO, sem IA)
+     * 4. IA em PARALELO (não bloqueia)
+     */
+    async function showResult(data) {
         if (!data) {
             console.warn('⚠️ showResult: dados vazios');
             return;
         }
 
-        console.log('📊 [showResult] Dados recebidos:', data);
+        console.log('📊 [showResult v3.0] Iniciando com PDF-first...');
         
         const chartData = extractChartData(data);
         const executiveScore = extractExecutiveScore(data);
-        const recommendations = extractRecommendations(data);
-        const insights = extractInsights(data);
-        const executiveSummary = extractExecutiveSummary(data);
         const metrics = extractMetrics(data);
 
-        console.log('📊 [showResult] chart_data:', chartData);
-        console.log('   Weekly:', chartData.weekly ? '✅' : '❌');
-
         state.chartData = chartData;
+        state.analysisResult = data;
+        state.pdfReady = false;
+        state.aiReportDone = false;
+        window._lastResult = data;
+        window._lastChartData = chartData;
 
-        if (chartData && Object.keys(chartData).length > 0 && chartData.weekly) {
-            console.log('📊 [showResult] Disparando evento chart:data_ready');
-            window.dispatchEvent(new CustomEvent('chart:data_ready', {
-                detail: { 
-                    chart_data: chartData,
-                    analysis_data: data
-                }
-            }));
-        }
-
+        // ==========================================
+        // PASSO 1: MOSTRAR CONTAINER (sem esperar nada)
+        // ==========================================
+        
         if (elements.resultPlaceholder) elements.resultPlaceholder.style.display = 'none';
         if (elements.resultContainer) elements.resultContainer.classList.add('show');
 
+        // ==========================================
+        // PASSO 2: MÉTRICAS RESUMIDAS (síncrono)
+        // ==========================================
+        
         const totalRegistros = data.rows_processed || data.result?.rows_processed || metrics.total_predictions || 0;
         const confidenceScore = data.confidence_score || data.result?.confidence_score || metrics.mean || 0.65;
         const scoreColor = getScoreColor(confidenceScore);
@@ -464,7 +503,7 @@
                 </div>
                 <div class="result-stat">
                     <div class="stat-value" style="color: ${scoreColor};">${confianca}%</div>
-                    <div class="stat-label">Score de confiança</div>
+                    <div class="stat-label">Score da Ayla</div>
                 </div>
                 <div class="result-stat">
                     <div class="stat-value">${scoreIcon} ${scoreLabel}</div>
@@ -472,94 +511,201 @@
                 </div>
                 <div class="result-stat">
                     <div class="stat-value">${data.credit_consumed ? 1 : 0}</div>
-                    <div class="stat-label">Créditos consumidos</div>
+                    <div class="stat-label">Créditos usados</div>
                 </div>
             `;
         }
 
-        if (elements.resultInsights) {
-            let insightsHtml = `
-                <div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
-                    <i class="fas fa-lightbulb" style="color:#ff6b35;margin-right:0.5rem;"></i>
-                    Insights da IA
-                </div>
-            `;
+        // ==========================================
+        // PASSO 3: DISPARA GRÁFICOS (Chart.js - paralelo)
+        // ==========================================
+        
+        if (chartData && chartData.weekly) {
+            console.log('📊 [showResult] Disparando gráficos Chart.js');
+            window.dispatchEvent(new CustomEvent('chart:data_ready', {
+                detail: { 
+                    chart_data: chartData,
+                    analysis_data: data
+                }
+            }));
+        }
 
-            const finalRecommendations = recommendations.length > 0 ? recommendations : 
-                (insights.recomendacoes || insights.recommendations || []);
-            
-            if (finalRecommendations.length > 0) {
-                finalRecommendations.slice(0, 5).forEach(r => {
-                    const desc = typeof r === 'string' ? r : (r.description || r.text || JSON.stringify(r));
-                    insightsHtml += `
-                        <div class="result-insight">
-                            <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
-                            ${desc}
-                        </div>
-                    `;
-                });
-            } else {
-                const defaultInsights = confidenceScore >= 0.7 ? [
-                    '✅ Seus dados mostram um alto potencial de performance. Continue com as boas práticas!',
-                    '📈 Recomendamos manter o foco em treinamento e manutenção preventiva.',
-                    '🎯 Considere expandir suas operações para capturar mais oportunidades.'
-                ] : confidenceScore >= 0.4 ? [
-                    '📊 Seus dados indicam espaço para melhorias significativas.',
-                    '🔍 Recomendamos revisar processos e identificar gargalos operacionais.',
-                    '📋 Considere investir em treinamento para sua equipe.'
-                ] : [
-                    '⚠️ Seus dados mostram oportunidades claras de melhoria.',
-                    '🛠️ Recomendamos uma revisão completa dos processos da oficina.',
-                    '📊 Considere implementar um sistema de monitoramento de performance.'
-                ];
+        // ==========================================
+        // PASSO 4: GERA O PDF PRIMEIRO (não bloqueia a IA)
+        // ==========================================
+        
+        console.log('📄 [showResult] Gerando PDF (antes da IA)...');
+        
+        try {
+            if (window.generatePDFBlob && typeof window.generatePDFBlob === 'function') {
+                const pdfBlob = await window.generatePDFBlob();
                 
-                defaultInsights.forEach(r => {
-                    insightsHtml += `
-                        <div class="result-insight">
-                            <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
-                            ${r}
-                        </div>
-                    `;
-                });
+                if (pdfBlob) {
+                    console.log('✅ [showResult] PDF Blob gerado:', pdfBlob.size, 'bytes');
+                    
+                    // Guarda o Blob
+                    state.pdfBlob = pdfBlob;
+                    window._lastPdfBlob = pdfBlob;
+                    state.pdfReady = true;
+                    
+                    // 🔥 Renderiza no iframe
+                    if (window.PDFPreview && typeof window.PDFPreview.renderFromBlob === 'function') {
+                        window.PDFPreview.renderFromBlob(pdfBlob);
+                        console.log('👁️ [showResult] Preview renderizado no iframe');
+                    }
+                } else {
+                    console.warn('⚠️ [showResult] PDF Blob vazio');
+                }
+            } else {
+                // Fallback: método antigo
+                console.warn('⚠️ [showResult] generatePDFBlob não disponível, usando fallback');
+                if (window.PDFPreview && typeof window.PDFPreview.render === 'function') {
+                    window.PDFPreview.render();
+                }
             }
-            
-            elements.resultInsights.innerHTML = insightsHtml;
+        } catch (pdfError) {
+            console.error('❌ [showResult] Erro ao gerar PDF:', pdfError);
+            // Fallback
+            if (window.PDFPreview && typeof window.PDFPreview.render === 'function') {
+                window.PDFPreview.render();
+            }
         }
 
-        if (elements.resultSummary) {
-            const modelUsed = data.model_used || data.result?.model_used || 'AutoML';
-            const encodingUsed = data.encoding_used || data.result?.encoding_used || 'auto';
-            
-            elements.resultSummary.innerHTML = `
-                <div style="display:flex; flex-wrap:wrap; gap:0.3rem 1rem; font-size:0.75rem; color:rgba(255,255,255,0.5);">
-                    <span><strong style="color:#ff6b35;">📊 ${totalRegistros}</strong> registros</span>
-                    <span><strong style="color:${scoreColor};">🎯 ${confianca}%</strong> confiança</span>
-                    <span><strong style="color:#f5a623;">📈 ${scoreLabel}</strong></span>
-                    <span><i class="fas fa-robot"></i> ${modelUsed}</span>
-                    <span><i class="fas fa-code"></i> ${encodingUsed}</span>
-                </div>
-            `;
-        }
+        // ==========================================
+        // PASSO 5: RELATÓRIO DA IA EM PARALELO (NÃO BLOQUEIA)
+        // ==========================================
+        
+        console.log('🤖 [showResult] Disparando IA em paralelo...');
+        
+        // 🔥 NÃO usa await! Roda em background
+        generateAIReportAsync(data, {
+            chartData,
+            executiveScore,
+            metrics,
+            totalRegistros,
+            confidenceScore,
+            scoreColor,
+            scoreLabel,
+            confianca,
+            filename
+        }).catch(err => {
+            console.error('❌ [showResult] Erro na IA:', err);
+        });
 
-        if (elements.resultFilename) {
-            elements.resultFilename.textContent = filename;
-        }
-
+        // ==========================================
+        // PASSO 6: FINALIZA (notificação + scroll)
+        // ==========================================
+        
         state.analysisResult = data;
         window._lastResult = data;
         window._lastChartData = chartData;
 
         const userName = getUserName();
-        showNotification(`✅ ${userName}, análise concluída com sucesso!`, 'success');
+        showNotification(`✅ ${userName}, análise concluída!`, 'success');
 
         const resultCard = document.getElementById('resultCard');
         if (resultCard) {
             setTimeout(() => {
                 resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 400);
+            }, 300);
         }
 
         updateCreditsDisplay();
+    }
+
+    /**
+     * 🔥 Gera o relatório da IA de forma assíncrona (não bloqueia o PDF)
+     * Roda em paralelo após o PDF já estar visível.
+     */
+    async function generateAIReportAsync(data, context) {
+        console.log('🤖 [Ayla] Iniciando geração do relatório (paralelo)...');
+        
+        try {
+            const { chartData, executiveScore, metrics, totalRegistros, confidenceScore, scoreColor, scoreLabel, confianca } = context;
+            
+            // Deixa o PDF respirar antes de mexer no DOM
+            await sleep(300);
+            
+            const recommendations = extractRecommendations(data);
+            const insights = extractInsights(data);
+            
+            // 🔥 Monta os insights da Ayla
+            if (elements.resultInsights) {
+                let insightsHtml = `
+                    <div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
+                        <i class="fas fa-lightbulb" style="color:#ff6b35;margin-right:0.5rem;"></i>
+                        Insights da Ayla
+                    </div>
+                `;
+
+                const finalRecommendations = recommendations.length > 0 ? recommendations : 
+                    (insights.recomendacoes || insights.recommendations || []);
+                
+                if (finalRecommendations.length > 0) {
+                    finalRecommendations.slice(0, 5).forEach(r => {
+                        const desc = typeof r === 'string' ? r : (r.description || r.text || JSON.stringify(r));
+                        insightsHtml += `
+                            <div class="result-insight">
+                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
+                                ${aylify(desc)}
+                            </div>
+                        `;
+                    });
+                } else {
+                    const defaultInsights = confidenceScore >= 0.7 ? [
+                        '✅ Seus dados mostram um alto potencial de performance. Continue com as boas práticas!',
+                        '📈 Recomendo manter o foco em treinamento e manutenção preventiva.',
+                        '🎯 Considere expandir suas operações para capturar mais oportunidades.'
+                    ] : confidenceScore >= 0.4 ? [
+                        '📊 Seus dados indicam espaço para melhorias significativas.',
+                        '🔍 Recomendo revisar processos e identificar gargalos operacionais.',
+                        '📋 Considere investir em treinamento para sua equipe.'
+                    ] : [
+                        '⚠️ Seus dados mostram oportunidades claras de melhoria.',
+                        '🛠️ Recomendo uma revisão completa dos processos da oficina.',
+                        '📊 Considere implementar um sistema de monitoramento de performance.'
+                    ];
+                    
+                    defaultInsights.forEach(r => {
+                        insightsHtml += `
+                            <div class="result-insight">
+                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
+                                ${r}
+                            </div>
+                        `;
+                    });
+                }
+                
+                elements.resultInsights.innerHTML = insightsHtml;
+            }
+
+            // 🔥 Resumo técnico
+            if (elements.resultSummary) {
+                elements.resultSummary.innerHTML = `
+                    <div style="display:flex; flex-wrap:wrap; gap:0.3rem 1rem; font-size:0.75rem; color:rgba(255,255,255,0.5);">
+                        <span><strong style="color:#ff6b35;">📊 ${totalRegistros}</strong> registros</span>
+                        <span><strong style="color:${scoreColor};">🎯 ${confianca}%</strong> score</span>
+                        <span><strong style="color:#f5a623;">📈 ${scoreLabel}</strong></span>
+                        <span><i class="fas fa-robot"></i> Análise por Ayla</span>
+                    </div>
+                `;
+            }
+
+            state.aiReportDone = true;
+            console.log('✅ [Ayla] Relatório concluído (sem bloquear o PDF)');
+            
+        } catch (error) {
+            console.error('❌ [Ayla] Erro:', error);
+            // Fallback amigável
+            if (elements.resultInsights) {
+                elements.resultInsights.innerHTML = `
+                    <div class="result-insight" style="color: rgba(255,255,255,0.5);">
+                        <span class="insight-icon">ℹ️</span>
+                        Análise detalhada indisponível no momento. O PDF já está pronto acima.
+                    </div>
+                `;
+            }
+        }
     }
 
     function hideResult() {
@@ -568,6 +714,20 @@
         if (elements.resultMetrics) elements.resultMetrics.innerHTML = '';
         if (elements.resultInsights) elements.resultInsights.innerHTML = '';
         if (elements.resultSummary) elements.resultSummary.innerHTML = '';
+        
+        // Limpa PDF
+        state.pdfBlob = null;
+        state.pdfReady = false;
+        state.aiReportDone = false;
+        window._lastPdfBlob = null;
+        
+        // Destroi preview
+        if (window.PDFPreview && typeof window.PDFPreview.destroy === 'function') {
+            window.PDFPreview.destroy();
+        }
+        const pdfWrapper = document.getElementById('pdfPreviewWrapper');
+        if (pdfWrapper) pdfWrapper.style.display = 'none';
+        
         state.analysisResult = null;
         state.chartData = null;
         window._lastResult = null;
@@ -575,19 +735,12 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (CORRIGIDO v2.7)
+    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (MANTIDO v2.7)
     // ==============================================
 
-    /**
-     * 🔴 BUGFIX v2.7: getPowSolution NÃO retorna mais null silenciosamente.
-     * - Força renovação REAL do challenge
-     * - Lança erro se não conseguir
-     * - Só usa window.powClient (sistema unificado)
-     */
     async function getPowSolution(forceRefresh = false) {
         const now = Date.now();
         
-        // 🔥 FORÇAR renovação REAL: limpar cache ANTES de pedir novo
         if (forceRefresh || (now - state.powLastRefresh) > CONFIG.POW_MAX_AGE) {
             console.log('🔄 Renovando PoW (forçado)...');
             if (window.powClient) {
@@ -612,7 +765,6 @@
             throw new Error('PoW Client inválido (getSolutionForUpload ausente). Recarregue a página.');
         }
         
-        // 🔥 Verificar saúde primeiro (se disponível)
         if (typeof window.powClient.isPowHealthy === 'function') {
             try {
                 const healthy = await window.powClient.isPowHealthy();
@@ -631,7 +783,6 @@
             }
         }
         
-        // 🔥 OBTER SOLUÇÃO
         try {
             const solution = await window.powClient.getSolutionForUpload();
             
@@ -653,7 +804,7 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD E ANÁLISE (CORRIGIDO v2.7)
+    // 🔥 UPLOAD E ANÁLISE (MANTIDO v2.7)
     // ==============================================
 
     async function startAnalysis() {
@@ -692,7 +843,7 @@
         
         showAnalysisStatus(
             '📤 Enviando arquivos...',
-            `${userName}, preparando ${filesToUpload.length} arquivo(s) para análise`,
+            `${userName}, preparando ${filesToUpload.length} arquivo(s)`,
             10
         );
 
@@ -704,7 +855,6 @@
             formData.append('analysis_type', 'auto');
             formData.append('report_format', 'html');
 
-            // 🔴 BUGFIX v2.7: NÃO continuar sem PoW!
             let solution = null;
             try {
                 updateAnalysisProgress(15, '🔐 Gerando prova de segurança...');
@@ -736,7 +886,7 @@
 
             const data = result;
             
-            updateAnalysisProgress(50, '✅ Upload concluído, processando resultados...');
+            updateAnalysisProgress(50, '✅ Upload concluído, processando...');
 
             let processId = null;
             
@@ -758,13 +908,7 @@
                 state.currentProcessId = processId;
                 await pollAnalysisStatus(processId);
             } else {
-                const chartData = extractChartData(data);
-                if (chartData && chartData.weekly) {
-                    window.dispatchEvent(new CustomEvent('chart:data_ready', {
-                        detail: { chart_data: chartData, analysis_data: data }
-                    }));
-                }
-                showResult(data);
+                await showResult(data);
             }
 
             state.files = [];
@@ -790,7 +934,7 @@
             
             if (isPowError(errorMsg)) {
                 setTimeout(() => {
-                    if (confirm('⚠️ Erro de segurança (PoW) detectado. Deseja tentar recuperar automaticamente?')) {
+                    if (confirm('⚠️ Erro de segurança (PoW). Deseja tentar recuperar automaticamente?')) {
                         refreshPowAndRetry();
                     }
                 }, 500);
@@ -832,20 +976,12 @@
     }
 
     // ==============================================
-    // 🔥 UPLOAD COM RETRY (CORRIGIDO v2.7)
+    // 🔥 UPLOAD COM RETRY (MANTIDO v2.7)
     // ==============================================
 
-    /**
-     * 🔴 BUGFIX v2.7:
-     * - Envia TODOS os headers do PoW (X-PoW-Complexity, X-PoW-Timestamp, X-Request-ID)
-     * - Não permite upload SEM PoW
-     * - Usa apenas o endpoint principal (sem fallback)
-     */
     async function uploadWithRetry(formData, solution, files) {
         let lastError = null;
         const maxRetries = CONFIG.UPLOAD_RETRY_ATTEMPTS;
-        
-        // 🔴 BUGFIX v2.7: usar APENAS o endpoint principal (sem fallback)
         const endpoints = [CONFIG.UPLOAD_ENDPOINT];
         
         for (let endpoint of endpoints) {
@@ -858,12 +994,10 @@
                         throw new Error('Token não encontrado. Faça login novamente.');
                     }
                     
-                    // 🔴 BUGFIX v2.7: NÃO permitir upload sem PoW
                     if (!solution || !solution.prefix || !solution.nonce) {
                         throw new Error('PoW ausente. Não é possível fazer upload.');
                     }
                     
-                    // 🔴 BUGFIX v2.7: enviar TODOS os headers que o backend espera
                     const headers = {
                         'Authorization': `Bearer ${token}`,
                         'Accept': 'application/json',
@@ -875,11 +1009,6 @@
                     };
 
                     console.log(`📤 Upload com PoW (tentativa ${attempt}/${maxRetries})`);
-                    console.log(`   🔑 Challenge: ${solution.prefix.substring(0, 10)}...`);
-                    console.log(`   🔑 Nonce: ${solution.nonce}`);
-                    console.log(`   🔑 Complexity: ${solution.complexity}`);
-                    console.log(`   🌐 Endpoint: ${endpoint}`);
-
                     const url = buildApiUrl(endpoint);
                     
                     updateAnalysisProgress(
@@ -904,7 +1033,6 @@
                         if (responseText) {
                             try {
                                 responseData = JSON.parse(responseText);
-                                console.log(`📄 Resposta JSON:`, responseData);
                             } catch (e) {
                                 console.log(`📄 Resposta texto: ${responseText.substring(0, 200)}...`);
                             }
@@ -914,7 +1042,7 @@
                     }
 
                     if (response.status === 400) {
-                        let errorMessage = 'Erro na requisição. Verifique os dados enviados.';
+                        let errorMessage = 'Erro na requisição.';
                         
                         if (responseData) {
                             if (responseData.detail) {
@@ -929,10 +1057,8 @@
                         }
                         
                         const errorStr = typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage);
-                        console.error(`❌ Erro 400: ${errorStr}`);
                         
                         if (isPowError(errorStr)) {
-                            console.log('🔄 Erro de PoW detectado, renovando...');
                             if (window.powClient) {
                                 window.powClient.clearCache();
                                 window.powClient.reset();
@@ -943,11 +1069,9 @@
                                 const newSolution = await getPowSolution(true);
                                 if (newSolution) {
                                     solution = newSolution;
-                                    console.log('✅ PoW renovado, tentando novamente...');
                                     continue;
                                 }
                             } catch (e) {
-                                console.warn('⚠️ Falha ao renovar PoW:', e.message);
                                 throw new Error(`Falha ao renovar PoW: ${e.message}`);
                             }
                         }
@@ -960,7 +1084,6 @@
                     }
 
                     if (response.status === 428) {
-                        console.warn('⚠️ PoW expirado (428), obtendo novo...');
                         if (window.powClient) {
                             window.powClient.clearCache();
                             window.powClient.reset();
@@ -973,20 +1096,15 @@
                                 solution = newSolution;
                                 continue;
                             }
-                        } catch (e) {
-                            console.warn('⚠️ Falha ao obter novo PoW:', e.message);
-                        }
+                        } catch (e) {}
                         throw new Error('PoW expirado. Tente novamente.');
                     }
 
                     if (response.status === 401) {
-                        console.warn('⚠️ Token expirado (401), tentando refresh...');
                         const app = getApp();
                         if (app && typeof app.refreshTokenSafely === 'function') {
                             const refreshed = await app.refreshTokenSafely();
-                            if (refreshed) {
-                                continue;
-                            }
+                            if (refreshed) continue;
                         }
                         throw new Error('Sessão expirada. Faça login novamente.');
                     }
@@ -994,7 +1112,6 @@
                     if (response.status === 429) {
                         const data = responseData || {};
                         const retryAfter = data.retry_after || 5;
-                        console.warn(`⚠️ Rate limit, aguardando ${retryAfter}s...`);
                         await sleep(retryAfter * 1000);
                         continue;
                     }
@@ -1026,20 +1143,13 @@
                         throw error;
                     }
                     
-                    if (endpointFailed) {
-                        break;
-                    }
+                    if (endpointFailed) break;
                     
                     if (attempt < maxRetries) {
                         const delay = getBackoffDelay(attempt);
-                        console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
                         await sleep(delay);
                     }
                 }
-            }
-            
-            if (endpointFailed) {
-                continue;
             }
         }
 
@@ -1067,20 +1177,17 @@
             state.pollAttempts = attempts;
             
             if (Date.now() - startTime > CONFIG.GLOBAL_TIMEOUT) {
-                throw new Error(`Timeout: a análise excedeu o tempo limite de ${totalTimeoutSeconds} segundos.`);
+                throw new Error(`Timeout: análise excedeu ${totalTimeoutSeconds}s.`);
             }
             
             try {
                 const token = getToken();
-                if (!token) {
-                    throw new Error('Token não encontrado.');
-                }
+                if (!token) throw new Error('Token não encontrado.');
                 
-                let statusData = null;
                 const statusEndpoint = `/analysis/progress/${processId}`;
                 const url = buildApiUrl(statusEndpoint);
                 
-                console.log(`📊 [Polling ${attempts}/${maxAttempts}] ${url}`);
+                console.log(`📊 [Polling ${attempts}/${maxAttempts}]`);
                 
                 const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -1089,12 +1196,11 @@
                 if (!response.ok) {
                     if (response.status === 404) {
                         consecutiveErrors = 0;
-                        
                         const progress = 50 + (attempts / maxAttempts) * 40;
                         const elapsed = Math.round((Date.now() - startTime) / 1000);
                         updateAnalysisProgress(
                             progress,
-                            `⏳ Aguardando início da análise... (${elapsed}s / ${totalTimeoutSeconds}s)`
+                            `⏳ Aguardando... (${elapsed}s / ${totalTimeoutSeconds}s)`
                         );
                         await sleep(interval);
                         continue;
@@ -1105,7 +1211,7 @@
                     
                     consecutiveErrors++;
                     if (consecutiveErrors > 3) {
-                        throw new Error(`Erro repetido ao verificar status: ${response.status}`);
+                        throw new Error(`Erro repetido: ${response.status}`);
                     }
                     
                     await sleep(interval * 1.5);
@@ -1114,13 +1220,13 @@
 
                 consecutiveErrors = 0;
 
-                statusData = await response.json();
+                const statusData = await response.json();
                 
                 const status = statusData.status || statusData.state || 'processing';
                 const progress = statusData.progress || 0;
                 const message = statusData.message || statusData.stage || 'Processando...';
                 
-                console.log(`📊 [Polling] Status: ${status}, Progresso: ${progress}%, Mensagem: ${message}`);
+                console.log(`📊 Status: ${status}, ${progress}%`);
 
                 if (status === 'processing') {
                     const pollProgress = Math.min(50 + (attempts / maxAttempts) * 40, 95);
@@ -1128,12 +1234,12 @@
                     const progressMsg = progress > 0 ? `${Math.round(progress)}%` : '...';
                     updateAnalysisProgress(
                         pollProgress,
-                        `⏳ ${message} (${progressMsg}) - ${elapsed}s / ${totalTimeoutSeconds}s`
+                        `⏳ ${message} (${progressMsg})`
                     );
                     
                     if (elements.statusSub) {
                         const remaining = Math.max(0, totalTimeoutSeconds - elapsed);
-                        elements.statusSub.textContent = `Processamento em andamento... ~${remaining}s restantes`;
+                        elements.statusSub.textContent = `Processando... ~${remaining}s`;
                     }
                     
                     await sleep(interval);
@@ -1141,11 +1247,10 @@
                 }
 
                 if (status === 'completed' || status === 'complete' || status === 'success') {
-                    updateAnalysisProgress(90, '📊 Buscando relatório completo...');
+                    updateAnalysisProgress(90, '📊 Buscando relatório...');
                     
                     const chartData = extractChartData(statusData);
                     if (chartData && chartData.weekly) {
-                        console.log('📊 [Polling] Chart_data obtido do polling');
                         window.dispatchEvent(new CustomEvent('chart:data_ready', {
                             detail: { chart_data: chartData, analysis_data: statusData }
                         }));
@@ -1162,11 +1267,11 @@
                                 detail: { chart_data: resultChartData, analysis_data: resultData }
                             }));
                         }
-                        showResult(resultData);
+                        await showResult(resultData);
                         state.isPolling = false;
                         return resultData;
                     } else if (statusData.result || statusData.analysis_info || statusData.chart_data) {
-                        showResult(statusData);
+                        await showResult(statusData);
                         state.isPolling = false;
                         return statusData;
                     } else {
@@ -1187,14 +1292,14 @@
                     throw error;
                 }
                 if (attempts >= maxAttempts) {
-                    throw new Error('Timeout: a análise está demorando mais que o esperado.');
+                    throw new Error('Timeout: análise demorando mais que o esperado.');
                 }
                 await sleep(interval * 1.5);
             }
         }
 
         state.isPolling = false;
-        throw new Error(`Timeout: a análise não foi concluída dentro de ${totalTimeoutSeconds} segundos.`);
+        throw new Error(`Timeout: análise não concluída em ${totalTimeoutSeconds}s.`);
     }
 
     // ==============================================
@@ -1204,11 +1309,7 @@
     async function fetchAnalysisResult(processId) {
         try {
             const token = getToken();
-            
-            if (!token) {
-                console.warn('⚠️ Sem token para buscar resultado');
-                return null;
-            }
+            if (!token) return null;
             
             const endpoints = [
                 `/analysis/result/${processId}`,
@@ -1220,25 +1321,17 @@
             for (const endpoint of endpoints) {
                 try {
                     const url = buildApiUrl(endpoint);
-                    console.log(`🔍 Buscando resultado em: ${url}`);
-                    
                     const response = await fetch(url, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
 
                     if (response.ok) {
                         const data = await response.json();
-                        console.log(`✅ Resultado obtido via ${endpoint}`);
-                        
-                        if (data.success !== false) {
-                            return data;
-                        }
-                        if (data.data && data.data.success !== false) {
-                            return data.data;
-                        }
+                        if (data.success !== false) return data;
+                        if (data.data && data.data.success !== false) return data.data;
                     }
                 } catch (e) {
-                    console.debug(`⚠️ Endpoint ${endpoint} falhou:`, e.message);
+                    console.debug(`⚠️ ${endpoint}:`, e.message);
                 }
             }
 
@@ -1258,14 +1351,10 @@
                         String(a.id) === processId
                     );
                     
-                    if (found) {
-                        console.log('✅ Resultado encontrado no histórico');
-                        return found;
-                    }
+                    if (found) return found;
                 }
             } catch (e) {}
 
-            console.warn(`⚠️ Resultado não encontrado para: ${processId}`);
             return null;
 
         } catch (error) {
@@ -1315,15 +1404,45 @@
             });
         }
 
+        // 🔥 BOTÃO DOWNLOAD - v3.0: usa Blob instantâneo
         if (elements.downloadPdfBtn) {
             elements.downloadPdfBtn.addEventListener('click', function() {
-                if (state.analysisResult) {
-                    showNotification('📄 Gerando PDF...', 'info');
-                    window.dispatchEvent(new CustomEvent('pdf:generate', {
-                        detail: { data: state.analysisResult }
-                    }));
-                } else {
-                    showNotification('Nenhum resultado disponível para gerar PDF.', 'warning');
+                // 🔥 Prioridade 1: Blob em memória (instantâneo)
+                if (state.pdfBlob || window._lastPdfBlob) {
+                    const blob = state.pdfBlob || window._lastPdfBlob;
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'Relatorio_Ayla_' + Date.now() + '.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    showNotification('📄 PDF baixado!', 'success');
+                    return;
+                }
+                
+                // 🔥 Prioridade 2: PDFPreview tem Blob
+                if (window.PDFPreview && window.PDFPreview._lastBlob) {
+                    window.PDFPreview.download();
+                    return;
+                }
+                
+                // 🔥 Fallback: gera do zero
+                showNotification('📄 Gerando PDF...', 'info');
+                if (window.generatePDFBlob) {
+                    window.generatePDFBlob().then(blob => {
+                        if (blob) {
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = 'Relatorio_Ayla_' + Date.now() + '.pdf';
+                            link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        }
+                    });
+                } else if (window.generatePDF) {
+                    window.generatePDF();
                 }
             });
         }
@@ -1341,8 +1460,6 @@
 
         document.addEventListener('chart:data_ready', function(e) {
             const detail = e.detail || {};
-            console.log('📊 [Event] chart:data_ready recebido');
-            
             if (detail.chart_data && detail.chart_data.weekly) {
                 window.dispatchEvent(new CustomEvent('dashboard:render_chart', {
                     detail: {
@@ -1351,11 +1468,6 @@
                     }
                 }));
             }
-        });
-
-        document.addEventListener('dashboard:chart_rendered', function(e) {
-            const detail = e.detail || {};
-            console.log('📊 [Event] dashboard:chart_rendered:', detail);
         });
 
         document.addEventListener('creditsUpdated', updateCreditsDisplay);
@@ -1396,7 +1508,10 @@
         startAnalysis: startAnalysis,
         getResult: function() { return state.analysisResult; },
         getChartData: function() { return state.chartData || window._lastChartData || null; },
+        getPdfBlob: function() { return state.pdfBlob || window._lastPdfBlob || null; },
         isUploading: function() { return state.isUploading; },
+        isPdfReady: function() { return state.pdfReady; },
+        isAiReportDone: function() { return state.aiReportDone; },
         updateCredits: updateCreditsDisplay,
         CONFIG: CONFIG,
         refreshPow: async function() {
@@ -1422,6 +1537,9 @@
                     powRecoveryAttempts: state.powRecoveryAttempts,
                     isRecovering: state.isRecovering,
                     hasChartData: !!state.chartData,
+                    pdfReady: state.pdfReady,
+                    aiReportDone: state.aiReportDone,
+                    hasPdfBlob: !!state.pdfBlob,
                 },
                 chartData: state.chartData ? {
                     hasWeekly: !!state.chartData.weekly,
@@ -1441,6 +1559,7 @@
             getPowSolution: getPowSolution,
             refreshPowAndRetry: refreshPowAndRetry,
             extractChartData: extractChartData,
+            aylify: aylify,
         }
     };
 
@@ -1449,7 +1568,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v2.7...');
+        console.log('🚀 Inicializando UploadReportSystem v3.0...');
         
         cacheElements();
         
@@ -1469,18 +1588,17 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v2.7 inicializado!');
+        console.log('✅ UploadReportSystem v3.0 inicializado!');
         console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
         console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
         console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
         console.log(`   🔄 Polling interval: ${CONFIG.POLLING_INTERVAL}ms`);
         console.log(`   ⏰ GLOBAL_TIMEOUT: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
-        console.log(`   🔥 CORREÇÕES v2.7:`);
-        console.log(`      ✅ getPowSolution NÃO retorna null (lança erro)`);
-        console.log(`      ✅ Headers X-PoW-Complexity/Timestamp/Request-ID enviados`);
-        console.log(`      ✅ Removido fallback /upload-auto (evitava consumo duplo)`);
-        console.log(`      ✅ NÃO permite upload sem PoW`);
-        console.log(`      ✅ POW_MAX_AGE sincronizado com backend (600s)`);
+        console.log(`   🔥 NOVIDADES v3.0:`);
+        console.log(`      ✅ PDF-FIRST: PDF aparece em ~1s`);
+        console.log(`      ✅ IA roda em PARALELO (não bloqueia)`);
+        console.log(`      ✅ Download INSTANTÂNEO via Blob`);
+        console.log(`      ✅ "Ayla" substitui TODAS as menções a ML/modelo/IA`);
         console.log(`   🔧 Use window.UploadSystem.getDiagnostics() para debug`);
     }
 
@@ -1490,11 +1608,11 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v2.7 carregado (CORRIGIDO)');
-    console.log('   ✅ PoW renovado corretamente');
-    console.log('   ✅ Headers completos enviados');
-    console.log('   ✅ Sem fallback /upload-auto');
-    console.log('   ✅ Não permite upload sem PoW');
+    console.log('📊 upload-report-system.js v3.0 carregado (PDF-FIRST)');
+    console.log('   ✅ PDF gerado ANTES da IA');
+    console.log('   ✅ IA em paralelo (não bloqueia)');
+    console.log('   ✅ Preview instantâneo');
+    console.log('   ✅ Download instantâneo via Blob');
     console.log('='.repeat(60));
 
 })();
