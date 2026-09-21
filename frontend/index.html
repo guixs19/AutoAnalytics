@@ -9,20 +9,28 @@
     <!-- 🔥 PRÉ-CONEXÃO COM CDNs (Performance) -->
     <!-- ============================================== -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    <link rel="dns-prefetch" href="https://code.jquery.com">
+
+    <!-- ============================================== -->
+    <!-- 🔥 PRELOAD DE LIBS CRÍTICAS (Preview mais rápido) -->
+    <!-- ============================================== -->
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as="script" crossorigin>
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/chart.js" as="script" crossorigin>
 
     <!-- ============================================== -->
     <!-- 🔥 CDN BIBLIOTECAS -->
     <!-- ============================================== -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
     <style>
         /* ==============================================
@@ -65,6 +73,7 @@
         .navbar-modern {
             background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
             padding: 0.6rem 0;
             position: fixed;
@@ -195,6 +204,7 @@
         .glass-card {
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-radius: 20px;
             padding: 1.2rem;
             border: 1px solid rgba(255, 255, 255, 0.06);
@@ -301,6 +311,7 @@
             font-size: 0.85rem;
             transition: all 0.3s;
             box-shadow: 0 4px 20px var(--glow-azul);
+            cursor: pointer;
         }
         .upload-area .btn-select:hover {
             transform: translateY(-2px);
@@ -605,6 +616,7 @@
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
+            cursor: pointer;
         }
         .result-actions .btn-result-primary {
             background: linear-gradient(135deg, var(--azul-principal), #0077B6);
@@ -652,7 +664,7 @@
         }
 
         /* ==============================================
-           🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO)
+           🔥 PRÉ-VISUALIZAÇÃO DO PDF
            ============================================== */
         #pdfPreviewWrapper {
             margin-top: 0.8rem;
@@ -695,6 +707,7 @@
             gap: 0.5rem;
             color: white;
             backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
             z-index: 2;
         }
 
@@ -779,6 +792,7 @@
             inset: 0;
             background: rgba(0, 0, 0, 0.92);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             z-index: 9999;
             justify-content: center;
             align-items: center;
@@ -829,6 +843,7 @@
             transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             margin-bottom: 6px;
             backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border: 1px solid var(--borda-azul);
         }
         .message-banner.message-visible { transform: translateX(0); opacity: 1; }
@@ -858,6 +873,7 @@
             transition: opacity 0.2s;
             margin-top: -2px;
             color: white;
+            cursor: pointer;
         }
         .message-dismiss:hover { opacity: 1; }
 
@@ -896,7 +912,7 @@
             #resultCard .card-title { font-size: 0.9rem !important; }
             .ai-report-card { max-height: 150px; }
 
-            /* 🔥 PDF Preview Mobile */
+            /* PDF Preview Mobile */
             #pdfPreviewContainer { height: 380px !important; }
             .btn-pdf-preview-action { display: none; }
         }
@@ -928,6 +944,17 @@
             color: white !important;
         }
         .btn-pdf i { color: white !important; }
+
+        /* ==============================================
+           🔥 ACESSIBILIDADE
+           ============================================== */
+        .btn-pdf-preview-action:focus-visible,
+        .credits-badge-nav:focus-visible,
+        .btn-planos-nav:focus-visible,
+        .btn-sair-nav:focus-visible {
+            outline: 2px solid var(--azul-principal);
+            outline-offset: 2px;
+        }
     </style>
 </head>
 <body class="loading-state">
@@ -937,8 +964,8 @@
     <!-- ============================================== -->
     <nav class="navbar-modern" id="mainNavbar">
         <div class="container">
-            <a class="brand-text text-decoration-none" href="/dashboard">
-                <span class="brand-icon"><i class="fas fa-chart-line"></i></span>
+            <a class="brand-text text-decoration-none" href="/dashboard" aria-label="Ayla Mechanic - Dashboard">
+                <span class="brand-icon" aria-hidden="true"><i class="fas fa-chart-line"></i></span>
                 <span>
                     <span class="brand-strong">Ayla</span>
                     <span class="brand-blue">Mechanic</span>
@@ -948,21 +975,21 @@
 
             <div class="nav-right">
                 <span class="user-name-display">
-                    <i class="fas fa-user-circle"></i>
+                    <i class="fas fa-user-circle" aria-hidden="true"></i>
                     <span id="userName">Carregando...</span>
                 </span>
 
-                <button class="credits-badge-nav" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal">
-                    <i class="fas fa-coins"></i>
+                <button class="credits-badge-nav" id="navbarCredits" data-bs-toggle="modal" data-bs-target="#creditsModal" aria-label="Ver créditos disponíveis">
+                    <i class="fas fa-coins" aria-hidden="true"></i>
                     <span id="creditsCount">0</span>
                 </button>
 
                 <a href="/planos" class="btn-planos-nav" id="planosLink">
-                    <i class="fas fa-crown"></i> Planos
+                    <i class="fas fa-crown" aria-hidden="true"></i> Planos
                 </a>
 
-                <a href="#" class="btn-sair-nav" onclick="event.preventDefault(); window.logout();">
-                    <i class="fas fa-sign-out-alt"></i> Sair
+                <a href="#" class="btn-sair-nav" onclick="event.preventDefault(); window.logout();" aria-label="Sair da conta">
+                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Sair
                 </a>
             </div>
         </div>
@@ -976,9 +1003,9 @@
     <!-- ============================================== -->
     <!-- 🔥 LOADING -->
     <!-- ============================================== -->
-    <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-overlay" id="loadingOverlay" role="dialog" aria-modal="true" aria-labelledby="loadingTitle">
         <div class="loading-container text-center">
-            <div class="loading-icon"><i class="fas fa-robot"></i></div>
+            <div class="loading-icon"><i class="fas fa-robot" aria-hidden="true"></i></div>
             <h3 class="loading-title" id="loadingTitle">Preparando sua análise</h3>
             <p class="loading-subtitle" id="loadingSubtitle">A Ayla está analisando seus dados</p>
             <div class="loading-progress">
@@ -998,7 +1025,7 @@
             <div class="row mb-3">
                 <div class="col-12 text-center" data-aos="fade-down">
                     <span style="display:inline-block; background:rgba(0,180,255,0.12); color:var(--azul-principal); border:1px solid var(--borda-azul); padding:0.25rem 0.8rem; border-radius:50px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;">
-                        <i class="fas fa-robot me-1"></i> Ayla Mechanic · IA para Oficinas
+                        <i class="fas fa-robot me-1" aria-hidden="true"></i> Ayla Mechanic · IA para Oficinas
                     </span>
                     <h1 class="display-6 fw-bold mt-2" style="color: #ffffff; font-size:1.85rem; letter-spacing:-0.5px;">
                         Transforme os dados da sua oficina em <span style="color: var(--azul-principal);">decisões mais claras</span>
@@ -1018,7 +1045,7 @@
                         <!-- MÉTRICAS -->
                         <div class="col-12">
                             <div class="glass-card">
-                                <h5 class="card-title"><i class="fas fa-chart-simple"></i> Resumo</h5>
+                                <h5 class="card-title"><i class="fas fa-chart-simple" aria-hidden="true"></i> Resumo</h5>
                                 <div class="metric-row">
                                     <div class="metric-card">
                                         <div class="metric-value" id="totalAnalises">0</div>
@@ -1039,13 +1066,13 @@
                         <!-- EXPLICAÇÃO -->
                         <div class="col-12">
                             <div class="glass-card">
-                                <h5 class="card-title"><i class="fas fa-info-circle"></i> Como funciona</h5>
+                                <h5 class="card-title"><i class="fas fa-info-circle" aria-hidden="true"></i> Como funciona</h5>
                                 <div class="site-explanation">
                                     <div class="exp-grid">
-                                        <div class="exp-item"><i class="fas fa-upload"></i> Envie <strong>CSV/Excel</strong></div>
-                                        <div class="exp-item"><i class="fas fa-robot"></i> Ayla analisa os <strong>dados</strong></div>
-                                        <div class="exp-item"><i class="fas fa-chart-line"></i> Receba <strong>insights</strong></div>
-                                        <div class="exp-item"><i class="fas fa-coins"></i> <strong>1 crédito</strong>/análise</div>
+                                        <div class="exp-item"><i class="fas fa-upload" aria-hidden="true"></i> Envie <strong>CSV/Excel</strong></div>
+                                        <div class="exp-item"><i class="fas fa-robot" aria-hidden="true"></i> Ayla analisa os <strong>dados</strong></div>
+                                        <div class="exp-item"><i class="fas fa-chart-line" aria-hidden="true"></i> Receba <strong>insights</strong></div>
+                                        <div class="exp-item"><i class="fas fa-coins" aria-hidden="true"></i> <strong>1 crédito</strong>/análise</div>
                                     </div>
                                 </div>
                             </div>
@@ -1059,41 +1086,41 @@
                         <div class="col-12">
                             <div class="glass-card" style="border-color: var(--borda-azul);">
                                 <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap">
-                                    <h5 class="card-title mb-0"><i class="fas fa-cloud-upload-alt"></i> Upload</h5>
+                                    <h5 class="card-title mb-0"><i class="fas fa-cloud-upload-alt" aria-hidden="true"></i> Upload</h5>
                                     <span class="badge" style="background: linear-gradient(135deg, var(--azul-principal), #0077B6); color: white; padding:0.15rem 0.6rem; font-size:0.6rem;">
-                                        <i class="fas fa-coins me-1"></i> <span id="uploadCredits">0</span>
+                                        <i class="fas fa-coins me-1" aria-hidden="true"></i> <span id="uploadCredits">0</span>
                                     </span>
                                 </div>
 
                                 <div style="background:rgba(0,180,255,0.04); border-radius:6px; padding:0.15rem 0.5rem; margin-bottom:0.4rem; text-align:center; font-size:0.55rem; color:rgba(255,255,255,0.4); border: 1px solid var(--borda-azul);">
                                     <div class="d-flex justify-content-center align-items-center flex-wrap gap-2">
-                                        <span><i class="fas fa-hard-drive"></i> <strong style="color:var(--azul-principal);">200 KB</strong>/arquivo</span>
-                                        <span><i class="fas fa-layer-group"></i> <strong style="color:var(--azul-principal);">3</strong> arquivos/vez</span>
-                                        <span><i class="fas fa-coins"></i> <strong style="color:var(--azul-principal);">1</strong> crédito/arquivo</span>
+                                        <span><i class="fas fa-hard-drive" aria-hidden="true"></i> <strong style="color:var(--azul-principal);">200 KB</strong>/arquivo</span>
+                                        <span><i class="fas fa-layer-group" aria-hidden="true"></i> <strong style="color:var(--azul-principal);">3</strong> arquivos/vez</span>
+                                        <span><i class="fas fa-coins" aria-hidden="true"></i> <strong style="color:var(--azul-principal);">1</strong> crédito/arquivo</span>
                                     </div>
                                 </div>
 
-                                <form id="uploadForm">
-                                    <div class="upload-area" id="dropArea">
-                                        <span class="upload-icon"><i class="fas fa-file-excel"></i></span>
+                                <form id="uploadForm" onsubmit="return false;">
+                                    <div class="upload-area" id="dropArea" role="button" tabindex="0" aria-label="Área de upload. Clique ou arraste arquivos CSV ou Excel aqui.">
+                                        <span class="upload-icon"><i class="fas fa-file-excel" aria-hidden="true"></i></span>
                                         <h4>📁 Arraste seus arquivos</h4>
                                         <p>CSV ou Excel (.xlsx, .xls)</p>
                                         <div>
                                             <label for="fileInput" class="btn-select">
-                                                <i class="fas fa-folder-open me-2"></i> Selecionar
+                                                <i class="fas fa-folder-open me-2" aria-hidden="true"></i> Selecionar
                                             </label>
-                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple>
+                                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls" multiple aria-label="Selecionar arquivos CSV ou Excel">
                                         </div>
                                         <div class="file-hint">
-                                            <span><i class="fas fa-check-circle"></i> Até 3 arquivos</span>
-                                            <span><i class="fas fa-weight-scale"></i> Máx. 200 KB</span>
-                                            <span><i class="fas fa-coins"></i> 1 crédito</span>
+                                            <span><i class="fas fa-check-circle" aria-hidden="true"></i> Até 3 arquivos</span>
+                                            <span><i class="fas fa-weight-scale" aria-hidden="true"></i> Máx. 200 KB</span>
+                                            <span><i class="fas fa-coins" aria-hidden="true"></i> 1 crédito</span>
                                         </div>
                                     </div>
 
                                     <div class="file-preview-container" id="filePreviewContainer"></div>
 
-                                    <div class="analysis-status" id="analysisStatus">
+                                    <div class="analysis-status" id="analysisStatus" role="status" aria-live="polite">
                                         <div class="status-icon" id="statusIcon">⏳</div>
                                         <div class="status-text" id="statusText">Processando...</div>
                                         <div class="status-sub" id="statusSub">A Ayla está analisando</div>
@@ -1112,10 +1139,10 @@
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
                         <h5 class="card-title">
-                            <i class="fas fa-robot"></i>
+                            <i class="fas fa-robot" aria-hidden="true"></i>
                             Relatório da Ayla
                             <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.15); margin-left:0.5rem;">
-                                <i class="fas fa-brain me-1"></i> Análise em linguagem natural
+                                <i class="fas fa-brain me-1" aria-hidden="true"></i> Análise em linguagem natural
                             </span>
                         </h5>
 
@@ -1124,34 +1151,34 @@
                         <div class="result-container" id="resultContainer">
                             <div class="result-header">
                                 <div class="result-title">
-                                    <i class="fas fa-check-circle"></i>
+                                    <i class="fas fa-check-circle" aria-hidden="true"></i>
                                     Análise concluída com sucesso
                                 </div>
                                 <span class="result-badge success">
-                                    <i class="fas fa-check-circle"></i> Concluído
+                                    <i class="fas fa-check-circle" aria-hidden="true"></i> Concluído
                                 </span>
                             </div>
 
                             <!-- 🔥 MÉTRICAS RESUMIDAS -->
                             <div class="result-grid" id="resultMetrics"></div>
 
-                            <!-- 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO) -->
+                            <!-- 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF -->
                             <div id="pdfPreviewWrapper" style="display: none;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
                                     <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-weight: 600;">
-                                        <i class="fas fa-file-pdf" style="color: #dc3545;"></i>
+                                        <i class="fas fa-file-pdf" style="color: #dc3545;" aria-hidden="true"></i>
                                         Pré-visualização do Relatório
                                     </div>
                                     <div style="display: flex; gap: 0.3rem; align-items: center;">
-                                        <button class="btn-pdf-preview-action" id="pdfZoomOut" title="Diminuir zoom">
-                                            <i class="fas fa-search-minus"></i>
+                                        <button class="btn-pdf-preview-action" id="pdfZoomOut" title="Diminuir zoom" aria-label="Diminuir zoom do PDF" type="button">
+                                            <i class="fas fa-search-minus" aria-hidden="true"></i>
                                         </button>
                                         <span id="pdfZoomLevel" style="color: rgba(255,255,255,0.4); font-size: 0.65rem; padding: 4px 6px;">100%</span>
-                                        <button class="btn-pdf-preview-action" id="pdfZoomIn" title="Aumentar zoom">
-                                            <i class="fas fa-search-plus"></i>
+                                        <button class="btn-pdf-preview-action" id="pdfZoomIn" title="Aumentar zoom" aria-label="Aumentar zoom do PDF" type="button">
+                                            <i class="fas fa-search-plus" aria-hidden="true"></i>
                                         </button>
-                                        <button class="btn-pdf-preview-action" id="pdfFullscreen" title="Tela cheia">
-                                            <i class="fas fa-expand"></i>
+                                        <button class="btn-pdf-preview-action" id="pdfFullscreen" title="Tela cheia" aria-label="Abrir PDF em tela cheia" type="button">
+                                            <i class="fas fa-expand" aria-hidden="true"></i>
                                         </button>
                                     </div>
                                 </div>
@@ -1159,12 +1186,14 @@
                                 <!-- Container do iframe -->
                                 <div id="pdfPreviewContainer">
                                     <iframe id="pdfPreviewFrame"
-                                            title="Pré-visualização do Relatório PDF">
+                                            title="Pré-visualização do Relatório PDF"
+                                            loading="lazy"
+                                            sandbox="allow-same-origin allow-scripts allow-popups">
                                     </iframe>
 
                                     <!-- Loading overlay do PDF -->
                                     <div id="pdfPreviewLoading">
-                                        <i class="fas fa-file-pdf fa-2x"></i>
+                                        <i class="fas fa-file-pdf fa-2x" aria-hidden="true"></i>
                                         <span>Gerando pré-visualização...</span>
                                     </div>
                                 </div>
@@ -1172,12 +1201,12 @@
 
                             <!-- Fallback: se iframe não funcionar -->
                             <div id="pdfPreviewFallback" style="display: none;">
-                                <i class="fas fa-file-pdf fa-3x" style="color: #dc3545; opacity: 0.6;"></i>
+                                <i class="fas fa-file-pdf fa-3x" style="color: #dc3545; opacity: 0.6;" aria-hidden="true"></i>
                                 <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin-top: 0.5rem;">
                                     Seu navegador não suporta pré-visualização de PDF.
                                 </p>
-                                <button class="btn-result btn-pdf" onclick="window.downloadLastPDF()" style="margin-top: 0.5rem;">
-                                    <i class="fas fa-download"></i> Baixar PDF
+                                <button class="btn-result btn-pdf" onclick="window.downloadLastPDF()" style="margin-top: 0.5rem;" type="button">
+                                    <i class="fas fa-download" aria-hidden="true"></i> Baixar PDF
                                 </button>
                             </div>
 
@@ -1185,7 +1214,7 @@
                             <div class="ai-report-card" style="margin-top: 0.8rem;">
                                 <div id="aiReportContent" class="ai-report-content">
                                     <div class="ai-report-placeholder">
-                                        <i class="fas fa-spinner fa-spin"></i>
+                                        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
                                         Gerando análise com IA...
                                     </div>
                                 </div>
@@ -1194,17 +1223,17 @@
                             <div class="result-insights" id="resultInsights"></div>
 
                             <div class="result-actions">
-                                <button class="btn-result btn-pdf" id="downloadPdfBtn">
-                                    <i class="fas fa-file-pdf"></i> Baixar Relatório PDF
+                                <button class="btn-result btn-pdf" id="downloadPdfBtn" type="button">
+                                    <i class="fas fa-file-pdf" aria-hidden="true"></i> Baixar Relatório PDF
                                 </button>
-                                <button class="btn-result btn-result-secondary" id="newAnalysisBtn">
-                                    <i class="fas fa-plus"></i> Nova Análise
+                                <button class="btn-result btn-result-secondary" id="newAnalysisBtn" type="button">
+                                    <i class="fas fa-plus" aria-hidden="true"></i> Nova Análise
                                 </button>
                             </div>
                         </div>
 
                         <div id="resultPlaceholder">
-                            <i class="fas fa-brain"></i>
+                            <i class="fas fa-brain" aria-hidden="true"></i>
                             <p>🤖 Aguardando análise da Ayla</p>
                             <span class="placeholder-sub">Faça upload de um arquivo CSV/Excel para gerar o relatório</span>
                         </div>
@@ -1217,14 +1246,14 @@
                 <div class="col-12">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-chart-bar"></i>
+                            <i class="fas fa-chart-bar" aria-hidden="true"></i>
                             Receita vs Custos (Semanal)
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
-                                <i class="fas fa-chart-line me-1"></i> Análise financeira
+                                <i class="fas fa-chart-line me-1" aria-hidden="true"></i> Análise financeira
                             </span>
                         </h5>
                         <div style="height: 220px; position: relative;">
-                            <canvas id="revenueChart"></canvas>
+                            <canvas id="revenueChart" aria-label="Gráfico de receita versus custos semanal"></canvas>
                         </div>
                     </div>
                 </div>
@@ -1235,28 +1264,28 @@
                 <div class="col-md-6">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-tasks"></i>
+                            <i class="fas fa-tasks" aria-hidden="true"></i>
                             Desempenho Semanal
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
-                                <i class="fas fa-wrench me-1"></i> Serviços
+                                <i class="fas fa-wrench me-1" aria-hidden="true"></i> Serviços
                             </span>
                         </h5>
                         <div style="height: 160px; position: relative;">
-                            <canvas id="performanceChart"></canvas>
+                            <canvas id="performanceChart" aria-label="Gráfico de desempenho semanal"></canvas>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="glass-card">
                         <h5 class="card-title">
-                            <i class="fas fa-calendar-alt"></i>
+                            <i class="fas fa-calendar-alt" aria-hidden="true"></i>
                             Evolução Mensal
                             <span style="font-size:0.55rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
-                                <i class="fas fa-chart-line me-1"></i> Receita
+                                <i class="fas fa-chart-line me-1" aria-hidden="true"></i> Receita
                             </span>
                         </h5>
                         <div style="height: 160px; position: relative;">
-                            <canvas id="monthlyChart"></canvas>
+                            <canvas id="monthlyChart" aria-label="Gráfico de evolução mensal"></canvas>
                         </div>
                     </div>
                 </div>
@@ -1268,14 +1297,14 @@
                     <div class="glass-card">
                         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap">
                             <h5 class="card-title mb-0">
-                                <i class="fas fa-heartbeat"></i>
+                                <i class="fas fa-heartbeat" aria-hidden="true"></i>
                                 GPSA - Performance da Oficina
                                 <span style="font-size:0.5rem; font-weight:400; color:rgba(255,255,255,0.2); margin-left:0.5rem;">
-                                    <i class="fas fa-chart-line me-1"></i> Score • Serviços • Financeiro
+                                    <i class="fas fa-chart-line me-1" aria-hidden="true"></i> Score • Serviços • Financeiro
                                 </span>
                             </h5>
                             <div id="gpsaHealthIndicator" class="badge" style="font-size:0.65rem; padding:0.3rem 0.8rem; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.4); border:1px solid rgba(255,255,255,0.05); transition: all 0.3s ease;">
-                                <i class="fas fa-circle me-1" style="font-size:0.4rem;"></i>
+                                <i class="fas fa-circle me-1" style="font-size:0.4rem;" aria-hidden="true"></i>
                                 Carregando...
                             </div>
                         </div>
@@ -1286,13 +1315,13 @@
                         </div>
 
                         <div id="gpsaPlaceholder" style="text-align:center; padding:2rem 0; color:rgba(255,255,255,0.1);">
-                            <i class="fas fa-chart-line fa-3x mb-3" style="opacity:0.2;"></i>
+                            <i class="fas fa-chart-line fa-3x mb-3" style="opacity:0.2;" aria-hidden="true"></i>
                             <p style="font-size:0.85rem; color:rgba(255,255,255,0.2);">Faça upload de arquivos para ver os gráficos GPSA</p>
                         </div>
 
                         <div class="mt-2 text-center">
                             <small style="color:rgba(255,255,255,0.15); font-size:0.5rem;">
-                                <i class="fas fa-info-circle me-1"></i>
+                                <i class="fas fa-info-circle me-1" aria-hidden="true"></i>
                                 Passe o mouse para ver detalhes • Picos e vales são destacados automaticamente
                             </small>
                         </div>
@@ -1304,12 +1333,12 @@
             <div class="row mt-3">
                 <div class="col-12 text-center">
                     <p style="color:rgba(255,255,255,0.1); font-size:0.55rem;">
-                        <i class="fas fa-chart-line me-1" style="color:var(--azul-principal);"></i>
+                        <i class="fas fa-chart-line me-1" style="color:var(--azul-principal);" aria-hidden="true"></i>
                         Ayla Mechanic · AutoAnalytics v9.0
                         <span class="mx-2">•</span>
-                        <i class="fas fa-shield-alt"></i> PoW
+                        <i class="fas fa-shield-alt" aria-hidden="true"></i> PoW
                         <span class="mx-2">•</span>
-                        <i class="fas fa-database"></i> Dados criptografados
+                        <i class="fas fa-database" aria-hidden="true"></i> Dados criptografados
                     </p>
                 </div>
             </div>
@@ -1321,19 +1350,19 @@
     <!-- 🔥 MODAIS -->
     <!-- ============================================== -->
 
-    <div class="modal fade" id="creditsModal" tabindex="-1">
+    <div class="modal fade" id="creditsModal" tabindex="-1" aria-labelledby="creditsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content modal-content-custom">
                 <div class="modal-header modal-header-custom">
-                    <h5 class="modal-title"><i class="fas fa-coins me-2" style="color:var(--azul-principal);"></i> Meus Créditos</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
+                    <h5 class="modal-title" id="creditsModalLabel"><i class="fas fa-coins me-2" style="color:var(--azul-principal);" aria-hidden="true"></i> Meus Créditos</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body text-center py-3">
-                    <i class="fas fa-coins fa-3x mb-2" style="color:var(--azul-principal);"></i>
+                    <i class="fas fa-coins fa-3x mb-2" style="color:var(--azul-principal);" aria-hidden="true"></i>
                     <div class="display-5 fw-bold" id="modalCreditsCount" style="color:var(--azul-principal);">0</div>
                     <p class="text-muted mb-2" style="color:rgba(255,255,255,0.4); font-size:0.8rem;">créditos disponíveis</p>
                     <div class="alert alert-info small" style="background:rgba(0,180,255,0.06) !important; border-color:var(--borda-azul) !important; color:rgba(255,255,255,0.7) !important; font-size:0.65rem; text-align:left;">
-                        <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);"></i>
+                        <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);" aria-hidden="true"></i>
                         <strong style="color:var(--azul-principal);">Como funciona:</strong><br>
                         • <strong style="color:var(--azul-principal);">3 créditos grátis</strong> ao começar<br>
                         • ⭐ Premium ganha 1 crédito/dia<br>
@@ -1343,19 +1372,19 @@
                 </div>
                 <div class="modal-footer modal-footer-custom">
                     <a href="/planos" class="btn w-100" style="background:linear-gradient(135deg,var(--azul-principal),#0077B6); color:white; border:none; padding:0.4rem; border-radius:50px; font-weight:700; font-size:0.75rem;">
-                        <i class="fas fa-credit-card me-2"></i> Comprar créditos
+                        <i class="fas fa-credit-card me-2" aria-hidden="true"></i> Comprar créditos
                     </a>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1">
+    <div class="modal fade modal-lg" id="gpsaModal" tabindex="-1" aria-labelledby="gpsaModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-xl">
             <div class="modal-content modal-content-custom">
                 <div class="modal-header modal-header-custom">
-                    <h5 class="modal-title"><i class="fas fa-chart-line me-2" style="color:var(--azul-principal);"></i> GPSA - Impacto no Negócio</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);"></button>
+                    <h5 class="modal-title" id="gpsaModalLabel"><i class="fas fa-chart-line me-2" style="color:var(--azul-principal);" aria-hidden="true"></i> GPSA - Impacto no Negócio</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter:brightness(0) invert(1);" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body" id="gpsaModalBody">
                     <div class="text-center py-3">
@@ -1376,11 +1405,11 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background:linear-gradient(135deg,#0A1628 0%,#050A14 100%); border:1px solid var(--azul-principal);">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-id-card me-2"></i>Confirme seu CPF</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-id-card me-2" aria-hidden="true"></i>Confirme seu CPF</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white-50 mb-2" style="font-size:0.8rem;"><i class="fas fa-shield-alt me-2" style="color:var(--azul-principal);"></i> CPF obrigatório para gerar PIX.</p>
+                    <p class="text-white-50 mb-2" style="font-size:0.8rem;"><i class="fas fa-shield-alt me-2" style="color:var(--azul-principal);" aria-hidden="true"></i> CPF obrigatório para gerar PIX.</p>
                     <div class="mb-2">
                         <label class="form-label text-white" style="font-size:0.75rem;">CPF</label>
                         <input type="text" class="form-control" id="cpfInput" placeholder="000.000.000-00" maxlength="14" style="background:rgba(255,255,255,0.08); border-color:var(--azul-principal); color:white; border-radius:8px; font-size:0.9rem;">
@@ -1391,7 +1420,7 @@
                 <div class="modal-footer border-0">
                     <button type="button" class="btn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.3rem 1.2rem; font-size:0.7rem;" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn" id="cpfConfirmBtn" style="background:linear-gradient(135deg,var(--azul-principal),#0077B6); color:white; border:none; border-radius:50px; padding:0.3rem 1.2rem; font-weight:700; font-size:0.7rem;">
-                        <i class="fas fa-arrow-right me-2"></i>Continuar
+                        <i class="fas fa-arrow-right me-2" aria-hidden="true"></i>Continuar
                     </button>
                 </div>
             </div>
@@ -1402,8 +1431,8 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background:linear-gradient(135deg,#0A1628 0%,#050A14 100%); border:1px solid var(--borda-azul);">
                 <div class="modal-header border-0">
-                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-qrcode me-2"></i> Pagamento PIX</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" style="color:var(--azul-principal);"><i class="fas fa-qrcode me-2" aria-hidden="true"></i> Pagamento PIX</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body text-center py-3">
                     <div class="alert alert-success mb-2 text-center" style="background:rgba(0,180,255,0.08); border-color:var(--borda-azul); color:var(--azul-principal); font-size:0.75rem;">
@@ -1413,15 +1442,15 @@
                     <h6 class="mb-2" style="color:rgba(255,255,255,0.5); font-size:0.75rem;">Escaneie o QR Code</h6>
                     <div class="text-center mb-2">
                         <div class="p-2 d-inline-block" style="background:white; border-radius:10px;">
-                            <img id="pixQrCode" src="" style="max-width:150px; display:none;">
+                            <img id="pixQrCode" src="" style="max-width:150px; display:none;" alt="QR Code PIX">
                             <div id="pixQrPlaceholder" style="width:150px; height:150px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; border-radius:6px; color:#999; font-size:12px;">QR Code</div>
                         </div>
                     </div>
                     <div class="p-2 rounded-2 mb-2" style="background:rgba(255,255,255,0.05); word-break:break-all;">
                         <code id="pixCodeText" style="color:var(--azul-principal); font-size:0.65rem;">autoanalyticss@gmail.com</code>
                     </div>
-                    <button class="btn w-100 mb-2" onclick="window.copyPixCode()" style="background:rgba(0,180,255,0.06); color:var(--azul-principal); border:1px solid var(--borda-azul); border-radius:8px; padding:0.4rem; font-size:0.7rem;">
-                        <i class="fas fa-copy me-2"></i> Copiar Chave
+                    <button class="btn w-100 mb-2" onclick="window.copyPixCode()" style="background:rgba(0,180,255,0.06); color:var(--azul-principal); border:1px solid var(--borda-azul); border-radius:8px; padding:0.4rem; font-size:0.7rem;" type="button">
+                        <i class="fas fa-copy me-2" aria-hidden="true"></i> Copiar Chave
                     </button>
                     <div class="alert alert-info small" style="background:rgba(0,180,255,0.05); border-color:var(--borda-azul); color:rgba(255,255,255,0.5); font-size:0.6rem; text-align:left;">
                         <strong id="pixPlanText">Plano Premium</strong> - <span id="pixAmountText">R$ 97,00</span><br>
@@ -1432,7 +1461,7 @@
                 </div>
                 <div class="modal-footer border-0 justify-content-center">
                     <button type="button" class="btn w-100" id="pixVerifyBtn" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:none; border-radius:50px; padding:0.4rem; font-size:0.7rem;">
-                        <i class="fas fa-check-circle me-2"></i> Já paguei
+                        <i class="fas fa-check-circle me-2" aria-hidden="true"></i> Já paguei
                     </button>
                 </div>
             </div>
@@ -1445,26 +1474,35 @@
 
     <!-- 1️⃣ BIBLIOTECAS -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    <!-- 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRETA (MANTIDA) -->
+    <!-- ============================================== -->
+    <!-- 🔥 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRIGIDA (v8.0 + v3.0) -->
+    <!-- ============================================== -->
+    <!-- 🔴 CRÍTICO: pdf-generator ANTES do upload-report-system -->
+    <!-- 🔴 CRÍTICO: Versões atualizadas para evitar cache antigo -->
+    
     <script src="/static/js/app.js?ver=7.8.0" defer></script>
     <script src="/static/js/auth.js?ver=4.3.0" defer></script>
     <script src="/static/js/pow-client.js?ver=5.2" defer></script>
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
     <script src="/static/js/dashboard.js?ver=16.16" defer></script>
-    <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
-    <script src="/static/js/pdf-generator.js?ver=6.0" defer></script>
+    
+    <!-- 🔥 pdf-generator v8.0 PRIMEIRO (define window.generatePDFBlob) -->
+    <script src="/static/js/pdf-generator.js?ver=8.0" defer></script>
+    
+    <!-- 🔥 upload-report-system v3.0 DEPOIS (usa window.generatePDFBlob) -->
+    <script src="/static/js/upload-report-system.js?ver=3.0" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (MANTIDO) -->
@@ -1691,6 +1729,7 @@
             z-index: 9999;
             background: rgba(0, 180, 255, 0.15);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             color: var(--azul-principal);
             border: 1px solid var(--borda-azul);
             border-radius: 50px;
@@ -1713,8 +1752,8 @@
             #syncDebugBtn { bottom: 15px; right: 15px; padding: 4px 10px; font-size: 9px; }
         }
     </style>
-    <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos">
-        <i class="fas fa-sync"></i> Sync
+    <button id="syncDebugBtn" onclick="forceSyncCredits()" title="Sincronizar créditos" type="button">
+        <i class="fas fa-sync" aria-hidden="true"></i> Sync
     </button>
 
 </body>
