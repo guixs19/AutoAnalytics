@@ -1,12 +1,15 @@
-// frontend/js/upload-report-system.js - v3.0 (PDF-FIRST + AYLA)
+// frontend/js/upload-report-system.js - v3.1 (AYLA REPORT + BLOB-FIRST)
 // SISTEMA COMPLETO DE UPLOAD, POLLING E RELATÓRIO
 /**
- * 🔥 NOVIDADES v3.0:
- * - 🔥 PDF-FIRST: PDF aparece em ~1s, antes da IA
- * - 🔥 IA roda em PARALELO (não bloqueia)
- * - 🔥 Download INSTANTÂNEO via Blob
- * - 🔥 "Ayla" substitui TODAS as menções a ML/modelo/IA
- * - 🔥 Insights aparecem quando prontos
+ * 🔥 NOVIDADES v3.1:
+ * - 🔥 Popular os 5 blocos do #aylaReportWrapper (Score, Resumo, Recomendações, Insights, Forecast)
+ * - 🔥 Renderiza o texto do backend direto na div "Relatório da Ayla"
+ * - 🔥 PDF continua sendo gerado via window.generatePDFBlob() (fallback)
+ * 
+ * ✅ MANTIDO v3.0:
+ * - PDF-FIRST: PDF aparece rápido (fallback)
+ * - IA roda em PARALELO (não bloqueia)
+ * - "Ayla" substitui TODAS as menções a ML/modelo/IA
  * 
  * ✅ MANTIDO v2.7:
  * - PoW renovado corretamente
@@ -18,7 +21,7 @@
 (function() {
     'use strict';
 
-    console.log('📊 Inicializando UploadReportSystem v3.0 (PDF-First + Ayla)...');
+    console.log('📊 Inicializando UploadReportSystem v3.1 (Ayla Report)...');
 
     // ==============================================
     // 🔥 CONFIGURAÇÕES
@@ -68,9 +71,9 @@
         errorCount: 0,
         isRecovering: false,
         chartData: null,
-        pdfBlob: null,        // 🔥 NOVO: guarda o Blob do PDF
-        pdfReady: false,      // 🔥 NOVO: flag se o PDF já está pronto
-        aiReportDone: false,  // 🔥 NOVO: flag se a IA já terminou
+        pdfBlob: null,
+        pdfReady: false,
+        aiReportDone: false,
     };
 
     // ==============================================
@@ -97,8 +100,19 @@
         elements.resultInsights = document.getElementById('resultInsights');
         elements.downloadPdfBtn = document.getElementById('downloadPdfBtn');
         elements.newAnalysisBtn = document.getElementById('newAnalysisBtn');
-        elements.resultFilename = document.getElementById('resultFilename');
-        elements.resultSummary = document.getElementById('resultSummary');
+        
+        // 🔥 NOVOS: elementos do relatório da Ayla
+        elements.aylaReportWrapper = document.getElementById('aylaReportWrapper');
+        elements.aylaScoreSection = document.getElementById('aylaScoreSection');
+        elements.aylaScoreGrid = document.getElementById('aylaScoreGrid');
+        elements.aylaSummarySection = document.getElementById('aylaSummarySection');
+        elements.aylaSummaryText = document.getElementById('aylaSummaryText');
+        elements.aylaRecommendationsSection = document.getElementById('aylaRecommendationsSection');
+        elements.aylaRecommendationsList = document.getElementById('aylaRecommendationsList');
+        elements.aylaInsightsSection = document.getElementById('aylaInsightsSection');
+        elements.aylaInsightsList = document.getElementById('aylaInsightsList');
+        elements.aylaForecastSection = document.getElementById('aylaForecastSection');
+        elements.aylaForecastText = document.getElementById('aylaForecastText');
         
         elements.creditsDisplay = document.getElementById('creditsDisplay');
         elements.creditsCount = document.getElementById('creditsCount');
@@ -245,8 +259,17 @@
             .replace(/\bmodelo preditivo\b/gi, 'Ayla')
             .replace(/\bmodelo\b/gi, 'Ayla')
             .replace(/\bIA\b/g, 'Ayla')
-            .replace(/\bInteligência Artificial\b/gi, 'Ayla')
-            .replace(/Análise por Ayla/g, 'Análise por Ayla');
+            .replace(/\bInteligência Artificial\b/gi, 'Ayla');
+    }
+
+    /**
+     * 🔥 Escapa HTML para evitar injeção em textos do backend
+     */
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
     }
 
     // ==============================================
@@ -305,6 +328,27 @@
         return data?.result?.metrics || 
                data?.metrics || 
                data?.analysis?.metrics || 
+               {};
+    }
+
+    function extractForecast(data) {
+        return data?.result?.forecast || 
+               data?.forecast || 
+               data?.analysis?.forecast || 
+               '';
+    }
+
+    function extractCombinedInsights(data) {
+        return data?.result?.combined_insights || 
+               data?.combined_insights || 
+               data?.analysis?.combined_insights || 
+               [];
+    }
+
+    function extractPerFileAnalysis(data) {
+        return data?.result?.per_file_analysis || 
+               data?.per_file_analysis || 
+               data?.analysis?.per_file_analysis || 
                {};
     }
 
@@ -445,46 +489,284 @@
     }
 
     // ==============================================
-    // 🔥 RESULT DISPLAY (PDF-FIRST v3.0)
+    // 🔥 RENDERIZAR RELATÓRIO DA AYLA (NOVO v3.1)
     // ==============================================
 
     /**
-     * 🔥 NOVO v3.0: Mostra resultado com PDF PRIMEIRO
-     * 
-     * ORDEM CORRETA:
-     * 1. Métricas resumidas (síncrono, instantâneo)
-     * 2. Gráficos Chart.js (paralelo)
-     * 3. PDF Blob + preview (RÁPIDO, sem IA)
-     * 4. IA em PARALELO (não bloqueia)
+     * 🔥 Popula os 5 blocos do #aylaReportWrapper com os dados do backend
      */
+    function renderAylaReport(data) {
+        console.log('🎨 [Ayla Report] Populando blocos...');
+
+        const executiveScore = extractExecutiveScore(data);
+        const executiveSummary = extractExecutiveSummary(data);
+        const recommendations = extractRecommendations(data);
+        const combinedInsights = extractCombinedInsights(data);
+        const forecast = extractForecast(data);
+        const perFile = extractPerFileAnalysis(data);
+        const metrics = extractMetrics(data);
+
+        const totalRegistros = data.rows_processed || data.result?.rows_processed || metrics.total_predictions || 0;
+        const confidenceScore = data.confidence_score || data.result?.confidence_score || metrics.mean || 0.65;
+        const confianca = Math.round(confidenceScore * 100);
+
+        // ==========================================
+        // 1. SCORE EXECUTIVO
+        // ==========================================
+        if (elements.aylaScoreSection && elements.aylaScoreGrid) {
+            if (Object.keys(executiveScore).length > 0) {
+                const scoreItems = [
+                    { key: 'nota_geral',        label: 'Nota Geral',       icon: '🏆' },
+                    { key: 'saude_financeira',  label: 'Saúde Financeira', icon: '💰' },
+                    { key: 'eficiencia',        label: 'Eficiência',       icon: '⚡' },
+                    { key: 'controle_custos',   label: 'Controle Custos',  icon: '📊' },
+                    { key: 'crescimento',       label: 'Crescimento',      icon: '📈' },
+                    { key: 'nivel_risco',       label: 'Nível de Risco',   icon: '🛡️' }
+                ];
+
+                let itemsHtml = '';
+                scoreItems.forEach(({ key, label, icon }) => {
+                    const value = executiveScore[key];
+                    if (value === undefined || value === null) return;
+
+                    const isNumber = typeof value === 'number';
+                    const color = isNumber
+                        ? (value >= 7 ? '#48bb78' : value >= 5 ? '#f5a623' : '#f56565')
+                        : (String(value).toLowerCase() === 'baixo' ? '#48bb78'
+                           : String(value).toLowerCase() === 'moderado' ? '#f5a623'
+                           : '#f56565');
+
+                    itemsHtml += `
+                        <div style="background: rgba(0,0,0,0.25); padding: 0.6rem 0.5rem; border-radius: 10px; text-align: center; border: 1px solid rgba(0,180,255,0.15);">
+                            <div style="font-size: 0.5rem; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.5px;">${label}</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: ${color}; margin-top: 4px;">
+                                ${icon} ${isNumber ? value.toFixed(1) : escapeHtml(value)}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                if (itemsHtml) {
+                    elements.aylaScoreGrid.innerHTML = itemsHtml;
+                    elements.aylaScoreSection.style.display = 'block';
+                }
+            } else {
+                elements.aylaScoreSection.style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // 2. RESUMO EXECUTIVO
+        // ==========================================
+        if (elements.aylaSummarySection && elements.aylaSummaryText) {
+            let summaryText = executiveSummary;
+            
+            // Fallback: monta resumo se backend não mandou
+            if (!summaryText || summaryText.length < 20) {
+                summaryText = `Análise concluída com sucesso pela Ayla. ` +
+                    `Foram analisados ${totalRegistros.toLocaleString('pt-BR')} registros, ` +
+                    `com um score médio de ${confianca}%. ` +
+                    `Recomendo monitorar de perto os casos de alto risco e manter as boas práticas.`;
+            }
+
+            elements.aylaSummaryText.innerHTML = aylify(summaryText);
+            elements.aylaSummarySection.style.display = 'block';
+        }
+
+        // ==========================================
+        // 3. RECOMENDAÇÕES
+        // ==========================================
+        if (elements.aylaRecommendationsSection && elements.aylaRecommendationsList) {
+            const priorityMap = {
+                alta:  { label: 'Alta Prioridade',  color: '#f56565', emoji: '🔴', bg: 'rgba(245,101,101,0.08)' },
+                media: { label: 'Média Prioridade', color: '#f5a623', emoji: '🟡', bg: 'rgba(245,166,35,0.08)' },
+                baixa: { label: 'Baixa Prioridade', color: '#48bb78', emoji: '🟢', bg: 'rgba(72,187,120,0.08)' }
+            };
+
+            let recsHtml = '';
+            const finalRecs = Array.isArray(recommendations) ? recommendations : [];
+
+            if (finalRecs.length > 0) {
+                finalRecs.slice(0, 10).forEach((rec) => {
+                    // 🔥 Backend manda "description" (não "text")
+                    const desc = typeof rec === 'string'
+                        ? rec
+                        : (rec.description || rec.text || rec.message || '');
+
+                    if (!desc) return;
+
+                    const priority = rec.priority || 'media';
+                    const pInfo = priorityMap[priority] || priorityMap.media;
+                    const category = rec.category 
+                        ? rec.category.charAt(0).toUpperCase() + rec.category.slice(1) 
+                        : '';
+
+                    recsHtml += `
+                        <div style="
+                            display: flex;
+                            gap: 0.6rem;
+                            padding: 0.7rem 0.9rem;
+                            background: ${pInfo.bg};
+                            border-radius: 10px;
+                            margin-bottom: 0.4rem;
+                            border-left: 3px solid ${pInfo.color};
+                            transition: all 0.3s ease;
+                        "
+                        onmouseover="this.style.background='${pInfo.bg.replace('0.08','0.15')}'"
+                        onmouseout="this.style.background='${pInfo.bg}'">
+                            <span style="font-size: 0.9rem; flex-shrink: 0; margin-top: 1px;" aria-hidden="true">${pInfo.emoji}</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; flex-wrap: wrap;">
+                                    <span style="font-size: 0.55rem; color: ${pInfo.color}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;">
+                                        ${pInfo.label}
+                                    </span>
+                                    ${category ? `
+                                        <span style="
+                                            font-size: 0.5rem;
+                                            color: rgba(255,255,255,0.4);
+                                            background: rgba(255,255,255,0.05);
+                                            padding: 1px 6px;
+                                            border-radius: 10px;
+                                            text-transform: uppercase;
+                                            letter-spacing: 0.4px;
+                                        ">${escapeHtml(category)}</span>
+                                    ` : ''}
+                                </div>
+                                <div style="color: rgba(255,255,255,0.85); font-size: 0.78rem; line-height: 1.5;">
+                                    ${aylify(escapeHtml(desc))}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            if (!recsHtml) {
+                recsHtml = `
+                    <div style="
+                        background: rgba(72,187,120,0.08);
+                        border-left: 3px solid #48bb78;
+                        border-radius: 10px;
+                        padding: 1rem;
+                        text-align: center;
+                        color: rgba(255,255,255,0.6);
+                        font-size: 0.8rem;
+                    ">
+                        <i class="fas fa-check-circle" style="color: #48bb78; font-size: 1.3rem; display: block; margin-bottom: 0.4rem;" aria-hidden="true"></i>
+                        Nenhuma recomendação crítica no momento.<br>
+                        <span style="font-size: 0.7rem; color: rgba(255,255,255,0.4);">Continue com as boas práticas!</span>
+                    </div>
+                `;
+            }
+
+            elements.aylaRecommendationsList.innerHTML = recsHtml;
+            elements.aylaRecommendationsSection.style.display = 'block';
+        }
+
+        // ==========================================
+        // 4. INSIGHTS COMBINADOS
+        // ==========================================
+        if (elements.aylaInsightsSection && elements.aylaInsightsList) {
+            let insightsArr = Array.isArray(combinedInsights) ? combinedInsights : [];
+
+            // Fallback: pega do per_file_analysis
+            if (insightsArr.length === 0 && perFile && Object.keys(perFile).length > 0) {
+                const firstFileKey = Object.keys(perFile)[0];
+                const firstFile = perFile[firstFileKey];
+                insightsArr = firstFile?.insights || [];
+            }
+
+            // Fallback final: insights genéricos
+            if (insightsArr.length === 0) {
+                insightsArr = confidenceScore >= 0.7 ? [
+                    '✅ Seus dados mostram um alto potencial de performance.',
+                    '📈 Recomendo manter o foco em treinamento e manutenção preventiva.',
+                    '🎯 Considere expandir suas operações para capturar mais oportunidades.'
+                ] : confidenceScore >= 0.4 ? [
+                    '📊 Seus dados indicam espaço para melhorias significativas.',
+                    '🔍 Recomendo revisar processos e identificar gargalos operacionais.',
+                    '📋 Considere investir em treinamento para sua equipe.'
+                ] : [
+                    '⚠️ Seus dados mostram oportunidades claras de melhoria.',
+                    '🛠️ Recomendo uma revisão completa dos processos da oficina.',
+                    '📊 Considere implementar um sistema de monitoramento de performance.'
+                ];
+            }
+
+            let insHtml = '';
+            insightsArr.slice(0, 8).forEach((ins) => {
+                insHtml += `
+                    <div style="
+                        display: flex;
+                        gap: 0.5rem;
+                        padding: 0.4rem 0;
+                        border-bottom: 1px solid rgba(255,255,255,0.03);
+                        color: rgba(255,255,255,0.75);
+                        font-size: 0.78rem;
+                        line-height: 1.5;
+                    ">
+                        <span style="color: #00B4FF; flex-shrink: 0; margin-top: 2px;" aria-hidden="true">▸</span>
+                        <span style="flex: 1;">${aylify(escapeHtml(ins))}</span>
+                    </div>
+                `;
+            });
+
+            elements.aylaInsightsList.innerHTML = insHtml;
+            elements.aylaInsightsSection.style.display = 'block';
+        }
+
+        // ==========================================
+        // 5. FORECAST
+        // ==========================================
+        if (elements.aylaForecastSection && elements.aylaForecastText) {
+            if (forecast && forecast.length > 10) {
+                elements.aylaForecastText.innerHTML = aylify(forecast);
+                elements.aylaForecastSection.style.display = 'block';
+            } else {
+                elements.aylaForecastSection.style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // 6. MOSTRAR WRAPPER
+        // ==========================================
+        if (elements.aylaReportWrapper) {
+            elements.aylaReportWrapper.style.display = 'block';
+        }
+
+        console.log('✅ [Ayla Report] Blocos populados!');
+    }
+
+    // ==============================================
+    // 🔥 RESULT DISPLAY (v3.1)
+    // ==============================================
+
     async function showResult(data) {
         if (!data) {
             console.warn('⚠️ showResult: dados vazios');
             return;
         }
 
-        console.log('📊 [showResult v3.0] Iniciando com PDF-first...');
+        console.log('📊 [showResult v3.1] Iniciando...');
         
         const chartData = extractChartData(data);
-        const executiveScore = extractExecutiveScore(data);
         const metrics = extractMetrics(data);
 
         state.chartData = chartData;
         state.analysisResult = data;
-        state.pdfReady = false;
         state.aiReportDone = false;
         window._lastResult = data;
         window._lastChartData = chartData;
 
         // ==========================================
-        // PASSO 1: MOSTRAR CONTAINER (sem esperar nada)
+        // PASSO 1: MOSTRAR CONTAINER
         // ==========================================
         
         if (elements.resultPlaceholder) elements.resultPlaceholder.style.display = 'none';
         if (elements.resultContainer) elements.resultContainer.classList.add('show');
 
         // ==========================================
-        // PASSO 2: MÉTRICAS RESUMIDAS (síncrono)
+        // PASSO 2: MÉTRICAS RESUMIDAS
         // ==========================================
         
         const totalRegistros = data.rows_processed || data.result?.rows_processed || metrics.total_predictions || 0;
@@ -493,7 +775,6 @@
         const scoreLabel = getScoreLabel(confidenceScore);
         const scoreIcon = getScoreIcon(confidenceScore);
         const confianca = Math.round(confidenceScore * 100);
-        const filename = data.filename || data.result?.filename || 'Análise';
 
         if (elements.resultMetrics) {
             elements.resultMetrics.innerHTML = `
@@ -517,11 +798,10 @@
         }
 
         // ==========================================
-        // PASSO 3: DISPARA GRÁFICOS (Chart.js - paralelo)
+        // PASSO 3: GRÁFICOS (Chart.js)
         // ==========================================
         
         if (chartData && chartData.weekly) {
-            console.log('📊 [showResult] Disparando gráficos Chart.js');
             window.dispatchEvent(new CustomEvent('chart:data_ready', {
                 detail: { 
                     chart_data: chartData,
@@ -531,69 +811,38 @@
         }
 
         // ==========================================
-        // PASSO 4: GERA O PDF PRIMEIRO (não bloqueia a IA)
+        // PASSO 4: 🔥 RENDERIZAR RELATÓRIO DA AYLA (NOVO)
         // ==========================================
         
-        console.log('📄 [showResult] Gerando PDF (antes da IA)...');
-        
         try {
-            if (window.generatePDFBlob && typeof window.generatePDFBlob === 'function') {
-                const pdfBlob = await window.generatePDFBlob();
-                
-                if (pdfBlob) {
-                    console.log('✅ [showResult] PDF Blob gerado:', pdfBlob.size, 'bytes');
-                    
-                    // Guarda o Blob
-                    state.pdfBlob = pdfBlob;
-                    window._lastPdfBlob = pdfBlob;
-                    state.pdfReady = true;
-                    
-                    // 🔥 Renderiza no iframe
-                    if (window.PDFPreview && typeof window.PDFPreview.renderFromBlob === 'function') {
-                        window.PDFPreview.renderFromBlob(pdfBlob);
-                        console.log('👁️ [showResult] Preview renderizado no iframe');
-                    }
-                } else {
-                    console.warn('⚠️ [showResult] PDF Blob vazio');
-                }
-            } else {
-                // Fallback: método antigo
-                console.warn('⚠️ [showResult] generatePDFBlob não disponível, usando fallback');
-                if (window.PDFPreview && typeof window.PDFPreview.render === 'function') {
-                    window.PDFPreview.render();
-                }
-            }
-        } catch (pdfError) {
-            console.error('❌ [showResult] Erro ao gerar PDF:', pdfError);
-            // Fallback
-            if (window.PDFPreview && typeof window.PDFPreview.render === 'function') {
-                window.PDFPreview.render();
-            }
+            renderAylaReport(data);
+            state.aiReportDone = true;
+        } catch (err) {
+            console.error('❌ [showResult] Erro ao renderizar relatório da Ayla:', err);
         }
 
         // ==========================================
-        // PASSO 5: RELATÓRIO DA IA EM PARALELO (NÃO BLOQUEIA)
+        // PASSO 5: GERAR PDF EM BACKGROUND (para download rápido)
         // ==========================================
         
-        console.log('🤖 [showResult] Disparando IA em paralelo...');
-        
-        // 🔥 NÃO usa await! Roda em background
-        generateAIReportAsync(data, {
-            chartData,
-            executiveScore,
-            metrics,
-            totalRegistros,
-            confidenceScore,
-            scoreColor,
-            scoreLabel,
-            confianca,
-            filename
-        }).catch(err => {
-            console.error('❌ [showResult] Erro na IA:', err);
-        });
+        setTimeout(async () => {
+            try {
+                if (window.generatePDFBlob && typeof window.generatePDFBlob === 'function') {
+                    const pdfBlob = await window.generatePDFBlob();
+                    if (pdfBlob) {
+                        state.pdfBlob = pdfBlob;
+                        window._lastPdfBlob = pdfBlob;
+                        state.pdfReady = true;
+                        console.log('✅ [showResult] PDF pronto para download:', pdfBlob.size, 'bytes');
+                    }
+                }
+            } catch (pdfError) {
+                console.warn('⚠️ [showResult] Erro ao pré-gerar PDF:', pdfError);
+            }
+        }, 500);
 
         // ==========================================
-        // PASSO 6: FINALIZA (notificação + scroll)
+        // PASSO 6: FINALIZA
         // ==========================================
         
         state.analysisResult = data;
@@ -613,120 +862,30 @@
         updateCreditsDisplay();
     }
 
-    /**
-     * 🔥 Gera o relatório da IA de forma assíncrona (não bloqueia o PDF)
-     * Roda em paralelo após o PDF já estar visível.
-     */
-    async function generateAIReportAsync(data, context) {
-        console.log('🤖 [Ayla] Iniciando geração do relatório (paralelo)...');
-        
-        try {
-            const { chartData, executiveScore, metrics, totalRegistros, confidenceScore, scoreColor, scoreLabel, confianca } = context;
-            
-            // Deixa o PDF respirar antes de mexer no DOM
-            await sleep(300);
-            
-            const recommendations = extractRecommendations(data);
-            const insights = extractInsights(data);
-            
-            // 🔥 Monta os insights da Ayla
-            if (elements.resultInsights) {
-                let insightsHtml = `
-                    <div style="margin-bottom:0.8rem;font-size:0.8rem;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
-                        <i class="fas fa-lightbulb" style="color:#ff6b35;margin-right:0.5rem;"></i>
-                        Insights da Ayla
-                    </div>
-                `;
-
-                const finalRecommendations = recommendations.length > 0 ? recommendations : 
-                    (insights.recomendacoes || insights.recommendations || []);
-                
-                if (finalRecommendations.length > 0) {
-                    finalRecommendations.slice(0, 5).forEach(r => {
-                        const desc = typeof r === 'string' ? r : (r.description || r.text || JSON.stringify(r));
-                        insightsHtml += `
-                            <div class="result-insight">
-                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
-                                ${aylify(desc)}
-                            </div>
-                        `;
-                    });
-                } else {
-                    const defaultInsights = confidenceScore >= 0.7 ? [
-                        '✅ Seus dados mostram um alto potencial de performance. Continue com as boas práticas!',
-                        '📈 Recomendo manter o foco em treinamento e manutenção preventiva.',
-                        '🎯 Considere expandir suas operações para capturar mais oportunidades.'
-                    ] : confidenceScore >= 0.4 ? [
-                        '📊 Seus dados indicam espaço para melhorias significativas.',
-                        '🔍 Recomendo revisar processos e identificar gargalos operacionais.',
-                        '📋 Considere investir em treinamento para sua equipe.'
-                    ] : [
-                        '⚠️ Seus dados mostram oportunidades claras de melhoria.',
-                        '🛠️ Recomendo uma revisão completa dos processos da oficina.',
-                        '📊 Considere implementar um sistema de monitoramento de performance.'
-                    ];
-                    
-                    defaultInsights.forEach(r => {
-                        insightsHtml += `
-                            <div class="result-insight">
-                                <span class="insight-icon"><i class="fas fa-chevron-right"></i></span>
-                                ${r}
-                            </div>
-                        `;
-                    });
-                }
-                
-                elements.resultInsights.innerHTML = insightsHtml;
-            }
-
-            // 🔥 Resumo técnico
-            if (elements.resultSummary) {
-                elements.resultSummary.innerHTML = `
-                    <div style="display:flex; flex-wrap:wrap; gap:0.3rem 1rem; font-size:0.75rem; color:rgba(255,255,255,0.5);">
-                        <span><strong style="color:#ff6b35;">📊 ${totalRegistros}</strong> registros</span>
-                        <span><strong style="color:${scoreColor};">🎯 ${confianca}%</strong> score</span>
-                        <span><strong style="color:#f5a623;">📈 ${scoreLabel}</strong></span>
-                        <span><i class="fas fa-robot"></i> Análise por Ayla</span>
-                    </div>
-                `;
-            }
-
-            state.aiReportDone = true;
-            console.log('✅ [Ayla] Relatório concluído (sem bloquear o PDF)');
-            
-        } catch (error) {
-            console.error('❌ [Ayla] Erro:', error);
-            // Fallback amigável
-            if (elements.resultInsights) {
-                elements.resultInsights.innerHTML = `
-                    <div class="result-insight" style="color: rgba(255,255,255,0.5);">
-                        <span class="insight-icon">ℹ️</span>
-                        Análise detalhada indisponível no momento. O PDF já está pronto acima.
-                    </div>
-                `;
-            }
-        }
-    }
-
     function hideResult() {
         if (elements.resultContainer) elements.resultContainer.classList.remove('show');
         if (elements.resultPlaceholder) elements.resultPlaceholder.style.display = 'block';
         if (elements.resultMetrics) elements.resultMetrics.innerHTML = '';
-        if (elements.resultInsights) elements.resultInsights.innerHTML = '';
-        if (elements.resultSummary) elements.resultSummary.innerHTML = '';
         
-        // Limpa PDF
+        // 🔥 Limpa relatório da Ayla
+        if (elements.aylaReportWrapper) elements.aylaReportWrapper.style.display = 'none';
+        if (elements.aylaScoreGrid) elements.aylaScoreGrid.innerHTML = '';
+        if (elements.aylaSummaryText) elements.aylaSummaryText.innerHTML = '';
+        if (elements.aylaRecommendationsList) elements.aylaRecommendationsList.innerHTML = '';
+        if (elements.aylaInsightsList) elements.aylaInsightsList.innerHTML = '';
+        if (elements.aylaForecastText) elements.aylaForecastText.innerHTML = '';
+        if (elements.aylaScoreSection) elements.aylaScoreSection.style.display = 'none';
+        if (elements.aylaSummarySection) elements.aylaSummarySection.style.display = 'none';
+        if (elements.aylaRecommendationsSection) elements.aylaRecommendationsSection.style.display = 'none';
+        if (elements.aylaInsightsSection) elements.aylaInsightsSection.style.display = 'none';
+        if (elements.aylaForecastSection) elements.aylaForecastSection.style.display = 'none';
+        
+        if (elements.resultInsights) elements.resultInsights.innerHTML = '';
+        
         state.pdfBlob = null;
         state.pdfReady = false;
         state.aiReportDone = false;
         window._lastPdfBlob = null;
-        
-        // Destroi preview
-        if (window.PDFPreview && typeof window.PDFPreview.destroy === 'function') {
-            window.PDFPreview.destroy();
-        }
-        const pdfWrapper = document.getElementById('pdfPreviewWrapper');
-        if (pdfWrapper) pdfWrapper.style.display = 'none';
         
         state.analysisResult = null;
         state.chartData = null;
@@ -735,7 +894,7 @@
     }
 
     // ==============================================
-    // 🔥 POW - OBTENÇÃO DE SOLUÇÃO (MANTIDO v2.7)
+    // 🔥 POW (MANTIDO v2.7)
     // ==============================================
 
     async function getPowSolution(forceRefresh = false) {
@@ -754,9 +913,6 @@
             state.powLastRefresh = now;
         }
         
-        console.log('🔐 [PoW] Tentando obter solução...');
-        console.log('   📦 powClient disponível?', !!window.powClient);
-        
         if (!window.powClient) {
             throw new Error('Sistema de segurança (PoW) não carregado. Recarregue a página.');
         }
@@ -768,19 +924,11 @@
         if (typeof window.powClient.isPowHealthy === 'function') {
             try {
                 const healthy = await window.powClient.isPowHealthy();
-                console.log('   🩺 PoW saudável?', healthy);
-                
-                if (!healthy) {
-                    console.log('   ⚠️ PoW não saudável, tentando recuperar...');
-                    if (typeof window.powClient.autoRecover === 'function') {
-                        const recovered = await window.powClient.autoRecover();
-                        state.powRecoveryAttempts++;
-                        console.log('   🔄 Recuperação:', recovered ? 'sucesso' : 'falhou');
-                    }
+                if (!healthy && typeof window.powClient.autoRecover === 'function') {
+                    const recovered = await window.powClient.autoRecover();
+                    state.powRecoveryAttempts++;
                 }
-            } catch (e) {
-                console.warn('   ⚠️ Erro ao verificar saúde do PoW:', e.message);
-            }
+            } catch (e) {}
         }
         
         try {
@@ -790,21 +938,15 @@
                 throw new Error('Solução PoW inválida retornada pelo cliente');
             }
             
-            console.log('✅ PoW solução obtida');
-            console.log(`   🔑 Prefix: ${solution.prefix.substring(0, 10)}...`);
-            console.log(`   🔑 Nonce: ${solution.nonce}`);
-            console.log(`   🔑 Complexity: ${solution.complexity}`);
-            
             return solution;
             
         } catch (e) {
-            console.error('❌ Erro ao obter solução PoW:', e.message);
             throw new Error(`Falha ao obter PoW: ${e.message}`);
         }
     }
 
     // ==============================================
-    // 🔥 UPLOAD E ANÁLISE (MANTIDO v2.7)
+    // 🔥 UPLOAD E ANÁLISE
     // ==============================================
 
     async function startAnalysis() {
@@ -841,11 +983,7 @@
         const filesToUpload = state.files.slice();
         const userName = getUserName();
         
-        showAnalysisStatus(
-            '📤 Enviando arquivos...',
-            `${userName}, preparando ${filesToUpload.length} arquivo(s)`,
-            10
-        );
+        showAnalysisStatus('📤 Enviando arquivos...', `${userName}, preparando ${filesToUpload.length} arquivo(s)`, 10);
 
         try {
             const formData = new FormData();
@@ -860,7 +998,6 @@
                 updateAnalysisProgress(15, '🔐 Gerando prova de segurança...');
                 solution = await getPowSolution(true);
             } catch (e) {
-                console.error('❌ Falha crítica ao obter PoW:', e.message);
                 showNotification(`❌ Erro de segurança: ${e.message}`, 'error');
                 state.isUploading = false;
                 state.lastError = e.message;
@@ -871,7 +1008,6 @@
             }
             
             if (!solution) {
-                console.error('❌ PoW retornou null');
                 showNotification('❌ Erro de segurança: PoW não disponível.', 'error');
                 state.isUploading = false;
                 resetAnalysisStatus();
@@ -880,12 +1016,9 @@
             
             const result = await uploadWithRetry(formData, solution, filesToUpload);
             
-            if (!result) {
-                throw new Error('Falha no upload após múltiplas tentativas');
-            }
+            if (!result) throw new Error('Falha no upload após múltiplas tentativas');
 
             const data = result;
-            
             updateAnalysisProgress(50, '✅ Upload concluído, processando...');
 
             let processId = null;
@@ -968,7 +1101,6 @@
             await startAnalysis();
             
         } catch (e) {
-            console.error('❌ Erro na recuperação:', e);
             showNotification('❌ Falha na recuperação. Recarregue a página.', 'error');
         } finally {
             state.isRecovering = false;
@@ -985,14 +1117,10 @@
         const endpoints = [CONFIG.UPLOAD_ENDPOINT];
         
         for (let endpoint of endpoints) {
-            let endpointFailed = false;
-            
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     const token = getToken();
-                    if (!token) {
-                        throw new Error('Token não encontrado. Faça login novamente.');
-                    }
+                    if (!token) throw new Error('Token não encontrado. Faça login novamente.');
                     
                     if (!solution || !solution.prefix || !solution.nonce) {
                         throw new Error('PoW ausente. Não é possível fazer upload.');
@@ -1008,13 +1136,8 @@
                         'X-Request-ID': Math.random().toString(36).substring(2, 10),
                     };
 
-                    console.log(`📤 Upload com PoW (tentativa ${attempt}/${maxRetries})`);
                     const url = buildApiUrl(endpoint);
-                    
-                    updateAnalysisProgress(
-                        20 + (attempt - 1) * 15,
-                        `📤 Tentativa ${attempt}/${maxRetries}...`
-                    );
+                    updateAnalysisProgress(20 + (attempt - 1) * 15, `📤 Tentativa ${attempt}/${maxRetries}...`);
 
                     const response = await fetch(url, {
                         method: 'POST',
@@ -1023,79 +1146,45 @@
                         credentials: 'include',
                     });
 
-                    console.log(`📡 Resposta: ${response.status} ${response.statusText}`);
-
                     let responseData = null;
-                    let responseText = null;
-                    
                     try {
-                        responseText = await response.text();
+                        const responseText = await response.text();
                         if (responseText) {
-                            try {
-                                responseData = JSON.parse(responseText);
-                            } catch (e) {
-                                console.log(`📄 Resposta texto: ${responseText.substring(0, 200)}...`);
-                            }
+                            try { responseData = JSON.parse(responseText); } catch (e) {}
                         }
-                    } catch (e) {
-                        console.warn('⚠️ Não foi possível ler a resposta');
-                    }
+                    } catch (e) {}
 
                     if (response.status === 400) {
                         let errorMessage = 'Erro na requisição.';
-                        
                         if (responseData) {
                             if (responseData.detail) {
-                                errorMessage = typeof responseData.detail === 'string' 
-                                    ? responseData.detail 
-                                    : JSON.stringify(responseData.detail);
+                                errorMessage = typeof responseData.detail === 'string' ? responseData.detail : JSON.stringify(responseData.detail);
                             } else if (responseData.message) {
                                 errorMessage = responseData.message;
-                            } else if (responseData.error) {
-                                errorMessage = responseData.error;
                             }
                         }
                         
                         const errorStr = typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage);
                         
                         if (isPowError(errorStr)) {
-                            if (window.powClient) {
-                                window.powClient.clearCache();
-                                window.powClient.reset();
-                            }
+                            if (window.powClient) { window.powClient.clearCache(); window.powClient.reset(); }
                             state.powLastRefresh = 0;
-                            
                             try {
                                 const newSolution = await getPowSolution(true);
-                                if (newSolution) {
-                                    solution = newSolution;
-                                    continue;
-                                }
-                            } catch (e) {
-                                throw new Error(`Falha ao renovar PoW: ${e.message}`);
-                            }
+                                if (newSolution) { solution = newSolution; continue; }
+                            } catch (e) { throw new Error(`Falha ao renovar PoW: ${e.message}`); }
                         }
                         
-                        if (isCreditsError(errorStr)) {
-                            throw new Error(`Créditos insuficientes: ${errorStr}`);
-                        }
-                        
+                        if (isCreditsError(errorStr)) throw new Error(`Créditos insuficientes: ${errorStr}`);
                         throw new Error(errorStr);
                     }
 
                     if (response.status === 428) {
-                        if (window.powClient) {
-                            window.powClient.clearCache();
-                            window.powClient.reset();
-                        }
+                        if (window.powClient) { window.powClient.clearCache(); window.powClient.reset(); }
                         state.powLastRefresh = 0;
-                        
                         try {
                             const newSolution = await getPowSolution(true);
-                            if (newSolution) {
-                                solution = newSolution;
-                                continue;
-                            }
+                            if (newSolution) { solution = newSolution; continue; }
                         } catch (e) {}
                         throw new Error('PoW expirado. Tente novamente.');
                     }
@@ -1135,15 +1224,12 @@
 
                 } catch (error) {
                     lastError = error;
-                    console.error(`❌ Tentativa ${attempt} falhou:`, error.message);
                     
                     if (isCreditsError(error.message) ||
                         error.message.includes('Sessão expirada') ||
                         error.message.includes('PoW ausente')) {
                         throw error;
                     }
-                    
-                    if (endpointFailed) break;
                     
                     if (attempt < maxRetries) {
                         const delay = getBackoffDelay(attempt);
@@ -1157,7 +1243,7 @@
     }
 
     // ==============================================
-    // 🔥 POLLING
+    // 🔥 POLLING (MANTIDO)
     // ==============================================
 
     async function pollAnalysisStatus(processId) {
@@ -1184,10 +1270,7 @@
                 const token = getToken();
                 if (!token) throw new Error('Token não encontrado.');
                 
-                const statusEndpoint = `/analysis/progress/${processId}`;
-                const url = buildApiUrl(statusEndpoint);
-                
-                console.log(`📊 [Polling ${attempts}/${maxAttempts}]`);
+                const url = buildApiUrl(`/analysis/progress/${processId}`);
                 
                 const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -1198,44 +1281,30 @@
                         consecutiveErrors = 0;
                         const progress = 50 + (attempts / maxAttempts) * 40;
                         const elapsed = Math.round((Date.now() - startTime) / 1000);
-                        updateAnalysisProgress(
-                            progress,
-                            `⏳ Aguardando... (${elapsed}s / ${totalTimeoutSeconds}s)`
-                        );
+                        updateAnalysisProgress(progress, `⏳ Aguardando... (${elapsed}s / ${totalTimeoutSeconds}s)`);
                         await sleep(interval);
                         continue;
                     }
-                    if (response.status === 401) {
-                        throw new Error('Sessão expirada. Faça login novamente.');
-                    }
+                    if (response.status === 401) throw new Error('Sessão expirada. Faça login novamente.');
                     
                     consecutiveErrors++;
-                    if (consecutiveErrors > 3) {
-                        throw new Error(`Erro repetido: ${response.status}`);
-                    }
+                    if (consecutiveErrors > 3) throw new Error(`Erro repetido: ${response.status}`);
                     
                     await sleep(interval * 1.5);
                     continue;
                 }
 
                 consecutiveErrors = 0;
-
                 const statusData = await response.json();
                 
                 const status = statusData.status || statusData.state || 'processing';
                 const progress = statusData.progress || 0;
                 const message = statusData.message || statusData.stage || 'Processando...';
-                
-                console.log(`📊 Status: ${status}, ${progress}%`);
 
                 if (status === 'processing') {
                     const pollProgress = Math.min(50 + (attempts / maxAttempts) * 40, 95);
                     const elapsed = Math.round((Date.now() - startTime) / 1000);
-                    const progressMsg = progress > 0 ? `${Math.round(progress)}%` : '...';
-                    updateAnalysisProgress(
-                        pollProgress,
-                        `⏳ ${message} (${progressMsg})`
-                    );
+                    updateAnalysisProgress(pollProgress, `⏳ ${message} (${Math.round(progress)}%)`);
                     
                     if (elements.statusSub) {
                         const remaining = Math.max(0, totalTimeoutSeconds - elapsed);
@@ -1281,19 +1350,13 @@
                     
                 } else if (status === 'error' || status === 'failed') {
                     throw new Error(statusData.error || statusData.message || 'Erro na análise');
-                    
                 } else {
                     await sleep(interval);
                 }
 
             } catch (error) {
-                console.warn('⚠️ Polling error:', error.message);
-                if (error.message.includes('Sessão expirada') || error.message.includes('Token')) {
-                    throw error;
-                }
-                if (attempts >= maxAttempts) {
-                    throw new Error('Timeout: análise demorando mais que o esperado.');
-                }
+                if (error.message.includes('Sessão expirada') || error.message.includes('Token')) throw error;
+                if (attempts >= maxAttempts) throw new Error('Timeout: análise demorando mais que o esperado.');
                 await sleep(interval * 1.5);
             }
         }
@@ -1330,9 +1393,7 @@
                         if (data.success !== false) return data;
                         if (data.data && data.data.success !== false) return data.data;
                     }
-                } catch (e) {
-                    console.debug(`⚠️ ${endpoint}:`, e.message);
-                }
+                } catch (e) {}
             }
 
             try {
@@ -1344,13 +1405,11 @@
                 if (response.ok) {
                     const data = await response.json();
                     const analyses = data.analyses || data.data || [];
-                    
                     const found = analyses.find(a => 
                         a.process_id === processId || 
                         a.id === processId || 
                         String(a.id) === processId
                     );
-                    
                     if (found) return found;
                 }
             } catch (e) {}
@@ -1358,7 +1417,6 @@
             return null;
 
         } catch (error) {
-            console.error('❌ Erro ao buscar resultado:', error);
             return null;
         }
     }
@@ -1404,10 +1462,9 @@
             });
         }
 
-        // 🔥 BOTÃO DOWNLOAD - v3.0: usa Blob instantâneo
+        // 🔥 BOTÃO DOWNLOAD
         if (elements.downloadPdfBtn) {
             elements.downloadPdfBtn.addEventListener('click', function() {
-                // 🔥 Prioridade 1: Blob em memória (instantâneo)
                 if (state.pdfBlob || window._lastPdfBlob) {
                     const blob = state.pdfBlob || window._lastPdfBlob;
                     const url = URL.createObjectURL(blob);
@@ -1422,13 +1479,11 @@
                     return;
                 }
                 
-                // 🔥 Prioridade 2: PDFPreview tem Blob
                 if (window.PDFPreview && window.PDFPreview._lastBlob) {
                     window.PDFPreview.download();
                     return;
                 }
                 
-                // 🔥 Fallback: gera do zero
                 showNotification('📄 Gerando PDF...', 'info');
                 if (window.generatePDFBlob) {
                     window.generatePDFBlob().then(blob => {
@@ -1487,8 +1542,6 @@
 
         document.addEventListener('app:ready', appReadyHandler);
         window.addEventListener('app:ready', appReadyHandler);
-
-        console.log('✅ Eventos configurados');
     }
 
     // ==============================================
@@ -1525,17 +1578,15 @@
         },
         recover: refreshPowAndRetry,
         extractChartData: extractChartData,
+        renderAylaReport: renderAylaReport,  // 🔥 NOVO
         getDiagnostics: function() {
             return {
                 state: {
                     files: state.files.length,
                     isUploading: state.isUploading,
                     isPolling: state.isPolling,
-                    pollAttempts: state.pollAttempts,
                     errorCount: state.errorCount,
                     lastError: state.lastError,
-                    powRecoveryAttempts: state.powRecoveryAttempts,
-                    isRecovering: state.isRecovering,
                     hasChartData: !!state.chartData,
                     pdfReady: state.pdfReady,
                     aiReportDone: state.aiReportDone,
@@ -1568,7 +1619,7 @@
     // ==============================================
 
     function init() {
-        console.log('🚀 Inicializando UploadReportSystem v3.0...');
+        console.log('🚀 Inicializando UploadReportSystem v3.1...');
         
         cacheElements();
         
@@ -1588,17 +1639,10 @@
         setTimeout(updateCreditsDisplay, 300);
         setInterval(updateCreditsDisplay, 30000);
 
-        console.log('✅ UploadReportSystem v3.0 inicializado!');
-        console.log(`   📁 Max files: ${CONFIG.MAX_FILES}`);
-        console.log(`   📊 Max size: ${CONFIG.MAX_FILE_SIZE_KB}KB`);
-        console.log(`   💰 Credits per file: ${CONFIG.CREDITS_PER_FILE}`);
-        console.log(`   🔄 Polling interval: ${CONFIG.POLLING_INTERVAL}ms`);
-        console.log(`   ⏰ GLOBAL_TIMEOUT: ${CONFIG.GLOBAL_TIMEOUT/1000}s`);
-        console.log(`   🔥 NOVIDADES v3.0:`);
-        console.log(`      ✅ PDF-FIRST: PDF aparece em ~1s`);
-        console.log(`      ✅ IA roda em PARALELO (não bloqueia)`);
-        console.log(`      ✅ Download INSTANTÂNEO via Blob`);
-        console.log(`      ✅ "Ayla" substitui TODAS as menções a ML/modelo/IA`);
+        console.log('✅ UploadReportSystem v3.1 inicializado!');
+        console.log(`   🔥 NOVIDADES v3.1:`);
+        console.log(`      ✅ Popular #aylaReportWrapper (Score, Resumo, Recomendações, Insights, Forecast)`);
+        console.log(`      ✅ Texto do backend renderizado direto na div "Relatório da Ayla"`);
         console.log(`   🔧 Use window.UploadSystem.getDiagnostics() para debug`);
     }
 
@@ -1608,11 +1652,7 @@
         setTimeout(init, 100);
     }
 
-    console.log('📊 upload-report-system.js v3.0 carregado (PDF-FIRST)');
-    console.log('   ✅ PDF gerado ANTES da IA');
-    console.log('   ✅ IA em paralelo (não bloqueia)');
-    console.log('   ✅ Preview instantâneo');
-    console.log('   ✅ Download instantâneo via Blob');
+    console.log('📊 upload-report-system.js v3.1 carregado (Ayla Report)');
     console.log('='.repeat(60));
 
 })();

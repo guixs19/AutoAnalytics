@@ -18,7 +18,7 @@
     <link rel="dns-prefetch" href="https://code.jquery.com">
 
     <!-- ============================================== -->
-    <!-- 🔥 PRELOAD DE LIBS CRÍTICAS (Preview mais rápido) -->
+    <!-- 🔥 PRELOAD DE LIBS CRÍTICAS -->
     <!-- ============================================== -->
     <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as="script" crossorigin>
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/chart.js" as="script" crossorigin>
@@ -34,7 +34,7 @@
 
     <style>
         /* ==============================================
-           🎨 PALETA AZUL + PRETO (mesma do planos.html)
+           🎨 PALETA AZUL + PRETO
            ============================================== */
         :root {
             --azul-principal: #00B4FF;
@@ -46,6 +46,10 @@
             --branco: #FFFFFF;
             --borda-azul: rgba(0, 180, 255, 0.25);
             --glow-azul: rgba(0, 180, 255, 0.4);
+            --laranja-ayla: #ff6b35;
+            --verde-sucesso: #48bb78;
+            --amarelo-alerta: #f5a623;
+            --vermelho-critico: #f56565;
         }
 
         /* ==============================================
@@ -287,7 +291,7 @@
             transform: scale(1.01);
         }
         .upload-area.dragover {
-            border-color: #48bb78;
+            border-color: var(--verde-sucesso);
             background: rgba(72, 187, 120, 0.12);
             transform: scale(1.02);
         }
@@ -331,7 +335,7 @@
         .upload-area.uploading { border-color: var(--azul-claro); background: rgba(0,180,255,0.08); pointer-events: none; }
         .upload-area.uploading .upload-icon i { animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .upload-area.success { border-color: #48bb78; background: rgba(72,187,120,0.08); }
+        .upload-area.success { border-color: var(--verde-sucesso); background: rgba(72,187,120,0.08); }
         .upload-area.error { border-color: #dc3545; background: rgba(220,53,69,0.08); }
 
         /* ==============================================
@@ -362,7 +366,7 @@
             flex: 1;
             min-width: 0;
         }
-        .file-preview-item .file-info i { font-size: 0.9rem; color: #48bb78; flex-shrink: 0; }
+        .file-preview-item .file-info i { font-size: 0.9rem; color: var(--verde-sucesso); flex-shrink: 0; }
         .file-preview-item .file-info .file-name {
             color: rgba(255,255,255,0.8);
             font-size: 0.7rem;
@@ -370,6 +374,11 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .file-preview-item .file-info .file-size {
+            color: rgba(255,255,255,0.3);
+            font-size: 0.65rem;
+            flex-shrink: 0;
         }
         .file-preview-item .file-remove {
             background: none;
@@ -413,47 +422,6 @@
             border-radius: 10px;
         }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* ==============================================
-           RELATÓRIO DA IA
-           ============================================== */
-        .ai-report-card {
-            background: rgba(0, 0, 0, 0.15);
-            border-radius: 12px;
-            padding: 1rem;
-            border: 1px solid var(--borda-azul);
-            max-height: 200px;
-            overflow-y: auto;
-            transition: all 0.3s ease;
-        }
-        .ai-report-card:hover { border-color: var(--azul-principal); }
-        .ai-report-card::-webkit-scrollbar { width: 4px; }
-        .ai-report-card::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
-        .ai-report-card::-webkit-scrollbar-thumb { background: var(--borda-azul); border-radius: 10px; }
-
-        .ai-report-content {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.8rem;
-            line-height: 1.6;
-            white-space: pre-wrap;
-        }
-        .ai-report-content .highlight { color: var(--azul-principal); font-weight: 600; }
-        .ai-report-content .success-text { color: #48bb78; }
-        .ai-report-content .warning-text { color: #f5a623; }
-        .ai-report-content .danger-text { color: #f56565; }
-
-        .ai-report-placeholder {
-            color: rgba(255, 255, 255, 0.15);
-            font-size: 0.8rem;
-            text-align: center;
-            padding: 1rem 0;
-        }
-        .ai-report-placeholder i {
-            font-size: 1.5rem;
-            display: block;
-            margin-bottom: 0.5rem;
-            opacity: 0.3;
-        }
 
         /* ==============================================
            RESULTADO
@@ -528,7 +496,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        .result-header .result-title i { color: #48bb78; font-size: 1.2rem; }
+        .result-header .result-title i { color: var(--verde-sucesso); font-size: 1.2rem; }
         .result-header .result-badge {
             padding: 0.2rem 1rem;
             border-radius: 50px;
@@ -539,7 +507,7 @@
         }
         .result-header .result-badge.success {
             background: rgba(72, 187, 120, 0.15);
-            color: #48bb78;
+            color: var(--verde-sucesso);
             border: 1px solid rgba(72, 187, 120, 0.25);
             box-shadow: 0 0 20px rgba(72, 187, 120, 0.1);
         }
@@ -576,27 +544,6 @@
             letter-spacing: 0.3px;
             margin-top: 2px;
         }
-        .result-stat .stat-icon {
-            font-size: 0.8rem;
-            color: rgba(255,255,255,0.15);
-            margin-right: 2px;
-        }
-
-        .result-insights {
-            margin-top: 0.5rem;
-            padding: 0.6rem 0.8rem;
-            background: rgba(0,0,0,0.15);
-            border-radius: 10px;
-            border-left: 3px solid var(--azul-principal);
-        }
-        .result-insight {
-            color: rgba(255,255,255,0.75);
-            font-size: 0.8rem;
-            line-height: 1.5;
-            padding: 0.15rem 0;
-        }
-        .result-insight:last-child { margin-bottom: 0; }
-        .result-insight .insight-icon { margin-right: 0.4rem; color: var(--azul-principal); }
 
         .result-actions {
             display: flex;
@@ -617,16 +564,6 @@
             align-items: center;
             gap: 0.4rem;
             cursor: pointer;
-        }
-        .result-actions .btn-result-primary {
-            background: linear-gradient(135deg, var(--azul-principal), #0077B6);
-            color: white;
-            box-shadow: 0 4px 20px var(--glow-azul);
-        }
-        .result-actions .btn-result-primary:hover {
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 8px 35px var(--glow-azul);
-            color: white;
         }
         .result-actions .btn-result-secondary {
             background: rgba(255,255,255,0.06);
@@ -664,87 +601,170 @@
         }
 
         /* ==============================================
-           🔥 PRÉ-VISUALIZAÇÃO DO PDF
+           🔥 RELATÓRIO DA AYLA (TEXTO) - NOVO
            ============================================== */
-        #pdfPreviewWrapper {
-            margin-top: 0.8rem;
-            animation: fadeUp 0.4s ease-out;
+        #aylaReportWrapper {
+            margin-top: 1rem;
+            animation: fadeUp 0.5s ease-out;
         }
 
-        #pdfPreviewContainer {
-            width: 100%;
-            height: 520px;
-            background: #2c3e50;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid rgba(0, 180, 255, 0.3);
-            position: relative;
-            box-shadow: inset 0 0 40px rgba(0,0,0,0.3);
+        /* Headers dos blocos */
+        .ayla-block-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.6rem;
+        }
+        .ayla-block-header i {
+            font-size: 0.9rem;
+        }
+        .ayla-block-header strong {
+            color: var(--laranja-ayla);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+        }
+
+        /* Score Grid */
+        .ayla-score-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 0.4rem;
+        }
+        .ayla-score-card {
+            background: rgba(0,0,0,0.25);
+            padding: 0.6rem 0.5rem;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid rgba(0,180,255,0.15);
             transition: all 0.3s ease;
         }
-
-        #pdfPreviewContainer:hover {
-            border-color: rgba(0, 180, 255, 0.6);
-            box-shadow: inset 0 0 40px rgba(0,0,0,0.3), 0 0 30px rgba(0, 180, 255, 0.15);
+        .ayla-score-card:hover {
+            background: rgba(0,180,255,0.05);
+            border-color: rgba(0,180,255,0.35);
+            transform: translateY(-2px);
+        }
+        .ayla-score-label {
+            font-size: 0.5rem;
+            color: rgba(255,255,255,0.35);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .ayla-score-value {
+            font-size: 1.05rem;
+            font-weight: 800;
+            margin-top: 4px;
         }
 
-        #pdfPreviewFrame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            background: white;
-            transition: transform 0.2s ease;
-        }
-
-        #pdfPreviewLoading {
-            position: absolute;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.6);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            color: white;
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            z-index: 2;
-        }
-
-        #pdfPreviewLoading i {
-            color: var(--azul-principal);
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        #pdfPreviewLoading span {
+        /* Resumo executivo / Forecast */
+        .ayla-text-box {
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
             font-size: 0.8rem;
-            color: rgba(255,255,255,0.8);
+            line-height: 1.7;
+            color: rgba(255,255,255,0.85);
+        }
+        .ayla-text-box.summary {
+            background: rgba(0, 180, 255, 0.05);
+            border-left: 3px solid var(--azul-principal);
+        }
+        .ayla-text-box.forecast {
+            background: rgba(72, 187, 120, 0.05);
+            border-left: 3px solid var(--verde-sucesso);
         }
 
-        .btn-pdf-preview-action {
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: white;
-            border-radius: 6px;
-            padding: 2px 8px;
-            font-size: 0.65rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
+        /* Recomendações */
+        .ayla-rec-item {
+            display: flex;
+            gap: 0.6rem;
+            padding: 0.7rem 0.9rem;
+            border-radius: 10px;
+            margin-bottom: 0.4rem;
+            border-left: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .ayla-rec-item.priority-alta {
+            background: rgba(245,101,101,0.08);
+            border-left-color: var(--vermelho-critico);
+        }
+        .ayla-rec-item.priority-alta:hover { background: rgba(245,101,101,0.15); }
+
+        .ayla-rec-item.priority-media {
+            background: rgba(245,166,35,0.08);
+            border-left-color: var(--amarelo-alerta);
+        }
+        .ayla-rec-item.priority-media:hover { background: rgba(245,166,35,0.15); }
+
+        .ayla-rec-item.priority-baixa {
+            background: rgba(72,187,120,0.08);
+            border-left-color: var(--verde-sucesso);
+        }
+        .ayla-rec-item.priority-baixa:hover { background: rgba(72,187,120,0.15); }
+
+        .ayla-rec-emoji { font-size: 0.9rem; flex-shrink: 0; margin-top: 1px; }
+        .ayla-rec-content { flex: 1; min-width: 0; }
+        .ayla-rec-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.25rem;
+            flex-wrap: wrap;
+        }
+        .ayla-rec-priority {
+            font-size: 0.55rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .ayla-rec-category {
+            font-size: 0.5rem;
+            color: rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.05);
+            padding: 1px 6px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .ayla-rec-desc {
+            color: rgba(255,255,255,0.85);
+            font-size: 0.78rem;
+            line-height: 1.5;
         }
 
-        .btn-pdf-preview-action:hover {
-            background: rgba(0, 180, 255, 0.15) !important;
-            border-color: rgba(0, 180, 255, 0.4) !important;
-            transform: translateY(-1px);
+        /* Insights */
+        .ayla-insight-item {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            color: rgba(255,255,255,0.75);
+            font-size: 0.78rem;
+            line-height: 1.5;
+        }
+        .ayla-insight-item:last-child { border-bottom: none; }
+        .ayla-insight-bullet {
+            color: var(--azul-principal);
+            flex-shrink: 0;
+            margin-top: 2px;
         }
 
-        #pdfPreviewFallback {
-            padding: 1.5rem;
+        /* Empty state */
+        .ayla-empty {
+            background: rgba(72,187,120,0.08);
+            border-left: 3px solid var(--verde-sucesso);
+            border-radius: 10px;
+            padding: 1rem;
             text-align: center;
-            background: rgba(220,53,69,0.05);
-            border-radius: 12px;
-            border: 1px solid rgba(220,53,69,0.2);
-            margin-top: 0.8rem;
+            color: rgba(255,255,255,0.6);
+            font-size: 0.8rem;
+        }
+        .ayla-empty i {
+            color: var(--verde-sucesso);
+            font-size: 1.3rem;
+            display: block;
+            margin-bottom: 0.4rem;
         }
 
         /* ==============================================
@@ -820,7 +840,7 @@
         .loading-overlay .loading-percent { color: rgba(255,255,255,0.3); font-size: 0.6rem; margin-top: 0.3rem; }
 
         /* ==============================================
-           MENSAGENS (MessageGuide)
+           MENSAGENS
            ============================================== */
         #messageContainer {
             position: fixed;
@@ -893,6 +913,21 @@
         }
 
         /* ==============================================
+           PDF BUTTON
+           ============================================== */
+        .btn-pdf {
+            background: linear-gradient(135deg, #dc3545, #c0392b) !important;
+            color: white !important;
+            box-shadow: 0 4px 20px rgba(220, 53, 69, 0.3) !important;
+        }
+        .btn-pdf:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 35px rgba(220, 53, 69, 0.45) !important;
+            color: white !important;
+        }
+        .btn-pdf i { color: white !important; }
+
+        /* ==============================================
            RESPONSIVIDADE
            ============================================== */
         @media (max-width: 768px) {
@@ -910,11 +945,10 @@
             #messageContainer { top: 95px; right: 10px; left: 10px; max-width: none; }
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
-            .ai-report-card { max-height: 150px; }
 
-            /* PDF Preview Mobile */
-            #pdfPreviewContainer { height: 380px !important; }
-            .btn-pdf-preview-action { display: none; }
+            /* Relatório da Ayla Mobile */
+            .ayla-score-grid { grid-template-columns: repeat(2, 1fr); }
+            .ayla-rec-item { padding: 0.6rem 0.7rem; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
@@ -925,33 +959,15 @@
             .site-explanation .exp-grid { grid-template-columns: 1fr; }
             .result-header { flex-direction: column; text-align: center; }
             .result-actions { justify-content: center; }
-            .ai-report-card { max-height: 120px; padding: 0.6rem; }
-            .ai-report-content { font-size: 0.7rem; }
-            #pdfPreviewContainer { height: 300px !important; }
         }
-
-        /* ==============================================
-           PDF BUTTON
-           ============================================== */
-        .btn-pdf {
-            background: linear-gradient(135deg, #dc3545, #c0392b) !important;
-            color: white !important;
-            box-shadow: 0 4px 20px rgba(220, 53, 69, 0.3) !important;
-        }
-        .btn-pdf:hover {
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 8px 35px rgba(220, 53, 69, 0.45) !important;
-            color: white !important;
-        }
-        .btn-pdf i { color: white !important; }
 
         /* ==============================================
            🔥 ACESSIBILIDADE
            ============================================== */
-        .btn-pdf-preview-action:focus-visible,
         .credits-badge-nav:focus-visible,
         .btn-planos-nav:focus-visible,
-        .btn-sair-nav:focus-visible {
+        .btn-sair-nav:focus-visible,
+        .btn-result:focus-visible {
             outline: 2px solid var(--azul-principal);
             outline-offset: 2px;
         }
@@ -995,9 +1011,6 @@
         </div>
     </nav>
 
-    <!-- ============================================== -->
-    <!-- 🔥 MENSAGENS (MessageGuide do dashboard.js) -->
-    <!-- ============================================== -->
     <div id="messageContainer" style="display: none;"></div>
 
     <!-- ============================================== -->
@@ -1041,8 +1054,6 @@
                 <!-- COLUNA ESQUERDA -->
                 <div class="col-lg-4">
                     <div class="row g-3">
-
-                        <!-- MÉTRICAS -->
                         <div class="col-12">
                             <div class="glass-card">
                                 <h5 class="card-title"><i class="fas fa-chart-simple" aria-hidden="true"></i> Resumo</h5>
@@ -1063,7 +1074,6 @@
                             </div>
                         </div>
 
-                        <!-- EXPLICAÇÃO -->
                         <div class="col-12">
                             <div class="glass-card">
                                 <h5 class="card-title"><i class="fas fa-info-circle" aria-hidden="true"></i> Como funciona</h5>
@@ -1134,7 +1144,9 @@
 
             </div>
 
+            <!-- ============================================== -->
             <!-- 🔥 RESULTADO -->
+            <!-- ============================================== -->
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="glass-card" id="resultCard">
@@ -1162,66 +1174,59 @@
                             <!-- 🔥 MÉTRICAS RESUMIDAS -->
                             <div class="result-grid" id="resultMetrics"></div>
 
-                            <!-- 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF -->
-                            <div id="pdfPreviewWrapper" style="display: none;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
-                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-weight: 600;">
-                                        <i class="fas fa-file-pdf" style="color: #dc3545;" aria-hidden="true"></i>
-                                        Pré-visualização do Relatório
+                            <!-- ============================================== -->
+                            <!-- 🔥🔥🔥 RELATÓRIO DA AYLA (NOVO) -->
+                            <!-- ============================================== -->
+                            <div id="aylaReportWrapper" style="display: none;">
+                                
+                                <!-- 🔥 SCORE EXECUTIVO -->
+                                <div id="aylaScoreSection" style="display: none; margin-top: 1rem;">
+                                    <div class="ayla-block-header">
+                                        <i class="fas fa-trophy" style="color: #f5a623;" aria-hidden="true"></i>
+                                        <strong>Score Executivo</strong>
                                     </div>
-                                    <div style="display: flex; gap: 0.3rem; align-items: center;">
-                                        <button class="btn-pdf-preview-action" id="pdfZoomOut" title="Diminuir zoom" aria-label="Diminuir zoom do PDF" type="button">
-                                            <i class="fas fa-search-minus" aria-hidden="true"></i>
-                                        </button>
-                                        <span id="pdfZoomLevel" style="color: rgba(255,255,255,0.4); font-size: 0.65rem; padding: 4px 6px;">100%</span>
-                                        <button class="btn-pdf-preview-action" id="pdfZoomIn" title="Aumentar zoom" aria-label="Aumentar zoom do PDF" type="button">
-                                            <i class="fas fa-search-plus" aria-hidden="true"></i>
-                                        </button>
-                                        <button class="btn-pdf-preview-action" id="pdfFullscreen" title="Tela cheia" aria-label="Abrir PDF em tela cheia" type="button">
-                                            <i class="fas fa-expand" aria-hidden="true"></i>
-                                        </button>
-                                    </div>
+                                    <div id="aylaScoreGrid" class="ayla-score-grid"></div>
                                 </div>
 
-                                <!-- Container do iframe -->
-                                <div id="pdfPreviewContainer">
-                                    <iframe id="pdfPreviewFrame"
-                                            title="Pré-visualização do Relatório PDF"
-                                            loading="lazy"
-                                            sandbox="allow-same-origin allow-scripts allow-popups">
-                                    </iframe>
-
-                                    <!-- Loading overlay do PDF -->
-                                    <div id="pdfPreviewLoading">
-                                        <i class="fas fa-file-pdf fa-2x" aria-hidden="true"></i>
-                                        <span>Gerando pré-visualização...</span>
+                                <!-- 🔥 RESUMO EXECUTIVO -->
+                                <div id="aylaSummarySection" style="display: none; margin-top: 1rem;">
+                                    <div class="ayla-block-header">
+                                        <i class="fas fa-file-alt" style="color: #00B4FF;" aria-hidden="true"></i>
+                                        <strong>Resumo Executivo</strong>
                                     </div>
+                                    <div id="aylaSummaryText" class="ayla-text-box summary"></div>
                                 </div>
-                            </div>
 
-                            <!-- Fallback: se iframe não funcionar -->
-                            <div id="pdfPreviewFallback" style="display: none;">
-                                <i class="fas fa-file-pdf fa-3x" style="color: #dc3545; opacity: 0.6;" aria-hidden="true"></i>
-                                <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin-top: 0.5rem;">
-                                    Seu navegador não suporta pré-visualização de PDF.
-                                </p>
-                                <button class="btn-result btn-pdf" onclick="window.downloadLastPDF()" style="margin-top: 0.5rem;" type="button">
-                                    <i class="fas fa-download" aria-hidden="true"></i> Baixar PDF
-                                </button>
-                            </div>
-
-                            <!-- Relatório da IA (texto) -->
-                            <div class="ai-report-card" style="margin-top: 0.8rem;">
-                                <div id="aiReportContent" class="ai-report-content">
-                                    <div class="ai-report-placeholder">
-                                        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-                                        Gerando análise com IA...
+                                <!-- 🔥 RECOMENDAÇÕES -->
+                                <div id="aylaRecommendationsSection" style="display: none; margin-top: 1rem;">
+                                    <div class="ayla-block-header">
+                                        <i class="fas fa-bullseye" style="color: #ff6b35;" aria-hidden="true"></i>
+                                        <strong>Recomendações da Ayla</strong>
                                     </div>
+                                    <div id="aylaRecommendationsList"></div>
                                 </div>
+
+                                <!-- 🔥 INSIGHTS -->
+                                <div id="aylaInsightsSection" style="display: none; margin-top: 1rem;">
+                                    <div class="ayla-block-header">
+                                        <i class="fas fa-lightbulb" style="color: #f5a623;" aria-hidden="true"></i>
+                                        <strong>Insights da Ayla</strong>
+                                    </div>
+                                    <div id="aylaInsightsList"></div>
+                                </div>
+
+                                <!-- 🔥 PREVISÃO -->
+                                <div id="aylaForecastSection" style="display: none; margin-top: 1rem;">
+                                    <div class="ayla-block-header">
+                                        <i class="fas fa-chart-line" style="color: #48bb78;" aria-hidden="true"></i>
+                                        <strong>Previsão</strong>
+                                    </div>
+                                    <div id="aylaForecastText" class="ayla-text-box forecast"></div>
+                                </div>
+
                             </div>
 
-                            <div class="result-insights" id="resultInsights"></div>
-
+                            <!-- 🔥 AÇÕES -->
                             <div class="result-actions">
                                 <button class="btn-result btn-pdf" id="downloadPdfBtn" type="button">
                                     <i class="fas fa-file-pdf" aria-hidden="true"></i> Baixar Relatório PDF
@@ -1334,7 +1339,7 @@
                 <div class="col-12 text-center">
                     <p style="color:rgba(255,255,255,0.1); font-size:0.55rem;">
                         <i class="fas fa-chart-line me-1" style="color:var(--azul-principal);" aria-hidden="true"></i>
-                        Ayla Mechanic · AutoAnalytics v9.0
+                        Ayla Mechanic · AutoAnalytics v9.1
                         <span class="mx-2">•</span>
                         <i class="fas fa-shield-alt" aria-hidden="true"></i> PoW
                         <span class="mx-2">•</span>
@@ -1399,7 +1404,7 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- 🔥 TEMPLATES PARA MODAIS (payment.js) -->
+    <!-- 🔥 TEMPLATES PARA MODAIS -->
     <!-- ============================================== -->
     <template id="cpfModalTemplate">
         <div class="modal-dialog modal-dialog-centered">
@@ -1486,26 +1491,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    <!-- ============================================== -->
-    <!-- 🔥 2️⃣ SCRIPTS DO SISTEMA - ORDEM CORRIGIDA (v8.0 + v3.0) -->
-    <!-- ============================================== -->
-    <!-- 🔴 CRÍTICO: pdf-generator ANTES do upload-report-system -->
-    <!-- 🔴 CRÍTICO: Versões atualizadas para evitar cache antigo -->
-    
+    <!-- 2️⃣ SCRIPTS DO SISTEMA -->
     <script src="/static/js/app.js?ver=7.8.0" defer></script>
     <script src="/static/js/auth.js?ver=4.3.0" defer></script>
     <script src="/static/js/pow-client.js?ver=5.2" defer></script>
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
     <script src="/static/js/dashboard.js?ver=16.16" defer></script>
-    
-    <!-- 🔥 pdf-generator v8.0 PRIMEIRO (define window.generatePDFBlob) -->
+
+    <!-- 🔥 pdf-generator v8.0 PRIMEIRO -->
     <script src="/static/js/pdf-generator.js?ver=8.0" defer></script>
-    
-    <!-- 🔥 upload-report-system v3.0 DEPOIS (usa window.generatePDFBlob) -->
-    <script src="/static/js/upload-report-system.js?ver=3.0" defer></script>
+
+    <!-- 🔥 upload-report-system v3.1 DEPOIS -->
+    <script src="/static/js/upload-report-system.js?ver=3.1" defer></script>
 
     <!-- ============================================== -->
-    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (MANTIDO) -->
+    <!-- 🔥 FALLBACK DE AUTENTICAÇÃO -->
     <!-- ============================================== -->
     <script>
     (function() {
@@ -1590,7 +1590,7 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 CORREÇÃO DE EMERGÊNCIA - isAuthenticated -->
+    <!-- 🔥 CORREÇÃO DE EMERGÊNCIA -->
     <!-- ============================================== -->
     <script>
     (function() {
@@ -1637,9 +1637,6 @@
             attempts++;
             if (fixAppAuth() || attempts >= maxAttempts) {
                 clearInterval(interval);
-                if (attempts >= maxAttempts) {
-                    console.warn('⚠️ [Fix] Não foi possível corrigir appAuth.isAuthenticated');
-                }
             }
         }, 500);
 
@@ -1648,7 +1645,7 @@
     </script>
 
     <!-- ============================================== -->
-    <!-- 🔥 SISTEMA DE SINCRONIZAÇÃO DE CRÉDITOS -->
+    <!-- 🔥 SINCRONIZAÇÃO DE CRÉDITOS -->
     <!-- ============================================== -->
     <script>
     (function() {
@@ -1656,8 +1653,6 @@
         console.log('🔄 [Sync] Inicializando sistema de sincronização v4...');
 
         async function forceSyncCredits() {
-            console.log('🔄 [Sync] Forçando sincronização de créditos...');
-
             try {
                 if (window.appAuth && typeof window.appAuth.loadUserCredits === 'function') {
                     await window.appAuth.loadUserCredits();
@@ -1680,10 +1675,8 @@
                 if (window.checkEligibility) {
                     await window.checkEligibility(true);
                 }
-                console.log('✅ [Sync] Sincronização concluída!');
                 return true;
             } catch (e) {
-                console.error('❌ [Sync] Erro na sincronização:', e);
                 return false;
             }
         }
@@ -1691,8 +1684,6 @@
         document.addEventListener('analysis:success', function() { setTimeout(forceSyncCredits, 500); });
         document.addEventListener('upload:completed', function() { setTimeout(forceSyncCredits, 500); });
         document.addEventListener('credits:consumed', function(e) {
-            const data = e.detail || {};
-            console.log(`💰 [Sync] Créditos consumidos: ${data.amount}, saldo: ${data.balance}`);
             setTimeout(forceSyncCredits, 300);
         });
         document.addEventListener('authLoginSuccess', function() { setTimeout(forceSyncCredits, 300); });
@@ -1718,9 +1709,6 @@
     })();
     </script>
 
-    <!-- ============================================== -->
-    <!-- 🔥 BOTÃO DE SINCRONIZAÇÃO (DEBUG) -->
-    <!-- ============================================== -->
     <style>
         #syncDebugBtn {
             position: fixed;
