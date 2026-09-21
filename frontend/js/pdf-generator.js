@@ -1,363 +1,92 @@
-// frontend/js/pdf-generator.js - VERSÃO 5.0 (FIX COMPLETO)
+// frontend/js/pdf-generator.js - VERSÃO 6.0 (FIX REAL)
 /**
- * 🔥 PDF Generator - AutoAnalytics v5.0
+ * 🔥 PDF Generator - AutoAnalytics v6.0
  * 
- * ✅ CORREÇÃO v5.0:
- * - 🔥 CONVERSÃO COMPLETA para ASCII antes de qualquer operação
- * - 🔥 REMOÇÃO de todos os caracteres não-ASCII
- * - 🔥 SUBSTITUIÇÃO de letras acentuadas por equivalentes sem acento
- * - 🔥 GARANTIA que o PDF só recebe caracteres ASCII
- * - 🔥 COMPATIBILIDADE TOTAL com fonte padrão jsPDF
+ * ✅ CORREÇÕES v6.0:
+ * - 🔥 Extração CORRETA de dados do fallback v7 (per_file_analysis)
+ * - 🔥 Recomendações agora usam "description" (não "text")
+ * - 🔥 Créditos normalizados (before/consumed/remaining)
+ * - 🔥 Sanitizador RELAXADO (jsPDF v2 suporta acentos pt-BR)
+ * - 🔥 Formatação de moeda com toLocaleString
+ * - 🔥 Gráfico semanal com eixo Y correto e clamp de labels
+ * - 🔥 Cards de métricas com valores reais (não hardcoded)
  */
 
 (function() {
     'use strict';
 
-    console.log('📄 PDF Generator v5.0 - ASCII Fix');
+    console.log('📄 PDF Generator v6.0 - FIX REAL');
 
     // ==============================================
-    // 🔥 MAPA DE ACENTUAÇÃO PARA ASCII
-    // ==============================================
-
-    const ACCENT_MAP = {
-        // Acentos comuns
-        'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a',
-        'Á': 'A', 'À': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A',
-        'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-        'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
-        'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
-        'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
-        'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ø': 'o',
-        'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O', 'Ø': 'O',
-        'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
-        'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
-        'ý': 'y', 'ÿ': 'y', 'Ý': 'Y', 'Ÿ': 'Y',
-        'ç': 'c', 'Ç': 'C',
-        'ñ': 'n', 'Ñ': 'N',
-        'ß': 'ss',
-        // Cedilha e outros
-        'æ': 'ae', 'œ': 'oe',
-        'Æ': 'AE', 'Œ': 'OE',
-        'ð': 'd', 'Ð': 'D',
-        'þ': 'th', 'Þ': 'TH',
-    };
-
-    // ==============================================
-    // 🔥 MAPA DE EMOJIS PARA TEXTO (COMPLETO)
-    // ==============================================
-
-    const EMOJI_TO_TEXT = {
-        // Emojis comuns
-        '📊': 'Grafico',
-        '📈': 'Crescimento',
-        '📉': 'Queda',
-        '💰': 'Financeiro',
-        '💡': 'Dica',
-        '🎯': 'Meta',
-        '✅': 'OK',
-        '❌': 'Erro',
-        '⚠️': 'Aviso',
-        '🔴': 'Alto',
-        '🟢': 'Baixo',
-        '🟡': 'Medio',
-        '🔥': 'Destaque',
-        '⭐': 'Destaque',
-        '🏆': 'Premio',
-        '📋': 'Lista',
-        '🔧': 'Ferramenta',
-        '🤖': 'IA',
-        '📄': 'PDF',
-        '📁': 'Pasta',
-        '📌': 'Pino',
-        '🔄': 'Sincronizar',
-        '📝': 'Nota',
-        '☑️': 'Check',
-        '✔️': 'Check',
-        '✖️': 'X',
-        '▶️': 'Play',
-        '🚀': 'Destaque',
-        '📅': 'Data',
-        '📑': 'Documento',
-        '📤': 'Enviar',
-        '📥': 'Receber',
-        '💻': 'Computador',
-        '🖥️': 'Monitor',
-        '🖱️': 'Mouse',
-        '⌨️': 'Teclado',
-        '🖨️': 'Impressora',
-        '☕': 'Cafe',
-        '🍕': 'Pizza',
-        '🍔': 'Hamburguer',
-        '🌮': 'Taco',
-        '🥗': 'Salada',
-        '🍣': 'Sushi',
-        '🍜': 'Ramen',
-        '🍰': 'Bolo',
-        '🎂': 'Bolo',
-        '🍩': 'Donut',
-        '🍪': 'Biscoito',
-        '🧁': 'Cupcake',
-        '🥤': 'Bebida',
-        '🧃': 'Suco',
-        '🧋': 'Boba',
-        '🍵': 'Cha',
-        '🍺': 'Cerveja',
-        '🍷': 'Vinho',
-        '🥂': 'Toast',
-        '🥃': 'Whisky',
-        '🧊': 'Gelo',
-        '🍽️': 'Comida',
-        '🥄': 'Colher',
-        '🔪': 'Faca',
-        '🏠': 'Casa',
-        '🏢': 'Predio',
-        '🏪': 'Loja',
-        '🏫': 'Escola',
-        '🏥': 'Hospital',
-        '🏦': 'Banco',
-        '🏭': 'Fabrica',
-        '🏗️': 'Construcao',
-        '🌆': 'Cidade',
-        '🌃': 'Noite',
-        '🌅': 'Nascer do sol',
-        '🌄': 'Amanhecer',
-        '🌇': 'Por do sol',
-        '🎄': 'Natal',
-        '🎅': 'Papai Noel',
-        '🎃': 'Abobora',
-        '🎆': 'Fogos',
-        '🎇': 'Fogos',
-        '🧨': 'Fogos',
-        '✨': 'Brilho',
-        '🌟': 'Estrela',
-        '🌠': 'Estrela',
-        '🌌': 'Galaxia',
-        '🌍': 'Terra',
-        '🌎': 'Terra',
-        '🌏': 'Terra',
-        '🌐': 'Internet',
-        '🗺️': 'Mapa',
-        '🧭': 'Bussola',
-        '🧳': 'Bagagem',
-        '🎒': 'Mochila',
-        '👕': 'Camisa',
-        '👖': 'Calca',
-        '👗': 'Vestido',
-        '👔': 'Gravata',
-        '👠': 'Salto',
-        '👞': 'Sapato',
-        '👟': 'Tenis',
-        '🧦': 'Meia',
-        '🧢': 'Bone',
-        '🎩': 'Cartola',
-        '🧣': 'Cachecol',
-        '🧤': 'Luva',
-        '🧥': 'Casaco',
-        '👚': 'Blusa',
-        '👙': 'Biquini',
-        '👘': 'Quimono',
-        '🥻': 'Sari',
-        '🩱': 'Maio',
-        '🩳': 'Short',
-        '🩴': 'Chinelo',
-        '👑': 'Coroa',
-        '💍': 'Anel',
-        '💎': 'Diamante',
-        '🔮': 'Bola de cristal',
-        '🎨': 'Arte',
-        '🎭': 'Teatro',
-        '🎪': 'Circo',
-        '🎢': 'Montanha russa',
-        '🎠': 'Carrossel',
-        '🎡': 'Roda gigante',
-        '🧵': 'Linha',
-        '🧶': 'La',
-        '🎲': 'Dado',
-        '♟️': 'Peao',
-        '🎳': 'Boliche',
-        '🎮': 'Video game',
-        '🕹️': 'Joystick',
-        '🎰': 'Caca niqueis',
-        '♠️': 'Espadas',
-        '♥️': 'Copas',
-        '♦️': 'Ouros',
-        '♣️': 'Paus',
-        '🃏': 'Coringa',
-        '🀄': 'Mahjong',
-        // Ícones de status
-        '⏳': 'Aguardando',
-        '⏱️': 'Tempo',
-        '⌛': 'Esgotado',
-        '🔍': 'Buscar',
-        '🔎': 'Buscar',
-        '🛠️': 'Ferramenta',
-        '⚙️': 'Configuracao',
-        '📞': 'Telefone',
-        '📧': 'Email',
-        '📨': 'Email',
-        '📩': 'Email',
-        '📪': 'Email',
-        '📫': 'Email',
-        '📬': 'Email',
-        '📭': 'Email',
-        '📮': 'Email',
-    };
-
-    // ==============================================
-    // 🔥 SANITIZADOR AVANÇADO v3 - FORÇA ASCII
+    // 🔥 SANITIZADOR RELAXADO (mantém acentos pt-BR)
     // ==============================================
 
     const TextSanitizer = {
         /**
-         * 🔥 CONVERTE PARA ASCII - REMOVE TUDO QUE NÃO É ASCII
-         * Esta é a função principal que resolve o problema
+         * 🔥 Remove apenas o que jsPDF NÃO suporta:
+         * - Emojis (Unicode > BMP)
+         * - Caracteres de controle
+         * - Símbolos tipográficos problemáticos
+         * MANTÉM acentos portugueses (á, é, ç, ã, etc.)
          */
-        toAscii: function(text) {
-            if (!text) return '';
+        sanitize: function(text) {
+            if (text === undefined || text === null) return '';
             
             let result = String(text);
             
-            // 1. Substituir emojis por texto
-            for (const [emoji, replacement] of Object.entries(EMOJI_TO_TEXT)) {
-                try {
-                    result = result.replace(new RegExp(emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
-                } catch (e) {
-                    // Ignora emojis que não podem ser regex
-                }
-            }
-            
-            // 2. Remover todos os emojis não mapeados (Unicode > U+FFFF)
+            // 1. Remove emojis (fora do BMP)
             result = result.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
-            result = result.replace(/[\u2600-\u27BF]/g, '');
+            result = result.replace(/[\u{2600}-\u{27BF}]/gu, '');
             result = result.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
             
-            // 3. Substituir caracteres acentuados por equivalentes ASCII
-            for (const [accented, ascii] of Object.entries(ACCENT_MAP)) {
-                result = result.replace(new RegExp(accented, 'g'), ascii);
-            }
-            
-            // 4. Substituir caracteres especiais problemáticos
-            const specials = {
-                '…': '...',
-                '—': '-',
-                '–': '-',
-                '•': '*',
-                '“': '"',
-                '”': '"',
-                '‘': "'",
-                '’': "'",
-                '€': 'EUR',
-                '£': 'GBP',
-                '¥': 'JPY',
-                '©': '(c)',
-                '®': '(r)',
-                '™': '(TM)',
-                '°': 'graus',
-                '±': '+/-',
-                '≠': '!=',
-                '≤': '<=',
-                '≥': '>=',
-                '∞': 'infinito',
-                '∑': 'soma',
-                '∏': 'produto',
-                '√': 'raiz',
-                '∂': 'derivada',
-                '∆': 'delta',
-                '∇': 'nabla',
-                '∫': 'integral',
-                '∮': 'integral',
-                '∴': 'portanto',
-                '∵': 'porque',
-                '∝': 'proporcional',
-                '∅': 'vazio',
-                '∈': 'pertence',
-                '∉': 'nao pertence',
-                '⊂': 'subconjunto',
-                '⊃': 'superconjunto',
-                '⊆': 'subconjunto ou igual',
-                '⊇': 'superconjunto ou igual',
-                '∪': 'uniao',
-                '∩': 'intersecao',
-                '∀': 'para todo',
-                '∃': 'existe',
-                '∄': 'nao existe',
-                '¬': 'negacao',
-                '∧': 'e',
-                '∨': 'ou',
-                '⊕': 'ou exclusivo',
-                '⊗': 'produto tensorial',
-                '†': 'crucifixo',
-                '‡': 'duplo crucifixo',
-                '·': '.',
-                '×': 'x',
-                '÷': '/',
-                '\u00A0': ' ',
-                '\n': ' ',
-                '\r': ' ',
-                '\t': ' ',
+            // 2. Substitui símbolos tipográficos problemáticos
+            const typographic = {
+                '\u2026': '...',  // …
+                '\u2014': '-',    // —
+                '\u2013': '-',    // –
+                '\u2022': '*',    // •
+                '\u201C': '"',    // "
+                '\u201D': '"',    // "
+                '\u2018': "'",    // '
+                '\u2019': "'",    // '
+                '\u00A0': ' ',    // nbsp
+                '\u20AC': 'EUR',  // €
+                '\u00A3': 'GBP',  // £
+                '\u00A5': 'JPY',  // ¥
+                '\u00B0': 'o',    // °
             };
-            
-            for (const [char, replacement] of Object.entries(specials)) {
-                try {
-                    result = result.replace(new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
-                } catch (e) {
-                    // Ignora caracteres que não podem ser regex
-                }
+            for (const [char, rep] of Object.entries(typographic)) {
+                result = result.split(char).join(rep);
             }
             
-            // 5. Remover múltiplos espaços
-            result = result.replace(/\s+/g, ' ').trim();
-            
-            // 6. 🔥 FORÇA ASCII - Remove qualquer caractere que não seja ASCII imprimível
-            // Isso é a chave para resolver o problema
-            result = result.replace(/[^\x20-\x7E]/g, '');
-            
-            // 7. Garantir que não há caracteres de controle
+            // 3. Remove caracteres de controle
             result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+            
+            // 4. Colapsa espaços
+            result = result.replace(/\s+/g, ' ').trim();
             
             return result;
         },
         
-        /**
-         * 🔥 Sanitiza para uso direto no PDF
-         */
-        sanitize: function(text) {
-            if (!text) return '';
-            return this.toAscii(text);
-        },
-        
-        /**
-         * 🔥 Sanitiza títulos (versão mais agressiva)
-         */
         sanitizeTitle: function(text) {
             if (!text) return '';
-            let clean = this.toAscii(text);
-            // Remove caracteres especiais que podem causar problemas
-            clean = clean.replace(/[^a-zA-Z0-9\s\-_.]/g, '');
-            return clean.trim();
+            return this.sanitize(text);
         },
         
-        /**
-         * 🔥 Sanitiza números e valores
-         */
         sanitizeNumber: function(value) {
             if (value === undefined || value === null) return '0';
-            let str = String(value);
-            // Mantém apenas números, pontos e vírgulas
-            str = str.replace(/[^0-9.,]/g, '');
-            // Remove vírgulas para evitar problemas
-            str = str.replace(/,/g, '.');
-            return str;
+            const n = Number(value);
+            return isNaN(n) ? '0' : String(n);
         }
     };
 
     // ==============================================
-    // 🔥 GERADOR DE PDF V5.0
+    // 🔥 GERADOR DE PDF V6.0
     // ==============================================
 
     class PDFGenerator {
         constructor() {
-            console.log('✅ PDFGenerator v5.0 (ASCII Fix)');
+            console.log('✅ PDFGenerator v6.0');
         }
         
         async generate(options = {}) {
@@ -375,7 +104,7 @@
             
             const metrics = this._extractMetrics(data);
             
-            if (metrics.totalRegistros === 0) {
+            if (metrics.totalRegistros === 0 && metrics.totalRevenue === 0) {
                 const msg = 'Nenhum dado real encontrado. Faca um upload primeiro.';
                 console.warn('⚠️', msg);
                 if (window.toastr) window.toastr.warning(msg);
@@ -421,51 +150,98 @@
             return null;
         }
         
+        // ==============================================
+        // 🔥 EXTRAÇÃO DE MÉTRICAS (CORRIGIDA)
+        // ==============================================
+        
         _extractMetrics(data) {
-            const metrics = data.metrics || data.analysis?.metrics || data.result?.metrics || {};
+            // 🔥 FIX 1: fallback v7 aninha dados em per_file_analysis
+            const perFile = data.per_file_analysis || {};
+            const firstFileKey = Object.keys(perFile)[0];
+            const firstFile = firstFileKey ? perFile[firstFileKey] : null;
+            const fileMetrics = firstFile?.metrics_extra || {};
             
+            const metrics = data.metrics || 
+                            data.analysis?.metrics || 
+                            data.result?.metrics || 
+                            fileMetrics || 
+                            {};
+            
+            // 🔥 FIX 2: múltiplas fontes para rows
             const rows = data.rows_processed || 
-                        data.result?.rows_processed || 
-                        data.total_rows || 0;
+                         data.result?.rows_processed || 
+                         data.total_rows || 
+                         fileMetrics.rows ||
+                         metrics.total_rows ||
+                         (data.files && data.files[0]?.total_rows) ||
+                         0;
             
-            const score = data.confidence_score || 
-                         data.result?.confidence_score ||
-                         metrics.mean_prediction || 0.65;
+            // 🔥 FIX 3: score real (fallback v7 usa avg_score)
+            let score = data.confidence_score ?? 
+                        data.result?.confidence_score ??
+                        fileMetrics.avg_score ??
+                        metrics.mean_prediction ?? 
+                        0.65;
             
-            const highRisk = data.high_risk || 
-                            data.result?.high_risk ||
-                            metrics.high_risk_percentage || 0;
+            // Se score vier em 0-100, normaliza
+            if (score > 1) score = score / 100;
             
-            const lowRisk = data.low_risk || 
-                           data.result?.low_risk ||
-                           metrics.low_risk_percentage || 0;
+            // 🔥 FIX 4: riscos — fallback v7 usa high_pct/low_pct (0-100)
+            let highRisk = data.high_risk ?? 
+                           data.result?.high_risk ??
+                           fileMetrics.high_pct ??
+                           metrics.high_risk_percentage ?? 
+                           0;
+            let lowRisk = data.low_risk ?? 
+                          data.result?.low_risk ??
+                          fileMetrics.low_pct ??
+                          metrics.low_risk_percentage ?? 
+                          0;
+            
+            // Normaliza: se vier 0-1, multiplica por 100
+            if (highRisk > 0 && highRisk <= 1) highRisk *= 100;
+            if (lowRisk > 0 && lowRisk <= 1) lowRisk *= 100;
+            
+            // 🔥 FIX 5: receita/custo reais
+            const totalRevenue = data.total_revenue ?? 
+                                 fileMetrics.revenue ??
+                                 metrics.total_revenue ??
+                                 (data.files && data.files[0]?.total_revenue) ??
+                                 0;
+            
+            const totalCosts = data.total_costs ?? 
+                               fileMetrics.cost ??
+                               metrics.total_costs ??
+                               (data.files && data.files[0]?.total_costs) ??
+                               0;
             
             const chartData = this._extractChartData(data);
-            const weekly = chartData.weekly || {};
-            const revenue = weekly.revenue || [];
-            const costs = weekly.costs || [];
+            
+            console.log('📊 [PDF] Metrics extraídas:', {
+                rows, score, highRisk, lowRisk, totalRevenue, totalCosts
+            });
             
             return {
                 totalRegistros: rows,
                 scoreMedio: score,
                 highRisk: highRisk,
                 lowRisk: lowRisk,
-                totalRevenue: revenue.reduce((a, b) => a + b, 0) || 0,
-                totalCosts: costs.reduce((a, b) => a + b, 0) || 0,
-                totalServices: chartData.performance?.services?.reduce((a, b) => a + b, 0) || 0,
+                totalRevenue: totalRevenue,
+                totalCosts: totalCosts,
                 chartData: chartData
             };
         }
         
         _extractChartData(data) {
-            // 🔥 Tenta extrair chart_data de múltiplas fontes
+            // 🔥 FIX: busca em mais lugares, incluindo fallback v7
             let chartData = data?.result?.chart_data || 
-                           data?.chart_data || 
-                           data?.analysis?.chart_data || 
-                           data?.data?.chart_data || 
-                           {};
+                            data?.chart_data || 
+                            data?.analysis?.chart_data || 
+                            data?.data?.chart_data ||
+                            data?.per_file_analysis?.[Object.keys(data.per_file_analysis || {})[0]]?.metrics_extra?.chart_data ||
+                            {};
             
-            // Se chartData não tem weekly, tenta construir
+            // Se não tem weekly mas tem monthly, tenta reconstruir
             if (!chartData.weekly && chartData.revenue) {
                 chartData = {
                     weekly: {
@@ -480,45 +256,81 @@
         }
         
         _extractReport(data) {
+            const perFile = data.per_file_analysis || {};
+            const firstFileKey = Object.keys(perFile)[0];
+            const firstFile = firstFileKey ? perFile[firstFileKey] : null;
+            
             return data.executive_summary || 
                    data.result?.executive_summary || 
                    data.analysis?.executive_summary || 
+                   firstFile?.summary ||
                    data.full_analysis || 
                    '';
         }
         
+        // 🔥 FIX 6: Recomendações suportam "description" (fallback v7)
         _extractRecommendations(data) {
+            const perFile = data.per_file_analysis || {};
+            const firstFileKey = Object.keys(perFile)[0];
+            const firstFile = firstFileKey ? perFile[firstFileKey] : null;
+            
             let recs = data.recommendations || 
                        data.result?.recommendations || 
                        data.analysis?.recommendations || 
+                       firstFile?.recommendations ||
                        [];
             
-            if (recs.length === 0) return [];
+            if (!Array.isArray(recs) || recs.length === 0) return [];
             
-            if (typeof recs[0] === 'string') {
-                return recs.map(text => ({ text: text, priority: 'media' }));
-            }
-            
-            return recs;
+            return recs.map(rec => {
+                if (typeof rec === 'string') {
+                    return { text: rec, priority: 'media' };
+                }
+                // 🔥 FIX: fallback v7 usa "description", não "text"
+                return {
+                    text: rec.text || rec.description || rec.message || rec.title || '',
+                    priority: rec.priority || 'media',
+                    category: rec.category || '',
+                };
+            }).filter(r => r.text && r.text.length > 0);
         }
         
         _extractScore(data) {
+            const perFile = data.per_file_analysis || {};
+            const firstFileKey = Object.keys(perFile)[0];
+            const firstFile = firstFileKey ? perFile[firstFileKey] : null;
+            
             return data.executive_score || 
                    data.result?.executive_score || 
                    data.analysis?.executive_score || 
+                   (firstFile?.score !== undefined ? { nota_geral: firstFile.score } : null) ||
                    { nota_geral: 0 };
         }
         
+        // 🔥 FIX 7: Créditos normalizados
         _extractCredits(data) {
-            return data.credits || 
-                   data.result?.credits || 
-                   { before: 0, consumed: 0, remaining: 0 };
+            const c = data.credits || 
+                      data.result?.credits || 
+                      data.analysis?.credits || 
+                      {};
+            
+            const toNum = (v) => {
+                const n = Number(v);
+                return isNaN(n) ? 0 : n;
+            };
+            
+            return {
+                before:    toNum(c.before ?? c.before_analysis ?? c.inicio ?? c.initial ?? 0),
+                consumed:  toNum(c.consumed ?? c.consumed_credits ?? c.usado ?? c.used ?? 0),
+                remaining: toNum(c.remaining ?? c.remaining_credits ?? c.restante ?? c.left ?? 0),
+            };
         }
         
         _extractFilename(data) {
             return data.filename || 
                    data.result?.filename || 
                    data.analysis?.filename || 
+                   (data.files && data.files[0]?.filename) ||
                    'Analise';
         }
         
@@ -527,6 +339,10 @@
                    data.result?.model_used || 
                    'AutoML';
         }
+        
+        // ==============================================
+        // 🔥 GERAÇÃO DO RELATÓRIO
+        // ==============================================
         
         _generateReport(metrics, data, options = {}) {
             const { jsPDF } = window.jspdf;
@@ -550,7 +366,7 @@
                 secondary: [52, 152, 219]
             };
             
-            // 🔥 EXTRAIR DADOS E SANITIZAR TUDO PARA ASCII
+            // 🔥 EXTRAIR DADOS
             const totalRegistros = metrics.totalRegistros || 0;
             const scoreMedio = metrics.scoreMedio || 0.65;
             const highRisk = metrics.highRisk || 0;
@@ -560,7 +376,6 @@
             const profit = revenue - costs;
             const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
             
-            // 🔥 SANITIZAR TODOS OS TEXTOS PARA ASCII
             const report = TextSanitizer.sanitize(this._extractReport(data));
             const recommendations = this._extractRecommendations(data);
             const score = this._extractScore(data);
@@ -572,7 +387,7 @@
             let yPos = M.MARGIN_TOP;
             
             // ==========================================
-            // 1. CABECALHO (SEM EMOJIS)
+            // 1. CABEÇALHO
             // ==========================================
             
             doc.setFillColor(C.dark[0], C.dark[1], C.dark[2]);
@@ -585,15 +400,13 @@
             
             doc.setFontSize(14);
             doc.setFont('helvetica', 'normal');
-            doc.text('Relatorio de Analise Financeira', M.MARGIN_LEFT, 30);
+            doc.text('Relatório de Análise Financeira', M.MARGIN_LEFT, 30);
             
             doc.setFontSize(8);
             doc.setTextColor(C.lightGray[0], C.lightGray[1], C.lightGray[2]);
             const now = new Date();
             const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
-            // 🔥 SANITIZAR DATA
-            const cleanDateStr = TextSanitizer.sanitize(dateStr);
-            doc.text('Gerado em: ' + cleanDateStr, M.MARGIN_LEFT, 38);
+            doc.text('Gerado em: ' + TextSanitizer.sanitize(dateStr), M.MARGIN_LEFT, 38);
             doc.text('Arquivo: ' + filename, 120, 38);
             
             doc.setDrawColor(C.secondary[0], C.secondary[1], C.secondary[2]);
@@ -603,13 +416,13 @@
             yPos = 55;
             
             // ==========================================
-            // 2. METRICAS PRINCIPAIS
+            // 2. MÉTRICAS PRINCIPAIS
             // ==========================================
             
             doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
             doc.setFontSize(13);
             doc.setFont('helvetica', 'bold');
-            doc.text('Metricas da Analise', M.MARGIN_LEFT, yPos);
+            doc.text('Métricas da Análise', M.MARGIN_LEFT, yPos);
             yPos += 8;
             
             const metricsData = [
@@ -646,45 +459,56 @@
             yPos += 38;
             
             // ==========================================
-            // 3. METRICAS FINANCEIRAS
+            // 3. MÉTRICAS FINANCEIRAS
             // ==========================================
             
             if (revenue > 0 || costs > 0) {
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFontSize(11);
                 doc.setFont('helvetica', 'bold');
-                doc.text('Metricas Financeiras', M.MARGIN_LEFT, yPos);
+                doc.text('Métricas Financeiras', M.MARGIN_LEFT, yPos);
                 yPos += 6;
                 
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
-                doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
                 
-                // 🔥 FORMATAR VALORES SEM VIRGULAS (só ASCII)
+                // 🔥 FIX 8: formatação com toLocaleString
                 const formatMoney = (val) => {
-                    return 'R$ ' + val.toFixed(2).replace('.', ',');
+                    return 'R$ ' + Number(val).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
                 };
                 
                 const finData = [
                     { label: 'Receita Total', value: formatMoney(revenue) },
                     { label: 'Custo Total', value: formatMoney(costs) },
                     { label: 'Lucro', value: formatMoney(profit) },
-                    { label: 'Margem', value: margin.toFixed(1) + '%' }
+                    { label: 'Margem', value: margin.toFixed(1).replace('.', ',') + '%' }
                 ];
                 
-                const finColWidth = 45;
+                // Layout em 2 linhas (2 colunas)
+                const finColWidth = 90;
                 finData.forEach((item, index) => {
-                    const x = M.MARGIN_LEFT + (index * finColWidth);
-                    const cleanLabel = TextSanitizer.sanitize(item.label);
-                    const cleanValue = TextSanitizer.sanitize(item.value);
-                    doc.text(cleanLabel + ': ' + cleanValue, x, yPos);
+                    const col = index % 2;
+                    const row = Math.floor(index / 2);
+                    const x = M.MARGIN_LEFT + (col * finColWidth);
+                    const y = yPos + (row * 6);
+                    
+                    doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
+                    doc.text(item.label + ':', x, y);
+                    
+                    doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(item.value, x + 32, y);
+                    doc.setFont('helvetica', 'normal');
                 });
                 
-                yPos += 10;
+                yPos += 18;
             }
             
             // ==========================================
-            // 4. INFORMACOES TECNICAS
+            // 4. INFO TÉCNICA
             // ==========================================
             
             doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
@@ -694,13 +518,13 @@
             yPos += 8;
             
             // ==========================================
-            // 5. RELATORIO DA IA
+            // 5. RELATÓRIO DA IA
             // ==========================================
             
             doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
             doc.setFontSize(13);
             doc.setFont('helvetica', 'bold');
-            doc.text('Relatorio da IA', M.MARGIN_LEFT, yPos);
+            doc.text('Relatório da IA', M.MARGIN_LEFT, yPos);
             yPos += 8;
             
             doc.setFontSize(10);
@@ -709,15 +533,14 @@
             
             let reportText = report;
             if (!reportText || reportText.length < 20) {
-                reportText = 'Analise concluida com sucesso.\n\n' +
-                    'Foram analisados ' + totalRegistros.toLocaleString() + ' registros, com um score medio de ' + 
+                reportText = 'Análise concluída com sucesso.\n\n' +
+                    'Foram analisados ' + totalRegistros.toLocaleString('pt-BR') + ' registros, com um score médio de ' + 
                     (scoreMedio*100).toFixed(0) + '%.\n\n' +
-                    highRisk.toFixed(0) + '% dos casos sao de alto risco, indicando a necessidade de revisao de processos.\n\n' +
-                    lowRisk.toFixed(0) + '% dos casos sao de baixo risco, demonstrando boa performance.\n\n' +
-                    'Recomenda-se monitorar de perto os casos de alto risco e manter as boas praticas que geram resultados positivos.';
+                    highRisk.toFixed(0) + '% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n' +
+                    lowRisk.toFixed(0) + '% dos casos são de baixo risco, demonstrando boa performance.\n\n' +
+                    'Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.';
             }
             
-            // 🔥 SANITIZAR RELATORIO COMPLETO PARA ASCII
             reportText = TextSanitizer.sanitize(reportText);
             
             const reportLines = doc.splitTextToSize(reportText, 170);
@@ -731,7 +554,7 @@
             yPos += (reportLines.length * M.LINE_HEIGHT) + 10;
             
             // ==========================================
-            // 6. RECOMENDACOES
+            // 6. RECOMENDAÇÕES
             // ==========================================
             
             if (recommendations.length > 0) {
@@ -743,20 +566,24 @@
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('Recomendacoes', M.MARGIN_LEFT, yPos);
+                doc.text('Recomendações', M.MARGIN_LEFT, yPos);
                 yPos += 8;
                 
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
                 
-                const priorityLabels = { alta: 'Alta Prioridade', media: 'Media Prioridade', baixa: 'Baixa Prioridade' };
+                const priorityLabels = { 
+                    alta: 'Alta Prioridade', 
+                    media: 'Média Prioridade', 
+                    baixa: 'Baixa Prioridade' 
+                };
                 
-                recommendations.slice(0, 5).forEach((rec) => {
-                    const rawText = rec.text || rec || '';
-                    // 🔥 SANITIZAR CADA RECOMENDACAO
-                    const text = TextSanitizer.sanitize(rawText);
+                recommendations.slice(0, 8).forEach((rec) => {
+                    const text = TextSanitizer.sanitize(rec.text || '');
                     const priority = rec.priority || 'media';
-                    const label = priorityLabels[priority] || 'Media Prioridade';
+                    const label = priorityLabels[priority] || 'Média Prioridade';
+                    
+                    if (!text) return;
                     
                     const lines = doc.splitTextToSize('[' + label + '] ' + text, 165);
                     
@@ -765,8 +592,19 @@
                         yPos = M.MARGIN_TOP;
                     }
                     
+                    // Cor da prioridade
+                    if (priority === 'alta') {
+                        doc.setTextColor(C.danger[0], C.danger[1], C.danger[2]);
+                    } else if (priority === 'media') {
+                        doc.setTextColor(230, 126, 34);
+                    } else {
+                        doc.setTextColor(C.accent[0], C.accent[1], C.accent[2]);
+                    }
+                    
                     doc.text(lines, M.MARGIN_LEFT + 2, yPos);
                     yPos += (lines.length * M.LINE_HEIGHT) + 3;
+                    
+                    doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 });
                 
                 yPos += 5;
@@ -792,27 +630,19 @@
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
                 
-                // 🔥 SANITIZAR VALORES
-                const cleanNota = TextSanitizer.sanitizeNumber(score.nota_geral);
-                const cleanSaude = TextSanitizer.sanitizeNumber(score.saude_financeira || 0);
-                const cleanEficiencia = TextSanitizer.sanitizeNumber(score.eficiencia || 0);
-                const cleanCrescimento = TextSanitizer.sanitizeNumber(score.crescimento || 0);
-                const cleanNivelRisco = TextSanitizer.sanitize(score.nivel_risco || 'Moderado');
-                
                 const scoreItems = [
-                    { label: 'Nota Geral', value: cleanNota + '/10' },
-                    { label: 'Saude Financeira', value: cleanSaude + '/10' },
-                    { label: 'Eficiencia', value: cleanEficiencia + '/10' },
-                    { label: 'Crescimento', value: cleanCrescimento + '/10' },
-                    { label: 'Nivel de Risco', value: cleanNivelRisco }
+                    { label: 'Nota Geral', value: (score.nota_geral || 0) + '/10' },
+                    { label: 'Saúde Financeira', value: (score.saude_financeira || 0) + '/10' },
+                    { label: 'Eficiência', value: (score.eficiencia || 0) + '/10' },
+                    { label: 'Crescimento', value: (score.crescimento || 0) + '/10' },
+                    { label: 'Nível de Risco', value: score.nivel_risco || 'Moderado' }
                 ];
                 
                 const scoreColWidth = 37;
                 scoreItems.forEach((item, index) => {
                     const x = M.MARGIN_LEFT + (index * scoreColWidth);
                     if (x + 30 < 195) {
-                        const cleanLabel = TextSanitizer.sanitize(item.label);
-                        doc.text(cleanLabel + ': ' + item.value, x, yPos);
+                        doc.text(TextSanitizer.sanitize(item.label) + ': ' + item.value, x, yPos);
                     }
                 });
                 
@@ -820,18 +650,17 @@
             }
             
             // ==========================================
-            // 8. GRAFICO DE TENDENCIA
+            // 8. GRÁFICO DE TENDÊNCIA SEMANAL
             // ==========================================
             
             const weeklyData = chartData.weekly || {};
-            const labels = weeklyData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+            const labels = weeklyData.labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
             const revenueData = weeklyData.revenue || [];
             
-            // 🔥 SANITIZAR LABELS
             const cleanLabels = labels.map(l => TextSanitizer.sanitize(l));
             
             if (revenueData.length > 0) {
-                if (yPos > 240) {
+                if (yPos > 210) {
                     doc.addPage();
                     yPos = M.MARGIN_TOP;
                 }
@@ -839,73 +668,96 @@
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text('Tendencia Semanal', M.MARGIN_LEFT, yPos);
+                doc.text('Tendência Semanal', M.MARGIN_LEFT, yPos);
                 yPos += 6;
                 
-                // Tabela de dados semanais
+                // Tabela de dados
                 doc.setFontSize(7);
                 doc.setFont('helvetica', 'normal');
                 
-                // Cabecalho
                 doc.setFillColor(C.primary[0], C.primary[1], C.primary[2]);
                 doc.rect(M.MARGIN_LEFT, yPos, 170, 5, 'F');
                 doc.setTextColor(C.white[0], C.white[1], C.white[2]);
                 doc.setFont('helvetica', 'bold');
                 
-                const colWidths = [20, 20, 20, 20, 20, 20, 20];
+                const colWidths = [24, 24, 24, 24, 24, 24, 24];
                 let xPos = M.MARGIN_LEFT + 2;
                 
                 cleanLabels.forEach((label, i) => {
                     doc.text(label, xPos, yPos + 3.5);
-                    xPos += colWidths[i] || 20;
+                    xPos += colWidths[i] || 24;
                 });
                 
                 yPos += 7;
                 
-                // Dados - Receita
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFont('helvetica', 'normal');
                 
                 xPos = M.MARGIN_LEFT + 2;
                 revenueData.forEach((val, i) => {
-                    const cleanVal = 'R$ ' + (val || 0).toFixed(0);
+                    const cleanVal = 'R$ ' + Number(val || 0).toFixed(0);
                     doc.text(cleanVal, xPos, yPos + 3.5);
-                    xPos += colWidths[i] || 20;
+                    xPos += colWidths[i] || 24;
                 });
                 
                 yPos += 10;
                 
-                // Grafico de barras simples
+                // 🔥 FIX 9: Gráfico de barras com eixo Y e clamp de labels
                 const maxVal = Math.max(...revenueData, 1);
-                const barWidth = 18;
-                const maxHeight = 40;
-                const chartStartX = M.MARGIN_LEFT + 5;
+                const barWidth = 16;
+                const barGap = 6;
+                const maxHeight = 45;
+                const chartStartX = M.MARGIN_LEFT + 12;
                 const chartStartY = yPos + 5;
                 
-                doc.setFillColor(C.primary[0], C.primary[1], C.primary[2]);
+                // Eixo Y (linhas de grade)
+                doc.setDrawColor(220, 220, 220);
+                doc.setLineWidth(0.2);
+                for (let i = 0; i <= 4; i++) {
+                    const gy = chartStartY + (maxHeight * i / 4);
+                    doc.line(chartStartX - 2, gy, chartStartX + 7 * (barWidth + barGap), gy);
+                    
+                    // Label do eixo Y
+                    doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
+                    doc.setFontSize(5);
+                    const yVal = maxVal * (4 - i) / 4;
+                    doc.text('R$' + yVal.toFixed(0), M.MARGIN_LEFT, gy + 1.5);
+                }
                 
+                // Barras
                 revenueData.forEach((val, i) => {
-                    const height = (val / maxVal) * maxHeight;
-                    const x = chartStartX + (i * (barWidth + 4));
+                    const height = Math.max(1, (val / maxVal) * maxHeight);
+                    const x = chartStartX + (i * (barWidth + barGap));
                     const y = chartStartY + maxHeight - height;
                     
                     doc.setFillColor(C.primary[0], C.primary[1], C.primary[2]);
                     doc.rect(x, y, barWidth, height, 'F');
                     
+                    // 🔥 FIX: clamp do label para não sair da página
                     doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                     doc.setFontSize(5);
-                    const cleanVal = 'R$' + val.toFixed(0);
-                    doc.text(cleanVal, x + 2, y - 2);
+                    const labelY = Math.max(y - 1.5, chartStartY - 2);
+                    const cleanVal = 'R$' + Number(val).toFixed(0);
+                    doc.text(cleanVal, x + 1, labelY);
                 });
+                
+                // Linha base do eixo X
+                doc.setDrawColor(150, 150, 150);
+                doc.setLineWidth(0.3);
+                doc.line(chartStartX - 2, chartStartY + maxHeight, 
+                         chartStartX + 7 * (barWidth + barGap) - barGap, 
+                         chartStartY + maxHeight);
                 
                 yPos += maxHeight + 15;
             }
             
             // ==========================================
-            // 9. CREDITOS
+            // 9. CRÉDITOS (só se houver dados válidos)
             // ==========================================
             
-            if (credits.consumed > 0 || credits.before > 0) {
+            const hasCredits = credits.before > 0 || credits.consumed > 0 || credits.remaining > 0;
+            
+            if (hasCredits) {
                 if (yPos > 270) {
                     doc.addPage();
                     yPos = M.MARGIN_TOP;
@@ -914,23 +766,27 @@
                 doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'normal');
-                const creditsText = 'Creditos: ' + credits.before + ' -> ' + credits.consumed + ' consumido(s) -> ' + credits.remaining + ' restante(s)';
+                const creditsText = `Créditos: ${credits.before} -> ${credits.consumed} consumido(s) -> ${credits.remaining} restante(s)`;
                 doc.text(TextSanitizer.sanitize(creditsText), M.MARGIN_LEFT, yPos);
                 yPos += 8;
             }
             
             // ==========================================
-            // 10. RODAPE
+            // 10. RODAPÉ
             // ==========================================
             
-            doc.setFillColor(C.dark[0], C.dark[1], C.dark[2]);
-            doc.rect(0, 280, 210, 17, 'F');
-            
-            doc.setTextColor(C.lightGray[0], C.lightGray[1], C.lightGray[2]);
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'normal');
-            doc.text('AutoAnalytics v5.0 - Relatorio gerado automaticamente por IA', M.MARGIN_LEFT, 290);
-            doc.text('Pagina 1/1', 170, 290);
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFillColor(C.dark[0], C.dark[1], C.dark[2]);
+                doc.rect(0, 280, 210, 17, 'F');
+                
+                doc.setTextColor(C.lightGray[0], C.lightGray[1], C.lightGray[2]);
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.text('AutoAnalytics v6.0 - Relatório gerado automaticamente por IA', M.MARGIN_LEFT, 290);
+                doc.text(`Página ${i}/${pageCount}`, 180, 290);
+            }
             
             // ==========================================
             // 11. SALVAR
@@ -957,12 +813,11 @@
     }
 
     // ==============================================
-    // 🔥 INSTANCIA GLOBAL
+    // 🔥 INSTÂNCIA GLOBAL
     // ==============================================
 
     const pdfGenerator = new PDFGenerator();
 
-    // Expor funcoes globalmente
     window.generatePDF = async function(options = {}) {
         try {
             return await pdfGenerator.generate(options);
@@ -975,27 +830,68 @@
         }
     };
 
+    // ==============================================
+    // 🔥 DIAGNÓSTICO - use no console para debugar
+    // ==============================================
+
+    window.diagnosticarPDF = function() {
+        const data = window._lastResult;
+        if (!data) {
+            console.warn('⚠️ window._lastResult está vazio!');
+            return;
+        }
+        
+        console.log('=== DIAGNÓSTICO PDF ===');
+        console.log('1. Chaves raiz:', Object.keys(data));
+        console.log('2. rows_processed:', data.rows_processed);
+        console.log('3. total_rows:', data.total_rows);
+        console.log('4. confidence_score:', data.confidence_score);
+        console.log('5. total_revenue:', data.total_revenue);
+        console.log('6. total_costs:', data.total_costs);
+        console.log('7. recommendations:', data.recommendations);
+        console.log('8. credits:', data.credits);
+        console.log('9. per_file_analysis:', data.per_file_analysis);
+        
+        if (data.per_file_analysis) {
+            const firstKey = Object.keys(data.per_file_analysis)[0];
+            console.log('10. Primeiro arquivo em per_file_analysis:', firstKey);
+            console.log('11. metrics_extra:', data.per_file_analysis[firstKey]?.metrics_extra);
+        }
+        
+        const pdfGen = new PDFGenerator();
+        const metrics = pdfGen._extractMetrics(data);
+        console.log('=== MÉTRICAS EXTRAÍDAS PELO PDF ===');
+        console.log(metrics);
+        
+        const recs = pdfGen._extractRecommendations(data);
+        console.log('=== RECOMENDAÇÕES EXTRAÍDAS ===');
+        console.log(recs);
+        
+        const credits = pdfGen._extractCredits(data);
+        console.log('=== CRÉDITOS EXTRAÍDOS ===');
+        console.log(credits);
+        
+        return { metrics, recs, credits };
+    };
+
     window.testPDF = async function() {
-        console.log('🧪 [PDF] Testando...');
+        console.log('🧪 [PDF] Testando com dados de exemplo...');
         
         window._lastResult = {
             success: true,
-            process_id: 42,
-            filename: 'orcamentos_oficina_100_linhas.xlsx',
-            rows_processed: 100,
-            model_used: 'RandomForest',
-            confidence_score: 0.78,
-            executive_summary: 'Analise de dados da oficina concluida com sucesso. O negocio apresenta boa saude financeira com margens consistentes de 35%.',
+            filename: 'oficina_ficticia_500_linhas.xlsx',
+            rows_processed: 500,
+            model_used: 'intelligent_fallback_v7',
+            confidence_score: 0.65,
+            total_revenue: 3751.73,
+            total_costs: 2128.48,
+            executive_summary: 'Análise concluída com sucesso. Foram analisados 500 registros, com um score médio de 65%.',
             
             chart_data: {
                 weekly: {
-                    labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
-                    revenue: [897, 431, 632, 1035, 538, 776, 1031],
+                    labels: ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'],
+                    revenue: [507, 478, 547, 565, 502, 644, 509],
                     costs: [266, 768, 277, 354, 235, 425, 604]
-                },
-                performance: {
-                    labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
-                    services: [12, 15, 10, 18, 14, 8, 6]
                 }
             },
             
@@ -1008,9 +904,9 @@
             },
             
             recommendations: [
-                { priority: 'alta', text: 'Reduzir custos operacionais em 15%' },
-                { priority: 'media', text: 'Implementar sistema de monitoramento de performance' },
-                { priority: 'baixa', text: 'Revisar processos administrativos' }
+                { priority: 'alta', description: 'Reduzir custos operacionais em 15%', category: 'financeiro' },
+                { priority: 'media', description: 'Implementar sistema de monitoramento de performance', category: 'operacional' },
+                { priority: 'baixa', description: 'Revisar processos administrativos', category: 'operacional' }
             ],
             
             credits: {
@@ -1020,8 +916,8 @@
             }
         };
         
-        await window.generatePDF({ filename: 'Teste_PDF_v5.0.pdf' });
-        console.log('✅ [PDF] Teste concluido!');
+        await window.generatePDF({ filename: 'Teste_PDF_v6.0.pdf' });
+        console.log('✅ [PDF] Teste concluído!');
     };
 
     // ==============================================
@@ -1034,7 +930,7 @@
         pdfBtns.forEach(btn => {
             btn.addEventListener('click', async function(e) {
                 e.preventDefault();
-                console.log('📄 [PDF] Botao clicado');
+                console.log('📄 [PDF] Botão clicado');
                 
                 const originalText = this.innerHTML;
                 this.disabled = true;
@@ -1046,19 +942,21 @@
                     console.error('❌ [PDF] Erro:', error);
                 } finally {
                     this.disabled = false;
-                    this.innerHTML = originalText || '📄 Baixar Relatorio PDF';
+                    this.innerHTML = originalText || '📄 Baixar Relatório PDF';
                 }
             });
         });
     });
 
-    console.log('✅ PDF Generator v5.0 carregado!');
-    console.log('   📄 Use window.generatePDF() para gerar');
-    console.log('   🧪 Use window.testPDF() para testar');
-    console.log('   🔥 CORRECOES v5.0:');
-    console.log('      ✅ Conversao completa para ASCII');
-    console.log('      ✅ Substituicao de acentos');
-    console.log('      ✅ Remocao de todos os caracteres nao-ASCII');
-    console.log('      ✅ PDFs 100% legiveis');
+    console.log('✅ PDF Generator v6.0 carregado!');
+    console.log('   📄 window.generatePDF()  - gera o PDF');
+    console.log('   🧪 window.testPDF()      - testa com dados de exemplo');
+    console.log('   🔍 window.diagnosticarPDF() - debug dos dados');
+    console.log('   🔥 CORREÇÕES v6.0:');
+    console.log('      ✅ Extração correta de per_file_analysis');
+    console.log('      ✅ Recomendações com "description"');
+    console.log('      ✅ Créditos normalizados');
+    console.log('      ✅ Acentos pt-BR mantidos');
+    console.log('      ✅ Gráfico com eixo Y');
 
 })();
