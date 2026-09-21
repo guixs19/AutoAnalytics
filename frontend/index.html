@@ -652,6 +652,89 @@
         }
 
         /* ==============================================
+           🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO)
+           ============================================== */
+        #pdfPreviewWrapper {
+            margin-top: 0.8rem;
+            animation: fadeUp 0.4s ease-out;
+        }
+
+        #pdfPreviewContainer {
+            width: 100%;
+            height: 520px;
+            background: #2c3e50;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(0, 180, 255, 0.3);
+            position: relative;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        #pdfPreviewContainer:hover {
+            border-color: rgba(0, 180, 255, 0.6);
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.3), 0 0 30px rgba(0, 180, 255, 0.15);
+        }
+
+        #pdfPreviewFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+            transition: transform 0.2s ease;
+        }
+
+        #pdfPreviewLoading {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            color: white;
+            backdrop-filter: blur(4px);
+            z-index: 2;
+        }
+
+        #pdfPreviewLoading i {
+            color: var(--azul-principal);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        #pdfPreviewLoading span {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .btn-pdf-preview-action {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 0.65rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-pdf-preview-action:hover {
+            background: rgba(0, 180, 255, 0.15) !important;
+            border-color: rgba(0, 180, 255, 0.4) !important;
+            transform: translateY(-1px);
+        }
+
+        #pdfPreviewFallback {
+            padding: 1.5rem;
+            text-align: center;
+            background: rgba(220,53,69,0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(220,53,69,0.2);
+            margin-top: 0.8rem;
+        }
+
+        /* ==============================================
            GRÁFICOS
            ============================================== */
         .chart-container {
@@ -812,6 +895,10 @@
             .glass-card { padding: 0.7rem; }
             #resultCard .card-title { font-size: 0.9rem !important; }
             .ai-report-card { max-height: 150px; }
+
+            /* 🔥 PDF Preview Mobile */
+            #pdfPreviewContainer { height: 380px !important; }
+            .btn-pdf-preview-action { display: none; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
@@ -824,6 +911,7 @@
             .result-actions { justify-content: center; }
             .ai-report-card { max-height: 120px; padding: 0.6rem; }
             .ai-report-content { font-size: 0.7rem; }
+            #pdfPreviewContainer { height: 300px !important; }
         }
 
         /* ==============================================
@@ -1044,9 +1132,57 @@
                                 </span>
                             </div>
 
+                            <!-- 🔥 MÉTRICAS RESUMIDAS -->
                             <div class="result-grid" id="resultMetrics"></div>
 
-                            <div class="ai-report-card">
+                            <!-- 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO) -->
+                            <div id="pdfPreviewWrapper" style="display: none;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-weight: 600;">
+                                        <i class="fas fa-file-pdf" style="color: #dc3545;"></i>
+                                        Pré-visualização do Relatório
+                                    </div>
+                                    <div style="display: flex; gap: 0.3rem; align-items: center;">
+                                        <button class="btn-pdf-preview-action" id="pdfZoomOut" title="Diminuir zoom">
+                                            <i class="fas fa-search-minus"></i>
+                                        </button>
+                                        <span id="pdfZoomLevel" style="color: rgba(255,255,255,0.4); font-size: 0.65rem; padding: 4px 6px;">100%</span>
+                                        <button class="btn-pdf-preview-action" id="pdfZoomIn" title="Aumentar zoom">
+                                            <i class="fas fa-search-plus"></i>
+                                        </button>
+                                        <button class="btn-pdf-preview-action" id="pdfFullscreen" title="Tela cheia">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Container do iframe -->
+                                <div id="pdfPreviewContainer">
+                                    <iframe id="pdfPreviewFrame"
+                                            title="Pré-visualização do Relatório PDF">
+                                    </iframe>
+
+                                    <!-- Loading overlay do PDF -->
+                                    <div id="pdfPreviewLoading">
+                                        <i class="fas fa-file-pdf fa-2x"></i>
+                                        <span>Gerando pré-visualização...</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Fallback: se iframe não funcionar -->
+                            <div id="pdfPreviewFallback" style="display: none;">
+                                <i class="fas fa-file-pdf fa-3x" style="color: #dc3545; opacity: 0.6;"></i>
+                                <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin-top: 0.5rem;">
+                                    Seu navegador não suporta pré-visualização de PDF.
+                                </p>
+                                <button class="btn-result btn-pdf" onclick="window.downloadLastPDF()" style="margin-top: 0.5rem;">
+                                    <i class="fas fa-download"></i> Baixar PDF
+                                </button>
+                            </div>
+
+                            <!-- Relatório da IA (texto) -->
+                            <div class="ai-report-card" style="margin-top: 0.8rem;">
                                 <div id="aiReportContent" class="ai-report-content">
                                     <div class="ai-report-placeholder">
                                         <i class="fas fa-spinner fa-spin"></i>
@@ -1328,7 +1464,7 @@
     <script src="/static/js/payment.js?ver=7.2.0" defer></script>
     <script src="/static/js/dashboard.js?ver=16.16" defer></script>
     <script src="/static/js/upload-report-system.js?ver=2.6" defer></script>
-    <script src="/static/js/pdf-generator.js?ver=4.3" defer></script>
+    <script src="/static/js/pdf-generator.js?ver=6.0" defer></script>
 
     <!-- ============================================== -->
     <!-- 🔥 FALLBACK DE AUTENTICAÇÃO (MANTIDO) -->

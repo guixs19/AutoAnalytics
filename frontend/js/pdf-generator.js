@@ -1,68 +1,56 @@
-// frontend/js/pdf-generator.js - VERSÃO 6.0 (FIX REAL)
+// frontend/js/pdf-generator.js - VERSÃO 7.0 (PREVIEW + AYLA)
 /**
- * 🔥 PDF Generator - AutoAnalytics v6.0
+ * 🔥 PDF Generator - AutoAnalytics v7.0
  * 
- * ✅ CORREÇÕES v6.0:
- * - 🔥 Extração CORRETA de dados do fallback v7 (per_file_analysis)
- * - 🔥 Recomendações agora usam "description" (não "text")
- * - 🔥 Créditos normalizados (before/consumed/remaining)
- * - 🔥 Sanitizador RELAXADO (jsPDF v2 suporta acentos pt-BR)
- * - 🔥 Formatação de moeda com toLocaleString
- * - 🔥 Gráfico semanal com eixo Y correto e clamp de labels
- * - 🔥 Cards de métricas com valores reais (não hardcoded)
+ * ✅ NOVIDADES v7.0:
+ * - 🔥 PDFPreview: renderiza o PDF no iframe da div "Relatório da Ayla"
+ * - 🔥 "Ayla" substitui TODAS as menções a "ML", "modelo", "IA"
+ * - 🔥 Zoom, fullscreen e download instantâneo
+ * - 🔥 Blob URL (sem salvar arquivo até o usuário clicar em baixar)
+ * 
+ * ✅ MANTIDO v6.0:
+ * - Extração correta de per_file_analysis
+ * - Recomendações com "description"
+ * - Créditos normalizados
+ * - Acentos pt-BR mantidos
+ * - Gráfico com eixo Y
  */
 
 (function() {
     'use strict';
 
-    console.log('📄 PDF Generator v6.0 - FIX REAL');
+    console.log('📄 PDF Generator v7.0 - Preview + Ayla');
 
     // ==============================================
-    // 🔥 SANITIZADOR RELAXADO (mantém acentos pt-BR)
+    // 🔥 SANITIZADOR (mantém acentos pt-BR)
     // ==============================================
 
     const TextSanitizer = {
-        /**
-         * 🔥 Remove apenas o que jsPDF NÃO suporta:
-         * - Emojis (Unicode > BMP)
-         * - Caracteres de controle
-         * - Símbolos tipográficos problemáticos
-         * MANTÉM acentos portugueses (á, é, ç, ã, etc.)
-         */
         sanitize: function(text) {
             if (text === undefined || text === null) return '';
             
             let result = String(text);
             
-            // 1. Remove emojis (fora do BMP)
+            // Remove emojis (fora do BMP)
             result = result.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
             result = result.replace(/[\u{2600}-\u{27BF}]/gu, '');
             result = result.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
             
-            // 2. Substitui símbolos tipográficos problemáticos
+            // Substitui símbolos tipográficos problemáticos
             const typographic = {
-                '\u2026': '...',  // …
-                '\u2014': '-',    // —
-                '\u2013': '-',    // –
-                '\u2022': '*',    // •
-                '\u201C': '"',    // "
-                '\u201D': '"',    // "
-                '\u2018': "'",    // '
-                '\u2019': "'",    // '
-                '\u00A0': ' ',    // nbsp
-                '\u20AC': 'EUR',  // €
-                '\u00A3': 'GBP',  // £
-                '\u00A5': 'JPY',  // ¥
-                '\u00B0': 'o',    // °
+                '\u2026': '...', '\u2014': '-', '\u2013': '-',
+                '\u2022': '*', '\u201C': '"', '\u201D': '"',
+                '\u2018': "'", '\u2019': "'", '\u00A0': ' ',
+                '\u20AC': 'EUR', '\u00A3': 'GBP', '\u00A5': 'JPY', '\u00B0': 'o',
             };
             for (const [char, rep] of Object.entries(typographic)) {
                 result = result.split(char).join(rep);
             }
             
-            // 3. Remove caracteres de controle
+            // Remove caracteres de controle
             result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
             
-            // 4. Colapsa espaços
+            // Colapsa espaços
             result = result.replace(/\s+/g, ' ').trim();
             
             return result;
@@ -81,12 +69,12 @@
     };
 
     // ==============================================
-    // 🔥 GERADOR DE PDF V6.0
+    // 🔥 GERADOR DE PDF V7.0
     // ==============================================
 
     class PDFGenerator {
         constructor() {
-            console.log('✅ PDFGenerator v6.0');
+            console.log('✅ PDFGenerator v7.0');
         }
         
         async generate(options = {}) {
@@ -118,14 +106,12 @@
         }
         
         _collectData() {
-            // FONTE 1: window._lastResult
             let data = window._lastResult;
             if (data && Object.keys(data).length > 0) {
                 console.log('✅ [PDF] Dados de window._lastResult');
                 return data;
             }
             
-            // FONTE 2: UploadSystem
             if (window.UploadSystem && typeof window.UploadSystem.getResult === 'function') {
                 data = window.UploadSystem.getResult();
                 if (data && Object.keys(data).length > 0) {
@@ -134,7 +120,6 @@
                 }
             }
             
-            // FONTE 3: localStorage
             try {
                 const stored = localStorage.getItem('lastAnalysisResult');
                 if (stored) {
@@ -151,11 +136,10 @@
         }
         
         // ==============================================
-        // 🔥 EXTRAÇÃO DE MÉTRICAS (CORRIGIDA)
+        // 🔥 EXTRAÇÃO DE MÉTRICAS
         // ==============================================
         
         _extractMetrics(data) {
-            // 🔥 FIX 1: fallback v7 aninha dados em per_file_analysis
             const perFile = data.per_file_analysis || {};
             const firstFileKey = Object.keys(perFile)[0];
             const firstFile = firstFileKey ? perFile[firstFileKey] : null;
@@ -167,7 +151,6 @@
                             fileMetrics || 
                             {};
             
-            // 🔥 FIX 2: múltiplas fontes para rows
             const rows = data.rows_processed || 
                          data.result?.rows_processed || 
                          data.total_rows || 
@@ -176,17 +159,14 @@
                          (data.files && data.files[0]?.total_rows) ||
                          0;
             
-            // 🔥 FIX 3: score real (fallback v7 usa avg_score)
             let score = data.confidence_score ?? 
                         data.result?.confidence_score ??
                         fileMetrics.avg_score ??
                         metrics.mean_prediction ?? 
                         0.65;
             
-            // Se score vier em 0-100, normaliza
             if (score > 1) score = score / 100;
             
-            // 🔥 FIX 4: riscos — fallback v7 usa high_pct/low_pct (0-100)
             let highRisk = data.high_risk ?? 
                            data.result?.high_risk ??
                            fileMetrics.high_pct ??
@@ -198,11 +178,9 @@
                           metrics.low_risk_percentage ?? 
                           0;
             
-            // Normaliza: se vier 0-1, multiplica por 100
             if (highRisk > 0 && highRisk <= 1) highRisk *= 100;
             if (lowRisk > 0 && lowRisk <= 1) lowRisk *= 100;
             
-            // 🔥 FIX 5: receita/custo reais
             const totalRevenue = data.total_revenue ?? 
                                  fileMetrics.revenue ??
                                  metrics.total_revenue ??
@@ -233,7 +211,6 @@
         }
         
         _extractChartData(data) {
-            // 🔥 FIX: busca em mais lugares, incluindo fallback v7
             let chartData = data?.result?.chart_data || 
                             data?.chart_data || 
                             data?.analysis?.chart_data || 
@@ -241,7 +218,6 @@
                             data?.per_file_analysis?.[Object.keys(data.per_file_analysis || {})[0]]?.metrics_extra?.chart_data ||
                             {};
             
-            // Se não tem weekly mas tem monthly, tenta reconstruir
             if (!chartData.weekly && chartData.revenue) {
                 chartData = {
                     weekly: {
@@ -268,7 +244,6 @@
                    '';
         }
         
-        // 🔥 FIX 6: Recomendações suportam "description" (fallback v7)
         _extractRecommendations(data) {
             const perFile = data.per_file_analysis || {};
             const firstFileKey = Object.keys(perFile)[0];
@@ -286,7 +261,6 @@
                 if (typeof rec === 'string') {
                     return { text: rec, priority: 'media' };
                 }
-                // 🔥 FIX: fallback v7 usa "description", não "text"
                 return {
                     text: rec.text || rec.description || rec.message || rec.title || '',
                     priority: rec.priority || 'media',
@@ -307,7 +281,6 @@
                    { nota_geral: 0 };
         }
         
-        // 🔥 FIX 7: Créditos normalizados
         _extractCredits(data) {
             const c = data.credits || 
                       data.result?.credits || 
@@ -332,12 +305,6 @@
                    data.analysis?.filename || 
                    (data.files && data.files[0]?.filename) ||
                    'Analise';
-        }
-        
-        _extractModel(data) {
-            return data.model_used || 
-                   data.result?.model_used || 
-                   'AutoML';
         }
         
         // ==============================================
@@ -366,7 +333,6 @@
                 secondary: [52, 152, 219]
             };
             
-            // 🔥 EXTRAIR DADOS
             const totalRegistros = metrics.totalRegistros || 0;
             const scoreMedio = metrics.scoreMedio || 0.65;
             const highRisk = metrics.highRisk || 0;
@@ -382,7 +348,6 @@
             const chartData = metrics.chartData || {};
             const credits = this._extractCredits(data);
             const filename = TextSanitizer.sanitizeTitle(this._extractFilename(data));
-            const modelUsed = TextSanitizer.sanitize(this._extractModel(data));
             
             let yPos = M.MARGIN_TOP;
             
@@ -396,7 +361,7 @@
             doc.setTextColor(C.white[0], C.white[1], C.white[2]);
             doc.setFontSize(22);
             doc.setFont('helvetica', 'bold');
-            doc.text('AutoAnalytics', M.MARGIN_LEFT, 20);
+            doc.text('Ayla Mechanic', M.MARGIN_LEFT, 20);
             
             doc.setFontSize(14);
             doc.setFont('helvetica', 'normal');
@@ -472,7 +437,6 @@
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'normal');
                 
-                // 🔥 FIX 8: formatação com toLocaleString
                 const formatMoney = (val) => {
                     return 'R$ ' + Number(val).toLocaleString('pt-BR', {
                         minimumFractionDigits: 2,
@@ -487,7 +451,6 @@
                     { label: 'Margem', value: margin.toFixed(1).replace('.', ',') + '%' }
                 ];
                 
-                // Layout em 2 linhas (2 colunas)
                 const finColWidth = 90;
                 finData.forEach((item, index) => {
                     const col = index % 2;
@@ -508,23 +471,23 @@
             }
             
             // ==========================================
-            // 4. INFO TÉCNICA
+            // 4. INFO TÉCNICA (AGORA "AYLA", NÃO "MODELO ML")
             // ==========================================
             
             doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
             doc.setFontSize(7);
             doc.setFont('helvetica', 'normal');
-            doc.text('Modelo: ' + modelUsed, M.MARGIN_LEFT, yPos);
+            doc.text('Análise realizada por: Ayla (IA da Ayla Mechanic)', M.MARGIN_LEFT, yPos);
             yPos += 8;
             
             // ==========================================
-            // 5. RELATÓRIO DA IA
+            // 5. RELATÓRIO DA AYLA
             // ==========================================
             
             doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
             doc.setFontSize(13);
             doc.setFont('helvetica', 'bold');
-            doc.text('Relatório da IA', M.MARGIN_LEFT, yPos);
+            doc.text('Relatório da Ayla', M.MARGIN_LEFT, yPos);
             yPos += 8;
             
             doc.setFontSize(10);
@@ -533,13 +496,24 @@
             
             let reportText = report;
             if (!reportText || reportText.length < 20) {
-                reportText = 'Análise concluída com sucesso.\n\n' +
+                reportText = 'Análise concluída com sucesso pela Ayla.\n\n' +
                     'Foram analisados ' + totalRegistros.toLocaleString('pt-BR') + ' registros, com um score médio de ' + 
                     (scoreMedio*100).toFixed(0) + '%.\n\n' +
                     highRisk.toFixed(0) + '% dos casos são de alto risco, indicando a necessidade de revisão de processos.\n\n' +
                     lowRisk.toFixed(0) + '% dos casos são de baixo risco, demonstrando boa performance.\n\n' +
-                    'Recomenda-se monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.';
+                    'Recomendo monitorar de perto os casos de alto risco e manter as boas práticas que geram resultados positivos.';
             }
+            
+            // 🔥 Substitui menções a "ML"/"IA"/"modelo" por "Ayla"
+            reportText = reportText
+                .replace(/\bML\b/g, 'Ayla')
+                .replace(/\bml\b/g, 'Ayla')
+                .replace(/modelo de machine learning/gi, 'Ayla')
+                .replace(/machine learning/gi, 'Ayla')
+                .replace(/\bmodelo preditivo\b/gi, 'Ayla')
+                .replace(/\bmodelo\b/gi, 'Ayla')
+                .replace(/\bIA\b/g, 'Ayla')
+                .replace(/\bInteligência Artificial\b/gi, 'Ayla');
             
             reportText = TextSanitizer.sanitize(reportText);
             
@@ -566,7 +540,7 @@
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('Recomendações', M.MARGIN_LEFT, yPos);
+                doc.text('Recomendações da Ayla', M.MARGIN_LEFT, yPos);
                 yPos += 8;
                 
                 doc.setFontSize(9);
@@ -579,7 +553,16 @@
                 };
                 
                 recommendations.slice(0, 8).forEach((rec) => {
-                    const text = TextSanitizer.sanitize(rec.text || '');
+                    let text = TextSanitizer.sanitize(rec.text || '');
+                    
+                    // 🔥 Substitui "ML" por "Ayla" também nas recomendações
+                    text = text
+                        .replace(/\bML\b/g, 'Ayla')
+                        .replace(/\bml\b/g, 'Ayla')
+                        .replace(/machine learning/gi, 'Ayla')
+                        .replace(/\bmodelo\b/gi, 'Ayla')
+                        .replace(/\bIA\b/g, 'Ayla');
+                    
                     const priority = rec.priority || 'media';
                     const label = priorityLabels[priority] || 'Média Prioridade';
                     
@@ -592,7 +575,6 @@
                         yPos = M.MARGIN_TOP;
                     }
                     
-                    // Cor da prioridade
                     if (priority === 'alta') {
                         doc.setTextColor(C.danger[0], C.danger[1], C.danger[2]);
                     } else if (priority === 'media') {
@@ -623,7 +605,7 @@
                 doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('Score Executivo', M.MARGIN_LEFT, yPos);
+                doc.text('Score Executivo (análise da Ayla)', M.MARGIN_LEFT, yPos);
                 yPos += 8;
                 
                 doc.setFontSize(9);
@@ -671,7 +653,6 @@
                 doc.text('Tendência Semanal', M.MARGIN_LEFT, yPos);
                 yPos += 6;
                 
-                // Tabela de dados
                 doc.setFontSize(7);
                 doc.setFont('helvetica', 'normal');
                 
@@ -702,7 +683,6 @@
                 
                 yPos += 10;
                 
-                // 🔥 FIX 9: Gráfico de barras com eixo Y e clamp de labels
                 const maxVal = Math.max(...revenueData, 1);
                 const barWidth = 16;
                 const barGap = 6;
@@ -710,21 +690,18 @@
                 const chartStartX = M.MARGIN_LEFT + 12;
                 const chartStartY = yPos + 5;
                 
-                // Eixo Y (linhas de grade)
                 doc.setDrawColor(220, 220, 220);
                 doc.setLineWidth(0.2);
                 for (let i = 0; i <= 4; i++) {
                     const gy = chartStartY + (maxHeight * i / 4);
                     doc.line(chartStartX - 2, gy, chartStartX + 7 * (barWidth + barGap), gy);
                     
-                    // Label do eixo Y
                     doc.setTextColor(C.gray[0], C.gray[1], C.gray[2]);
                     doc.setFontSize(5);
                     const yVal = maxVal * (4 - i) / 4;
                     doc.text('R$' + yVal.toFixed(0), M.MARGIN_LEFT, gy + 1.5);
                 }
                 
-                // Barras
                 revenueData.forEach((val, i) => {
                     const height = Math.max(1, (val / maxVal) * maxHeight);
                     const x = chartStartX + (i * (barWidth + barGap));
@@ -733,7 +710,6 @@
                     doc.setFillColor(C.primary[0], C.primary[1], C.primary[2]);
                     doc.rect(x, y, barWidth, height, 'F');
                     
-                    // 🔥 FIX: clamp do label para não sair da página
                     doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
                     doc.setFontSize(5);
                     const labelY = Math.max(y - 1.5, chartStartY - 2);
@@ -741,7 +717,6 @@
                     doc.text(cleanVal, x + 1, labelY);
                 });
                 
-                // Linha base do eixo X
                 doc.setDrawColor(150, 150, 150);
                 doc.setLineWidth(0.3);
                 doc.line(chartStartX - 2, chartStartY + maxHeight, 
@@ -752,7 +727,7 @@
             }
             
             // ==========================================
-            // 9. CRÉDITOS (só se houver dados válidos)
+            // 9. CRÉDITOS
             // ==========================================
             
             const hasCredits = credits.before > 0 || credits.consumed > 0 || credits.remaining > 0;
@@ -784,16 +759,22 @@
                 doc.setTextColor(C.lightGray[0], C.lightGray[1], C.lightGray[2]);
                 doc.setFontSize(7);
                 doc.setFont('helvetica', 'normal');
-                doc.text('AutoAnalytics v6.0 - Relatório gerado automaticamente por IA', M.MARGIN_LEFT, 290);
+                doc.text('Ayla Mechanic v7.0 - Relatório gerado automaticamente pela Ayla', M.MARGIN_LEFT, 290);
                 doc.text(`Página ${i}/${pageCount}`, 180, 290);
             }
             
             // ==========================================
-            // 11. SALVAR
+            // 11. RETORNAR OU SALVAR (preview mode)
             // ==========================================
             
+            // 🔥 Se for modo preview, retorna o doc SEM salvar
+            if (options._returnDoc || options._previewMode) {
+                console.log('👁️ [PDF] Modo preview - retornando doc sem salvar');
+                return doc;
+            }
+            
             try {
-                const filename_ = options.filename || 'Relatorio_AutoAnalytics_' + Date.now() + '.pdf';
+                const filename_ = options.filename || 'Relatorio_Ayla_' + Date.now() + '.pdf';
                 doc.save(filename_);
                 console.log('✅ [PDF] Gerado: ' + filename_);
                 
@@ -831,7 +812,176 @@
     };
 
     // ==============================================
-    // 🔥 DIAGNÓSTICO - use no console para debugar
+    // 🔥🔥🔥 PRÉ-VISUALIZAÇÃO DO PDF (NOVO v7.0)
+    // ==============================================
+
+    const PDFPreview = {
+        _currentBlobUrl: null,
+        _zoomLevel: 100,
+        _lastDoc: null,
+
+        /**
+         * Gera o PDF em memória e retorna o Blob URL (sem salvar)
+         */
+        async generatePreviewBlob(options = {}) {
+            const data = pdfGenerator._collectData();
+            if (!data) {
+                console.warn('⚠️ [PDF Preview] Sem dados para gerar preview');
+                return null;
+            }
+
+            const metrics = pdfGenerator._extractMetrics(data);
+            if (metrics.totalRegistros === 0 && metrics.totalRevenue === 0) {
+                console.warn('⚠️ [PDF Preview] Sem dados reais');
+                return null;
+            }
+
+            // 🔥 Gera o PDF SEM salvar (passa flag _returnDoc)
+            const doc = pdfGenerator._generateReport(metrics, data, {
+                ...options,
+                _previewMode: true,
+                _returnDoc: true
+            });
+
+            if (!doc) return null;
+
+            this._lastDoc = doc;
+
+            // 🔥 Cria Blob URL em vez de salvar
+            const blob = doc.output('blob');
+            const blobUrl = URL.createObjectURL(blob);
+
+            // Limpa URL anterior para evitar memory leak
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+            }
+            this._currentBlobUrl = blobUrl;
+
+            console.log('✅ [PDF Preview] Blob gerado:', blobUrl);
+            return blobUrl;
+        },
+
+        /**
+         * Renderiza o PDF na div de preview
+         */
+        async render() {
+            const wrapper = document.getElementById('pdfPreviewWrapper');
+            const frame = document.getElementById('pdfPreviewFrame');
+            const loading = document.getElementById('pdfPreviewLoading');
+            const fallback = document.getElementById('pdfPreviewFallback');
+
+            if (!wrapper || !frame) {
+                console.warn('⚠️ [PDF Preview] Elementos não encontrados no DOM');
+                return;
+            }
+
+            // Mostra wrapper e loading
+            wrapper.style.display = 'block';
+            if (loading) loading.style.display = 'flex';
+            if (fallback) fallback.style.display = 'none';
+
+            try {
+                const blobUrl = await this.generatePreviewBlob();
+
+                if (!blobUrl) {
+                    throw new Error('Falha ao gerar PDF em memória');
+                }
+
+                // Aguarda o iframe carregar
+                frame.onload = () => {
+                    if (loading) loading.style.display = 'none';
+                    console.log('✅ [PDF Preview] Renderizado com sucesso no iframe');
+                };
+
+                frame.src = blobUrl;
+
+                // Timeout de segurança (caso onload não dispare)
+                setTimeout(() => {
+                    if (loading) loading.style.display = 'none';
+                }, 3000);
+
+            } catch (error) {
+                console.error('❌ [PDF Preview] Erro:', error);
+                if (loading) loading.style.display = 'none';
+                if (wrapper) wrapper.style.display = 'none';
+                if (fallback) fallback.style.display = 'block';
+            }
+        },
+
+        /**
+         * Aplica zoom no iframe (via CSS transform)
+         */
+        applyZoom(level) {
+            const frame = document.getElementById('pdfPreviewFrame');
+            const zoomLabel = document.getElementById('pdfZoomLevel');
+
+            if (!frame) return;
+
+            this._zoomLevel = Math.max(50, Math.min(200, level));
+            if (zoomLabel) zoomLabel.textContent = this._zoomLevel + '%';
+
+            const scale = this._zoomLevel / 100;
+            frame.style.transform = `scale(${scale})`;
+            frame.style.transformOrigin = 'top left';
+            frame.style.width = (100 / scale) + '%';
+            frame.style.height = (100 / scale) + '%';
+        },
+
+        /**
+         * Download do PDF (mesmo já estando em preview)
+         */
+        download() {
+            if (this._lastDoc) {
+                const filename = 'Relatorio_Ayla_' + Date.now() + '.pdf';
+                this._lastDoc.save(filename);
+                console.log('✅ [PDF Preview] Download iniciado:', filename);
+            } else {
+                window.generatePDF();
+            }
+        },
+
+        /**
+         * Abre em tela cheia
+         */
+        fullscreen() {
+            const container = document.getElementById('pdfPreviewContainer');
+            if (!container) return;
+
+            if (container.requestFullscreen) {
+                container.requestFullscreen();
+            } else if (container.webkitRequestFullscreen) {
+                container.webkitRequestFullscreen();
+            }
+        },
+
+        /**
+         * Limpa recursos
+         */
+        destroy() {
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+                this._currentBlobUrl = null;
+            }
+            this._lastDoc = null;
+        }
+    };
+
+    // ==============================================
+    // 🔥 EXPOR GLOBALMENTE
+    // ==============================================
+
+    window.PDFPreview = PDFPreview;
+
+    window.previewPDF = async function() {
+        return await PDFPreview.render();
+    };
+
+    window.downloadLastPDF = function() {
+        return PDFPreview.download();
+    };
+
+    // ==============================================
+    // 🔥 DIAGNÓSTICO
     // ==============================================
 
     window.diagnosticarPDF = function() {
@@ -844,30 +994,22 @@
         console.log('=== DIAGNÓSTICO PDF ===');
         console.log('1. Chaves raiz:', Object.keys(data));
         console.log('2. rows_processed:', data.rows_processed);
-        console.log('3. total_rows:', data.total_rows);
-        console.log('4. confidence_score:', data.confidence_score);
-        console.log('5. total_revenue:', data.total_revenue);
-        console.log('6. total_costs:', data.total_costs);
-        console.log('7. recommendations:', data.recommendations);
-        console.log('8. credits:', data.credits);
-        console.log('9. per_file_analysis:', data.per_file_analysis);
+        console.log('3. confidence_score:', data.confidence_score);
+        console.log('4. total_revenue:', data.total_revenue);
+        console.log('5. total_costs:', data.total_costs);
+        console.log('6. recommendations:', data.recommendations);
+        console.log('7. credits:', data.credits);
+        console.log('8. per_file_analysis:', data.per_file_analysis);
         
-        if (data.per_file_analysis) {
-            const firstKey = Object.keys(data.per_file_analysis)[0];
-            console.log('10. Primeiro arquivo em per_file_analysis:', firstKey);
-            console.log('11. metrics_extra:', data.per_file_analysis[firstKey]?.metrics_extra);
-        }
-        
-        const pdfGen = new PDFGenerator();
-        const metrics = pdfGen._extractMetrics(data);
-        console.log('=== MÉTRICAS EXTRAÍDAS PELO PDF ===');
+        const metrics = pdfGenerator._extractMetrics(data);
+        console.log('=== MÉTRICAS EXTRAÍDAS ===');
         console.log(metrics);
         
-        const recs = pdfGen._extractRecommendations(data);
+        const recs = pdfGenerator._extractRecommendations(data);
         console.log('=== RECOMENDAÇÕES EXTRAÍDAS ===');
         console.log(recs);
         
-        const credits = pdfGen._extractCredits(data);
+        const credits = pdfGenerator._extractCredits(data);
         console.log('=== CRÉDITOS EXTRAÍDOS ===');
         console.log(credits);
         
@@ -881,7 +1023,6 @@
             success: true,
             filename: 'oficina_ficticia_500_linhas.xlsx',
             rows_processed: 500,
-            model_used: 'intelligent_fallback_v7',
             confidence_score: 0.65,
             total_revenue: 3751.73,
             total_costs: 2128.48,
@@ -916,47 +1057,73 @@
             }
         };
         
-        await window.generatePDF({ filename: 'Teste_PDF_v6.0.pdf' });
-        console.log('✅ [PDF] Teste concluído!');
+        // 🔥 Renderiza no preview (não salva)
+        await PDFPreview.render();
+        console.log('✅ [PDF] Teste concluído! Preview renderizado.');
     };
 
     // ==============================================
-    // 🔥 EVENT LISTENER
+    // 🔥 EVENT LISTENERS
     // ==============================================
 
     document.addEventListener('DOMContentLoaded', function() {
-        const pdfBtns = document.querySelectorAll('#downloadPdfBtn, .pdf-btn, [data-pdf-btn]');
-        
-        pdfBtns.forEach(btn => {
-            btn.addEventListener('click', async function(e) {
+        // 🔥 BOTÕES DE ZOOM / FULLSCREEN
+        const zoomIn = document.getElementById('pdfZoomIn');
+        const zoomOut = document.getElementById('pdfZoomOut');
+        const fullscreen = document.getElementById('pdfFullscreen');
+
+        if (zoomIn) {
+            zoomIn.addEventListener('click', () => PDFPreview.applyZoom(PDFPreview._zoomLevel + 10));
+        }
+        if (zoomOut) {
+            zoomOut.addEventListener('click', () => PDFPreview.applyZoom(PDFPreview._zoomLevel - 10));
+        }
+        if (fullscreen) {
+            fullscreen.addEventListener('click', () => PDFPreview.fullscreen());
+        }
+
+        // 🔥 BOTÃO DE DOWNLOAD - usa o PDF já em memória se existir
+        const downloadBtn = document.getElementById('downloadPdfBtn');
+        if (downloadBtn) {
+            // Remove listeners antigos para não duplicar
+            const newBtn = downloadBtn.cloneNode(true);
+            downloadBtn.parentNode.replaceChild(newBtn, downloadBtn);
+
+            newBtn.addEventListener('click', async function(e) {
                 e.preventDefault();
-                console.log('📄 [PDF] Botão clicado');
-                
+                console.log('📄 [PDF] Botão Download clicado');
+
                 const originalText = this.innerHTML;
                 this.disabled = true;
-                this.innerHTML = '⏳ Gerando PDF...';
-                
+                this.innerHTML = '⏳ Baixando...';
+
                 try {
-                    await window.generatePDF();
+                    // 🔥 Se já temos preview em memória, apenas baixa
+                    if (PDFPreview._lastDoc) {
+                        PDFPreview.download();
+                    } else {
+                        // Senão, gera e baixa
+                        await window.generatePDF();
+                    }
                 } catch (error) {
-                    console.error('❌ [PDF] Erro:', error);
+                    console.error('❌ [PDF] Erro no download:', error);
                 } finally {
                     this.disabled = false;
                     this.innerHTML = originalText || '📄 Baixar Relatório PDF';
                 }
             });
-        });
+        }
     });
 
-    console.log('✅ PDF Generator v6.0 carregado!');
-    console.log('   📄 window.generatePDF()  - gera o PDF');
-    console.log('   🧪 window.testPDF()      - testa com dados de exemplo');
+    console.log('✅ PDF Generator v7.0 carregado!');
+    console.log('   📄 window.generatePDF()     - gera e BAIXA o PDF');
+    console.log('   👁️ window.previewPDF()       - gera e PRÉ-VISUALIZA o PDF');
+    console.log('   🧪 window.testPDF()         - testa com dados de exemplo');
     console.log('   🔍 window.diagnosticarPDF() - debug dos dados');
-    console.log('   🔥 CORREÇÕES v6.0:');
-    console.log('      ✅ Extração correta de per_file_analysis');
-    console.log('      ✅ Recomendações com "description"');
-    console.log('      ✅ Créditos normalizados');
-    console.log('      ✅ Acentos pt-BR mantidos');
-    console.log('      ✅ Gráfico com eixo Y');
+    console.log('   🔥 NOVIDADES v7.0:');
+    console.log('      ✅ PDFPreview: renderiza na div "Relatório da Ayla"');
+    console.log('      ✅ Zoom, fullscreen e download instantâneo');
+    console.log('      ✅ Blob URL (sem salvar até clicar em baixar)');
+    console.log('      ✅ "Ayla" substitui TODAS as menções a ML/modelo/IA');
 
 })();
