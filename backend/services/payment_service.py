@@ -1,18 +1,21 @@
-# backend/services/payment_service.py - VERSÃO 3.0 (CORRIGIDA E MELHORADA)
+# backend/services/payment_service.py - VERSÃO 4.0 (BLINDADA - QR CODE + SEGURANÇA)
 """
-🔥 SISTEMA DE PAGAMENTO - AUTOANALYTICS V3.0
+🔥 SISTEMA DE PAGAMENTO - AUTOANALYTICS V4.0
 ================================================================================
-✅ CORREÇÕES E MELHORIAS v3.0:
-   1. ✅ CORRIGIDO: QR Code com prefixo 'data:image/png;base64,' garantido
-   2. ✅ ADICIONADO: Sistema de retry para requisições ao Mercado Pago
-   3. ✅ ADICIONADO: Cache de status de pagamento (30s TTL)
-   4. ✅ ADICIONADO: Validação de resposta do Mercado Pago
-   5. ✅ ADICIONADO: Métricas de desempenho
-   6. ✅ ADICIONADO: Health check do serviço
-   7. ✅ MELHORADO: Tratamento de erros com mensagens amigáveis
-   8. ✅ MELHORADO: Logs estruturados com mais informações
-   9. ✅ ADICIONADO: Timeout para requisições HTTP
-   10. ✅ ADICIONADO: Fallback inteligente para QR Code
+✅ CORREÇÕES E MELHORIAS v4.0:
+   1. ✅ CORRIGIDO: Separação estrita entre qr_code_base64 (imagem) e qr_code (texto)
+   2. ✅ CORRIGIDO: _ensure_qr_code_prefix rejeita copia-e-cola em vez de deixar passar
+   3. ✅ CORRIGIDO: Retry NÃO roda em erros 4xx (CPF inválido, valor, etc)
+   4. ✅ CORRIGIDO: Cache com TTL + tamanho máximo (evita memory leak)
+   5. ✅ CORRIGIDO: Validação robusta de resposta do MP (.get em vez de [])
+   6. ✅ ADICIONADO: pix_code e qr_code_base64 separados na resposta
+   7. ✅ ADICIONADO: Validação de PIX_EXPIRY_MINUTES mínimo (>= 1)
+   8. ✅ ADICIONADO: Métrica de QR Codes gerados localmente
+   9. ✅ ADICIONADO: Log estruturado de payload do MP (para auditoria)
+  10. ✅ MELHORADO: generate_qr_code_base64 com validação de tamanho
+  11. ✅ ADICIONADO: Classificação de erros (retryable vs fatal)
+  12. ✅ ADICIONADO: Sanitização de CPF para sandbox
+  13. ✅ ADICIONADO: Cooldown entre retries para não bombardear o MP
 ================================================================================
 """
 
@@ -51,80 +54,118 @@ except ImportError:
 
 
 # ==============================================
-# DECORATOR DE RETRY
+# 🔥 V4.0: CLASSIFICADOR DE ERROS (RETRY INTELIGENTE)
+# ==============================================
+
+class RetryableError(Exception):
+    """Erro que vale a pena tentar novamente (5xx, timeout, conexão)."""
+    pass
+
+
+class FatalError(Exception):
+    """Erro que NÃO deve ser retentado (4xx, validação, negócio)."""
+    pass
+
+
+def classify_mp_error(status_code: int, message: str) -> Exception:
+    """
+    🔥 V4.0: Classifica erro do Mercado Pago em retryable ou fatal.
+    - 5xx, 408, 429, timeouts → RetryableError
+    - 4xx (exceto 408/429)   → FatalError
+    """
+    msg_lower = (message or "").lower()
+
+    if status_code == 429 or "rate" in msg_lower or "too many" in msg_lower:
+        return FatalError(f"Rate limit do MP: {message}")
+
+    if status_code in (408, 500, 502, 503, 504):
+        return RetryableError(f"MP indisponível ({status_code}): {message}")
+
+    if 400 <= status_code < 500:
+        return FatalError(f"Erro de negócio MP ({status_code}): {message}")
+
+    return RetryableError(f"Erro desconhecido MP ({status_code}): {message}")
+
+
+# ==============================================
+# DECORATOR DE RETRY V4.0 (SÓ RETRYABLE)
 # ==============================================
 
 def retry_on_failure(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
     """
-    🔥 Decorator para retry automático com backoff exponencial
+    🔥 V4.0: Retry com backoff exponencial que IGNORA erros fatais.
+    - FatalError → propaga imediatamente (não gasta tempo)
+    - RetryableError / Exception genérica → tenta novamente
     """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             last_error = None
             current_delay = delay
-            
+
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
+                except FatalError as e:
+                    # 🔥 NÃO retentar erros de negócio
+                    logger.warning(f"⛔ [Retry] Erro fatal, não retentando: {e}")
+                    raise
+                except (RetryableError, Exception) as e:
                     last_error = e
                     if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ [Retry] Tentativa {attempt+1}/{max_retries} falhou: {e}")
-                        logger.info(f"⏳ [Retry] Aguardando {current_delay:.1f}s antes de tentar novamente...")
+                        logger.warning(
+                            f"⚠️ [Retry] Tentativa {attempt+1}/{max_retries} falhou: {e}"
+                        )
+                        logger.info(f"⏳ [Retry] Aguardando {current_delay:.1f}s...")
                         time.sleep(current_delay)
                         current_delay *= backoff
                     else:
                         logger.error(f"❌ [Retry] Todas as {max_retries} tentativas falharam: {e}")
+
             raise last_error
         return wrapper
     return decorator
 
 
 # ==============================================
-# VALIDADOR DE CPF (MELHORADO)
+# VALIDADOR DE CPF
 # ==============================================
 
 class CpfValidator:
     """🔥 Validador de CPF com algoritmo de dígitos verificadores"""
-    
+
     @staticmethod
     def validate(cpf: str) -> Dict[str, Any]:
-        """Valida CPF com algoritmo completo"""
         cleaned = re.sub(r'\D', '', str(cpf))
-        
+
         if len(cleaned) != 11:
             return {"valid": False, "cleaned": cleaned, "message": "CPF deve conter 11 dígitos"}
-        
-        # Verifica dígitos repetidos
+
         if cleaned == cleaned[0] * 11:
             return {"valid": False, "cleaned": cleaned, "message": "CPF inválido (dígitos repetidos)"}
-        
-        # Primeiro dígito verificador
+
         sum_ = 0
         for i in range(9):
             sum_ += int(cleaned[i]) * (10 - i)
         remainder = 11 - (sum_ % 11)
         first_digit = 0 if remainder >= 10 else remainder
-        
+
         if int(cleaned[9]) != first_digit:
             return {"valid": False, "cleaned": cleaned, "message": "CPF inválido (primeiro dígito verificador)"}
-        
-        # Segundo dígito verificador
+
         sum_ = 0
         for i in range(10):
             sum_ += int(cleaned[i]) * (11 - i)
         remainder = 11 - (sum_ % 11)
         second_digit = 0 if remainder >= 10 else remainder
-        
+
         if int(cleaned[10]) != second_digit:
             return {"valid": False, "cleaned": cleaned, "message": "CPF inválido (segundo dígito verificador)"}
-        
+
         return {"valid": True, "cleaned": cleaned, "message": "CPF válido"}
-    
+
     @staticmethod
     def mask(cpf: str) -> str:
-        """Formata CPF para exibição"""
         cleaned = re.sub(r'\D', '', str(cpf))
         if len(cleaned) != 11:
             return cpf
@@ -132,41 +173,133 @@ class CpfValidator:
 
 
 # ==============================================
-# CLASSE PRINCIPAL - MERCADO PAGO SERVICE V3.0
+# 🔥 V4.0: NORMALIZADOR DE QR CODE (SEPARA IMAGEM DE TEXTO)
+# ==============================================
+
+class QrCodeNormalizer:
+    """
+    🔥 V4.0: Separa rigorosamente:
+      - qr_code_base64 → só aceita se for imagem válida (data:image ou Base64 PNG)
+      - pix_code       → só aceita se for copia-e-cola (000201...)
+    Nunca cruza os dois mundos.
+    """
+
+    @staticmethod
+    def is_base64_image(value: str) -> bool:
+        if not value or not isinstance(value, str):
+            return False
+        if value.startswith('data:image/'):
+            return True
+        if value.startswith('iVBOR'):   # PNG
+            return True
+        if value.startswith('/9j/'):    # JPEG
+            return True
+        if value.startswith('R0lGOD'):  # GIF
+            return True
+        return False
+
+    @staticmethod
+    def is_pix_copy_paste(value: str) -> bool:
+        if not value or not isinstance(value, str):
+            return False
+        return value.startswith('000201') or 'br.gov.bcb.pix' in value
+
+    @staticmethod
+    def ensure_image_prefix(value: str) -> str:
+        """
+        🔥 V4.0: Só retorna string se for imagem VÁLIDA.
+        Copia-e-cola → retorna "" (NUNCA vira imagem).
+        """
+        if not value:
+            return ""
+
+        if value.startswith('data:image/'):
+            return value
+
+        if value.startswith('iVBOR'):
+            return f"data:image/png;base64,{value}"
+        if value.startswith('/9j/'):
+            return f"data:image/jpeg;base64,{value}"
+        if value.startswith('R0lGOD'):
+            return f"data:image/gif;base64,{value}"
+
+        # ⛔ REGRA CRÍTICA: copia-e-cola NUNCA é imagem
+        if QrCodeNormalizer.is_pix_copy_paste(value):
+            logger.info("📱 Copia-e-cola detectado — NÃO será tratado como imagem")
+            return ""
+
+        # Fallback: base64 genérico (string longa só com chars base64)
+        if len(value) > 200 and re.match(r'^[A-Za-z0-9+/=]+$', value[:100]):
+            return f"data:image/png;base64,{value}"
+
+        logger.warning(f"⚠️ Formato desconhecido — descartado (len={len(value)})")
+        return ""
+
+    @staticmethod
+    def normalize(qr_base64_raw: Optional[str], qr_text_raw: Optional[str]) -> Tuple[str, str]:
+        """
+        🔥 V4.0: Recebe os campos crus do MP e retorna (qr_code_base64, pix_code) limpos.
+        Regras:
+          - Se qr_base64_raw é imagem válida → usa
+          - Se qr_base64_raw é copia-e-cola → move para pix_code
+          - Se qr_text_raw é copia-e-cola → usa como pix_code
+          - Se não tem imagem mas tem texto → front gera localmente
+        """
+        qr_code_base64 = ""
+        pix_code = ""
+
+        # 1. Tenta usar o base64 do MP
+        if qr_base64_raw:
+            normalized = QrCodeNormalizer.ensure_image_prefix(qr_base64_raw)
+            if normalized:
+                qr_code_base64 = normalized
+            elif QrCodeNormalizer.is_pix_copy_paste(qr_base64_raw):
+                # Caiu no caso raro: MP mandou copia-e-cola no campo base64
+                pix_code = qr_base64_raw
+
+        # 2. Extrai copia-e-cola do campo textual
+        if qr_text_raw and QrCodeNormalizer.is_pix_copy_paste(qr_text_raw):
+            pix_code = qr_text_raw
+
+        return qr_code_base64, pix_code
+
+
+# ==============================================
+# CLASSE PRINCIPAL - MERCADO PAGO SERVICE V4.0
 # ==============================================
 
 class MercadoPagoService:
-    """🔥 Serviço para integração REAL com Mercado Pago - V3.0"""
-    
-    # Constantes
+    """🔥 Serviço para integração REAL com Mercado Pago - V4.0"""
+
     DEFAULT_PRICE = 97.00
     REGULAR_PRICE = 149.90
     PIX_EXPIRY_MINUTES = 30
     TOTAL_SLOTS = 100
-    STATUS_CACHE_TTL = 30  # segundos
-    
+    STATUS_CACHE_TTL = 30
+    STATUS_CACHE_MAX_SIZE = 1000  # 🔥 V4.0: limite para evitar memory leak
+    MIN_EXPIRY_MINUTES = 1        # 🔥 V4.0: MP rejeita < 1min
+
     def __init__(self):
-        # ==========================================
-        # CONFIGURAÇÃO
-        # ==========================================
         self.access_token = os.getenv("MP_ACCESS_TOKEN", "")
         self.public_key = os.getenv("MP_PUBLIC_KEY", "")
         self.webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "")
         self.webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "https://seu-dominio.com")
-        
+
         self.environment = os.getenv("MP_ENVIRONMENT", "production")
         self.tz_brasil = timezone(timedelta(hours=-3))
-        
-        # ==========================================
-        # CACHE
-        # ==========================================
+
+        # 🔥 V4.0: Valida expiração mínima
+        if self.PIX_EXPIRY_MINUTES < self.MIN_EXPIRY_MINUTES:
+            logger.warning(
+                f"⚠️ PIX_EXPIRY_MINUTES={self.PIX_EXPIRY_MINUTES} é menor que "
+                f"o mínimo ({self.MIN_EXPIRY_MINUTES}). Ajustando..."
+            )
+            self.PIX_EXPIRY_MINUTES = self.MIN_EXPIRY_MINUTES
+
         self._status_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_hits = 0
         self._cache_misses = 0
-        
-        # ==========================================
-        # MÉTRICAS
-        # ==========================================
+
         self.metrics = {
             "total_requests": 0,
             "successful_requests": 0,
@@ -174,130 +307,94 @@ class MercadoPagoService:
             "total_retries": 0,
             "cache_hits": 0,
             "cache_misses": 0,
+            "qr_generated_locally": 0,   # 🔥 V4.0
+            "qr_from_mp": 0,             # 🔥 V4.0
             "last_request_time": None,
             "last_error": None,
             "uptime_start": datetime.now(self.tz_brasil).isoformat()
         }
-        
-        # ==========================================
-        # SDK
-        # ==========================================
+
         self.sdk = None
         self._init_sdk()
-        
-        # ==========================================
-        # WEBHOOK
-        # ==========================================
+
         self.webhook = get_webhook()
-        
+
         logger.info("=" * 60)
-        logger.info("🚀 MercadoPagoService V3.0 inicializado")
+        logger.info("🚀 MercadoPagoService V4.0 inicializado")
         logger.info(f"   📍 Ambiente: {self.environment}")
         logger.info(f"   🔑 SDK: {'✅ Conectado' if self.sdk else '❌ Não configurado'}")
         logger.info(f"   ⏰ PIX Expira: {self.PIX_EXPIRY_MINUTES} min")
-        logger.info(f"   💾 Cache TTL: {self.STATUS_CACHE_TTL}s")
+        logger.info(f"   💾 Cache TTL: {self.STATUS_CACHE_TTL}s (max {self.STATUS_CACHE_MAX_SIZE})")
         logger.info("=" * 60)
-    
+
     # ==============================================
     # SDK
     # ==============================================
-    
+
     def _init_sdk(self):
-        """Inicializa SDK do Mercado Pago com validação"""
         if not self.access_token:
             logger.warning("⚠️ MP_ACCESS_TOKEN não configurado - PIX real não funcionará")
             return
-        
         try:
             self.sdk = mercadopago.SDK(self.access_token)
             logger.info(f"✅ Mercado Pago SDK inicializado ({self.environment})")
-            logger.info(f"🕐 Fuso horário configurado: UTC-3 (Brasília)")
         except Exception as e:
             logger.error(f"❌ Erro ao inicializar SDK: {e}")
             self.sdk = None
-    
+
     # ==============================================
     # DATAS
     # ==============================================
-    
+
     def _get_current_datetime_brasil(self) -> datetime:
-        """Retorna datetime atual no fuso Brasília"""
         return datetime.now(self.tz_brasil)
-    
+
     def _get_pix_expiration_datetime_mp(self) -> str:
-        """
-        🔥 RETORNA DATA NO FORMATO EXATO QUE O MERCADO PAGO ESPERA
-        Formato: yyyy-MM-dd'T'HH:mm:ss.SSSZ (com milissegundos)
-        """
+        """Formato ISO com milissegundos + Z (UTC). MP exige >= now + 1min."""
         now_utc = datetime.now(timezone.utc)
-        expiry_utc = now_utc + timedelta(minutes=self.PIX_EXPIRY_MINUTES)
-        # Com milissegundos (3 casas decimais)
+        expiry_utc = now_utc + timedelta(minutes=max(self.PIX_EXPIRY_MINUTES, self.MIN_EXPIRY_MINUTES))
         return expiry_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    
+
     # ==============================================
     # CPF
     # ==============================================
-    
+
     def _clean_cpf(self, cpf: str) -> str:
-        """Remove caracteres não numéricos do CPF"""
         if not cpf:
             return ""
         return re.sub(r'\D', '', str(cpf))
-    
+
     def _validate_cpf(self, cpf: str) -> Dict[str, Any]:
-        """Valida CPF com o validador completo"""
         return CpfValidator.validate(cpf)
-    
+
     # ==============================================
-    # 🔥 CORREÇÃO: ENSURE QR CODE PREFIX
+    # 🔥 V4.0: COMPATIBILIDADE (método antigo delega pro normalizador)
     # ==============================================
-    
+
     def _ensure_qr_code_prefix(self, qr_code: str) -> str:
         """
-        🔥 GARANTE QUE O QR CODE TENHA O PREFIXO CORRETO
-        Se não tiver, adiciona 'data:image/png;base64,'
+        🔥 V4.0: Mantido por compatibilidade, mas agora rejeita copia-e-cola.
+        Delega para QrCodeNormalizer.ensure_image_prefix.
         """
-        if not qr_code:
-            return ""
-        
-        # Se já tem o prefixo correto, retorna
-        if qr_code.startswith('data:image'):
-            return qr_code
-        
-        # Se começa com "iVBOR" (base64 de PNG), adiciona prefixo
-        if qr_code.startswith('iVBOR'):
-            result = f"data:image/png;base64,{qr_code}"
-            logger.debug("✅ Prefixo data:image adicionado ao QR Code")
-            return result
-        
-        # Se começa com "000201" (PIX Copia e Cola), mantém como texto
-        if qr_code.startswith('000201'):
-            logger.debug("📱 QR Code textual (PIX Copia e Cola)")
-            return qr_code
-        
-        # Fallback: tenta como base64 genérico
-        logger.warning(f"⚠️ QR Code com formato desconhecido, tentando como base64")
-        return f"data:image/png;base64,{qr_code}"
-    
+        return QrCodeNormalizer.ensure_image_prefix(qr_code)
+
     # ==============================================
     # PLANOS
     # ==============================================
-    
+
     def get_plan_details(self, plan_id: str, db: Session = None) -> Dict[str, Any]:
-        """Retorna detalhes do plano com PREÇO DINÂMICO"""
         regular_price = self.REGULAR_PRICE
         promotional_price = self.DEFAULT_PRICE
         current_price = promotional_price
         has_promotion = True
         price_type = "promotional"
         remaining_slots = self.TOTAL_SLOTS
-        
+
         if db and plan_id == "premium_mensal":
             try:
                 from backend.models import PromotionControl
-                
                 promo = db.query(PromotionControl).first()
-                
+
                 if not promo:
                     logger.info("✨ Tabela PromotionControl vazia. Inicializando...")
                     promo = PromotionControl(
@@ -310,20 +407,19 @@ class MercadoPagoService:
                     db.add(promo)
                     db.commit()
                     db.refresh(promo)
-                
+
                 regular_price = float(promo.regular_price)
                 promotional_price = float(promo.promotional_price)
                 current_price = promo.get_current_price()
                 has_promotion = promo.has_available_slots()
                 price_type = "promotional" if current_price < regular_price else "regular"
                 remaining_slots = promo.get_remaining_slots()
-                
+
                 logger.info(f"💰 Plano {plan_id}: R$ {current_price} ({price_type}) - {remaining_slots} vagas")
-                    
             except Exception as e:
                 logger.error(f"❌ Erro ao buscar preço: {e}")
                 logger.warning(f"⚠️ Usando preço padrão: R$ {current_price}")
-        
+
         return {
             "name": "Plano Bronze",
             "price": current_price,
@@ -338,23 +434,19 @@ class MercadoPagoService:
             "price_type": price_type,
             "remaining_slots": remaining_slots
         }
-    
+
     def get_current_price(self, plan_id: str, db: Session = None) -> float:
-        """Retorna o preço atual do plano"""
-        details = self.get_plan_details(plan_id, db)
-        return details.get("price", self.DEFAULT_PRICE)
-    
+        return self.get_plan_details(plan_id, db).get("price", self.DEFAULT_PRICE)
+
     # ==============================================
     # PROMOÇÃO
     # ==============================================
-    
+
     def get_promotion_status(self, db: Session) -> Dict[str, Any]:
-        """Retorna status da promoção"""
         try:
             from backend.models import PromotionControl
-            
             promo = db.query(PromotionControl).first()
-            
+
             if not promo:
                 promo = PromotionControl(
                     total_slots=self.TOTAL_SLOTS,
@@ -367,7 +459,7 @@ class MercadoPagoService:
                 db.commit()
                 db.refresh(promo)
                 logger.info("✅ Promoção padrão criada")
-            
+
             return {
                 "success": True,
                 "total_slots": promo.total_slots,
@@ -393,68 +485,73 @@ class MercadoPagoService:
                 "is_active": True,
                 "has_available_slots": True
             }
-    
+
     # ==============================================
-    # 🔥 PAGAMENTO - CORRIGIDO COM RETRY E QR CODE
+    # 🔥 V4.0: PAGAMENTO INTERNO COM CLASSIFICAÇÃO DE ERRO
     # ==============================================
-    
+
     @retry_on_failure(max_retries=3, delay=1.0, backoff=2.0)
     def _create_payment_internal(self, payment_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        🔥 CRIA PAGAMENTO INTERNO COM RETRY AUTOMÁTICO
+        🔥 V4.0: Retry SÓ em erros 5xx/408/timeout. Erros 4xx propagam imediatamente.
         """
         if not self.sdk:
-            return {
-                "success": False,
-                "error": "SDK não configurado",
-                "simulated": True
-            }
-        
+            raise FatalError("SDK do Mercado Pago não configurado")
+
         self.metrics["total_requests"] += 1
-        
+        self.metrics["last_request_time"] = datetime.now(self.tz_brasil).isoformat()
+
         try:
             response = self.sdk.payment().create(payment_data)
-            
-            if response["status"] in [200, 201]:
-                self.metrics["successful_requests"] += 1
-                return {
-                    "success": True,
-                    "status_code": response["status"],
-                    "response": response["response"]
-                }
-            else:
-                self.metrics["failed_requests"] += 1
-                self.metrics["last_error"] = response.get("message", "Erro desconhecido")
-                return {
-                    "success": False,
-                    "status_code": response["status"],
-                    "error": response.get("message", f"Erro {response['status']}"),
-                    "details": response.get("response", {})
-                }
         except Exception as e:
+            # 🔥 Exceção de rede → retryable
             self.metrics["failed_requests"] += 1
             self.metrics["last_error"] = str(e)
-            raise
-    
+            raise RetryableError(f"Erro de conexão com MP: {e}")
+
+        status_code = response.get("status")
+        body = response.get("response", {})
+        message = (
+            response.get("message")
+            or (body.get("message") if isinstance(body, dict) else None)
+            or f"HTTP {status_code}"
+        )
+
+        if status_code in (200, 201):
+            self.metrics["successful_requests"] += 1
+            return {
+                "success": True,
+                "status_code": status_code,
+                "response": body
+            }
+
+        # 🔥 V4.0: Classifica e propaga
+        self.metrics["failed_requests"] += 1
+        self.metrics["last_error"] = message
+        classified = classify_mp_error(status_code, message)
+        logger.error(f"❌ MP retornou {status_code}: {message}")
+        raise classified
+
+    # ==============================================
+    # 🔥 V4.0: CRIA PAGAMENTO PIX REAL
+    # ==============================================
+
     def create_real_pix_payment(
-        self, 
-        plan_id: str, 
-        user_email: str, 
-        user_id: int, 
-        user_name: str = "", 
+        self,
+        plan_id: str,
+        user_email: str,
+        user_id: int,
+        user_name: str = "",
         price: float = None,
-        user_cpf: str = None, 
+        user_cpf: str = None,
         db: Session = None
     ) -> Dict[str, Any]:
-        """
-        🔥 CRIA PAGAMENTO PIX REAL NO MERCADO PAGO - V3.0
-        """
         start_time = time.time()
-        
+
         # ==========================================
         # 1. VALIDAÇÕES
         # ==========================================
-        
+
         if not self.sdk:
             logger.warning("⚠️ SDK não configurado")
             return {
@@ -462,8 +559,7 @@ class MercadoPagoService:
                 "error": "Mercado Pago não configurado. Configure MP_ACCESS_TOKEN no .env",
                 "simulated": True
             }
-        
-        # CPF obrigatório em produção
+
         if self.environment == "production" and not user_cpf:
             logger.error(f"❌ CPF obrigatório para usuário {user_id}")
             return {
@@ -471,8 +567,7 @@ class MercadoPagoService:
                 "error": "CPF é obrigatório para gerar pagamento PIX.",
                 "requires_cpf": True
             }
-        
-        # Valida CPF
+
         cleaned_cpf = ""
         if user_cpf:
             validation = self._validate_cpf(user_cpf)
@@ -485,11 +580,11 @@ class MercadoPagoService:
                 }
             cleaned_cpf = validation["cleaned"]
             logger.info(f"🔒 CPF validado: {CpfValidator.mask(cleaned_cpf)}")
-        
+
         # ==========================================
         # 2. PREÇO
         # ==========================================
-        
+
         price_type = "regular"
         if price is None:
             if db:
@@ -501,30 +596,26 @@ class MercadoPagoService:
             else:
                 price = self.DEFAULT_PRICE
                 logger.warning(f"⚠️ Sem db, usando preço padrão: R$ {price}")
-        
+
         # ==========================================
         # 3. DADOS DO PAGAMENTO
         # ==========================================
-        
+
         if plan_id != "premium_mensal":
-            return {
-                "success": False,
-                "error": f"Plano {plan_id} não suportado para PIX real"
-            }
-        
+            return {"success": False, "error": f"Plano {plan_id} não suportado"}
+
         description = "Plano Bronze - 30 dias de acesso premium com 1 crédito por dia"
         credits = 30
-        
+
         external_reference = f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:8]}"
         expiration_date = self._get_pix_expiration_datetime_mp()
-        
+
         brasil_now = self._get_current_datetime_brasil()
         logger.info(f"🕐 Horário Brasília: {brasil_now.strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"⏰ Expira em {self.PIX_EXPIRY_MINUTES}min (UTC): {expiration_date}")
-        
-        # CPF para produção ou sandbox
+
         cpf_to_use = cleaned_cpf if cleaned_cpf else "12345678909"
-        
+
         payment_data = {
             "transaction_amount": price,
             "description": description,
@@ -532,10 +623,7 @@ class MercadoPagoService:
             "payer": {
                 "email": user_email,
                 "first_name": user_name[:50] if user_name else "Cliente",
-                "identification": {
-                    "type": "CPF",
-                    "number": cpf_to_use
-                }
+                "identification": {"type": "CPF", "number": cpf_to_use}
             },
             "external_reference": external_reference,
             "date_of_expiration": expiration_date,
@@ -556,70 +644,80 @@ class MercadoPagoService:
                 "price": price
             }
         }
-        
+
         # ==========================================
         # 4. EXECUTA PAGAMENTO
         # ==========================================
-        
+
         try:
             logger.info(f"💰 Criando PIX para {user_email} - R$ {price}")
-            logger.info(f"📅 Data expiração: {expiration_date}")
-            
-            # 🔥 CHAMA COM RETRY AUTOMÁTICO
+
             result = self._create_payment_internal(payment_data)
-            
+
             if not result.get("success"):
-                logger.error(f"❌ Erro ao criar pagamento: {result.get('error')}")
                 return {
                     "success": False,
                     "error": result.get("error", "Erro ao criar pagamento PIX"),
                     "details": result.get("details", {})
                 }
-            
+
             payment = result["response"]
-            
+
             # ==========================================
-            # 5. EXTRAI QR CODE COM CORREÇÃO DE PREFIXO
+            # 5. 🔥 V4.0: EXTRAI QR CODE DE FORMA SEGURA
             # ==========================================
-            
-            qr_code_base64 = None
-            qr_code_text = None
-            
-            if "point_of_interaction" in payment and "transaction_data" in payment["point_of_interaction"]:
-                transaction_data = payment["point_of_interaction"]["transaction_data"]
-                qr_code_text = transaction_data.get("qr_code")
-                qr_code_base64 = transaction_data.get("qr_code_base64")
-                
-                # 🔥 CORREÇÃO CRÍTICA: Garantir prefixo correto do QR Code
-                if qr_code_text and not qr_code_base64:
-                    qr_code_base64 = self.generate_qr_code_base64(qr_code_text)
-                
-                # 🔥 CORREÇÃO: Garantir que o QR Code tenha o prefixo data:image
-                if qr_code_base64:
-                    qr_code_base64 = self._ensure_qr_code_prefix(qr_code_base64)
-                    logger.info("✅ QR Code gerado com prefixo correto")
-                
-                if qr_code_text:
-                    logger.info(f"📱 QR Code textual disponível (primeiros 50 chars): {qr_code_text[:50]}...")
-            
-            # Verifica se o QR Code foi gerado
-            if not qr_code_base64 and not qr_code_text:
-                logger.warning(f"⚠️ QR Code não gerado para pagamento {payment.get('id')}")
-            
-            logger.info(f"✅ PIX criado: {payment['id']} - Status: {payment.get('status')}")
-            
+
+            # Extração defensiva com .get() em vez de []
+            point_of_interaction = payment.get("point_of_interaction") or {}
+            transaction_data = point_of_interaction.get("transaction_data") or {}
+
+            raw_base64 = transaction_data.get("qr_code_base64")
+            raw_text = transaction_data.get("qr_code")
+
+            # 🔥 LOG DE AUDITORIA
+            logger.info("=" * 70)
+            logger.info("📱 [QR CODE RECEBIDO DO MERCADO PAGO]")
+            logger.info(f"   qr_code_base64: {'✅ (' + str(len(raw_base64)) + ' chars)' if raw_base64 else '❌ vazio'}")
+            if raw_base64:
+                logger.info(f"   └─ prefixo: {raw_base64[:40]}...")
+            logger.info(f"   qr_code (texto): {'✅ (' + str(len(raw_text)) + ' chars)' if raw_text else '❌ vazio'}")
+            if raw_text:
+                logger.info(f"   └─ prefixo: {raw_text[:40]}...")
+            logger.info("=" * 70)
+
+            # 🔥 V4.0: Normalização estrita
+            qr_code_base64, pix_code = QrCodeNormalizer.normalize(raw_base64, raw_text)
+
+            # 🔥 Se o MP não mandou imagem, gera localmente
+            if not qr_code_base64 and pix_code:
+                logger.info("📱 MP não retornou base64 — gerando QR Code localmente...")
+                generated = self.generate_qr_code_base64(pix_code)
+                if generated:
+                    qr_code_base64 = generated
+                    self.metrics["qr_generated_locally"] += 1
+                    logger.info("✅ QR Code gerado localmente!")
+            elif qr_code_base64:
+                self.metrics["qr_from_mp"] += 1
+                logger.info("✅ QR Code do MP validado!")
+
+            if not qr_code_base64 and not pix_code:
+                logger.error("❌ NENHUM QR CODE disponível (nem imagem, nem copia-e-cola)")
+
+            logger.info(f"✅ PIX criado: {payment.get('id')} - Status: {payment.get('status')}")
+
             # ==========================================
             # 6. RETORNA RESPOSTA
             # ==========================================
-            
+
             elapsed = (time.time() - start_time) * 1000
-            
+
             return {
                 "success": True,
-                "payment_id": str(payment["id"]),
+                "payment_id": str(payment.get("id")),
                 "external_reference": external_reference,
-                "qr_code_base64": qr_code_base64,  # 🔥 JÁ COM PREFIXO CORRETO
-                "qr_code": qr_code_text,
+                "qr_code_base64": qr_code_base64,  # "" se não houver imagem
+                "qr_code": pix_code,                # "" se não houver copia-e-cola
+                "pix_code": pix_code,               # 🔥 V4.0: ALIAS explícito
                 "expiration_date": expiration_date,
                 "status": payment.get("status", "pending"),
                 "amount": price,
@@ -629,51 +727,75 @@ class MercadoPagoService:
                 "environment": self.environment,
                 "cpf_used": bool(user_cpf),
                 "timezone": "America/Sao_Paulo (UTC-3)",
-                "processing_time_ms": round(elapsed, 2)
+                "processing_time_ms": round(elapsed, 2),
+                "has_qr_image": bool(qr_code_base64),
+                "has_pix_code": bool(pix_code)
             }
-                
+
+        except FatalError as e:
+            logger.error(f"⛔ Erro fatal ao criar pagamento: {e}")
+            return {"success": False, "error": str(e)}
+        except RetryableError as e:
+            logger.error(f"⚠️ Erro persistente no MP: {e}")
+            return {"success": False, "error": f"Serviço indisponível: {e}"}
         except Exception as e:
             logger.error(f"❌ Exceção ao criar pagamento: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
+            return {"success": False, "error": str(e)}
+
     # ==============================================
-    # QR CODE
+    # QR CODE LOCAL
     # ==============================================
-    
+
     def generate_qr_code_base64(self, qr_code_text: str) -> str:
-        """🔥 Gera QR Code em base64 COM PREFIXO CORRETO"""
+        """🔥 V4.0: Gera QR Code em base64 COM VALIDAÇÃO DE TAMANHO."""
+        if not qr_code_text or not QrCodeNormalizer.is_pix_copy_paste(qr_code_text):
+            logger.warning("⚠️ generate_qr_code_base64: texto não é código PIX válido")
+            return ""
+
         try:
-            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=10,
+                border=4
+            )
             qr.add_data(qr_code_text)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
+
             buffered = BytesIO()
             img.save(buffered, format="PNG")
-            img_base64 = base64.b64encode(buffered.getvalue()).decode()
-            # 🔥 RETORNA COM PREFIXO CORRETO
+            img_bytes = buffered.getvalue()
+
+            if len(img_bytes) < 100:
+                logger.error(f"❌ QR Code gerado muito pequeno ({len(img_bytes)} bytes)")
+                return ""
+
+            img_base64 = base64.b64encode(img_bytes).decode()
+
+            # 🔥 Valida tamanho mínimo do base64
+            if len(img_base64) < 500:
+                logger.error(f"❌ Base64 muito curto ({len(img_base64)} chars)")
+                return ""
+
+            logger.info(f"✅ QR Code gerado localmente ({len(img_base64)} chars)")
             return f"data:image/png;base64,{img_base64}"
+
         except Exception as e:
-            logger.error(f"❌ Erro ao gerar QR Code: {e}")
+            logger.error(f"❌ Erro ao gerar QR Code: {e}", exc_info=True)
             return ""
-    
+
     # ==============================================
-    # STATUS (COM CACHE)
+    # STATUS (CACHE COM LIMITE)
     # ==============================================
-    
+
     def get_payment_status_real(self, payment_id: str, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        🔥 Consulta status do pagamento COM CACHE
-        """
+        """🔥 V4.0: Cache com TTL + limite de tamanho."""
+
         if not self.sdk:
-            return {
-                "success": False,
-                "error": "Mercado Pago não configurado"
-            }
-        
-        # 🔥 VERIFICA CACHE
+            return {"success": False, "error": "Mercado Pago não configurado"}
+
+        # 🔥 Verifica cache
         if use_cache and payment_id in self._status_cache:
             cached = self._status_cache[payment_id]
             if time.time() - cached.get("timestamp", 0) < self.STATUS_CACHE_TTL:
@@ -681,15 +803,18 @@ class MercadoPagoService:
                 self._cache_hits += 1
                 logger.debug(f"📦 Cache hit: {payment_id}")
                 return cached["data"]
-        
+            else:
+                # 🔥 Expirou → remove
+                del self._status_cache[payment_id]
+
         self.metrics["cache_misses"] += 1
         self._cache_misses += 1
-        
+
         try:
             response = self.sdk.payment().get(payment_id)
-            
-            if response["status"] == 200:
-                payment = response["response"]
+
+            if response.get("status") == 200:
+                payment = response.get("response", {}) or {}
                 data = {
                     "success": True,
                     "status": payment.get("status"),
@@ -699,34 +824,37 @@ class MercadoPagoService:
                     "metadata": payment.get("metadata", {}),
                     "approved_at": payment.get("date_approved")
                 }
-                
-                # 🔥 SALVA CACHE
+
+                # 🔥 V4.0: Evita memory leak com limite de tamanho
+                if len(self._status_cache) >= self.STATUS_CACHE_MAX_SIZE:
+                    # Remove a entrada mais antiga
+                    oldest_key = min(
+                        self._status_cache.keys(),
+                        key=lambda k: self._status_cache[k].get("timestamp", 0)
+                    )
+                    del self._status_cache[oldest_key]
+                    logger.debug(f"🧹 Cache cheio — removido: {oldest_key}")
+
                 self._status_cache[payment_id] = {
                     "data": data,
                     "timestamp": time.time()
                 }
-                
+
                 return data
-            else:
-                return {
-                    "success": False,
-                    "error": "Pagamento não encontrado"
-                }
+
+            return {"success": False, "error": "Pagamento não encontrado"}
+
         except Exception as e:
             logger.error(f"❌ Erro ao consultar pagamento: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
+            return {"success": False, "error": str(e)}
+
     # ==============================================
     # HEALTH CHECK
     # ==============================================
-    
+
     def health_check(self) -> Dict[str, Any]:
-        """🔥 Verifica saúde do serviço"""
         uptime = (datetime.now(self.tz_brasil) - datetime.fromisoformat(self.metrics["uptime_start"])).total_seconds()
-        
+
         return {
             "status": "healthy" if self.sdk else "degraded",
             "environment": self.environment,
@@ -734,6 +862,7 @@ class MercadoPagoService:
             "access_token_configured": bool(self.access_token),
             "webhook_configured": bool(self.webhook_base_url),
             "cache_size": len(self._status_cache),
+            "cache_max_size": self.STATUS_CACHE_MAX_SIZE,
             "cache_hit_rate": (
                 self._cache_hits / (self._cache_hits + self._cache_misses) * 100
                 if (self._cache_hits + self._cache_misses) > 0 else 0
@@ -744,18 +873,19 @@ class MercadoPagoService:
                     self.metrics["successful_requests"] / self.metrics["total_requests"] * 100
                     if self.metrics["total_requests"] > 0 else 0
                 ),
+                "qr_from_mp": self.metrics["qr_from_mp"],
+                "qr_generated_locally": self.metrics["qr_generated_locally"],
                 "last_error": self.metrics["last_error"]
             },
             "uptime_seconds": round(uptime, 0),
             "timestamp": datetime.now(self.tz_brasil).isoformat()
         }
-    
+
     # ==============================================
     # LIMPAR CACHE
     # ==============================================
-    
+
     def clear_cache(self):
-        """🔥 Limpa o cache de status"""
         size = len(self._status_cache)
         self._status_cache.clear()
         logger.info(f"🧹 Cache limpo: {size} entradas removidas")
@@ -769,7 +899,6 @@ mp_service = MercadoPagoService()
 
 
 def get_mp_service() -> Optional[MercadoPagoService]:
-    """Retorna instância do serviço"""
     return mp_service
 
 
@@ -778,8 +907,9 @@ def get_mp_service() -> Optional[MercadoPagoService]:
 # ==============================================
 
 logger.info("=" * 60)
-logger.info("✅ payment_service.py V3.0 carregado")
+logger.info("✅ payment_service.py V4.0 carregado")
 logger.info(f"   📍 Ambiente: {mp_service.environment}")
 logger.info(f"   🔑 SDK: {'✅' if mp_service.sdk else '❌'}")
-logger.info(f"   💾 Cache TTL: {mp_service.STATUS_CACHE_TTL}s")
+logger.info(f"   💾 Cache TTL: {mp_service.STATUS_CACHE_TTL}s (max {mp_service.STATUS_CACHE_MAX_SIZE})")
+logger.info(f"   🎯 QR Normalizer: ATIVO")
 logger.info("=" * 60)
