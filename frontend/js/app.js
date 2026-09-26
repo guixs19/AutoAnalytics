@@ -1,21 +1,20 @@
-// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.7 (CORREÇÃO DE CRÉDITOS)
+// frontend/js/app.js - ORQUESTRADOR CENTRAL - v7.8 (CICLO DE 24H)
 /**
  * AutoAnalytics - Módulo Principal da Aplicação
  * 
- * 🏗️ ARQUITETURA V7.7:
- * 1. 🔥 CORRIGIDO: NÃO CONSOLE créditos no upload (apenas verifica)
- * 2. 🔥 CORRIGIDO: Sincronização de créditos via /auth/me
- * 3. 🔥 CORRIGIDO: Evento credits:consumed escuta o backend
- * 4. 🔥 CORRIGIDO: UI atualiza corretamente após consumo
- * 5. 🔥 MANTIDO: Elegibilidade de créditos
- * 6. 🔥 MANTIDO: Verificação automática de crédito diário
- * 7. 🔥 MANTIDO: UI reativa para elegibilidade
+ * 🏗️ ARQUITETURA V7.8:
+ * 1. 🔥 MANTIDO: NÃO CONSOLE créditos no upload (apenas verifica)
+ * 2. 🔥 MANTIDO: Sincronização de créditos via /auth/me
+ * 3. 🔥 MANTIDO: Evento credits:consumed escuta o backend
+ * 4. 🔥 MANTIDO: Elegibilidade de créditos
+ * 5. 🔥 NOVO: Card do ciclo de 24h (next_credit_at_human)
+ * 6. 🔥 NOVO: Mensagens relativas ao ciclo ("amanhã às 14:30")
  * 
- * 🔥 CORREÇÕES V7.7:
- * - Removido consumo de créditos no frontend
- * - Apenas verifica se tem créditos suficientes
- * - Sincroniza com backend após análise
- * - Eventos agora usam sync ao invés de update direto
+ * 🔥 CORREÇÕES V7.8:
+ * - Adicionados nextCreditAt, nextCreditAtHuman, expiresAtHuman no State
+ * - updateEligibility salva os 3 campos novos
+ * - updateEligibilityUI popula o card #dailyCreditSchedule
+ * - Mensagens usam "próximo crédito amanhã às HH:MM"
  */
 
 (function() {
@@ -26,43 +25,34 @@
     // ==============================================
 
     const CONFIG = Object.freeze({
-        // App
-        VERSION: '7.7.0',
+        VERSION: '7.8.0',
         
-        // Upload
         MAX_FILES: 3,
         MAX_FILE_SIZE_KB: 200,
         
-        // Créditos
         MAX_CREDITS_BALANCE: 3,
         INITIAL_FREE_CREDITS: 3,
         
-        // Preços
         PROMOTIONAL_PRICE: 97.00,
         REGULAR_PRICE: 149.90,
         TOTAL_PROMOTIONAL_SLOTS: 100,
         DAYS_PREMIUM: 30,
         
-        // Token
         TOKEN_EXPIRY_MINUTES: 15,
         SESSION_TIMEOUT: 15 * 60 * 1000,
         
-        // 🔥 INATIVIDADE
         INACTIVITY_TIMEOUT: 15 * 60 * 1000,
         INACTIVITY_CHECK_INTERVAL: 30000,
         INACTIVITY_WARNING_TIME: 60,
         
-        // Rate Limit
         RATE_LIMIT_LOGIN_MAX: 5,
         RATE_LIMIT_LOGIN_WINDOW: 900,
         RATE_LIMIT_REGISTER_MAX: 5,
         RATE_LIMIT_REGISTER_WINDOW: 3600,
         
-        // PoW
         POW_STOCK_SIZE: 2,
         API_BASE: '/api',
         
-        // Rotas
         ROUTES: {
             PROTECTED: ['/', '/dashboard', '/planos', '/checkout'],
             PUBLIC: ['/login', '/register'],
@@ -70,27 +60,22 @@
             LOGIN: '/login'
         },
         
-        // UI
         UI_CACHE_TTL: 5000,
         DEBOUNCE_DELAY: 50,
         
-        // Reload
         RELOAD_COOLDOWN: 3000,
         MAX_RELOADS: 3,
         RELOAD_STORAGE_KEY: '_aa_reload_count',
         AUTH_BLOCK_KEY: '_aa_auth_block',
         
-        // API
         API_RETRY_ATTEMPTS: 3,
         API_RETRY_DELAY: 1000,
         MAX_API_RETRY_DELAY: 10000,
         
-        // 🔥 ELEGIBILIDADE
-        ELIGIBILITY_CHECK_INTERVAL: 60000, // 1 minuto
+        ELIGIBILITY_CHECK_INTERVAL: 60000,
         ELIGIBILITY_DEBOUNCE: 3000,
         ELIGIBILITY_CACHE_TTL: 30000,
         
-        // 🔥 UI ELEGIBILIDADE
         DAILY_CREDIT_BUTTON_ID: 'dailyCreditBtn',
         DAILY_CREDIT_STATUS_ID: 'dailyCreditStatus',
         BONUS_CONTAINER_ID: 'bonusContainer',
@@ -471,6 +456,11 @@
         eligibilityReason: '',
         nextCreditDate: null,
         
+        // 🔥 CICLO DE 24H (v7.8)
+        nextCreditAt: null,
+        nextCreditAtHuman: null,
+        expiresAtHuman: null,
+        
         powReady: false,
         powSolutionsReady: 0,
         powAutoRefillActive: false,
@@ -496,7 +486,6 @@
         _isUpdating: false
     };
 
-    // 🔥 Carregar estado salvo
     try {
         const savedState = localStorage.getItem('__APP_STATE_PERSIST');
         if (savedState) {
@@ -560,7 +549,6 @@
             State.promotionalPrice = status.promotional_price || null;
             State.credits = status.credits_balance || State.credits;
             
-            // 🔥 ATUALIZA ELEGIBILIDADE
             State.canReceiveDailyCredit = status.can_receive_today || false;
             State.receivedDailyCreditToday = status.received_today || false;
             State.atMaxLimit = status.at_max_limit || false;
@@ -578,6 +566,10 @@
             State.isPremium = eligibility.is_premium || false;
             State.isAdmin = eligibility.is_admin || false;
             State.canReceiveBonus = eligibility.can_receive_bonus || false;
+            // 🔥 CICLO DE 24H (v7.8)
+            State.nextCreditAt = eligibility.next_credit_at || null;
+            State.nextCreditAtHuman = eligibility.next_credit_at_human || null;
+            State.expiresAtHuman = eligibility.expires_at_human || null;
             return State;
         },
         getState: function() { return { ...State }; },
@@ -846,7 +838,8 @@
         StateManager.updateState({
             user: null, credits: 0, isPremium: false, isAdmin: false,
             tokenValid: false, isAppReady: false, userInitialized: false,
-            canReceiveDailyCredit: false, receivedDailyCreditToday: false, atMaxLimit: false
+            canReceiveDailyCredit: false, receivedDailyCreditToday: false, atMaxLimit: false,
+            nextCreditAt: null, nextCreditAtHuman: null, expiresAtHuman: null
         });
         EventBus.emit('auth:unauthorized', { message: 'Sessão inválida ou expirada', redirect: true });
         setTimeout(() => window.location.replace('/login'), 300);
@@ -1049,7 +1042,7 @@
         },
 
         // ==========================================
-        // 🔥 UI DE ELEGIBILIDADE
+        // 🔥 UI DE ELEGIBILIDADE (v7.8)
         // ==========================================
 
         updateEligibilityUI: function() {
@@ -1064,6 +1057,41 @@
                 const dailyBtn = document.getElementById('dailyCreditBtn');
                 const dailyStatus = document.getElementById('dailyCreditStatus');
 
+                // 🔥 CARD DO CICLO (v7.8)
+                const scheduleBox = document.getElementById('dailyCreditSchedule');
+                const nextText = document.getElementById('dailyCreditNextText');
+                const balanceText = document.getElementById('dailyCreditBalanceText');
+                const badge = document.getElementById('dailyCreditBadge');
+
+                if (scheduleBox) {
+                    if (isPremium && !isAdmin) {
+                        scheduleBox.style.display = 'block';
+
+                        const nextHuman = State.nextCreditAtHuman || 'aguardando...';
+                        const balance = State.credits || 0;
+                        const maxC = CONFIG.MAX_CREDITS_BALANCE || 3;
+
+                        if (nextText) {
+                            nextText.textContent = 'Próximo crédito: ' + nextHuman;
+                        }
+                        if (balanceText) {
+                            balanceText.textContent = `Saldo: ${balance}/${maxC}`;
+                        }
+                        if (badge) {
+                            badge.textContent = `${State.daysLeftPremium || 0} dias restantes`;
+                            badge.style.background = 'rgba(72, 187, 120, 0.12)';
+                            badge.style.color = '#48bb78';
+                        }
+                    } else {
+                        scheduleBox.style.display = 'none';
+                        if (badge) {
+                            badge.textContent = isAdmin ? 'Admin' : 'Free';
+                            badge.style.background = 'rgba(255,255,255,0.05)';
+                            badge.style.color = 'rgba(255,255,255,0.5)';
+                        }
+                    }
+                }
+
                 if (isAdmin) {
                     if (dailyBtn) { dailyBtn.style.display = 'none'; }
                     if (dailyStatus) { dailyStatus.innerHTML = '👑 Admin - créditos ilimitados'; dailyStatus.style.color = '#f5a623'; }
@@ -1073,7 +1101,7 @@
                 if (!isPremium) {
                     if (dailyBtn) { dailyBtn.style.display = 'none'; }
                     if (dailyStatus) {
-                        dailyStatus.innerHTML = '💎 Assine o Premium para ganhar créditos diários';
+                        dailyStatus.innerHTML = '💎 Assine o Premium para ganhar créditos a cada 24h';
                         dailyStatus.style.color = 'rgba(255,255,255,0.4)';
                     }
                     return;
@@ -1082,7 +1110,7 @@
                 if (dailyBtn) {
                     if (canReceive) {
                         dailyBtn.style.display = 'inline-flex';
-                        dailyBtn.innerHTML = '<i class="fas fa-sun me-2"></i> Receber Crédito Diário';
+                        dailyBtn.innerHTML = '<i class="fas fa-sun me-2"></i> Receber Crédito do Ciclo';
                         dailyBtn.className = 'btn btn-sm btn-success';
                         dailyBtn.onclick = () => Eligibility.receiveDailyCredit();
                         dailyBtn.disabled = false;
@@ -1094,7 +1122,7 @@
                         dailyBtn.disabled = true;
                     } else if (receivedToday) {
                         dailyBtn.style.display = 'inline-flex';
-                        dailyBtn.innerHTML = '✅ Crédito recebido hoje';
+                        dailyBtn.innerHTML = '✅ Crédito já resgatado';
                         dailyBtn.className = 'btn btn-sm btn-secondary';
                         dailyBtn.onclick = null;
                         dailyBtn.disabled = true;
@@ -1105,14 +1133,15 @@
 
                 if (dailyStatus) {
                     if (canReceive) {
-                        dailyStatus.innerHTML = '🌅 Você pode receber 1 crédito hoje!';
+                        dailyStatus.innerHTML = '🌅 Seu crédito do ciclo está disponível!';
                         dailyStatus.style.color = '#48bb78';
                     } else if (atMaxLimit) {
-                        dailyStatus.innerHTML = `⚠️ Limite máximo de ${CONFIG.MAX_CREDITS_BALANCE} créditos atingido. Gaste um para receber mais.`;
+                        dailyStatus.innerHTML = `⚠️ Limite de ${CONFIG.MAX_CREDITS_BALANCE} créditos. Gaste 1 para retomar o ciclo.`;
                         dailyStatus.style.color = '#f5a623';
                     } else if (receivedToday) {
-                        dailyStatus.innerHTML = '✅ Você já recebeu seu crédito hoje. Volte amanhã!';
-                        dailyStatus.style.color = 'rgba(255,255,255,0.5)';
+                        const nextHuman = State.nextCreditAtHuman || 'em breve';
+                        dailyStatus.innerHTML = `⏰ Próximo crédito ${nextHuman}.`;
+                        dailyStatus.style.color = 'rgba(255,255,255,0.6)';
                     } else {
                         dailyStatus.innerHTML = reason || '⏳ Aguarde o próximo ciclo de créditos.';
                         dailyStatus.style.color = 'rgba(255,255,255,0.4)';
@@ -1124,11 +1153,11 @@
                     if (atMaxLimit && isPremium) {
                         maxLimitWarning.style.display = 'block';
                         maxLimitWarning.innerHTML = `
-                            <div style="background: rgba(245,166,35,0.12); border: 1px solid #f5a623; border-radius: 8px; padding: 0.5rem 1rem; margin: 0.5rem 0; display: flex; align-items: center; gap: 0.5rem;">
-                                <span style="font-size: 1rem;">⚠️</span>
-                                <span style="color: #f5a623; font-size: 0.75rem;">
-                                    Você atingiu o limite máximo de <strong>${CONFIG.MAX_CREDITS_BALANCE}</strong> créditos. 
-                                    Gaste um crédito para receber mais amanhã.
+                            <div class="limit-warning-box">
+                                <span class="limit-icon">⚠️</span>
+                                <span class="limit-text">
+                                    Você atingiu o limite de <strong>${CONFIG.MAX_CREDITS_BALANCE}</strong> créditos. 
+                                    Gaste 1 para retomar o ciclo.
                                 </span>
                             </div>
                         `;
@@ -1226,7 +1255,6 @@
         updateCredits: StateManager.updateCredits,
         updatePremiumStatus: StateManager.updatePremiumStatus,
         
-        // 🔥 V7.7: CARREGA CRÉDITOS DO BACKEND (NÃO CONSOLE)
         loadUserCredits: async function() {
             try {
                 const url = buildApiUrl('/auth/me');
@@ -1253,7 +1281,6 @@
                         } catch (e) {}
                     }
                     
-                    // 🔥 DISPARA EVENTO APENAS SE MUDOU
                     if (newCredits !== oldCredits) {
                         Logger.info(`💰 Créditos atualizados: ${oldCredits} → ${newCredits}`);
                         window.dispatchEvent(new CustomEvent('creditsUpdated', {
@@ -1270,7 +1297,6 @@
                     
                     Logger.info(`✅ Créditos carregados: ${newCredits}`);
                     
-                    // 🔥 Carrega elegibilidade após créditos
                     setTimeout(() => Eligibility.checkEligibility(), 300);
                     if (window.App && typeof window.App.updateNavbar === 'function') window.App.updateNavbar();
                     return data;
@@ -1315,7 +1341,7 @@
     };
 
     // ==============================================
-    // 🔥🔥🔥 SISTEMA DE ELEGIBILIDADE
+    // 🔥 SISTEMA DE ELEGIBILIDADE
     // ==============================================
 
     const Eligibility = {
@@ -1365,6 +1391,9 @@
                     can_receive_bonus: data.can_receive_bonus || false,
                     reason: data.reason || '',
                     next_credit_date: data.next_credit_date || null,
+                    next_credit_at: data.next_credit_at || null,
+                    next_credit_at_human: data.next_credit_at_human || null,
+                    expires_at_human: data.expires_at_human || null,
                     days_left: data.days_left || 0,
                     credits_balance: data.credits_balance || 0,
                     is_premium: data.is_premium || false,
@@ -1377,7 +1406,7 @@
                     detail: data
                 }));
 
-                Logger.info(`📊 [Eligibility] Verificação concluída: canReceive=${data.can_receive_today}, isPremium=${data.is_premium}`);
+                Logger.info(`📊 [Eligibility] Verificação concluída: canReceive=${data.can_receive_today}, nextHuman=${data.next_credit_at_human}`);
                 return data;
 
             } catch (error) {
@@ -1390,7 +1419,7 @@
 
         receiveDailyCredit: async function() {
             if (!State.isPremium) {
-                Utils.showNotification('💎 Crédito diário exclusivo para Premium. Assine o plano!', 'warning');
+                Utils.showNotification('💎 Crédito do ciclo exclusivo para Premium. Assine o plano!', 'warning');
                 return null;
             }
 
@@ -1423,7 +1452,8 @@
                     UI.updateCredits();
                     UI.updateEligibilityUI();
 
-                    Utils.showNotification('🌅 Crédito recebido com sucesso!', 'success');
+                    const nextHuman = data.next_credit_at_human || 'em 24h';
+                    Utils.showNotification(`🌅 Crédito recebido! Próximo ${nextHuman}.`, 'success');
 
                     setTimeout(() => Eligibility.checkEligibility(true), 500);
 
@@ -1477,6 +1507,9 @@
                 canReceiveBonus: State.canReceiveBonus,
                 reason: State.eligibilityReason,
                 nextCreditDate: State.nextCreditDate,
+                nextCreditAt: State.nextCreditAt,
+                nextCreditAtHuman: State.nextCreditAtHuman,
+                expiresAtHuman: State.expiresAtHuman,
                 daysLeft: State.daysLeftPremium,
                 credits: State.credits,
                 isPremium: State.isPremium,
@@ -1486,19 +1519,16 @@
     };
 
     // ==============================================
-    // 🔥 GERENCIADOR DE EVENTOS (V7.7 - CORRIGIDO)
+    // 🔥 GERENCIADOR DE EVENTOS
     // ==============================================
 
     const EventManager = {
         setup: function() {
             Logger.info('📡 Configurando gerenciador de eventos...');
 
-            // 🔥 V7.7: CRÉDITOS ATUALIZADOS - SÓ SINCRONIZA, NÃO CONSOLE
             document.addEventListener('creditsUpdated', function(e) {
                 const data = e.detail || {};
                 
-                // 🔥 NÃO CONSOLE CRÉDITOS AQUI!
-                // Apenas atualiza o estado se os dados vierem do backend
                 if (data._source === 'loadUserCredits' || data._source === 'backend') {
                     StateManager.updateCredits(data.credits || 0, data.isPremium || false);
                     if (window.App && typeof window.App.updateCredits === 'function') {
@@ -1514,12 +1544,7 @@
                 }, 300);
             });
 
-            // 🔥 V7.7: ANÁLISE CONCLUÍDA - SINCRONIZA CRÉDITOS
             document.addEventListener('analysis:success', function(e) {
-                const detail = e.detail || {};
-                
-                // 🔥 NÃO ATUALIZA CRÉDITOS DIRETAMENTE!
-                // Força sincronização com o backend
                 Logger.info('📊 Análise concluída, sincronizando créditos...');
                 
                 setTimeout(() => {
@@ -1530,12 +1555,7 @@
                 }, 500);
             });
 
-            // 🔥 V7.7: UPLOAD CONCLUÍDO - SINCRONIZA CRÉDITOS
             document.addEventListener('upload:completed', function(e) {
-                const detail = e.detail || {};
-                
-                // 🔥 NÃO ATUALIZA CRÉDITOS DIRETAMENTE!
-                // Força sincronização com o backend
                 Logger.info('📤 Upload concluído, sincronizando créditos...');
                 
                 setTimeout(() => {
@@ -1546,12 +1566,10 @@
                 }, 500);
             });
 
-            // 🔥 V7.7: CRÉDITO CONSUMIDO (EVENTO DO BACKEND)
             document.addEventListener('credits:consumed', function(e) {
                 const data = e.detail || {};
-                Logger.info(`💰 [Event] Créditos consumidos pelo backend: ${data.amount}, Saldo: ${data.balance}`);
+                Logger.info(`💰 [Event] Créditos consumidos: ${data.amount}, Saldo: ${data.balance}`);
                 
-                // 🔥 Atualiza com os dados do backend
                 StateManager.updateCredits(data.balance || 0, State.isPremium);
                 
                 if (window.App && typeof window.App.updateCredits === 'function') {
@@ -1566,7 +1584,6 @@
                 }, 500);
             });
 
-            // 🔥 PREMIUM STATUS ATUALIZADO
             document.addEventListener('premiumStatusUpdated', function(e) {
                 const data = e.detail || {};
                 StateManager.updatePremiumStatus({
@@ -1585,7 +1602,6 @@
                 }, 400);
             });
 
-            // 🔥 PAYMENT READY
             document.addEventListener('paymentReady', function(e) {
                 window._paymentReady = true;
                 setTimeout(() => {
@@ -1599,14 +1615,12 @@
                 }, 300);
             });
 
-            // 🔥 ELEGIBILIDADE ATUALIZADA
             document.addEventListener('eligibility:updated', function(e) {
                 const data = e.detail || {};
                 UI.updateEligibilityUI();
                 if (data.is_premium !== undefined) UI.updatePremiumBadge();
             });
 
-            // 🔥 CRÉDITOS INSUFICIENTES
             document.addEventListener('credits:insufficient', function(e) {
                 const detail = e.detail || {};
                 Utils.showNotification(detail.message || 'Créditos insuficientes!', 'warning');
@@ -1615,7 +1629,6 @@
                 }));
             });
 
-            // 🔥 RATE LIMIT
             document.addEventListener('rate_limit:blocked', function(e) {
                 const detail = e.detail || {};
                 State.rateLimitBlocked = true;
@@ -1625,7 +1638,6 @@
                 Utils.showNotification(detail.message || 'Muitas tentativas. Aguarde um momento.', 'warning');
             });
 
-            // 🔥 AUTH READY
             document.addEventListener('authReady', function(e) {
                 const detail = e.detail || {};
                 if (detail.isAuthenticated) {
@@ -1643,7 +1655,7 @@
 
             document.addEventListener('authLogout', handleUnauthorized);
 
-            Logger.info('✅ Event listeners configurados (v7.7 - créditos corrigidos)');
+            Logger.info('✅ Event listeners configurados (v7.8 - ciclo de 24h)');
         }
     };
 
@@ -1743,8 +1755,6 @@
                 State.totalAnalyses++;
                 if (State.recentAnalyses.length > 50) State.recentAnalyses = State.recentAnalyses.slice(0, 50);
                 
-                // 🔥 V7.7: NÃO ATUALIZA CRÉDITOS DIRETAMENTE
-                // Força sincronização com o backend
                 setTimeout(() => {
                     if (window.appAuth?.loadUserCredits) {
                         window.appAuth.loadUserCredits();
@@ -1853,7 +1863,7 @@
     // ==============================================
 
     async function initApp() {
-        Logger.info('🚀 Inicializando App (Orquestrador) v7.7...');
+        Logger.info('🚀 Inicializando App (Orquestrador) v7.8...');
 
         try {
             ReloadManager.reset();
@@ -1940,6 +1950,8 @@
                 canReceiveDailyCredit: State.canReceiveDailyCredit,
                 receivedDailyCreditToday: State.receivedDailyCreditToday,
                 atMaxLimit: State.atMaxLimit,
+                nextCreditAtHuman: State.nextCreditAtHuman,
+                expiresAtHuman: State.expiresAtHuman,
                 daysLeftPremium: State.daysLeftPremium,
                 isReady: true,
                 version: CONFIG.VERSION
@@ -1960,19 +1972,17 @@
                 detail: { isReady: true, version: CONFIG.VERSION }
             }));
 
-            Logger.info('✅ App (Orquestrador) v7.7 inicializado com sucesso!');
+            Logger.info('✅ App (Orquestrador) v7.8 inicializado com sucesso!');
             Logger.info(`📌 Autenticado: ${isAuth}`);
             Logger.info(`📌 Página: ${currentPath}`);
             Logger.info(`📌 Admin: ${State.isAdmin}`);
             Logger.info(`📌 Premium: ${State.isPremium}`);
             Logger.info(`📌 Créditos: ${State.creditsDisplay}`);
             Logger.info(`📌 Segmento: ${State.userSegment || 'Não definido'}`);
-            Logger.info(`📌 Elegibilidade: canReceive=${State.canReceiveDailyCredit}, atMaxLimit=${State.atMaxLimit}`);
+            Logger.info(`📌 Elegibilidade: canReceive=${State.canReceiveDailyCredit}, nextHuman=${State.nextCreditAtHuman}`);
             Logger.info(`⏰ Inatividade: ${CONFIG.INACTIVITY_TIMEOUT/60000} minutos`);
             Logger.info(`⏰ Elegibilidade: ${CONFIG.ELIGIBILITY_CHECK_INTERVAL/60000} minutos`);
-            Logger.info('🔧 CORREÇÃO V7.7: NÃO CONSOLE créditos no frontend');
-            Logger.info('🔧 CORREÇÃO V7.7: Sincroniza créditos via /auth/me');
-            Logger.info('🔧 CORREÇÃO V7.7: Events corrigidos');
+            Logger.info('🔧 V7.8: Card do ciclo de 24h + mensagens relativas');
 
         } catch (error) {
             Logger.error('❌ Erro na inicialização do App:', error);
@@ -1984,7 +1994,7 @@
     }
 
     // ==============================================
-    // 🔥🔥🔥 EXPORTAÇÕES GLOBAIS
+    // 🔥 EXPORTAÇÕES GLOBAIS
     // ==============================================
 
     const App = {
@@ -2022,6 +2032,8 @@
         hasVitalicio: () => State.hasPromotionalPrice,
         getPromotionalPrice: () => State.promotionalPrice,
         canReceiveDailyCredit: () => State.canReceiveDailyCredit,
+        getNextCreditAtHuman: () => State.nextCreditAtHuman,
+        getExpiresAtHuman: () => State.expiresAtHuman,
         getDaysLeftPremium: () => State.daysLeftPremium,
         isTokenValid: () => State.tokenValid,
         isAtMaxLimit: () => State.atMaxLimit,
@@ -2150,7 +2162,6 @@
     window.receiveDailyCredit = Eligibility.receiveDailyCredit;
     window.getEligibilityStatus = Eligibility.getStatus;
 
-    // 🔥 V7.7: Função para sincronizar créditos manualmente
     window.syncCredits = async function() {
         Logger.info('🔄 Sincronizando créditos manualmente...');
         if (window.appAuth?.loadUserCredits) {
@@ -2175,12 +2186,10 @@
         }
     }
 
-    Logger.info('✅ app.js (Orquestrador) v7.7 carregado!');
-    Logger.info('   🔥 CORREÇÃO V7.7: NÃO CONSOLE créditos no frontend');
-    Logger.info('   🔥 CORREÇÃO V7.7: Sincroniza créditos via /auth/me');
-    Logger.info('   🔥 CORREÇÃO V7.7: Evento credits:consumed escuta o backend');
-    Logger.info('   🔥 Use window.syncCredits() para sincronizar manualmente');
+    Logger.info('✅ app.js (Orquestrador) v7.8 carregado!');
+    Logger.info('   🔥 V7.8: Card do ciclo de 24h');
+    Logger.info('   🔥 V7.8: Mensagens relativas ao ciclo');
     Logger.info('   🔥 Use window.checkEligibility() para verificar elegibilidade');
-    Logger.info('   🔥 Use window.receiveDailyCredit() para receber crédito diário');
+    Logger.info('   🔥 Use window.receiveDailyCredit() para receber crédito');
 
 })();

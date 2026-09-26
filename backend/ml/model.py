@@ -1,746 +1,923 @@
-# backend/ml/model.py - VERSÃO 2.0 (INTEGRADO COM TRAIN V4.0 E PREDICT V7.0)
-"""
-Arquivo de compatibilidade para o sistema ML.
-Versão simplificada que NÃO usa TensorFlow (seu CPU não tem AVX).
-🔥 VERSÃO 2.0: Integrado com train.py V4.0 e predict.py V7.0
-🔥 USANDO Z-SCORE (StandardScaler)
-🔥 SUPORTE A DETECÇÃO DE FEATURES
-🔥 COMPATIBILIDADE COM MODELOS TREINADOS V4.0
-"""
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
+from sqlalchemy.orm import relationship
+from datetime import datetime, date, timedelta, timezone
+import enum
+from typing import Dict, Any, Optional, List, Union
 
-import numpy as np
-import pandas as pd
-import pickle
-import joblib
-import os
-from typing import Tuple, Optional, Dict, Any, List, Union
-from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
+from backend.database import Base
+from backend.security import hasher
 
-print("🔧 Carregando model.py V2.0 (versão scikit-learn integrada)...")
+# ==============================================
+# 🔥 FUSO HORÁRIO DE BRASÍLIA (UTC-3)
+# ==============================================
+
+TZ_BRASIL = timezone(timedelta(hours=-3))
+
+# 🔥 CACHE para evitar recriar o timezone a cada chamada
+_TZ_CACHE = TZ_BRASIL
 
 
-class MLModel:
+def _now_brasil() -> datetime:
+    """Retorna datetime atual no fuso horário de Brasília (UTC-3)"""
+    return datetime.now(_TZ_CACHE)
+
+
+def _today_brasil() -> date:
+    """Retorna data atual no fuso horário de Brasília (UTC-3)"""
+    return datetime.now(_TZ_CACHE).date()
+
+
+def _as_date(dt) -> Optional[date]:
     """
-    Classe wrapper para compatibilidade com scikit-learn
-    🔥 V2.0: Integrado com train.py V4.0 e predict.py V7.0
-    🔥 Normalização Z-Score (StandardScaler)"
-    🔥 Detecção automática de features
+    🔥 Normaliza datetime/date/None para date.
+
+    O driver psycopg2 às vezes entrega colunas `Date` como `datetime`.
+    Esta função garante que as comparações e aritméticas sempre usem `date`.
     """
-    
-    def __init__(self, input_shape: Tuple[int, ...] = (10,)):
-        self.input_shape = input_shape
-        self.model = None
-        self.scaler = None
-        self.model_type = None
-        self.is_trained = False
-        self.models_dir = os.path.join("backend", "ml", "models")
-        os.makedirs(self.models_dir, exist_ok=True)
-        
-        # 🔥 NOVO: Detecção de features
-        self.feature_names = []
-        self.feature_count = 0
-        self.model_feature_count = None
-        self.normalization = "Z-Score (StandardScaler)"
-        self.version = "2.0"
-        
-        # 🔥 NOVO: Estatísticas
-        self.stats = {
-            "total_predictions": 0,
-            "total_trainings": 0,
-            "successful_trainings": 0,
-            "failed_trainings": 0,
-            "last_accuracy": 0.0,
-            "last_f1": 0.0,
-            "last_training_date": None,
-            "model_loaded": False
-        }
-        
-        print(f"✅ MLModel V2.0 scikit-learn inicializado (shape: {input_shape})")
-        print(f"   📊 Normalização: {self.normalization}")
-    
-    # ==============================================
-    # 🔥 CRIAÇÃO DE MODELOS
-    # ==============================================
-    
-    def create_binary_classifier(
-        self, 
-        n_estimators: int = 100, 
-        max_depth: int = 10,
-        random_state: int = 42
-    ):
-        """Cria classificador binário com scikit-learn (RandomForest)"""
-        try:
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.preprocessing import StandardScaler
-            
-            self.model = RandomForestClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                random_state=random_state,
-                n_jobs=-1
-            )
-            self.scaler = StandardScaler()  # Z-Score
-            self.model_type = "random_forest_classifier"
-            self.normalization = "Z-Score (StandardScaler)"
-            self.version = "2.0"
-            
-            print(f"✅ Classificador RandomForest criado (Z-Score)")
-            print(f"   🌳 Árvores: {n_estimators}, Profundidade: {max_depth}")
-            return self
-            
-        except ImportError as e:
-            print(f"⚠️  Erro ao criar classificador: {e}")
-            self.model_type = "simulated"
-            return self
-    
-    def create_regression_model(
-        self, 
-        n_estimators: int = 100, 
-        max_depth: int = 10,
-        random_state: int = 42
-    ):
-        """Cria modelo de regressão com scikit-learn (RandomForest)"""
-        try:
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.preprocessing import StandardScaler
-            
-            self.model = RandomForestRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                random_state=random_state,
-                n_jobs=-1
-            )
-            self.scaler = StandardScaler()  # Z-Score
-            self.model_type = "random_forest_regressor"
-            self.normalization = "Z-Score (StandardScaler)"
-            self.version = "2.0"
-            
-            print(f"✅ Regressor RandomForest criado (Z-Score)")
-            print(f"   🌳 Árvores: {n_estimators}, Profundidade: {max_depth}")
-            return self
-            
-        except ImportError as e:
-            print(f"⚠️  Erro ao criar regressor: {e}")
-            self.model_type = "simulated"
-            return self
-    
-    def create_ensemble_classifier(self):
-        """Cria ensemble de classificadores (VotingClassifier)"""
-        try:
-            from sklearn.ensemble import (
-                RandomForestClassifier, 
-                GradientBoostingClassifier,
-                VotingClassifier
-            )
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.preprocessing import StandardScaler
-            
-            estimators = [
-                ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)),
-                ('gb', GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)),
-                ('lr', LogisticRegression(C=1.0, max_iter=1000, random_state=42, n_jobs=-1))
-            ]
-            
-            self.model = VotingClassifier(
-                estimators=estimators,
-                voting='soft',
-                weights=[1, 1, 1]
-            )
-            self.scaler = StandardScaler()  # Z-Score
-            self.model_type = "ensemble_classifier"
-            self.normalization = "Z-Score (StandardScaler)"
-            self.version = "2.0"
-            
-            print(f"✅ Ensemble Classifier criado (3 modelos)")
-            print(f"   📊 Normalização: Z-Score")
-            return self
-            
-        except ImportError as e:
-            print(f"⚠️  Erro ao criar ensemble: {e}")
-            self.model_type = "simulated"
-            return self
-    
-    # ==============================================
-    # 🔥 MODELO PLACEHOLDER (TREINADO COM Z-SCORE)
-    # ==============================================
-    
-    def create_and_train_placeholder_model(
-        self, 
-        input_shape: Tuple[int, ...] = (10,),
-        n_samples: int = 200,
-        random_state: int = 42
-    ):
-        """Cria e treina modelo placeholder com scikit-learn (Z-Score)"""
-        self.input_shape = input_shape
-        
-        try:
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.preprocessing import StandardScaler
-            
-            print("🔧 Criando modelo placeholder com Z-Score...")
-            
-            # Criar modelo
-            self.model = RandomForestClassifier(
-                n_estimators=50,
-                max_depth=8,
-                random_state=random_state,
-                n_jobs=-1
-            )
-            self.scaler = StandardScaler()  # Z-Score
-            self.normalization = "Z-Score (StandardScaler)"
-            self.version = "2.0"
-            
-            # Dados sintéticos
-            X_train = np.random.randn(n_samples, input_shape[0])
-            
-            # Labels sintéticos com padrão
-            y_train = np.zeros(n_samples)
-            for i in range(n_samples):
-                risk_score = (
-                    X_train[i, 0] * 0.3 +
-                    X_train[i, 1] * 0.3 +
-                    X_train[i, 2] * 0.4
-                )
-                risk_score = (risk_score - risk_score.min()) / (risk_score.max() - risk_score.min() + 1e-8)
-                risk_score = risk_score + np.random.normal(0, 0.1)
-                y_train[i] = 1 if risk_score > 0.5 else 0
-            
-            # Normalizar (Z-Score) e treinar
-            X_scaled = self.scaler.fit_transform(X_train)
-            self.model.fit(X_scaled, y_train)
-            
-            # Avaliação
-            train_pred = self.model.predict(X_scaled)
-            accuracy = np.mean(train_pred == y_train)
-            
-            self.is_trained = True
-            self.model_type = "random_forest_placeholder"
-            self.feature_count = input_shape[0]
-            self.feature_names = [f"feature_{i}" for i in range(input_shape[0])]
-            self.model_feature_count = input_shape[0]
-            
-            self.stats["last_accuracy"] = float(accuracy)
-            self.stats["last_training_date"] = datetime.now().isoformat()
-            self.stats["total_trainings"] += 1
-            self.stats["successful_trainings"] += 1
-            
-            print(f"✅ Modelo placeholder treinado: {accuracy:.1%} acurácia")
-            print(f"   📊 Features: {input_shape[0]}")
-            print(f"   📊 Normalização: Z-Score")
-            return self
-            
-        except ImportError as e:
-            print(f"⚠️  Erro com scikit-learn: {e}")
-            self.model_type = "simulated"
-            self.is_trained = True
-            return self
-    
-    # ==============================================
-    # 🔥 TREINAMENTO (COM Z-SCORE)
-    # ==============================================
-    
-    def train(
-        self, 
-        X_train: np.ndarray, 
-        y_train: np.ndarray, 
-        X_val: Optional[np.ndarray] = None, 
-        y_val: Optional[np.ndarray] = None,
-        epochs: int = 50, 
-        batch_size: int = 32, 
-        callbacks: list = None,
-        normalize: bool = True
-    ):
-        """
-        Treina o modelo com normalização Z-Score
-        """
-        if self.model is None:
-            self.create_binary_classifier()
-        
-        try:
-            # Normalizar com Z-Score
-            if normalize and hasattr(self, 'scaler') and self.scaler is not None:
-                X_scaled = self.scaler.fit_transform(X_train)
-                if X_val is not None:
-                    X_val_scaled = self.scaler.transform(X_val)
-                else:
-                    X_val_scaled = None
-                print(f"📊 Z-Score aplicado: média ≈ 0, std ≈ 1")
-            else:
-                X_scaled = X_train
-                X_val_scaled = X_val
-            
-            # Treinar
-            if hasattr(self.model, 'fit'):
-                self.model.fit(X_scaled, y_train)
-                self.is_trained = True
-                self.model_feature_count = X_scaled.shape[1]
-                
-                print(f"✅ Modelo treinado com {len(X_train)} amostras")
-                print(f"   📊 Features: {self.model_feature_count}")
-                print(f"   📊 Normalização: Z-Score")
-                
-                # Calcular acurácia de treino
-                if hasattr(self.model, 'predict'):
-                    train_pred = self.model.predict(X_scaled)
-                    accuracy = np.mean(train_pred == y_train)
-                    self.stats["last_accuracy"] = float(accuracy)
-                    print(f"   📈 Acurácia treino: {accuracy:.2%}")
-                
-                self.stats["total_trainings"] += 1
-                self.stats["successful_trainings"] += 1
-                self.stats["last_training_date"] = datetime.now().isoformat()
-                
-                # Retornar histórico simulado para compatibilidade
-                history = {
-                    'loss': [0.5, 0.3, 0.2, 0.15, 0.1],
-                    'accuracy': [0.6, 0.7, 0.8, 0.85, 0.9],
-                    'val_loss': [0.6, 0.4, 0.3, 0.25, 0.2],
-                    'val_accuracy': [0.55, 0.65, 0.75, 0.8, 0.85],
-                    'normalization': 'Z-Score'
-                }
-                return history
-            else:
-                raise ValueError("Modelo não suporta treinamento")
-                
-        except Exception as e:
-            print(f"⚠️  Erro no treinamento: {e}")
-            self.is_trained = True  # Marcar como treinado mesmo com erro
-            self.stats["failed_trainings"] += 1
-            return {
-                'loss': [0.5], 
-                'accuracy': [0.7],
-                'normalization': 'Z-Score'
-            }
-    
-    # ==============================================
-    # 🔥 PREDIÇÃO (COM Z-SCORE)
-    # ==============================================
-    
-    def predict(self, X: np.ndarray, threshold: float = 0.5, normalize: bool = True):
-        """
-        Faz previsões com normalização Z-Score
-        """
-        if not self.is_trained:
-            print("⚠️  Modelo não treinado - usando simulação")
-            self.stats["total_predictions"] += 1
-            if len(X.shape) == 2:
-                return np.random.rand(X.shape[0]) > threshold
-            else:
-                return np.random.rand(len(X)) > threshold
-        
-        try:
-            # Normalizar com Z-Score
-            if normalize and hasattr(self, 'scaler') and self.scaler is not None:
-                try:
-                    X_scaled = self.scaler.transform(X)
-                except Exception as e:
-                    print(f"⚠️  Erro no scaler: {e}, usando dados originais")
-                    X_scaled = X
-            else:
-                X_scaled = X
-            
-            # Predizer
-            if hasattr(self.model, 'predict'):
-                if self.model_type in ["random_forest_regressor"]:
-                    predictions = self.model.predict(X_scaled)
-                else:
-                    predictions = self.model.predict(X_scaled)
-                    # Converter para 0/1 se for classificação
-                    if predictions.dtype.kind in 'iu' or predictions.dtype == bool:
-                        predictions = predictions.astype(float)
-                
-                self.stats["total_predictions"] += 1
-                return predictions
-            else:
-                # Fallback: previsões aleatórias
-                self.stats["total_predictions"] += 1
-                if len(X.shape) == 2:
-                    return np.random.rand(X.shape[0])
-                else:
-                    return np.random.rand(len(X))
-                    
-        except Exception as e:
-            print(f"⚠️  Erro nas previsões: {e}")
-            self.stats["total_predictions"] += 1
-            if len(X.shape) == 2:
-                return np.random.rand(X.shape[0])
-            else:
-                return np.random.rand(len(X))
-    
-    def predict_probabilities(self, X: np.ndarray, normalize: bool = True):
-        """
-        Retorna probabilidades com normalização Z-Score
-        """
-        if not self.is_trained:
-            if len(X.shape) == 2:
-                return np.random.rand(X.shape[0], 1)
-            else:
-                return np.random.rand(len(X), 1)
-        
-        try:
-            # Normalizar com Z-Score
-            if normalize and hasattr(self, 'scaler') and self.scaler is not None:
-                try:
-                    X_scaled = self.scaler.transform(X)
-                except Exception as e:
-                    print(f"⚠️  Erro no scaler: {e}, usando dados originais")
-                    X_scaled = X
-            else:
-                X_scaled = X
-            
-            if hasattr(self.model, 'predict_proba'):
-                probs = self.model.predict_proba(X_scaled)
-                # Para classificador binário, retornar probabilidade da classe positiva
-                if len(probs.shape) > 1 and probs.shape[1] > 1:
-                    return probs[:, 1:2]  # Apenas classe positiva
-                else:
-                    return probs
-            else:
-                # Simular probabilidades
-                predictions = self.predict(X, normalize=normalize)
-                # Adicionar algum ruído para parecer probabilístico
-                noise = np.random.normal(0, 0.1, predictions.shape)
-                probs = np.clip(predictions + noise, 0, 1)
-                return probs.reshape(-1, 1) if len(probs.shape) == 1 else probs
-                
-        except Exception as e:
-            print(f"⚠️  Erro nas probabilidades: {e}")
-            if len(X.shape) == 2:
-                return np.random.rand(X.shape[0], 1)
-            else:
-                return np.random.rand(len(X), 1)
-    
-    # ==============================================
-    # 🔥 AVALIAÇÃO
-    # ==============================================
-    
-    def evaluate(self, X_test: np.ndarray, y_test: np.ndarray, normalize: bool = True):
-        """
-        Avalia o modelo com normalização Z-Score
-        """
-        if not self.is_trained:
-            return {
-                'accuracy': 0.7, 
-                'loss': 0.5,
-                'normalization': 'Z-Score',
-                'is_placeholder': True
-            }
-        
-        try:
-            predictions = self.predict(X_test, normalize=normalize)
-            
-            if self.model_type in ["random_forest_regressor"]:
-                # Para regressão: MSE, MAE, R²
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                mse = mean_squared_error(y_test, predictions)
-                mae = mean_absolute_error(y_test, predictions)
-                r2 = r2_score(y_test, predictions)
-                
-                self.stats["last_accuracy"] = float(r2)
-                
-                return {
-                    'mse': float(mse),
-                    'mae': float(mae),
-                    'r2_score': float(r2),
-                    'normalization': 'Z-Score'
-                }
-            else:
-                # Para classificação: accuracy, precision, recall, f1
-                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-                
-                # Converter para classes binárias se necessário
-                if predictions.dtype.kind in 'iu' or predictions.dtype == bool:
-                    y_pred = predictions.astype(int)
-                else:
-                    y_pred = (predictions > 0.5).astype(int)
-                
-                accuracy = accuracy_score(y_test, y_pred)
-                precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-                recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-                f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-                
-                self.stats["last_accuracy"] = float(accuracy)
-                self.stats["last_f1"] = float(f1)
-                
-                return {
-                    'accuracy': float(accuracy),
-                    'precision': float(precision),
-                    'recall': float(recall),
-                    'f1_score': float(f1),
-                    'normalization': 'Z-Score'
-                }
-                
-        except Exception as e:
-            print(f"⚠️  Erro na avaliação: {e}")
-            return {
-                'accuracy': 0.7 + np.random.rand() * 0.2,
-                'normalization': 'Z-Score'
-            }
-    
-    # ==============================================
-    # 🔥 SALVAR E CARREGAR (COMPATÍVEL COM V4.0)
-    # ==============================================
-    
-    def save_model(self, path: str = None):
-        """
-        Salva o modelo em disco (formato compatível com train.py V4.0)
-        """
-        if path is None:
-            path = os.path.join(self.models_dir, "trained_model.pkl")
-        
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        
-        # 🔥 FORMATO COMPATÍVEL COM TRAIN.PY V4.0 E PREDICT.PY V7.0
-        model_data = {
-            'model': self.model,
-            'scaler': getattr(self, 'scaler', None),
-            'input_shape': self.input_shape,
-            'model_type': self.model_type,
-            'model_name': self.model_type or 'MLModel_V2.0',
-            'is_trained': self.is_trained,
-            'saved_at': datetime.now().isoformat(),
-            'version': self.version,
-            'normalization': self.normalization,
-            'feature_count': self.feature_count,
-            'feature_names': self.feature_names,
-            'model_feature_count': self.model_feature_count,
-            'metrics': {
-                'accuracy': self.stats.get('last_accuracy', 0),
-                'f1_score': self.stats.get('last_f1', 0),
-                'training_date': self.stats.get('last_training_date')
-            },
-            'stats': self.stats
-        }
-        
-        try:
-            with open(path, 'wb') as f:
-                pickle.dump(model_data, f)
-            print(f"💾 Modelo V2.0 salvo em: {path}")
-            print(f"   📊 Normalização: {self.normalization}")
-            print(f"   📊 Features: {self.model_feature_count or self.feature_count or 'N/A'}")
-            return path
-        except Exception as e:
-            print(f"⚠️  Erro ao salvar modelo: {e}")
-            return None
-    
-    def load_model(self, path: str = None):
-        """
-        Carrega um modelo salvo (compatível com train.py V4.0)
-        """
-        if path is None:
-            path = os.path.join(self.models_dir, "trained_model.pkl")
-        
-        try:
-            if os.path.exists(path):
-                with open(path, 'rb') as f:
-                    model_data = pickle.load(f)
-                
-                # Carregar componentes
-                self.model = model_data.get('model')
-                self.scaler = model_data.get('scaler')
-                self.input_shape = model_data.get('input_shape', (10,))
-                self.model_type = model_data.get('model_type')
-                self.is_trained = model_data.get('is_trained', False)
-                self.version = model_data.get('version', '1.0')
-                self.normalization = model_data.get('normalization', 'Z-Score (StandardScaler)')
-                self.feature_count = model_data.get('feature_count', 0)
-                self.feature_names = model_data.get('feature_names', [])
-                self.model_feature_count = model_data.get('model_feature_count', self.feature_count)
-                
-                # Carregar métricas
-                metrics = model_data.get('metrics', {})
-                self.stats['last_accuracy'] = metrics.get('accuracy', 0)
-                self.stats['last_f1'] = metrics.get('f1_score', 0)
-                self.stats['last_training_date'] = metrics.get('training_date')
-                
-                # Carregar stats
-                stats = model_data.get('stats', {})
-                self.stats.update(stats)
-                self.stats['model_loaded'] = True
-                
-                print(f"✅ Modelo V{self.version} carregado de: {path}")
-                print(f"   📊 Tipo: {self.model_type}")
-                print(f"   📊 Normalização: {self.normalization}")
-                print(f"   📊 Features: {self.model_feature_count or self.feature_count or 'N/A'}")
-                
-                return self.model
-            else:
-                print(f"⚠️  Modelo não encontrado: {path}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Erro ao carregar modelo: {e}")
-            return None
-    
-    def load_from_joblib(self, path: str = None):
-        """
-        Carrega modelo salvo com joblib (formato do train.py)
-        """
-        if path is None:
-            path = os.path.join(self.models_dir, "trained_model.pkl")
-        
-        try:
-            if os.path.exists(path):
-                model_data = joblib.load(path)
-                
-                if isinstance(model_data, dict):
-                    self.model = model_data.get('model')
-                    self.scaler = model_data.get('scaler')
-                    self.model_type = model_data.get('model_type') or model_data.get('type')
-                    self.is_trained = True
-                    self.version = model_data.get('version', '1.0')
-                    self.normalization = model_data.get('normalization', 'Z-Score (StandardScaler)')
-                    self.feature_count = model_data.get('feature_count', 0)
-                    self.feature_names = model_data.get('features', [])
-                    
-                    print(f"✅ Modelo joblib V{self.version} carregado de: {path}")
-                    print(f"   📊 Normalização: {self.normalization}")
-                    print(f"   📊 Features: {self.feature_count or 'N/A'}")
-                    
-                    return self.model
-                else:
-                    self.model = model_data
-                    self.is_trained = True
-                    print(f"✅ Modelo joblib carregado de: {path}")
-                    return self.model
-            else:
-                print(f"⚠️  Modelo não encontrado: {path}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Erro ao carregar modelo joblib: {e}")
-            return None
-    
-    # ==============================================
-    # 🔥 DETECÇÃO DE FEATURES
-    # ==============================================
-    
-    def detect_features(self, X: np.ndarray) -> Dict[str, Any]:
-        """
-        Detecta features do modelo e dos dados
-        """
-        actual = X.shape[1] if len(X.shape) > 1 else 1
-        expected = self.model_feature_count or self.feature_count or 0
-        
-        result = {
-            'actual_features': actual,
-            'expected_features': expected,
-            'match': actual == expected,
-            'difference': actual - expected,
-            'match_percentage': (min(actual, expected) / max(actual, expected) * 100) if expected > 0 else 0,
-            'feature_names': self.feature_names[:min(actual, len(self.feature_names))] if self.feature_names else []
-        }
-        
-        if not result['match']:
-            print(f"⚠️  Feature mismatch: esperado {expected}, recebido {actual}")
-            print(f"   Match: {result['match_percentage']:.1f}%")
-        
-        return result
-    
-    # ==============================================
-    # 🔥 UTILITÁRIOS
-    # ==============================================
-    
-    def get_model_summary(self) -> Dict[str, Any]:
-        """Retorna resumo do modelo"""
-        return {
-            "modelo_carregado": self.is_trained,
-            "modelo_tipo": self.model_type,
-            "versao": self.version,
-            "normalization": self.normalization,
-            "feature_count": self.feature_count,
-            "model_feature_count": self.model_feature_count,
-            "feature_names": self.feature_names[:10] if self.feature_names else [],
-            "is_trained": self.is_trained,
-            "ultima_acuracia": self.stats.get('last_accuracy', 0),
-            "ultimo_f1": self.stats.get('last_f1', 0),
-            "total_predicoes": self.stats.get('total_predictions', 0),
-            "total_treinamentos": self.stats.get('total_trainings', 0),
-            "data_ultimo_treino": self.stats.get('last_training_date'),
-            "modelo_carregado_arquivo": self.stats.get('model_loaded', False)
-        }
-    
-    def create_model_for_office_data(self, data_type: str = 'clientes'):
-        """
-        Cria modelo específico para dados de oficina
-        """
-        print(f"🔧 Criando modelo para análise de {data_type} (Z-Score)...")
-        
-        if data_type == 'clientes':
-            return self.create_binary_classifier()
-        elif data_type == 'servicos':
-            return self.create_ensemble_classifier()
-        elif data_type in ['estoque', 'financeiro']:
-            return self.create_regression_model()
-        else:
-            return self.create_binary_classifier()
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas do modelo"""
-        return {
-            **self.stats,
-            "model_type": self.model_type,
-            "version": self.version,
-            "normalization": self.normalization,
-            "feature_count": self.feature_count,
-            "model_feature_count": self.model_feature_count,
-            "is_trained": self.is_trained
-        }
-    
-    def reset(self):
-        """Reseta o modelo"""
-        self.model = None
-        self.scaler = None
-        self.is_trained = False
-        self.model_type = None
-        self.feature_names = []
-        self.feature_count = 0
-        self.model_feature_count = None
-        self.stats = {
-            "total_predictions": 0,
-            "total_trainings": 0,
-            "successful_trainings": 0,
-            "failed_trainings": 0,
-            "last_accuracy": 0.0,
-            "last_f1": 0.0,
-            "last_training_date": None,
-            "model_loaded": False
-        }
-        print("🔄 Modelo resetado")
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        return dt.date()
+    return dt
+
+
+def _ensure_timezone(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    🔥 Garante que um datetime tenha timezone (adiciona UTC-3 se for naive)
+
+    Args:
+        dt: Datetime para verificar
+
+    Returns:
+        Datetime com timezone ou None
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=_TZ_CACHE)
+    return dt
 
 
 # ==============================================
-# 🔥 INSTÂNCIA GLOBAL PARA COMPATIBILIDADE
+# 🔥 ENUMS
 # ==============================================
 
-# Instância global para compatibilidade com código antigo
-office_ml_model = MLModel()
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    MANAGER = "manager"
+    USER = "user"
+    CLIENT = "client"
 
-# 🔥 Nova instância com suporte a V4.0
-ml_model_v2 = MLModel(input_shape=(10,))
+
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
 
 
-print("\n" + "=" * 70)
-print("✅ model.py V2.0 carregado com sucesso!")
+class UserPlan(str, enum.Enum):
+    BASICO = "basico"
+    PROFISSIONAL = "profissional"
+    EMPRESARIAL = "empresarial"
+    PREMIUM_MENSAL = "premium_mensal"
+
+
+# ==============================================
+# 🔥 USER - MODELO PRINCIPAL
+# ==============================================
+
+class User(Base):
+    __tablename__ = 'users'
+    __table_args__ = {'extend_existing': True}
+
+    # ===== CAMPOS BÁSICOS =====
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    workshop_name = Column(String)
+    phone = Column(String)
+
+    # 🔥 FIX: values_callable faz o SQLAlchemy gravar/ler os .value (minúsculos)
+    role = Column(
+        Enum(
+            UserRole,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="userrole",
+        ),
+        default=UserRole.USER,
+    )
+
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=_now_brasil)
+    last_login = Column(DateTime, onupdate=_now_brasil)
+
+    is_admin = Column(Boolean, default=False)
+
+    # ===== CRÉDITOS =====
+    credits = Column(Integer, default=0)
+    total_purchased = Column(Integer, default=0)
+    last_payment_date = Column(DateTime, onupdate=_now_brasil)
+
+    # 🔥 CONTROLE DE CRÉDITOS INICIAIS (v2.5)
+    received_initial_credits = Column(Boolean, default=False, nullable=False,
+                                       comment="Indica se o usuário já recebeu os créditos iniciais")
+
+    # 🔥 CONTROLE DE BÔNUS PREMIUM
+    last_bonus_at = Column(DateTime, nullable=True,
+                           comment="Última vez que recebeu bônus premium por zerar créditos")
+    bonus_count = Column(Integer, default=0,
+                         comment="Número total de bônus premium recebidos")
+
+    # ===== PLANO PREMIUM =====
+    # 🔥 FIX: values_callable + native_enum=False para casar com o varchar(50) do banco
+    plan = Column(
+        Enum(
+            UserPlan,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="userplan",
+        ),
+        default=UserPlan.BASICO,
+        nullable=False,
+    )
+    premium_activated_at = Column(DateTime, nullable=True)
+    premium_expires_at = Column(Date, nullable=True)
+
+    # 🔥 v2.9: Âncora do ciclo de crédito diário (24h a partir daqui)
+    last_daily_credit_at = Column(
+        DateTime, nullable=True,
+        comment="Última vez que recebeu crédito diário (âncora do ciclo de 24h)"
+    )
+
+    # ===== PROMOÇÃO =====
+    promotional_price_locked = Column(Boolean, default=False)
+    promotional_price = Column(Float, nullable=True)
+    purchased_at_promotion = Column(DateTime, nullable=True)
+
+    # ===== REFRESH TOKEN =====
+    refresh_token = Column(Text, nullable=True)
+    refresh_token_expires = Column(DateTime, nullable=True)
+    refresh_token_revoked = Column(Boolean, default=False)
+    refresh_token_jti = Column(String, nullable=True)
+    last_refresh_at = Column(DateTime, nullable=True)
+
+    # ===== RELACIONAMENTOS =====
+    analyses = relationship("Analysis", back_populates="user", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
+    daily_credits = relationship("DailyCreditLog", back_populates="user", cascade="all, delete-orphan")
+
+    # ==========================================
+    # 🔥 MÉTODOS DE AUTENTICAÇÃO
+    # ==========================================
+
+    def verify_password(self, password: str) -> bool:
+        """Verifica se a senha está correta"""
+        return hasher.verify_password(password, self.hashed_password)
+
+    def set_password(self, password: str):
+        """Define nova senha (hash automaticamente)"""
+        self.hashed_password = hasher.hash_password(password)
+
+    # ==========================================
+    # 🔥 MÉTODOS DE CRÉDITOS
+    # ==========================================
+
+    def has_credits(self, required: int = 1) -> bool:
+        """Verifica se o usuário tem créditos suficientes"""
+        if self.is_admin:
+            return True
+        return self.credits >= required
+
+    def deduct_credit(self, amount: int = 1) -> bool:
+        """Deduz créditos do usuário"""
+        if self.is_admin:
+            return True
+        if self.credits >= amount:
+            self.credits -= amount
+            return True
+        return False
+
+    def add_credits(self, amount: int):
+        """Adiciona créditos ao usuário"""
+        self.credits += amount
+        self.total_purchased += amount
+        self.last_payment_date = _now_brasil()
+
+    def has_received_initial_credits(self) -> bool:
+        """Verifica se o usuário já recebeu os créditos iniciais"""
+        return self.received_initial_credits
+
+    def mark_initial_credits_received(self):
+        """Marca que o usuário já recebeu os créditos iniciais"""
+        self.received_initial_credits = True
+
+    # ==========================================
+    # 🔥 MÉTODOS DE BÔNUS
+    # ==========================================
+
+    def has_received_bonus_today(self) -> bool:
+        """Verifica se o usuário já recebeu bônus hoje"""
+        if not self.last_bonus_at:
+            return False
+        last = _as_date(self.last_bonus_at)
+        return last == _today_brasil()
+
+    def mark_bonus_received(self):
+        """Marca que o usuário recebeu bônus hoje"""
+        self.last_bonus_at = _now_brasil()
+        self.bonus_count = (self.bonus_count or 0) + 1
+
+    def can_receive_bonus_today(self) -> bool:
+        """Verifica se o usuário pode receber bônus hoje (apenas premium)"""
+        if not self.is_premium():
+            return False
+        if self.has_received_bonus_today():
+            return False
+        return True
+
+    # ==========================================
+    # 🔥 MÉTODOS DE PLANO PREMIUM
+    # ==========================================
+
+    def _plan_value(self) -> str:
+        """🔥 Normaliza o valor do plano como string minúscula."""
+        plan = self.plan
+        if plan is None:
+            return ""
+        if hasattr(plan, "value"):
+            return plan.value
+        return str(plan).lower()
+
+    def is_premium(self) -> bool:
+        """
+        🔥 Verifica se o usuário tem plano premium ativo.
+
+        - Normaliza o valor do plano (aceita Enum, str maiúscula ou minúscula).
+        - Normaliza `premium_expires_at` para `date` antes de comparar.
+        """
+        if self._plan_value() != UserPlan.PREMIUM_MENSAL.value:
+            return False
+
+        expires = _as_date(self.premium_expires_at)
+        if not expires:
+            return False
+
+        return expires >= _today_brasil()
+
+    def get_premium_days_left(self) -> int:
+        """Retorna dias restantes do plano premium"""
+        if not self.is_premium():
+            return 0
+        expires = _as_date(self.premium_expires_at)
+        return (expires - _today_brasil()).days
+
+    def get_premium_progress(self) -> float:
+        """Retorna progresso do plano premium (0-100)"""
+        activated = _as_date(self.premium_activated_at)
+        expires = _as_date(self.premium_expires_at)
+        if not activated or not expires:
+            return 0
+
+        total_days = 30
+        days_passed = (_today_brasil() - activated).days
+        if days_passed < 0:
+            days_passed = 0
+        elif days_passed > total_days:
+            days_passed = total_days
+
+        return round((days_passed / total_days) * 100, 1)
+
+    def get_current_price(self) -> float:
+        """Retorna o preço atual (promocional ou regular)"""
+        if self.promotional_price_locked and self.promotional_price:
+            return self.promotional_price
+        return 97.00
+
+    # ==========================================
+    # 🔥 CICLO DE CRÉDITO DIÁRIO (v2.9)
+    # ==========================================
+
+    def get_next_credit_at(self) -> Optional[datetime]:
+        """
+        🔥 Retorna quando o próximo crédito do ciclo estará disponível.
+
+        - Se não é premium: None
+        - Se nunca recebeu (`last_daily_credit_at is None`): agora (crédito do ato)
+        - Se já recebeu: `last_daily_credit_at + 24h`
+        """
+        if not self.is_premium():
+            return None
+
+        if not self.last_daily_credit_at:
+            return _now_brasil()
+
+        last = _ensure_timezone(self.last_daily_credit_at)
+        return last + timedelta(hours=24)
+
+    def can_receive_daily_credit(self) -> bool:
+        """
+        🔥 Verifica se o usuário pode receber o crédito do ciclo agora.
+
+        Regras:
+          - Precisa ser premium ativo
+          - Saldo < 3 (limite máximo)
+          - Já completou 24h desde `last_daily_credit_at`
+        """
+        if not self.is_premium():
+            return False
+
+        if (self.credits or 0) >= 3:
+            return False
+
+        next_at = self.get_next_credit_at()
+        if not next_at:
+            return False
+
+        return _now_brasil() >= next_at
+
+    def time_until_next_credit(self) -> tuple:
+        """
+        🔥 Retorna (horas, minutos) até o próximo crédito.
+        Se já pode receber, retorna (0, 0).
+        """
+        next_at = self.get_next_credit_at()
+        if not next_at:
+            return (0, 0)
+
+        now = _now_brasil()
+        if now >= next_at:
+            return (0, 0)
+
+        delta = next_at - now
+        total_seconds = int(delta.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        return (hours, minutes)
+
+    def days_until_next_credit(self) -> int:
+        """
+        🔥 Retorna dias (inteiros) até o próximo crédito.
+        Se for hoje, retorna 0. Se for amanhã, retorna 1.
+        """
+        next_at = self.get_next_credit_at()
+        if not next_at:
+            return 0
+
+        now = _now_brasil()
+        if now >= next_at:
+            return 0
+
+        # Diferença em dias (calendário), não em horas
+        return (next_at.date() - now.date()).days
+
+    def get_next_credit_human(self) -> str:
+        """
+        🔥 Retorna 'hoje às HH:MM' ou 'amanhã às HH:MM'.
+        Usado pelo front pra mostrar quando cai o próximo crédito.
+        """
+        next_at = self.get_next_credit_at()
+        if not next_at:
+            return ""
+
+        aware = _ensure_timezone(next_at)
+        local = aware.astimezone(_TZ_CACHE)
+        today = _today_brasil()
+
+        time_str = local.strftime("%H:%M")
+        if local.date() == today:
+            return f"hoje às {time_str}"
+
+        # Quantos dias faltam (calendário)
+        diff_days = (local.date() - today).days
+        if diff_days == 1:
+            return f"amanhã às {time_str}"
+        if diff_days > 1:
+            return f"em {diff_days} dias ({local.strftime('%d/%m')} às {time_str})"
+
+        return f"às {time_str}"
+
+    # ==========================================
+    # 🔥 MÉTODOS DE REFRESH TOKEN (FIX v2.7)
+    # ==========================================
+
+    def set_refresh_token(self, token: str, jti: str, expires_days: int = 7):
+        """Define um novo refresh token para o usuário"""
+        self.refresh_token = token
+        self.refresh_token_jti = jti
+        self.refresh_token_expires = _now_brasil() + timedelta(days=expires_days)
+        self.refresh_token_revoked = False
+        self.last_refresh_at = _now_brasil()
+
+    def validate_refresh_token(self, token: str) -> bool:
+        """
+        🔥 Valida se o refresh token é válido
+        🔥 CORRIGIDO v2.7: Timezone handling
+        """
+        if not self.refresh_token or not token:
+            return False
+
+        if self.refresh_token != token:
+            return False
+
+        if self.refresh_token_revoked:
+            return False
+
+        if not self.refresh_token_expires:
+            return False
+
+        now = _now_brasil()
+        expires = _ensure_timezone(self.refresh_token_expires)
+
+        return expires > now
+
+    def is_refresh_token_valid(self) -> bool:
+        """🔥 Verifica se o refresh token atual é válido (sem precisar do token)"""
+        if not self.refresh_token:
+            return False
+        if self.refresh_token_revoked:
+            return False
+        if not self.refresh_token_expires:
+            return False
+
+        now = _now_brasil()
+        expires = _ensure_timezone(self.refresh_token_expires)
+
+        return expires > now
+
+    def revoke_refresh_token(self):
+        """Revoga o refresh token atual"""
+        self.refresh_token_revoked = True
+        self.refresh_token = None
+        self.refresh_token_jti = None
+        self.refresh_token_expires = None
+
+    # ==========================================
+    # 🔥 MÉTODOS DE UTILIDADE
+    # ==========================================
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte usuário para dicionário (sem dados sensíveis)"""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "workshop_name": self.workshop_name,
+            "phone": self.phone,
+            "role": self.role.value if self.role else None,
+            "is_active": self.is_active,
+            "is_verified": self.is_verified,
+            "is_admin": self.is_admin,
+            "credits": self.credits,
+            "plan": self.plan.value if self.plan else None,
+            "is_premium": self.is_premium(),
+            "premium_days_left": self.get_premium_days_left(),
+            # 🔥 v2.9: ciclo de crédito
+            "last_daily_credit_at": self.last_daily_credit_at.isoformat() if self.last_daily_credit_at else None,
+            "next_credit_at": self.get_next_credit_at().isoformat() if self.get_next_credit_at() else None,
+            "next_credit_at_human": self.get_next_credit_human(),
+            "can_receive_daily_credit": self.can_receive_daily_credit(),
+            "has_promotional_price": self.promotional_price_locked,
+            "promotional_price": self.promotional_price,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "has_refresh_token": bool(self.refresh_token),
+            "refresh_token_valid": self.is_refresh_token_valid()
+        }
+
+
+# ==============================================
+# 🔥 PAYMENT - MODELO DE PAGAMENTO
+# ==============================================
+
+class Payment(Base):
+    __tablename__ = 'payments'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    mp_id = Column(String, unique=True, index=True)
+    amount = Column(Float, nullable=False)
+    credits = Column(Integer, nullable=False)
+
+    # 🔥 FIX: values_callable para gravar/ler os .value (minúsculos)
+    status = Column(
+        Enum(
+            PaymentStatus,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="paymentstatus",
+        ),
+        default=PaymentStatus.PENDING,
+    )
+
+    payment_method = Column(String)
+    payment_type = Column(String)
+
+    qr_code = Column(Text)
+    qr_code_base64 = Column(Text)
+    qr_code_url = Column(String)
+    checkout_url = Column(String)
+    preference_id = Column(String)
+
+    description = Column(String)
+    payment_metadata = Column(JSON, default={})
+
+    created_at = Column(DateTime, default=_now_brasil)
+    updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
+    approved_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="payments")
+    daily_credit_logs = relationship("DailyCreditLog", back_populates="payment", cascade="all, delete-orphan")
+
+    def is_approved(self) -> bool:
+        """Verifica se o pagamento foi aprovado"""
+        return self.status == PaymentStatus.APPROVED
+
+    def is_pending(self) -> bool:
+        """Verifica se o pagamento está pendente"""
+        return self.status == PaymentStatus.PENDING
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte pagamento para dicionário"""
+        return {
+            "id": self.id,
+            "mp_id": self.mp_id,
+            "amount": self.amount,
+            "credits": self.credits,
+            "status": self.status.value if self.status else None,
+            "payment_method": self.payment_method,
+            "qr_code_base64": self.qr_code_base64,
+            "qr_code_url": self.qr_code_url,
+            "checkout_url": self.checkout_url,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None
+        }
+
+
+# ==============================================
+# 🔥 DAILY CREDIT LOG
+# ==============================================
+
+class DailyCreditLog(Base):
+    __tablename__ = 'daily_credit_logs'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
+
+    credits_added = Column(Integer, default=1)
+    date = Column(Date, default=_today_brasil)
+    day_number = Column(Integer)
+    total_after = Column(Integer)
+    source = Column(String, default="daily_upload")
+
+    created_at = Column(DateTime, default=_now_brasil)
+
+    user = relationship("User", back_populates="daily_credits")
+    payment = relationship("Payment", back_populates="daily_credit_logs")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte log para dicionário"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "credits_added": self.credits_added,
+            "date": self.date.isoformat() if self.date else None,
+            "day_number": self.day_number,
+            "total_after": self.total_after,
+            "source": self.source,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# ==============================================
+# 🔥 ANALYSIS - MODELO DE ANÁLISE (V2.6)
+# ==============================================
+
+class Analysis(Base):
+    __tablename__ = 'analyses'
+    __table_args__ = {'extend_existing': True}
+
+    # ===== CAMPOS BÁSICOS =====
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    filename = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True, comment="Tamanho do arquivo em bytes")
+    analysis_type = Column(String, nullable=False, default="auto")
+    status = Column(String, default="pending")
+    ai_used = Column(Boolean, default=False)
+    rows_processed = Column(Integer, default=0)
+    columns_processed = Column(Integer, default=0)
+    ai_report = Column(Text, nullable=True)
+    report_path = Column(String, nullable=True)
+
+    uploaded_at = Column(DateTime, default=_now_brasil)
+    processed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="analyses")
+
+    # ===== CAMPOS PoW E SEGURANÇA =====
+    pow_challenge = Column(String(64), nullable=True, comment="Desafio PoW usado no upload")
+    pow_nonce = Column(String(64), nullable=True, comment="Nonce PoW usado no upload")
+    pow_difficulty = Column(Integer, default=4, comment="Dificuldade do PoW (número de zeros)")
+    pow_verified = Column(Boolean, default=False, comment="PoW foi verificado pelo backend")
+    pow_verified_at = Column(DateTime, nullable=True, comment="Data da verificação PoW")
+    pow_algorithm = Column(String(20), default="SHA-256", comment="Algoritmo usado")
+
+    # ===== SEGURANÇA =====
+    client_ip = Column(String(45), nullable=True, comment="IP do cliente")
+    user_agent = Column(String(255), nullable=True, comment="User Agent do cliente")
+    rate_limit_applied = Column(Boolean, default=False, comment="Rate limit foi aplicado")
+
+    # ===== MÉTRICAS DE PERFORMANCE =====
+    processing_time_ms = Column(Integer, nullable=True, comment="Tempo total de processamento em ms")
+    pow_solve_time_ms = Column(Integer, nullable=True, comment="Tempo de resolução do PoW em ms")
+    upload_time_ms = Column(Integer, nullable=True, comment="Tempo de upload em ms")
+
+    # ===== MÉTRICAS DE ML =====
+    encoding_used = Column(String(20), nullable=True, comment="Encoding detectado no arquivo")
+    model_used = Column(String(50), nullable=True, comment="Modelo ML utilizado")
+    confidence_score = Column(Float, nullable=True, comment="Score de confiança do modelo")
+
+    # ===== MÉTRICAS DE DADOS =====
+    total_rows = Column(Integer, default=0, comment="Total de linhas processadas")
+    total_columns = Column(Integer, default=0, comment="Total de colunas processadas")
+    numeric_columns = Column(Integer, default=0, comment="Colunas numéricas")
+    categorical_columns = Column(Integer, default=0, comment="Colunas categóricas")
+
+    # ===== CHART DATA =====
+    chart_data = Column(JSON, nullable=True, comment="Dados para renderização de gráficos")
+
+    # ===== PROGRESSO =====
+    progress = Column(Integer, default=0, comment="Progresso do processamento (0-100)")
+    progress_message = Column(String(255), default="Aguardando início...", comment="Mensagem de progresso")
+
+    # ===== CRÉDITOS (V2.6) =====
+    credits_needed = Column(Integer, default=1, comment="Créditos necessários para liberar a análise")
+
+    credits_consumed = Column(Boolean, default=False, comment="Indica se o crédito foi consumido")
+    credits_consumed_at = Column(DateTime, nullable=True, comment="Data do consumo do crédito")
+    credits_consumed_amount = Column(Integer, default=0, comment="Quantidade consumida (1)")
+    credits_remaining_after = Column(Integer, nullable=True, comment="Saldo após consumo")
+    credits_error = Column(String(255), nullable=True, comment="Erro no consumo de crédito")
+    credits_bonus_granted = Column(Boolean, default=False, comment="Se bônus foi concedido")
+    credits_bonus_amount = Column(Integer, default=0, comment="Quantidade de bônus")
+
+    # ===== RESULTADOS =====
+    predictions_summary = Column(JSON, nullable=True, comment="Resumo das predições")
+    insights = Column(JSON, nullable=True, comment="Insights gerados")
+    recommendations = Column(JSON, nullable=True, comment="Recomendações geradas")
+    executive_score = Column(JSON, nullable=True, comment="Score executivo")
+
+    # ==========================================
+    # 🔥 MÉTODOS
+    # ==========================================
+
+    def set_pow_data(self, challenge: str, nonce: str, difficulty: int = 4):
+        """Define os dados do PoW"""
+        self.pow_challenge = challenge
+        self.pow_nonce = nonce
+        self.pow_difficulty = difficulty
+        self.pow_algorithm = "SHA-256"
+
+    def verify_pow(self):
+        """Marca o PoW como verificado"""
+        self.pow_verified = True
+        self.pow_verified_at = _now_brasil()
+
+    def set_processing_metrics(self, metrics: dict):
+        """Define métricas de processamento"""
+        if 'processing_time_ms' in metrics:
+            self.processing_time_ms = metrics['processing_time_ms']
+        if 'pow_solve_time_ms' in metrics:
+            self.pow_solve_time_ms = metrics['pow_solve_time_ms']
+        if 'upload_time_ms' in metrics:
+            self.upload_time_ms = metrics['upload_time_ms']
+        if 'encoding_used' in metrics:
+            self.encoding_used = metrics['encoding_used']
+        if 'model_used' in metrics:
+            self.model_used = metrics['model_used']
+        if 'confidence_score' in metrics:
+            self.confidence_score = metrics['confidence_score']
+
+    def set_data_metrics(self, data: dict):
+        """Define métricas dos dados"""
+        if 'total_rows' in data:
+            self.total_rows = data['total_rows']
+        if 'total_columns' in data:
+            self.total_columns = data['total_columns']
+        if 'numeric_columns' in data:
+            self.numeric_columns = data['numeric_columns']
+        if 'categorical_columns' in data:
+            self.categorical_columns = data['categorical_columns']
+
+    def set_results(self, results: dict):
+        """Define os resultados da análise"""
+        if 'predictions_summary' in results:
+            self.predictions_summary = results['predictions_summary']
+        if 'insights' in results:
+            self.insights = results['insights']
+        if 'recommendations' in results:
+            self.recommendations = results['recommendations']
+        if 'chart_data' in results:
+            self.chart_data = results['chart_data']
+        if 'executive_score' in results:
+            self.executive_score = results['executive_score']
+
+    # ===== MÉTODOS DE CRÉDITOS =====
+
+    def mark_credit_consumed(self, amount: int = 1, remaining: int = None):
+        """Marca que o crédito foi consumido"""
+        self.credits_consumed = True
+        self.credits_consumed_at = _now_brasil()
+        self.credits_consumed_amount = amount
+        if remaining is not None:
+            self.credits_remaining_after = remaining
+
+    def mark_credit_error(self, error: str):
+        """Marca erro no consumo de crédito"""
+        self.credits_error = error
+
+    def mark_bonus_granted(self, amount: int = 1):
+        """Marca que bônus foi concedido"""
+        self.credits_bonus_granted = True
+        self.credits_bonus_amount = amount
+
+    def has_credit_consumed(self) -> bool:
+        """Verifica se o crédito já foi consumido"""
+        return self.credits_consumed
+
+    def is_pending_credit(self) -> bool:
+        """Verifica se está aguardando crédito"""
+        return self.status == "pending_credit" or (not self.credits_consumed and self.status == "completed")
+
+    def needs_credits(self) -> bool:
+        """Verifica se a análise precisa de créditos para ser liberada"""
+        return not self.credits_consumed and self.status in ["completed", "pending_credit"]
+
+    def get_credits_status(self) -> Dict[str, Any]:
+        """Retorna o status completo dos créditos da análise"""
+        return {
+            "needed": self.credits_needed or 1,
+            "consumed": self.credits_consumed,
+            "consumed_at": self.credits_consumed_at.isoformat() if self.credits_consumed_at else None,
+            "amount_consumed": self.credits_consumed_amount,
+            "remaining_after": self.credits_remaining_after,
+            "error": self.credits_error,
+            "bonus_granted": self.credits_bonus_granted,
+            "bonus_amount": self.credits_bonus_amount,
+            "is_pending": self.is_pending_credit()
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte análise para dicionário"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "filename": self.filename,
+            "file_size": self.file_size,
+            "analysis_type": self.analysis_type,
+            "status": self.status,
+            "ai_used": self.ai_used,
+            "rows_processed": self.rows_processed,
+            "columns_processed": self.columns_processed,
+            "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
+            "processed_at": self.processed_at.isoformat() if self.processed_at else None,
+            "pow_verified": self.pow_verified,
+            "pow_difficulty": self.pow_difficulty,
+            "pow_algorithm": self.pow_algorithm,
+            "client_ip": self.client_ip,
+            "rate_limit_applied": self.rate_limit_applied,
+            "processing_time_ms": self.processing_time_ms,
+            "encoding_used": self.encoding_used,
+            "model_used": self.model_used,
+            "confidence_score": self.confidence_score,
+            "total_rows": self.total_rows,
+            "total_columns": self.total_columns,
+            "numeric_columns": self.numeric_columns,
+            "categorical_columns": self.categorical_columns,
+            "chart_data": self.chart_data,
+            "progress": self.progress,
+            "progress_message": self.progress_message,
+            "predictions_summary": self.predictions_summary,
+            "insights": self.insights,
+            "recommendations": self.recommendations,
+            "executive_score": self.executive_score,
+            # 🔥 CAMPOS DE CRÉDITO (V2.6)
+            "credits_needed": self.credits_needed,
+            "credits_consumed": self.credits_consumed,
+            "credits_consumed_at": self.credits_consumed_at.isoformat() if self.credits_consumed_at else None,
+            "credits_consumed_amount": self.credits_consumed_amount,
+            "credits_remaining_after": self.credits_remaining_after,
+            "credits_error": self.credits_error,
+            "credits_bonus_granted": self.credits_bonus_granted,
+            "credits_bonus_amount": self.credits_bonus_amount,
+            "is_pending_credit": self.is_pending_credit()
+        }
+
+
+# ==============================================
+# 🔥 PROMOTION CONTROL
+# ==============================================
+
+class PromotionControl(Base):
+    __tablename__ = 'promotion_control'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    total_slots = Column(Integer, default=100)
+    used_slots = Column(Integer, default=0)
+    promotional_price = Column(Float, default=97.00)
+    regular_price = Column(Float, default=149.90)
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=_now_brasil)
+    updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
+
+    def get_remaining_slots(self) -> int:
+        """Retorna vagas restantes"""
+        return max(0, self.total_slots - self.used_slots)
+
+    def has_available_slots(self) -> bool:
+        """Verifica se há vagas disponíveis"""
+        return self.get_remaining_slots() > 0 and self.is_active
+
+    def get_current_price(self) -> float:
+        """Retorna o preço atual"""
+        return self.promotional_price if self.has_available_slots() else self.regular_price
+
+    def use_slot(self) -> bool:
+        """Consome uma vaga"""
+        if self.has_available_slots():
+            self.used_slots += 1
+            self.updated_at = _now_brasil()
+            return True
+        return False
+
+    def reset_promotion(self):
+        """Reseta a promoção"""
+        self.used_slots = 0
+        self.is_active = True
+        self.updated_at = _now_brasil()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "total_slots": self.total_slots,
+            "used_slots": self.used_slots,
+            "remaining_slots": self.get_remaining_slots(),
+            "promotional_price": self.promotional_price,
+            "regular_price": self.regular_price,
+            "is_active": self.is_active,
+            "has_available": self.has_available_slots()
+        }
+
+
+# ==============================================
+# 🔥 BLACKLISTED TOKEN
+# ==============================================
+
+class BlacklistedToken(Base):
+    __tablename__ = 'blacklisted_tokens'
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(512), unique=True, index=True, nullable=False)
+    jti = Column(String(255), unique=True, index=True, nullable=True)
+    blacklisted_at = Column(DateTime, default=_now_brasil, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+    @classmethod
+    def is_blacklisted(cls, jti: str) -> bool:
+        """Verifica se um token está na blacklist"""
+        return False
+
+    def __repr__(self):
+        return f"<BlacklistedToken jti={self.jti[:8] if self.jti else 'None'}... expires={self.expires_at}>"
+
+
+# ==============================================
+# 🔥 LOADING INFO
+# ==============================================
+
 print("=" * 70)
-print("   📊 Normalização: Z-Score (StandardScaler)")
-print("   🔥 Integrado com train.py V4.0 e predict.py V7.0")
-print("   🔥 Detecção automática de features")
-print("   📊 MÉTODOS:")
-print("      • create_binary_classifier() → RandomForest com Z-Score")
-print("      • create_regression_model() → RandomForest Regressor com Z-Score")
-print("      • create_ensemble_classifier() → VotingClassifier com Z-Score")
-print("      • train(X, y, normalize=True) → Treino com Z-Score")
-print("      • predict(X, normalize=True) → Predição com Z-Score")
-print("      • predict_probabilities(X) → Probabilidades")
-print("      • save_model(path) → Salva no formato V4.0")
-print("      • load_model(path) → Carrega do formato V4.0")
-print("      • load_from_joblib(path) → Carrega joblib")
-print("      • detect_features(X) → Detecta mismatch de features")
-print("      • get_model_summary() → Resumo do modelo")
-print("   📊 INSTÂNCIAS:")
-print("      • office_ml_model → Compatibilidade (legado)")
-print("      • ml_model_v2 → Nova instância V2.0")
+print("🔥 models.py v2.9 carregado - CICLO DE CRÉDITO DIÁRIO!")
+print("   ✅ v2.9: last_daily_credit_at (âncora do ciclo de 24h)")
+print("   ✅ v2.9: get_next_credit_at() / can_receive_daily_credit()")
+print("   ✅ v2.9: get_next_credit_human() para o front")
+print("   ✅ v2.9: to_dict() enriquecido com campos do ciclo")
+print("   ✅ v2.8: _as_date() normaliza datetime/date")
+print("   ✅ v2.8: Enum com values_callable")
+print("   ✅ v2.7: validate_refresh_token com timezone handling")
 print("=" * 70)

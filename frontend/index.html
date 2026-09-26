@@ -269,6 +269,60 @@
         }
 
         /* ==============================================
+           🔥 CARD DE CRÉDITO DO CICLO (v3.0)
+           ============================================== */
+        #dailyCreditWrapper {
+            margin-top: 0.8rem;
+            padding-top: 0.8rem;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        #dailyCreditStatus {
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.5);
+            line-height: 1.5;
+            text-align: center;
+            min-height: 1.1rem;
+        }
+        #dailyCreditSchedule {
+            display: none;
+            margin-top: 0.6rem;
+            padding: 0.5rem 0.7rem;
+            background: rgba(0, 180, 255, 0.04);
+            border-radius: 8px;
+            border-left: 3px solid #00B4FF;
+        }
+        #dailyCreditBadge {
+            margin-left: auto;
+            font-size: 0.6rem;
+            padding: 2px 8px;
+            border-radius: 50px;
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.5);
+            transition: all 0.3s ease;
+        }
+        #maxLimitWarning {
+            display: none;
+            margin-top: 0.5rem;
+        }
+        #maxLimitWarning .limit-warning-box {
+            background: rgba(245,166,35,0.12);
+            border: 1px solid #f5a623;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        #maxLimitWarning .limit-warning-box .limit-icon {
+            font-size: 1rem;
+        }
+        #maxLimitWarning .limit-warning-box .limit-text {
+            color: #f5a623;
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+
+        /* ==============================================
            UPLOAD
            ============================================== */
         .upload-area {
@@ -949,6 +1003,10 @@
             /* Relatório da Ayla Mobile */
             .ayla-score-grid { grid-template-columns: repeat(2, 1fr); }
             .ayla-rec-item { padding: 0.6rem 0.7rem; }
+
+            /* 🔥 Card do ciclo no mobile */
+            #dailyCreditBadge { font-size: 0.55rem; padding: 2px 6px; }
+            #dailyCreditStatus { font-size: 0.65rem; }
         }
         @media (max-width: 480px) {
             .metric-row { grid-template-columns: 1fr 1fr; }
@@ -1070,6 +1128,34 @@
                                         <div class="metric-value credits-highlight" id="creditsDisplay">0</div>
                                         <div class="metric-label" style="color:var(--azul-principal);">Créditos</div>
                                     </div>
+                                </div>
+
+                                <!-- 🔥 BLOCO DE CRÉDITO DO CICLO (v3.0) -->
+                                <div id="dailyCreditWrapper">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                        <i class="fas fa-sun" style="color: #f5a623; font-size: 0.9rem;" aria-hidden="true"></i>
+                                        <strong style="color: #f5a623; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            Crédito do Ciclo
+                                        </strong>
+                                        <span id="dailyCreditBadge">Premium</span>
+                                    </div>
+
+                                    <div id="dailyCreditStatus" aria-live="polite">
+                                        Carregando status...
+                                    </div>
+
+                                    <div id="dailyCreditSchedule">
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; color: rgba(255,255,255,0.7); margin-bottom: 0.2rem;">
+                                            <i class="fas fa-clock" style="color: #00B4FF;" aria-hidden="true"></i>
+                                            <span id="dailyCreditNextText">Próximo crédito: —</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; color: rgba(255,255,255,0.7);">
+                                            <i class="fas fa-coins" style="color: #f5a623;" aria-hidden="true"></i>
+                                            <span id="dailyCreditBalanceText">Saldo: —</span>
+                                        </div>
+                                    </div>
+
+                                    <div id="maxLimitWarning"></div>
                                 </div>
                             </div>
                         </div>
@@ -1370,7 +1456,7 @@
                         <i class="fas fa-info-circle me-2" style="color:var(--azul-principal);" aria-hidden="true"></i>
                         <strong style="color:var(--azul-principal);">Como funciona:</strong><br>
                         • <strong style="color:var(--azul-principal);">3 créditos grátis</strong> ao começar<br>
-                        • ⭐ Premium ganha 1 crédito/dia<br>
+                        • ⭐ Premium ganha 1 crédito a cada 24h<br>
                         • Cada análise consome 1 crédito<br>
                         • 📁 Até 3 arquivos por vez (200KB cada)
                     </div>

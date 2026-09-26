@@ -1,29 +1,21 @@
-# backend/api/payment_routes.py - VERSÃO 4.1 (CORRIGIDA + MELHORADA)
+# backend/api/payment_routes.py - VERSÃO 4.3 (CICLO DE 24H)
 """
 🔥 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 4.1 - SINCRONIZADA COM payment_service.py V4.0
+VERSÃO: 4.3 - SINCRONIZADA COM payment_service.py V4.0
 
-🔥 MUDANÇAS v4.1:
-   1. ✅ FIX: removido import morto de _is_premium_user/_get_plan_value
-   2. ✅ FIX: get_pix_qrcode não usa mais payment.expires_at (coluna inexistente)
-      → calcula expiração via created_at + PIX_QR_CODE_EXPIRY_MINUTES
-   3. ✅ FIX: claim_bonus usa receive_daily_credit direto (sem amount=0)
-   4. ✅ FIX: filtros SQL usam .value explícito (plan/status)
-   5. ✅ FIX: comparações de datetime naive vs aware normalizadas
-   6. ✅ FIX: uptime_seconds no /metrics (sinal correto)
-   7. ✅ CLEAN: imports não usados removidos
-   8. ✅ CLEAN: _scheduler_lock e SIMULATION_DELAY_SECONDS removidos
-   9. ✅ CLEAN: initialize_new_user_credits (dead code) removido
-  10. ✅ IMPROVE: logs padronizados com prefixo [payments]
-  11. ✅ IMPROVE: user.is_premium() em vez de _is_premium_user()
-  12. ✅ IMPROVE: PaymentStatus enum em vez de strings
+🔥 MUDANÇAS v4.3:
+   1. ✅ CICLO: job diário virou "interval(minutes=5)" (não mais CronTrigger)
+   2. ✅ CICLO: crédito do ato ancorado em last_daily_credit_at
+   3. ✅ CICLO: webhook grava DailyCreditLog no ato do pagamento
+   4. ✅ CLEAN: removidos DAILY_CREDITS_HOUR/MINUTE (não usados)
+   5. ✅ IMPROVE: logs com próximo ciclo calculado
 
-🔥 MANTIDO da v4.0:
-   - sanitize NÃO corrompe QR Code Base64
-   - pix_code separado de qr_code_base64
+🔥 MANTIDO da v4.2:
+   - grant_daily_credits_to_all() percorre todos os premium
+   - Execução no boot (recupera quem perdeu)
+   - POST /admin/run-daily-credits (teste manual)
+   - sanitize NÃO corrompe QR Code
    - Scheduler idempotente
-   - Revalidação MP antes de cancelar
-   - Rate limit com intervalo explícito
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
@@ -105,16 +97,16 @@ PROMOTIONAL_PRICE = 97.00
 REGULAR_PRICE = 149.90
 TOTAL_PROMOTIONAL_SLOTS = 100
 
+# 🔥 v4.3: ciclo do job diário (a cada 5 min)
+DAILY_CREDITS_INTERVAL_MINUTES = 5
+
 
 # ==============================================
 # 🔥 HELPERS DE TIMEZONE
 # ==============================================
 
 def _naive_now_brasil() -> datetime:
-    """
-    🔥 Retorna datetime naive (sem tzinfo) no horário de Brasília.
-    Usado para comparar com colunas naive do banco (timestamp without time zone).
-    """
+    """Retorna datetime naive (sem tzinfo) no horário de Brasília."""
     return _now_brasil().replace(tzinfo=None)
 
 
@@ -126,11 +118,7 @@ def _as_naive(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _payment_expires_at(payment: Payment) -> Optional[datetime]:
-    """
-    🔥 Calcula a expiração do PIX.
-    Como Payment não tem coluna expires_at, derivamos de created_at.
-    Retorna datetime naive (mesmo formato do banco).
-    """
+    """Calcula expiração do PIX via created_at + PIX_QR_CODE_EXPIRY_MINUTES."""
     created = _as_naive(payment.created_at)
     if not created:
         return None
@@ -138,16 +126,14 @@ def _payment_expires_at(payment: Payment) -> Optional[datetime]:
 
 
 # ==============================================
-# 🔥 SCHEDULER IDEMPOTENTE
+# 🔥 SCHEDULER (cleanup + daily credits)
 # ==============================================
 
 _scheduler_instance = None
 
 
 def cleanup_expired_payments():
-    """
-    🔥 Revalida com o MP antes de cancelar (evita cancelar pagamento aprovado).
-    """
+    """Revalida com o MP antes de cancelar (evita cancelar pagamento aprovado)."""
     db = None
     try:
         db = SessionLocal()
@@ -212,8 +198,60 @@ def cleanup_expired_payments():
             db.close()
 
 
+def grant_daily_credits_to_all():
+    """
+    🔥 v4.3: Percorre TODOS os premium ativos e credita quem já completou
+    o ciclo de 24h desde o último crédito (via DailyCreditsService v3.0).
+
+    Roda a cada 5 min (não mais 1×/dia).
+    O service decide quem pode receber com base em `last_daily_credit_at`.
+    """
+    db = None
+    try:
+        db = SessionLocal()
+
+        # Filtro: premium ativo, não expirado, ativo, não admin
+        users = db.query(User).filter(
+            User.plan == UserPlan.PREMIUM_MENSAL.value,
+            User.premium_expires_at >= _today_brasil(),
+            User.is_active == True,
+            User.is_admin == False,
+        ).all()
+
+        if not users:
+            logger.debug("[payments] 🕐 Job: nenhum premium ativo")
+            return
+
+        granted = 0
+        skipped = 0
+
+        for user in users:
+            try:
+                result = daily_credits_service.check_and_add_daily_credit(db, user.id)
+                if result.get("credits_added", 0) > 0:
+                    granted += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                logger.error(f"[payments] ⚠️ Erro ao creditar {user.email}: {e}")
+                db.rollback()
+
+        if granted > 0 or skipped > 0:
+            logger.info(
+                f"[payments] 🕐 Job do ciclo: {granted} crédito(s) concedido(s), "
+                f"{skipped} pulado(s) (não completou 24h ou no limite)"
+            )
+    except Exception as e:
+        logger.error(f"[payments] ❌ Erro no job do ciclo: {e}")
+        if db:
+            db.rollback()
+    finally:
+        if db:
+            db.close()
+
+
 def start_payment_cleanup_scheduler():
-    """🔥 Scheduler singleton — não duplica em hot-reload."""
+    """🔥 Scheduler singleton — 2 jobs: cleanup (2min) + ciclo de crédito (5min)."""
     global _scheduler_instance
 
     if _scheduler_instance is not None:
@@ -226,6 +264,8 @@ def start_payment_cleanup_scheduler():
         from apscheduler.schedulers.background import BackgroundScheduler
 
         _scheduler_instance = BackgroundScheduler()
+
+        # 🔥 Job 1: limpeza de pagamentos expirados (a cada 2 min)
         _scheduler_instance.add_job(
             cleanup_expired_payments,
             "interval",
@@ -236,16 +276,40 @@ def start_payment_cleanup_scheduler():
             coalesce=True,
             misfire_grace_time=30,
         )
+
+        # 🔥 Job 2 (v4.3): ciclo de crédito — a cada 5 min
+        # O ciclo é de 24h ancorado em last_daily_credit_at, então
+        # o job roda a cada 5 min e credita quem já completou 24h.
+        _scheduler_instance.add_job(
+            grant_daily_credits_to_all,
+            "interval",
+            minutes=DAILY_CREDITS_INTERVAL_MINUTES,
+            id="daily_credits",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,  # 5 min de tolerância
+        )
+
         _scheduler_instance.start()
         start_payment_cleanup_scheduler._started = True
-        logger.info("[payments] 🧹 Scheduler iniciado (2min)")
+        logger.info(
+            f"[payments] 🧹 Scheduler iniciado "
+            f"(cleanup: 2min | ciclo crédito: {DAILY_CREDITS_INTERVAL_MINUTES}min)"
+        )
 
+        # 🔥 Execuções no boot
         cleanup_expired_payments()
+        try:
+            grant_daily_credits_to_all()
+        except Exception as e:
+            logger.warning(f"[payments] ⚠️ Job do ciclo no boot falhou: {e}")
+
         atexit.register(
             lambda: _scheduler_instance.shutdown() if _scheduler_instance else None
         )
-    except ImportError:
-        logger.warning("[payments] ⚠️ apscheduler não instalado")
+    except ImportError as e:
+        logger.warning(f"[payments] ⚠️ apscheduler não instalado: {e}")
     except Exception as e:
         logger.error(f"[payments] ❌ Erro ao iniciar scheduler: {e}")
 
@@ -292,6 +356,9 @@ class CreditEligibilityResponse(BaseModel):
     at_max_limit: bool
     reason: str
     next_credit_date: Optional[str] = None
+    next_credit_at: Optional[str] = None
+    next_credit_at_human: Optional[str] = None
+    expires_at_human: Optional[str] = None
     credits_until_limit: int
     timezone: str = "America/Sao_Paulo (UTC-3)"
     today_date: str
@@ -481,7 +548,7 @@ def get_user_price(user: User, db: Session) -> tuple:
 
 
 def check_payment_rate_limit(user_id: int, db: Session) -> bool:
-    """🔥 Usa intervalo explícito de datas naive."""
+    """Usa intervalo explícito de datas naive."""
     now_brasil = _naive_now_brasil()
     start_of_day = now_brasil.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = start_of_day + timedelta(days=1)
@@ -538,6 +605,29 @@ async def admin_cleanup_expired(
         return {"success": True, "message": "✅ Limpeza executada"}
     except Exception as e:
         logger.error(f"[payments] ❌ Erro limpeza manual: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/run-daily-credits")
+async def admin_run_daily_credits(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔥 v4.3: executa o job do ciclo manualmente (para teste).
+    Uso: POST /api/payments/admin/run-daily-credits
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores")
+    try:
+        grant_daily_credits_to_all()
+        return {
+            "success": True,
+            "message": "✅ Job do ciclo executado",
+            "timestamp": _now_brasil().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"[payments] ❌ Erro no job manual: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -661,6 +751,9 @@ async def get_credit_eligibility_endpoint(
         at_max_limit=eligibility.get("at_max_limit", False),
         reason=eligibility.get("reason", ""),
         next_credit_date=eligibility.get("next_credit_date"),
+        next_credit_at=eligibility.get("next_credit_at"),
+        next_credit_at_human=eligibility.get("next_credit_at_human"),
+        expires_at_human=eligibility.get("expires_at_human"),
         credits_until_limit=eligibility.get("credits_until_limit", 0),
         timezone="America/Sao_Paulo (UTC-3)",
         today_date=_today_brasil().isoformat(),
@@ -689,6 +782,7 @@ async def receive_daily_credit_endpoint(
         "current_credits": result.get("current_credits", user.credits),
         "max_credits": result.get("max_credits", MAX_CREDITS_PREMIUM),
         "message": result.get("message", "🌅 Crédito recebido!"),
+        "next_credit_at_human": result.get("next_credit_at_human"),
         "remaining_until_limit": result.get("remaining_until_limit", 0),
     })
 
@@ -722,7 +816,7 @@ async def claim_bonus(
     db: Session = Depends(get_db),
 ):
     """
-    🔥 v4.1: Usa receive_daily_credit direto (sem gambiarra com amount=0).
+    Bônus manual para usuário premium (fallback do job do ciclo).
     """
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -843,6 +937,8 @@ async def get_user_balance(
         "is_admin": user.is_admin,
         "max_credits_balance": MAX_CREDITS_PREMIUM,
         "can_receive_today": eligibility.get("can_receive_today", False),
+        "next_credit_at_human": eligibility.get("next_credit_at_human"),
+        "expires_at_human": eligibility.get("expires_at_human"),
         "plan": {
             "type": crud._get_plan_value(user),
             "is_premium": premium_status.get("is_premium", False),
@@ -1004,10 +1100,6 @@ async def get_pix_qrcode(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    🔥 v4.1: NÃO usa mais payment.expires_at (coluna inexistente).
-    Calcula expiração via created_at + PIX_QR_CODE_EXPIRY_MINUTES.
-    """
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID inválido")
 
@@ -1018,7 +1110,6 @@ async def get_pix_qrcode(
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    # 🔥 Expiração calculada (naive)
     expires_at = _payment_expires_at(payment)
     now_naive = _naive_now_brasil()
 
@@ -1123,7 +1214,7 @@ async def get_plans(db: Session = Depends(get_db)):
                 "is_vitalicio": True,
                 "remaining_slots": promo.get_remaining_slots(),
                 "total_slots": promo.total_slots,
-                "description": f"1 crédito/dia durante {DAYS_PREMIUM} dias",
+                "description": f"1 crédito a cada 24h durante {DAYS_PREMIUM} dias",
                 "credits_per_day": CREDITS_PER_DAY,
                 "total_days": DAYS_PREMIUM,
                 "max_credits_balance": MAX_CREDITS_PREMIUM,
@@ -1151,7 +1242,6 @@ async def get_payment_metrics(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas admins")
 
-    # 🔥 v4.1: uptime com sinal correto
     try:
         started = datetime.fromisoformat(_payment_metrics["started_at"])
         now = _now_brasil()
@@ -1170,6 +1260,11 @@ async def get_payment_metrics(
             "rate_limit": MAX_PAYMENT_ATTEMPTS_PER_DAY,
             "mp_sdk_available": mp_service and mp_service.sdk is not None,
             "uptime_seconds": uptime,
+            "daily_credits_job": {
+                "interval_minutes": DAILY_CREDITS_INTERVAL_MINUTES,
+                "cycle_hours": 24,
+                "anchor": "last_daily_credit_at",
+            },
         },
     })
 
@@ -1183,6 +1278,11 @@ async def payment_health_check():
         "mp_sdk_available": mp_service and mp_service.sdk is not None,
         "cache_active": cache_active,
         "cache_ttl": PROMOTION_CACHE_TTL,
+        "daily_credits_job": {
+            "interval_minutes": DAILY_CREDITS_INTERVAL_MINUTES,
+            "cycle_hours": 24,
+            "anchor": "last_daily_credit_at",
+        },
         "metrics": {
             "total_attempts": _payment_metrics["total_attempts"],
             "successful": _payment_metrics["successful_payments"],
@@ -1318,8 +1418,30 @@ async def process_payment_webhook(payment_id: str):
             user = crud.get_user_by_id(db, payment.user_id)
 
             if user and not user.is_premium():
+                # 🔥 Ativa plano + inicia ciclo
                 if crud.activate_premium_plan(db, user.id, payment.id):
-                    crud.add_credits(db, user.id, 1, "Crédito inicial do plano premium")
+                    # 🔥 v4.3: +1 crédito no ATO do pagamento (1º do ciclo)
+                    now = _now_brasil()
+                    user.credits = (user.credits or 0) + 1
+                    user.last_daily_credit_at = now  # reforça a âncora
+                    db.add(user)
+
+                    log = DailyCreditLog(
+                        user_id=user.id,
+                        credits_added=1,
+                        date=now.date(),
+                        total_after=user.credits,
+                        source="premium_daily",
+                    )
+                    db.add(log)
+                    db.commit()
+
+                    next_cycle = now + timedelta(hours=24)
+                    logger.info(
+                        f"[payments] ⭐ +1 crédito no ato para {user.email} "
+                        f"(saldo: {user.credits}, próximo ciclo: "
+                        f"{next_cycle.strftime('%d/%m %H:%M')})"
+                    )
 
             if user:
                 was_promotional = (payment.payment_metadata or {}).get("was_promotional", False)
@@ -1441,17 +1563,19 @@ async def check_daily_credit(
                 "credits_added": result.get("credits_added", 1),
                 "current_credits": result.get("current_credits", user.credits),
                 "max_credits": MAX_CREDITS_PREMIUM,
-                "message": result.get("message", "🎉 Crédito do dia!"),
+                "message": result.get("message", "🎉 Crédito do ciclo!"),
+                "next_credit_at_human": result.get("next_credit_at_human"),
                 "remaining_until_limit": result.get("remaining_until_limit", 0),
             })
 
     return sanitize_response({
         "success": False,
-        "message": eligibility.get("reason", "Já recebeu hoje"),
+        "message": eligibility.get("reason", "Aguarde o próximo ciclo"),
         "current_credits": user.credits,
         "max_credits": MAX_CREDITS_PREMIUM,
         "at_max_limit": eligibility.get("at_max_limit", False),
         "received_today": eligibility.get("received_today", False),
+        "next_credit_at_human": eligibility.get("next_credit_at_human"),
     })
 
 
@@ -1500,6 +1624,7 @@ async def get_subscription_status(
         "can_receive_today": eligibility.get("can_receive_today", False),
         "received_today": eligibility.get("received_today", False),
         "at_max_limit": eligibility.get("at_max_limit", False),
+        "next_credit_at_human": eligibility.get("next_credit_at_human"),
         "credits_balance": user.credits or 0,
         "message": "✅ Plano ativo" if is_active else "❌ Plano expirado",
     })
@@ -1510,14 +1635,16 @@ async def get_subscription_status(
 # ==============================================
 
 print("=" * 70)
-print("✅ payment_routes.py v4.1 carregado - CORRIGIDO + MELHORADO!")
-print("   🔥 FIX v4.1:")
-print("      - Imports mortos removidos (_is_premium_user, _get_plan_value)")
-print("      - get_pix_qrcode: expiração calculada (não usa coluna inexistente)")
-print("      - claim_bonus: usa receive_daily_credit direto")
-print("      - Filtros SQL com .value explícito")
-print("      - Comparações naive vs aware normalizadas")
-print("      - uptime_seconds com sinal correto")
+print("✅ payment_routes.py v4.3 carregado - CICLO DE 24H!")
+print("   🔥 NOVO v4.3:")
+print("      - Job do ciclo: interval(minutes=5) em vez de CronTrigger")
+print("      - Webhook: +1 crédito no ato + last_daily_credit_at")
+print("      - Webhook: DailyCreditLog source='premium_daily'")
+print("      - Logs com próximo ciclo calculado")
+print("   🔥 MANTIDO v4.2:")
+print("      - grant_daily_credits_to_all() percorre todos os premium")
+print("      - Execução no boot")
+print("      - POST /admin/run-daily-credits")
 print("   📊 Rate limit: 5/dia")
-print("   ⏰ Expiração PIX: 30 min | Limpeza: 2 min")
+print("   ⏰ Cleanup: 2min | Ciclo: 5min")
 print("=" * 70)

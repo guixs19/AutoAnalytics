@@ -1,25 +1,24 @@
-# backend/crud.py - VERSÃO 2.6 (SIMPLIFICADA + CORRIGIDA)
+# backend/crud.py - VERSÃO 3.0 (CICLO DE 24H ANCORADO NA ASSINATURA)
 """
 CRUD - Operações de banco de dados
-VERSÃO: 2.6
+VERSÃO: 3.0
 
-🔥 MUDANÇAS v2.6:
-   - ✅ FIX: _is_premium_user agora delega para user.is_premium()
-   - ✅ FIX: queries de "recebeu hoje" sem func.date() (usa intervalo de datas)
-   - ✅ FIX: filtros de plan/role/status usam .value explícito
-   - ✅ CLEAN: imports não usados removidos
-   - ✅ CLEAN: helpers _today_range() e _as_date() centralizados
-   - ✅ CLEAN: logs padronizados com prefixo [crud]
-   - ✅ IMPROVE: count_user_analyses usa dialect.has_table()
-   - ✅ IMPROVE: get_user_stats com query agregada
+🔥 MUDANÇAS v3.0:
+   - ✅ CICLO: crédito diário agora ancorado em `last_daily_credit_at`
+   - ✅ activate_premium_plan seta a âncora do ciclo
+   - ✅ receive_daily_credit atualiza a âncora
+   - ✅ get_credit_eligibility reescrito pra usar o ciclo
+   - ✅ _format_next_credit_human() pra exibir "amanhã às HH:MM"
+   - ✅ deduct_credits / manage_credits_after_consumption alinhados
+   - ✅ check_premium_status enriquecido com campos do ciclo
 
-🔥 REGRAS DE NEGÓCIO (mantidas da v2.5):
-   - FREE: 3 créditos iniciais, NUNCA ganha mais
-   - PREMIUM: 3 créditos iniciais, ganha 1/dia (máx 3)
-   - Premium SÓ ganha se saldo < 3 e NÃO recebeu hoje
-   - Premium PRECISA gastar para ganhar mais
-   - Se saldo = 3, NÃO ganha (precisa gastar)
-   - Se saldo = 0 e já recebeu hoje, ganha amanhã
+🔥 REGRAS DE NEGÓCIO v3.0:
+   - FREE: 3 créditos iniciais, nunca ganha mais
+   - PREMIUM: 1º crédito NO ATO do pagamento (âncora)
+   - PREMIUM: a cada 24h ganha +1 (se saldo < 3)
+   - PREMIUM: se saldo = 3, o ciclo pausa
+   - PREMIUM: se gastar e voltar a < 3, retoma no próximo ciclo
+   - PREMIUM: total de 30 créditos em 30 dias
 """
 
 from sqlalchemy.orm import Session
@@ -29,6 +28,7 @@ from typing import Optional, List, Dict, Any, Union
 import logging
 
 from backend import models, schemas
+from backend.models import _ensure_timezone, _now_brasil, _today_brasil
 from backend.security import hasher
 
 logger = logging.getLogger(__name__)
@@ -40,34 +40,38 @@ logger = logging.getLogger(__name__)
 TZ_BRASIL = timezone(timedelta(hours=-3))
 
 
-def _now_brasil() -> datetime:
-    return datetime.now(TZ_BRASIL)
-
-
-def _today_brasil() -> date:
-    return datetime.now(TZ_BRASIL).date()
-
-
 def _today_range() -> tuple:
-    """
-    🔥 Retorna (hoje, amanhã) no fuso de Brasília.
-    Usado para queries de "recebeu hoje" sem `func.date()`.
-    """
     today = _today_brasil()
     return today, today + timedelta(days=1)
 
 
-def _get_next_day_brasil(days_ahead: int = 1) -> date:
-    return _today_brasil() + timedelta(days=days_ahead)
-
-
 def _as_date(dt) -> Optional[date]:
-    """Normaliza datetime/date/None para date."""
     if dt is None:
         return None
     if isinstance(dt, datetime):
         return dt.date()
     return dt
+
+
+def _format_next_credit_human(dt: Optional[datetime]) -> str:
+    """
+    🔥 Formata 'hoje às HH:MM' / 'amanhã às HH:MM' no fuso UTC-3.
+    Usa o helper do models quando possível.
+    """
+    if not dt:
+        return ""
+    aware = _ensure_timezone(dt)
+    local = aware.astimezone(TZ_BRASIL)
+    today = _today_brasil()
+    time_str = local.strftime("%H:%M")
+    if local.date() == today:
+        return f"hoje às {time_str}"
+    diff_days = (local.date() - today).days
+    if diff_days == 1:
+        return f"amanhã às {time_str}"
+    if diff_days > 1:
+        return f"em {diff_days} dias ({local.strftime('%d/%m')} às {time_str})"
+    return f"às {time_str}"
 
 
 # ==============================================
@@ -91,6 +95,8 @@ def _is_datetime_valid(db_datetime: Optional[datetime]) -> bool:
 
 MAX_CREDITS_PREMIUM = 3
 INITIAL_FREE_CREDITS = 3
+PREMIUM_DURATION_DAYS = 30
+CYCLE_HOURS = 24
 
 
 # ==============================================
@@ -108,7 +114,6 @@ def safe_commit(db: Session, error_msg: str = "Erro ao salvar no banco") -> bool
 
 
 def _is_premium_user(user: models.User) -> bool:
-    """🔥 Fonte única de verdade: delega para User.is_premium()."""
     if not user:
         return False
     return user.is_premium()
@@ -167,7 +172,7 @@ def user_exists(db: Session, email: str, phone: Optional[str] = None) -> bool:
 
 
 def create_user(db: Session, user_data: Any) -> models.User:
-    """🔥 Cria usuário com créditos iniciais e marca como recebido."""
+    """Cria usuário com créditos iniciais."""
     phone_value = getattr(user_data, "phone", None)
     if phone_value:
         phone_value = phone_value.strip()
@@ -324,10 +329,6 @@ def has_received_initial_credits(db: Session, user: models.User) -> bool:
 
 
 def grant_initial_credits_if_needed(db: Session, user: models.User) -> Dict[str, Any]:
-    """
-    🔥 Concede créditos iniciais APENAS se nunca recebeu.
-    NÃO chamar automaticamente no login — só no cadastro/admin.
-    """
     if not user:
         return {"granted": False, "message": "Usuário não encontrado", "credits": 0}
 
@@ -395,15 +396,25 @@ def check_credits(user: models.User, required: int = 1) -> bool:
 
 
 # ==============================================
-# 🔥 GET_CREDIT_ELIGIBILITY
+# 🔥 GET_CREDIT_ELIGIBILITY - v3.0 (CICLO 24H)
 # ==============================================
 
 def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
     """
-    🔥 Elegibilidade do usuário para receber créditos.
+    🔥 Elegibilidade do usuário para receber crédito do ciclo.
 
-    - FREE: nunca recebe
-    - PREMIUM: 1/dia se saldo < 3 e não recebeu hoje
+    Modelo v3.0:
+      - 1º crédito: no ato do pagamento (last_daily_credit_at = ativação)
+      - Próximo: 24h depois de last_daily_credit_at
+      - Se saldo >= 3: ciclo pausado
+      - Se saldo < 3 e 24h passaram: pode receber
+
+    Retorna:
+      - can_receive_today: bool (pode receber agora)
+      - received_today: bool (recebeu no ciclo atual)
+      - next_credit_at: ISO datetime do próximo crédito
+      - next_credit_at_human: "amanhã às 14:30"
+      - expires_at_human: "hoje às 14:30" (quando o ciclo atual expira)
     """
     if not user:
         return {"error": "Usuário não encontrado"}
@@ -421,6 +432,12 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
             "at_max_limit": False,
             "reason": "Admin tem créditos ilimitados",
             "next_credit_date": None,
+            "next_credit_at": None,
+            "next_credit_at_human": None,
+            "expires_at_human": None,
+            "credits_until_limit": 0,
+            "timezone": "America/Sao_Paulo (UTC-3)",
+            "today_date": _today_brasil().isoformat(),
         }
 
     is_premium = _is_premium_user(user)
@@ -440,41 +457,60 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
             "at_max_limit": current_credits >= MAX_CREDITS_PREMIUM,
             "reason": "Usuário free não recebe créditos diários. Assine o Premium!",
             "next_credit_date": None,
+            "next_credit_at": None,
+            "next_credit_at_human": None,
+            "expires_at_human": None,
+            "credits_until_limit": max(0, MAX_CREDITS_PREMIUM - current_credits),
+            "timezone": "America/Sao_Paulo (UTC-3)",
+            "today_date": today.isoformat(),
         }
 
-    # ⭐ PREMIUM
-    today_start, tomorrow_start = _today_range()
-    received_today = db.query(models.DailyCreditLog.id).filter(
-        models.DailyCreditLog.user_id == user.id,
-        models.DailyCreditLog.date >= today_start,
-        models.DailyCreditLog.date < tomorrow_start,
-        models.DailyCreditLog.source == "premium_daily",
-    ).first() is not None
-
+    # ⭐ PREMIUM — CICLO DE 24H
     days_left = user.get_premium_days_left()
     at_max_limit = current_credits >= MAX_CREDITS_PREMIUM
 
-    can_receive_today = (
-        not received_today
-        and days_left > 0
-        and not at_max_limit
+    next_credit_at = user.get_next_credit_at()  # datetime aware ou None
+    now = _now_brasil()
+
+    # Recebeu no ciclo atual? (last_daily_credit_at existe E ainda não passou 24h)
+    received_in_cycle = bool(
+        user.last_daily_credit_at
+        and next_credit_at
+        and now < next_credit_at
     )
 
-    # Próxima data
-    next_credit_date = None
-    if days_left > 0:
-        if can_receive_today:
-            next_credit_date = today.isoformat()
-        else:
-            next_credit_date = _get_next_day_brasil(1).isoformat()
+    # Pode receber agora?
+    can_receive_today = (
+        not at_max_limit
+        and days_left > 0
+        and next_credit_at is not None
+        and now >= next_credit_at
+    )
 
-    # Motivo
+    # 🔥 Formatação pro front
+    next_credit_at_human = None
+    if next_credit_at:
+        if can_receive_today:
+            next_credit_at_human = "agora"
+        else:
+            next_credit_at_human = _format_next_credit_human(next_credit_at)
+
+    # Quando expira o ciclo atual (24h depois de last_daily_credit_at)
+    expires_at_human = None
+    if user.last_daily_credit_at:
+        expires_at = _ensure_timezone(user.last_daily_credit_at) + timedelta(hours=CYCLE_HOURS)
+        expires_at_human = _format_next_credit_human(expires_at)
+
+    # 🔥 Motivo
     if can_receive_today:
-        reason = "✅ Você pode receber 1 crédito premium hoje!"
+        reason = "✅ Você pode receber 1 crédito agora!"
     elif at_max_limit:
-        reason = f"⚠️ Você atingiu o limite máximo de {MAX_CREDITS_PREMIUM} créditos. Gaste um para receber mais amanhã!"
-    elif received_today:
-        reason = "✅ Você já recebeu seu crédito hoje! Volte amanhã."
+        reason = (
+            f"⚠️ Você atingiu o limite de {MAX_CREDITS_PREMIUM} créditos. "
+            f"Gaste 1 para liberar o próximo ciclo."
+        )
+    elif received_in_cycle:
+        reason = f"⏰ Próximo crédito {next_credit_at_human}."
     elif days_left <= 0:
         reason = "⏰ Seu plano premium expirou. Renove para continuar recebendo créditos!"
     else:
@@ -486,11 +522,14 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
         "is_admin": False,
         "credits_balance": current_credits,
         "max_credits": MAX_CREDITS_PREMIUM,
-        "received_today": received_today,
+        "received_today": received_in_cycle,
         "days_left": days_left,
         "at_max_limit": at_max_limit,
         "reason": reason,
-        "next_credit_date": next_credit_date,
+        "next_credit_date": next_credit_at.isoformat() if next_credit_at else None,
+        "next_credit_at": next_credit_at.isoformat() if next_credit_at else None,
+        "next_credit_at_human": next_credit_at_human,
+        "expires_at_human": expires_at_human,
         "credits_until_limit": max(0, MAX_CREDITS_PREMIUM - current_credits),
         "timezone": "America/Sao_Paulo (UTC-3)",
         "today_date": today.isoformat(),
@@ -503,8 +542,7 @@ def get_credit_eligibility(db: Session, user: models.User) -> Dict[str, Any]:
 
 def add_credits(db: Session, user_id: int, amount: int, description: str = "") -> bool:
     """
-    🔥 Adiciona créditos com validação.
-
+    Adiciona créditos com validação.
     - Admin: ilimitado
     - Premium: máximo MAX_CREDITS_PREMIUM
     - Free: só os iniciais
@@ -540,15 +578,16 @@ def add_credits(db: Session, user_id: int, amount: int, description: str = "") -
 
 
 # ==============================================
-# 🔥 DEDUCT_CREDITS
+# 🔥 DEDUCT_CREDITS - v3.0
 # ==============================================
 
 def deduct_credits(db: Session, user: models.User, amount: int = 1, description: str = "") -> bool:
     """
-    🔥 Consome créditos com bônus automático para premium.
+    🔥 v3.0: consome créditos. NÃO concede bônus automático —
+    o ciclo de 24h cuida disso no próximo `get_next_credit_at()`.
 
     - Free: só consome
-    - Premium: consome; se zerou e pode receber hoje, ganha 1 na hora
+    - Premium: só consome (o job dará +1 quando o ciclo virar)
     """
     if not user or amount <= 0:
         return False
@@ -565,31 +604,18 @@ def deduct_credits(db: Session, user: models.User, amount: int = 1, description:
     safe_commit(db, f"Erro ao deduzir créditos de {user.email}")
 
     logger.info(f"[crud] 💰 {user.email} -{amount} crédito(s). {old_credits} → {user.credits}")
-
-    if user.credits == 0 and _is_premium_user(user):
-        eligibility = get_credit_eligibility(db, user)
-        if eligibility.get("can_receive_today", False):
-            user.credits += 1
-            log = models.DailyCreditLog(
-                user_id=user.id,
-                credits_added=1,
-                date=_today_brasil(),
-                total_after=user.credits,
-                source="premium_daily_after_consumption",
-            )
-            db.add(log)
-            safe_commit(db, "Erro ao conceder bônus premium")
-            logger.info(f"[crud] ⭐ Bônus premium concedido para {user.email}")
-
     return True
 
 
 # ==============================================
-# 🔥 RECEIVE_DAILY_CREDIT
+# 🔥 RECEIVE_DAILY_CREDIT - v3.0
 # ==============================================
 
 def receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
-    """🔥 Recebe crédito diário (apenas premium)."""
+    """
+    🔥 v3.0: recebe crédito do ciclo atual e atualiza a âncora.
+    Só funciona se `can_receive_today` for True.
+    """
     user = get_user_by_id(db, user_id)
     if not user:
         return {"success": False, "error": "Usuário não encontrado"}
@@ -598,43 +624,52 @@ def receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
     if not eligibility.get("can_receive_today", False):
         return {
             "success": False,
-            "error": eligibility.get("reason", "Não é possível receber crédito hoje"),
+            "error": eligibility.get("reason", "Não é possível receber crédito agora"),
             "can_receive": False,
             "credits_balance": eligibility.get("credits_balance", 0),
         }
 
+    now = _now_brasil()
     old_credits = user.credits
     user.credits += 1
+    user.last_daily_credit_at = now  # 🔥 move a âncora do ciclo
 
     log = models.DailyCreditLog(
         user_id=user.id,
         credits_added=1,
-        date=_today_brasil(),
+        date=now.date(),
         total_after=user.credits,
         source="premium_daily",
     )
     db.add(log)
-    safe_commit(db, "Erro ao conceder crédito diário")
+    safe_commit(db, "Erro ao conceder crédito do ciclo")
     db.refresh(user)
 
-    logger.info(f"[crud] ⭐ Crédito diário para {user.email}. {old_credits} → {user.credits}")
+    next_at = _ensure_timezone(now) + timedelta(hours=CYCLE_HOURS)
+    next_human = _format_next_credit_human(next_at)
+
+    logger.info(
+        f"[crud] ⭐ +1 crédito do ciclo para {user.email}. "
+        f"{old_credits} → {user.credits} (próximo: {next_human})"
+    )
 
     return {
         "success": True,
         "credits_added": 1,
         "current_credits": user.credits,
         "max_credits": MAX_CREDITS_PREMIUM,
-        "message": "🌅 Você recebeu seu crédito premium diário!",
+        "message": "🎉 Você recebeu +1 crédito do seu plano!",
+        "next_credit_at": next_at.isoformat(),
+        "next_credit_at_human": next_human,
         "remaining_until_limit": max(0, MAX_CREDITS_PREMIUM - user.credits),
     }
 
 
 # ==============================================
-# 🔥 CAN_RECEIVE_DAILY_CREDIT
+# 🔥 CAN_RECEIVE_DAILY_CREDIT - v3.0
 # ==============================================
 
 def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
-    """🔥 Versão enxuta que usa get_credit_eligibility()."""
     user = get_user_by_id(db, user_id)
     if not user:
         return {"success": False, "error": "Usuário não encontrado"}
@@ -653,13 +688,16 @@ def can_receive_daily_credit(db: Session, user_id: int) -> Dict[str, Any]:
         "days_left": eligibility.get("days_left", 0),
         "at_max_limit": eligibility.get("at_max_limit", False),
         "next_credit_date": eligibility.get("next_credit_date"),
+        "next_credit_at": eligibility.get("next_credit_at"),
+        "next_credit_at_human": eligibility.get("next_credit_at_human"),
+        "expires_at_human": eligibility.get("expires_at_human"),
         "timezone": "America/Sao_Paulo (UTC-3)",
         "today_date": _today_brasil().isoformat(),
     }
 
 
 # ==============================================
-# 🔥 MANAGE_CREDITS_AFTER_CONSUMPTION
+# 🔥 MANAGE_CREDITS_AFTER_CONSUMPTION - v3.0
 # ==============================================
 
 def manage_credits_after_consumption(
@@ -669,10 +707,10 @@ def manage_credits_after_consumption(
     description: str = "",
 ) -> Dict[str, Any]:
     """
-    🔥 Gerenciamento unificado:
-    1. Consome créditos
-    2. Se premium e zerou → tenta bônus
-    3. Se free e zerou → notifica
+    🔥 v3.0: consome créditos. NÃO concede bônus automático —
+    o ciclo de 24h cuida disso.
+
+    Se zerou e o ciclo já virou, avisa que pode receber.
     """
     if not user or amount <= 0:
         return {
@@ -722,8 +760,6 @@ def manage_credits_after_consumption(
     logger.info(f"[crud] 💰 {user.email} consumiu {amount}. {old_credits} → {user.credits}")
 
     is_premium = _is_premium_user(user)
-    bonus_granted = False
-    bonus_amount = 0
     needs_attention = False
     message = f"✅ {amount} crédito(s) consumido(s). Saldo: {user.credits}"
 
@@ -731,33 +767,30 @@ def manage_credits_after_consumption(
         if is_premium:
             eligibility = get_credit_eligibility(db, user)
             if eligibility.get("can_receive_today", False):
-                user.credits += 1
-                bonus_amount = 1
-                bonus_granted = True
-                log = models.DailyCreditLog(
-                    user_id=user.id,
-                    credits_added=1,
-                    date=_today_brasil(),
-                    total_after=user.credits,
-                    source="premium_daily_after_consumption",
+                message = (
+                    f"⭐ Seus créditos acabaram! Você pode receber +1 agora. "
+                    f"Saldo: {user.credits}"
                 )
-                db.add(log)
-                safe_commit(db, "Erro ao conceder bônus premium")
-                message = f"⭐ Créditos zerados! Você ganhou 1 crédito premium. Saldo: {user.credits}"
             else:
-                reason = eligibility.get("reason", "Aguardando próximo ciclo")
-                message = f"📌 Seus créditos acabaram. {reason}. Saldo: {user.credits}"
-                needs_attention = True
+                next_human = eligibility.get("next_credit_at_human") or "em breve"
+                message = (
+                    f"📌 Seus créditos acabaram. Próximo crédito {next_human}. "
+                    f"Saldo: {user.credits}"
+                )
+            needs_attention = True
         else:
-            message = f"💡 Seus créditos acabaram! Assine o Premium para continuar. Saldo: {user.credits}"
+            message = (
+                f"💡 Seus créditos acabaram! Assine o Premium para continuar. "
+                f"Saldo: {user.credits}"
+            )
             needs_attention = True
 
     return {
         "success": True,
         "consumed": amount,
         "remaining": user.credits,
-        "bonus_granted": bonus_granted,
-        "bonus_amount": bonus_amount,
+        "bonus_granted": False,
+        "bonus_amount": 0,
         "message": message,
         "needs_attention": needs_attention,
         "is_premium": is_premium,
@@ -880,18 +913,31 @@ def cleanup_expired_refresh_tokens(db: Session) -> int:
 
 
 # ==============================================
-# PLANO PREMIUM
+# 🔥 PLANO PREMIUM - v3.0
 # ==============================================
 
 def activate_premium_plan(db: Session, user_id: int, payment_id: int = None) -> bool:
+    """
+    🔥 v3.0: ativa o premium E inicia o ciclo de 24h.
+    `last_daily_credit_at` = agora → o crédito do ato é o 1º do ciclo.
+    """
     user = get_user_by_id(db, user_id)
     if not user:
         return False
+
+    now = _now_brasil()
     user.plan = models.UserPlan.PREMIUM_MENSAL
-    user.premium_activated_at = _now_brasil()
-    user.premium_expires_at = _today_brasil() + timedelta(days=30)
+    user.premium_activated_at = now
+    user.premium_expires_at = _today_brasil() + timedelta(days=PREMIUM_DURATION_DAYS)
+    user.last_daily_credit_at = now  # 🔥 inicia o ciclo
     safe_commit(db, "Erro ao ativar plano premium")
-    logger.info(f"[crud] ⭐ Premium ativado para user {user_id} (expira em 30 dias)")
+
+    next_at = now + timedelta(hours=CYCLE_HOURS)
+    logger.info(
+        f"[crud] ⭐ Premium ativado para user {user_id}. "
+        f"Ciclo de 24h iniciado: {now.strftime('%d/%m %H:%M')} → "
+        f"{next_at.strftime('%d/%m %H:%M')}"
+    )
     return True
 
 
@@ -901,6 +947,7 @@ def check_premium_status(db: Session, user_id: int) -> Dict[str, Any]:
         return {"is_premium": False, "error": "Usuário não encontrado"}
 
     plan_value = user.plan.value if hasattr(user.plan, "value") else str(user.plan)
+    next_at = user.get_next_credit_at()
 
     return {
         "is_premium": user.is_premium(),
@@ -911,12 +958,16 @@ def check_premium_status(db: Session, user_id: int) -> Dict[str, Any]:
         "progress": user.get_premium_progress(),
         "credits_balance": user.credits or 0,
         "max_credits_balance": MAX_CREDITS_PREMIUM,
+        # 🔥 v3.0: ciclo
+        "last_daily_credit_at": user.last_daily_credit_at,
+        "next_credit_at": next_at.isoformat() if next_at else None,
+        "next_credit_at_human": _format_next_credit_human(next_at) if next_at else None,
+        "can_receive_daily_credit": user.can_receive_daily_credit(),
         "timezone": "America/Sao_Paulo (UTC-3)",
     }
 
 
 def get_premium_users(db: Session) -> List[models.User]:
-    """🔥 Usa .value explícito para o filtro casar com o banco."""
     return db.query(models.User).filter(
         models.User.plan == models.UserPlan.PREMIUM_MENSAL.value,
         models.User.premium_expires_at >= _today_brasil(),
@@ -937,6 +988,7 @@ def downgrade_expired_premium(db: Session) -> int:
         user.plan = models.UserPlan.BASICO
         user.premium_activated_at = None
         user.premium_expires_at = None
+        user.last_daily_credit_at = None
         count += 1
     if count > 0:
         safe_commit(db, "Erro ao rebaixar planos expirados")
@@ -1505,9 +1557,9 @@ def get_message_config(segment: str, credits: int, is_admin: bool = False) -> Di
         elif credits == 2:
             return {"message_id": "premium_two", "title": "⭐ Créditos Disponíveis", "icon": "fa-star-half-alt", "color": "premium", "message": "Você tem 2 créditos. Use-os ou perca-os!", "show_action": True, "action_text": "Fazer Análise", "action_url": "/dashboard", "priority": 1, "dismissible": True}
         elif credits == 1:
-            return {"message_id": "premium_one", "title": "✨ Último Crédito!", "icon": "fa-star", "color": "warning", "message": "Depois de gastar, novos créditos serão gerados amanhã. 🎯", "show_action": True, "action_text": "Usar Agora", "action_url": "/dashboard", "priority": 2, "dismissible": True}
+            return {"message_id": "premium_one", "title": "✨ Último Crédito!", "icon": "fa-star", "color": "warning", "message": "Depois de gastar, novos créditos virão a cada 24h. 🎯", "show_action": True, "action_text": "Usar Agora", "action_url": "/dashboard", "priority": 2, "dismissible": True}
         else:
-            return {"message_id": "premium_zero", "title": "🔄 Créditos Esgotados", "icon": "fa-sync", "color": "info", "message": "Todos os créditos gastos! Novos créditos estarão disponíveis amanhã. Volte amanhã! 🌅", "show_action": True, "action_text": "Ver Status", "action_url": "/dashboard", "priority": 1, "dismissible": True}
+            return {"message_id": "premium_zero", "title": "🔄 Créditos Esgotados", "icon": "fa-sync", "color": "info", "message": "Todos os créditos gastos! Novos créditos a cada 24h. 🌅", "show_action": True, "action_text": "Ver Status", "action_url": "/dashboard", "priority": 1, "dismissible": True}
 
     if segment == "new":
         if credits == 3:
@@ -1576,10 +1628,10 @@ def get_full_user_context(db: Session, user: models.User) -> Dict[str, Any]:
 # ==============================================
 
 print("=" * 70)
-print("✅ crud.py v2.6 carregado - SIMPLIFICADO + CORRIGIDO!")
-print("   🔥 FIX: _is_premium_user delega para user.is_premium()")
-print("   🔥 FIX: queries de 'recebeu hoje' com intervalo de datas")
-print("   🔥 FIX: filtros de plan/role/status usam .value explícito")
-print("   🔥 CLEAN: imports não usados removidos")
-print("   🔥 IMPROVE: count_user_analyses usa dialect.has_table()")
+print("✅ crud.py v3.0 carregado - CICLO DE 24H!")
+print("   🔥 CICLO: crédito diário ancorado em last_daily_credit_at")
+print("   🔥 activate_premium_plan inicia o ciclo no ato do pagamento")
+print("   🔥 receive_daily_credit move a âncora")
+print("   🔥 get_credit_eligibility com next_credit_at_human")
+print("   🔥 _format_next_credit_human() pra exibir 'amanhã às 14:30'")
 print("=" * 70)
