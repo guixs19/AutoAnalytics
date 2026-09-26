@@ -1,4 +1,3 @@
-
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum, ForeignKey, JSON, Date
 from sqlalchemy.orm import relationship
 from datetime import datetime, date, timedelta, timezone
@@ -28,13 +27,27 @@ def _today_brasil() -> date:
     return datetime.now(_TZ_CACHE).date()
 
 
+def _as_date(dt) -> Optional[date]:
+    """
+    🔥 Normaliza datetime/date/None para date.
+
+    O driver psycopg2 às vezes entrega colunas `Date` como `datetime`.
+    Esta função garante que as comparações e aritméticas sempre usem `date`.
+    """
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        return dt.date()
+    return dt
+
+
 def _ensure_timezone(dt: Optional[datetime]) -> Optional[datetime]:
     """
     🔥 Garante que um datetime tenha timezone (adiciona UTC-3 se for naive)
-    
+
     Args:
         dt: Datetime para verificar
-    
+
     Returns:
         Datetime com timezone ou None
     """
@@ -78,7 +91,7 @@ class UserPlan(str, enum.Enum):
 class User(Base):
     __tablename__ = 'users'
     __table_args__ = {'extend_existing': True}
-    
+
     # ===== CAMPOS BÁSICOS =====
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
@@ -86,74 +99,97 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     workshop_name = Column(String)
     phone = Column(String)
-    role = Column(Enum(UserRole), default=UserRole.USER)
+
+    # 🔥 FIX: values_callable faz o SQLAlchemy gravar/ler os .value (minúsculos)
+    role = Column(
+        Enum(
+            UserRole,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="userrole",
+        ),
+        default=UserRole.USER,
+    )
+
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
-    
+
     created_at = Column(DateTime, default=_now_brasil)
     last_login = Column(DateTime, onupdate=_now_brasil)
-    
+
     is_admin = Column(Boolean, default=False)
-    
+
     # ===== CRÉDITOS =====
     credits = Column(Integer, default=0)
     total_purchased = Column(Integer, default=0)
     last_payment_date = Column(DateTime, onupdate=_now_brasil)
-    
+
     # 🔥 CONTROLE DE CRÉDITOS INICIAIS (v2.5)
-    received_initial_credits = Column(Boolean, default=False, nullable=False, 
+    received_initial_credits = Column(Boolean, default=False, nullable=False,
                                        comment="Indica se o usuário já recebeu os créditos iniciais")
-    
+
     # 🔥 CONTROLE DE BÔNUS PREMIUM
-    last_bonus_at = Column(DateTime, nullable=True, 
+    last_bonus_at = Column(DateTime, nullable=True,
                            comment="Última vez que recebeu bônus premium por zerar créditos")
-    bonus_count = Column(Integer, default=0, 
+    bonus_count = Column(Integer, default=0,
                          comment="Número total de bônus premium recebidos")
-    
+
     # ===== PLANO PREMIUM =====
-    plan = Column(Enum(UserPlan), default=UserPlan.BASICO)
+    # 🔥 FIX: values_callable + native_enum=False para casar com o varchar(50) do banco
+    plan = Column(
+        Enum(
+            UserPlan,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="userplan",
+        ),
+        default=UserPlan.BASICO,
+        nullable=False,
+    )
     premium_activated_at = Column(DateTime, nullable=True)
     premium_expires_at = Column(Date, nullable=True)
-    
+
     # ===== PROMOÇÃO =====
     promotional_price_locked = Column(Boolean, default=False)
     promotional_price = Column(Float, nullable=True)
     purchased_at_promotion = Column(DateTime, nullable=True)
-    
+
     # ===== REFRESH TOKEN =====
     refresh_token = Column(Text, nullable=True)
     refresh_token_expires = Column(DateTime, nullable=True)
     refresh_token_revoked = Column(Boolean, default=False)
     refresh_token_jti = Column(String, nullable=True)
     last_refresh_at = Column(DateTime, nullable=True)
-    
+
     # ===== RELACIONAMENTOS =====
     analyses = relationship("Analysis", back_populates="user", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
     daily_credits = relationship("DailyCreditLog", back_populates="user", cascade="all, delete-orphan")
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE AUTENTICAÇÃO
     # ==========================================
-    
+
     def verify_password(self, password: str) -> bool:
         """Verifica se a senha está correta"""
         return hasher.verify_password(password, self.hashed_password)
-    
+
     def set_password(self, password: str):
         """Define nova senha (hash automaticamente)"""
         self.hashed_password = hasher.hash_password(password)
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE CRÉDITOS
     # ==========================================
-    
+
     def has_credits(self, required: int = 1) -> bool:
         """Verifica se o usuário tem créditos suficientes"""
         if self.is_admin:
             return True
         return self.credits >= required
-    
+
     def deduct_credit(self, amount: int = 1) -> bool:
         """Deduz créditos do usuário"""
         if self.is_admin:
@@ -162,36 +198,37 @@ class User(Base):
             self.credits -= amount
             return True
         return False
-    
+
     def add_credits(self, amount: int):
         """Adiciona créditos ao usuário"""
         self.credits += amount
         self.total_purchased += amount
         self.last_payment_date = _now_brasil()
-    
+
     def has_received_initial_credits(self) -> bool:
         """Verifica se o usuário já recebeu os créditos iniciais"""
         return self.received_initial_credits
-    
+
     def mark_initial_credits_received(self):
         """Marca que o usuário já recebeu os créditos iniciais"""
         self.received_initial_credits = True
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE BÔNUS
     # ==========================================
-    
+
     def has_received_bonus_today(self) -> bool:
         """Verifica se o usuário já recebeu bônus hoje"""
         if not self.last_bonus_at:
             return False
-        return self.last_bonus_at.date() == _today_brasil()
-    
+        last = _as_date(self.last_bonus_at)
+        return last == _today_brasil()
+
     def mark_bonus_received(self):
         """Marca que o usuário recebeu bônus hoje"""
         self.last_bonus_at = _now_brasil()
         self.bonus_count = (self.bonus_count or 0) + 1
-    
+
     def can_receive_bonus_today(self) -> bool:
         """Verifica se o usuário pode receber bônus hoje (apenas premium)"""
         if not self.is_premium():
@@ -199,47 +236,69 @@ class User(Base):
         if self.has_received_bonus_today():
             return False
         return True
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE PLANO PREMIUM
     # ==========================================
-    
+
+    def _plan_value(self) -> str:
+        """🔥 Normaliza o valor do plano como string minúscula."""
+        plan = self.plan
+        if plan is None:
+            return ""
+        if hasattr(plan, "value"):
+            return plan.value
+        return str(plan).lower()
+
     def is_premium(self) -> bool:
-        """Verifica se o usuário tem plano premium ativo"""
-        if self.plan != UserPlan.PREMIUM_MENSAL:
+        """
+        🔥 Verifica se o usuário tem plano premium ativo.
+
+        - Normaliza o valor do plano (aceita Enum, str maiúscula ou minúscula).
+        - Normaliza `premium_expires_at` para `date` antes de comparar.
+        """
+        if self._plan_value() != UserPlan.PREMIUM_MENSAL.value:
             return False
-        if not self.premium_expires_at:
+
+        expires = _as_date(self.premium_expires_at)
+        if not expires:
             return False
-        return self.premium_expires_at >= _today_brasil()
-    
+
+        return expires >= _today_brasil()
+
     def get_premium_days_left(self) -> int:
         """Retorna dias restantes do plano premium"""
         if not self.is_premium():
             return 0
-        return (self.premium_expires_at - _today_brasil()).days
-    
+        expires = _as_date(self.premium_expires_at)
+        return (expires - _today_brasil()).days
+
     def get_premium_progress(self) -> float:
         """Retorna progresso do plano premium (0-100)"""
-        if not self.premium_activated_at or not self.premium_expires_at:
+        activated = _as_date(self.premium_activated_at)
+        expires = _as_date(self.premium_expires_at)
+        if not activated or not expires:
             return 0
+
         total_days = 30
-        days_passed = (_today_brasil() - self.premium_activated_at.date()).days
+        days_passed = (_today_brasil() - activated).days
         if days_passed < 0:
             days_passed = 0
         elif days_passed > total_days:
             days_passed = total_days
+
         return round((days_passed / total_days) * 100, 1)
-    
+
     def get_current_price(self) -> float:
         """Retorna o preço atual (promocional ou regular)"""
         if self.promotional_price_locked and self.promotional_price:
             return self.promotional_price
         return 97.00
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE REFRESH TOKEN (FIX v2.7)
     # ==========================================
-    
+
     def set_refresh_token(self, token: str, jti: str, expires_days: int = 7):
         """Define um novo refresh token para o usuário"""
         self.refresh_token = token
@@ -247,7 +306,7 @@ class User(Base):
         self.refresh_token_expires = _now_brasil() + timedelta(days=expires_days)
         self.refresh_token_revoked = False
         self.last_refresh_at = _now_brasil()
-    
+
     def validate_refresh_token(self, token: str) -> bool:
         """
         🔥 Valida se o refresh token é válido
@@ -255,47 +314,46 @@ class User(Base):
         """
         if not self.refresh_token or not token:
             return False
-        
+
         if self.refresh_token != token:
             return False
-        
+
         if self.refresh_token_revoked:
             return False
-        
+
         if not self.refresh_token_expires:
             return False
-        
-        # 🔥 FIX: Garante comparação segura de timezone
+
         now = _now_brasil()
         expires = _ensure_timezone(self.refresh_token_expires)
-        
+
         return expires > now
-    
+
     def is_refresh_token_valid(self) -> bool:
-        """🔥 NOVO: Verifica se o refresh token atual é válido (sem precisar do token)"""
+        """🔥 Verifica se o refresh token atual é válido (sem precisar do token)"""
         if not self.refresh_token:
             return False
         if self.refresh_token_revoked:
             return False
         if not self.refresh_token_expires:
             return False
-        
+
         now = _now_brasil()
         expires = _ensure_timezone(self.refresh_token_expires)
-        
+
         return expires > now
-    
+
     def revoke_refresh_token(self):
         """Revoga o refresh token atual"""
         self.refresh_token_revoked = True
         self.refresh_token = None
         self.refresh_token_jti = None
         self.refresh_token_expires = None
-    
+
     # ==========================================
     # 🔥 MÉTODOS DE UTILIDADE
     # ==========================================
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte usuário para dicionário (sem dados sensíveis)"""
         return {
@@ -328,42 +386,53 @@ class User(Base):
 class Payment(Base):
     __tablename__ = 'payments'
     __table_args__ = {'extend_existing': True}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    
+
     mp_id = Column(String, unique=True, index=True)
     amount = Column(Float, nullable=False)
     credits = Column(Integer, nullable=False)
-    status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
-    
+
+    # 🔥 FIX: values_callable para gravar/ler os .value (minúsculos)
+    status = Column(
+        Enum(
+            PaymentStatus,
+            native_enum=False,
+            length=50,
+            values_callable=lambda e: [x.value for x in e],
+            name="paymentstatus",
+        ),
+        default=PaymentStatus.PENDING,
+    )
+
     payment_method = Column(String)
     payment_type = Column(String)
-    
+
     qr_code = Column(Text)
     qr_code_base64 = Column(Text)
     qr_code_url = Column(String)
     checkout_url = Column(String)
     preference_id = Column(String)
-    
+
     description = Column(String)
     payment_metadata = Column(JSON, default={})
-    
+
     created_at = Column(DateTime, default=_now_brasil)
     updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
     approved_at = Column(DateTime, nullable=True)
-    
+
     user = relationship("User", back_populates="payments")
     daily_credit_logs = relationship("DailyCreditLog", back_populates="payment", cascade="all, delete-orphan")
-    
+
     def is_approved(self) -> bool:
         """Verifica se o pagamento foi aprovado"""
         return self.status == PaymentStatus.APPROVED
-    
+
     def is_pending(self) -> bool:
         """Verifica se o pagamento está pendente"""
         return self.status == PaymentStatus.PENDING
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte pagamento para dicionário"""
         return {
@@ -389,22 +458,22 @@ class Payment(Base):
 class DailyCreditLog(Base):
     __tablename__ = 'daily_credit_logs'
     __table_args__ = {'extend_existing': True}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True)
-    
+
     credits_added = Column(Integer, default=1)
     date = Column(Date, default=_today_brasil)
     day_number = Column(Integer)
     total_after = Column(Integer)
     source = Column(String, default="daily_upload")
-    
+
     created_at = Column(DateTime, default=_now_brasil)
-    
+
     user = relationship("User", back_populates="daily_credits")
     payment = relationship("Payment", back_populates="daily_credit_logs")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte log para dicionário"""
         return {
@@ -426,7 +495,7 @@ class DailyCreditLog(Base):
 class Analysis(Base):
     __tablename__ = 'analyses'
     __table_args__ = {'extend_existing': True}
-    
+
     # ===== CAMPOS BÁSICOS =====
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -439,12 +508,12 @@ class Analysis(Base):
     columns_processed = Column(Integer, default=0)
     ai_report = Column(Text, nullable=True)
     report_path = Column(String, nullable=True)
-    
+
     uploaded_at = Column(DateTime, default=_now_brasil)
     processed_at = Column(DateTime, nullable=True)
-    
+
     user = relationship("User", back_populates="analyses")
-    
+
     # ===== CAMPOS PoW E SEGURANÇA =====
     pow_challenge = Column(String(64), nullable=True, comment="Desafio PoW usado no upload")
     pow_nonce = Column(String(64), nullable=True, comment="Nonce PoW usado no upload")
@@ -452,38 +521,38 @@ class Analysis(Base):
     pow_verified = Column(Boolean, default=False, comment="PoW foi verificado pelo backend")
     pow_verified_at = Column(DateTime, nullable=True, comment="Data da verificação PoW")
     pow_algorithm = Column(String(20), default="SHA-256", comment="Algoritmo usado")
-    
+
     # ===== SEGURANÇA =====
     client_ip = Column(String(45), nullable=True, comment="IP do cliente")
     user_agent = Column(String(255), nullable=True, comment="User Agent do cliente")
     rate_limit_applied = Column(Boolean, default=False, comment="Rate limit foi aplicado")
-    
+
     # ===== MÉTRICAS DE PERFORMANCE =====
     processing_time_ms = Column(Integer, nullable=True, comment="Tempo total de processamento em ms")
     pow_solve_time_ms = Column(Integer, nullable=True, comment="Tempo de resolução do PoW em ms")
     upload_time_ms = Column(Integer, nullable=True, comment="Tempo de upload em ms")
-    
+
     # ===== MÉTRICAS DE ML =====
     encoding_used = Column(String(20), nullable=True, comment="Encoding detectado no arquivo")
     model_used = Column(String(50), nullable=True, comment="Modelo ML utilizado")
     confidence_score = Column(Float, nullable=True, comment="Score de confiança do modelo")
-    
+
     # ===== MÉTRICAS DE DADOS =====
     total_rows = Column(Integer, default=0, comment="Total de linhas processadas")
     total_columns = Column(Integer, default=0, comment="Total de colunas processadas")
     numeric_columns = Column(Integer, default=0, comment="Colunas numéricas")
     categorical_columns = Column(Integer, default=0, comment="Colunas categóricas")
-    
+
     # ===== CHART DATA =====
     chart_data = Column(JSON, nullable=True, comment="Dados para renderização de gráficos")
-    
+
     # ===== PROGRESSO =====
     progress = Column(Integer, default=0, comment="Progresso do processamento (0-100)")
     progress_message = Column(String(255), default="Aguardando início...", comment="Mensagem de progresso")
-    
+
     # ===== CRÉDITOS (V2.6) =====
     credits_needed = Column(Integer, default=1, comment="Créditos necessários para liberar a análise")
-    
+
     credits_consumed = Column(Boolean, default=False, comment="Indica se o crédito foi consumido")
     credits_consumed_at = Column(DateTime, nullable=True, comment="Data do consumo do crédito")
     credits_consumed_amount = Column(Integer, default=0, comment="Quantidade consumida (1)")
@@ -491,29 +560,29 @@ class Analysis(Base):
     credits_error = Column(String(255), nullable=True, comment="Erro no consumo de crédito")
     credits_bonus_granted = Column(Boolean, default=False, comment="Se bônus foi concedido")
     credits_bonus_amount = Column(Integer, default=0, comment="Quantidade de bônus")
-    
+
     # ===== RESULTADOS =====
     predictions_summary = Column(JSON, nullable=True, comment="Resumo das predições")
     insights = Column(JSON, nullable=True, comment="Insights gerados")
     recommendations = Column(JSON, nullable=True, comment="Recomendações geradas")
     executive_score = Column(JSON, nullable=True, comment="Score executivo")
-    
+
     # ==========================================
     # 🔥 MÉTODOS
     # ==========================================
-    
+
     def set_pow_data(self, challenge: str, nonce: str, difficulty: int = 4):
         """Define os dados do PoW"""
         self.pow_challenge = challenge
         self.pow_nonce = nonce
         self.pow_difficulty = difficulty
         self.pow_algorithm = "SHA-256"
-    
+
     def verify_pow(self):
         """Marca o PoW como verificado"""
         self.pow_verified = True
         self.pow_verified_at = _now_brasil()
-    
+
     def set_processing_metrics(self, metrics: dict):
         """Define métricas de processamento"""
         if 'processing_time_ms' in metrics:
@@ -528,7 +597,7 @@ class Analysis(Base):
             self.model_used = metrics['model_used']
         if 'confidence_score' in metrics:
             self.confidence_score = metrics['confidence_score']
-    
+
     def set_data_metrics(self, data: dict):
         """Define métricas dos dados"""
         if 'total_rows' in data:
@@ -539,7 +608,7 @@ class Analysis(Base):
             self.numeric_columns = data['numeric_columns']
         if 'categorical_columns' in data:
             self.categorical_columns = data['categorical_columns']
-    
+
     def set_results(self, results: dict):
         """Define os resultados da análise"""
         if 'predictions_summary' in results:
@@ -552,9 +621,9 @@ class Analysis(Base):
             self.chart_data = results['chart_data']
         if 'executive_score' in results:
             self.executive_score = results['executive_score']
-    
+
     # ===== MÉTODOS DE CRÉDITOS =====
-    
+
     def mark_credit_consumed(self, amount: int = 1, remaining: int = None):
         """Marca que o crédito foi consumido"""
         self.credits_consumed = True
@@ -562,28 +631,28 @@ class Analysis(Base):
         self.credits_consumed_amount = amount
         if remaining is not None:
             self.credits_remaining_after = remaining
-    
+
     def mark_credit_error(self, error: str):
         """Marca erro no consumo de crédito"""
         self.credits_error = error
-    
+
     def mark_bonus_granted(self, amount: int = 1):
         """Marca que bônus foi concedido"""
         self.credits_bonus_granted = True
         self.credits_bonus_amount = amount
-    
+
     def has_credit_consumed(self) -> bool:
         """Verifica se o crédito já foi consumido"""
         return self.credits_consumed
-    
+
     def is_pending_credit(self) -> bool:
         """Verifica se está aguardando crédito"""
         return self.status == "pending_credit" or (not self.credits_consumed and self.status == "completed")
-    
+
     def needs_credits(self) -> bool:
         """Verifica se a análise precisa de créditos para ser liberada"""
         return not self.credits_consumed and self.status in ["completed", "pending_credit"]
-    
+
     def get_credits_status(self) -> Dict[str, Any]:
         """Retorna o status completo dos créditos da análise"""
         return {
@@ -597,7 +666,7 @@ class Analysis(Base):
             "bonus_amount": self.credits_bonus_amount,
             "is_pending": self.is_pending_credit()
         }
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte análise para dicionário"""
         return {
@@ -652,29 +721,29 @@ class Analysis(Base):
 class PromotionControl(Base):
     __tablename__ = 'promotion_control'
     __table_args__ = {'extend_existing': True}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     total_slots = Column(Integer, default=100)
     used_slots = Column(Integer, default=0)
     promotional_price = Column(Float, default=97.00)
     regular_price = Column(Float, default=149.90)
     is_active = Column(Boolean, default=True)
-    
+
     created_at = Column(DateTime, default=_now_brasil)
     updated_at = Column(DateTime, default=_now_brasil, onupdate=_now_brasil)
-    
+
     def get_remaining_slots(self) -> int:
         """Retorna vagas restantes"""
         return max(0, self.total_slots - self.used_slots)
-    
+
     def has_available_slots(self) -> bool:
         """Verifica se há vagas disponíveis"""
         return self.get_remaining_slots() > 0 and self.is_active
-    
+
     def get_current_price(self) -> float:
         """Retorna o preço atual"""
         return self.promotional_price if self.has_available_slots() else self.regular_price
-    
+
     def use_slot(self) -> bool:
         """Consome uma vaga"""
         if self.has_available_slots():
@@ -682,13 +751,13 @@ class PromotionControl(Base):
             self.updated_at = _now_brasil()
             return True
         return False
-    
+
     def reset_promotion(self):
         """Reseta a promoção"""
         self.used_slots = 0
         self.is_active = True
         self.updated_at = _now_brasil()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte para dicionário"""
         return {
@@ -708,19 +777,18 @@ class PromotionControl(Base):
 
 class BlacklistedToken(Base):
     __tablename__ = 'blacklisted_tokens'
-    
+
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String(512), unique=True, index=True, nullable=False)
     jti = Column(String(255), unique=True, index=True, nullable=True)
     blacklisted_at = Column(DateTime, default=_now_brasil, nullable=False)
     expires_at = Column(DateTime, nullable=False)
-    
+
     @classmethod
     def is_blacklisted(cls, jti: str) -> bool:
         """Verifica se um token está na blacklist"""
-        # 🔥 Será implementado com a sessão do banco
         return False
-    
+
     def __repr__(self):
         return f"<BlacklistedToken jti={self.jti[:8] if self.jti else 'None'}... expires={self.expires_at}>"
 
@@ -730,18 +798,11 @@ class BlacklistedToken(Base):
 # ==============================================
 
 print("=" * 70)
-print("🔥 models.py v2.7 carregado - TIMEZONE FIX!")  
-print("   ✅ CORRIGIDO: validate_refresh_token - comparação de timezone")
-print("   ✅ CORRIGIDO: Import duplicado removido")
-print("   ✅ MELHORADO: Cache de timezone para performance")
-print("   ✅ MELHORADO: Docstrings em todos os métodos")
-print("   ✅ ADICIONADO: is_refresh_token_valid() - verificação mais segura")
-print("   ✅ ADICIONADO: to_dict() para User, Payment, PromotionControl")
-print("   ✅ ADICIONADO: is_approved() e is_pending() para Payment")
-print("   ✅ ADICIONADO: is_blacklisted() para BlacklistedToken")
-print("   ✅ NOVO CAMPO (v2.6):")
-print("      - credits_needed: Créditos necessários para liberar a análise")
-print("   ✅ NOVO CAMPO (v2.5):")
-print("      - received_initial_credits: Controle de créditos iniciais")
-print("   ✅ Datetimes sincronizados com UTC-3 (Brasília)")
+print("🔥 models.py v2.8 carregado - ENUM + DATE FIX!")
+print("   ✅ FIX: _as_date() normaliza datetime/date")
+print("   ✅ FIX: is_premium/get_premium_days_left/get_premium_progress")
+print("   ✅ FIX: Enum(UserPlan/UserRole/PaymentStatus) com values_callable")
+print("   ✅ FIX: plan com nullable=False")
+print("   ✅ MANTIDO: validate_refresh_token com timezone handling")
+print("   ✅ MANTIDO: todos os campos e métodos da v2.7")
 print("=" * 70)

@@ -1,34 +1,39 @@
-# backend/api/payment_routes.py - VERSÃO 4.0 (BLINDADA - SEM SANITIZE NO QR CODE)
+# backend/api/payment_routes.py - VERSÃO 4.1 (CORRIGIDA + MELHORADA)
 """
 🔥 ROTAS DE PAGAMENTO - SISTEMA DE PREÇO FUNDADOR VITALÍCIO
-VERSÃO: 4.0 - SINCRONIZADA COM payment_service.py V4.0
+VERSÃO: 4.1 - SINCRONIZADA COM payment_service.py V4.0
 
-🔥 CORREÇÕES v4.0:
-   1. ✅ CORRIGIDO: sanitize_response NÃO é mais aplicado em qr_code_base64
-      (o sanitize removia '/' e '+' e truncava em 500 chars, corrompendo a imagem)
-   2. ✅ CORRIGIDO: Resposta SEMPRE inclui pix_code separado de qr_code_base64
-   3. ✅ CORRIGIDO: /reset-my-attempts agora usa JSON funcional (SQLAlchemy 2.x)
-   4. ✅ CORRIGIDO: Scheduler idempotente (usa singleton global)
-   5. ✅ CORRIGIDO: price default no handler de exceção (evita NameError)
-   6. ✅ CORRIGIDO: Rate limit usa intervalo explícito de datas
-   7. ✅ MELHORADO: Log estruturado do payload FINAL enviado ao front
-   8. ✅ ADICIONADO: Validação do QR Code ANTES de mandar pro front
-   9. ✅ ADICIONADO: JSONResponse direto (sem sanitize) para o create-pix
-  10. ✅ ADICIONADO: Revalidação com MP antes de cancelar pagamento expirado
-  11. ✅ MELHORADO: Lock atômico no scheduler para múltiplos workers
+🔥 MUDANÇAS v4.1:
+   1. ✅ FIX: removido import morto de _is_premium_user/_get_plan_value
+   2. ✅ FIX: get_pix_qrcode não usa mais payment.expires_at (coluna inexistente)
+      → calcula expiração via created_at + PIX_QR_CODE_EXPIRY_MINUTES
+   3. ✅ FIX: claim_bonus usa receive_daily_credit direto (sem amount=0)
+   4. ✅ FIX: filtros SQL usam .value explícito (plan/status)
+   5. ✅ FIX: comparações de datetime naive vs aware normalizadas
+   6. ✅ FIX: uptime_seconds no /metrics (sinal correto)
+   7. ✅ CLEAN: imports não usados removidos
+   8. ✅ CLEAN: _scheduler_lock e SIMULATION_DELAY_SECONDS removidos
+   9. ✅ CLEAN: initialize_new_user_credits (dead code) removido
+  10. ✅ IMPROVE: logs padronizados com prefixo [payments]
+  11. ✅ IMPROVE: user.is_premium() em vez de _is_premium_user()
+  12. ✅ IMPROVE: PaymentStatus enum em vez de strings
+
+🔥 MANTIDO da v4.0:
+   - sanitize NÃO corrompe QR Code Base64
+   - pix_code separado de qr_code_base64
+   - Scheduler idempotente
+   - Revalidação MP antes de cancelar
+   - Rate limit com intervalo explícito
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, date
-import uuid
+from datetime import datetime, timedelta
 import logging
 import re
 import html
 import asyncio
-import os
 import json
 import time
 from typing import Dict, Any, Optional
@@ -37,19 +42,25 @@ from pydantic import BaseModel, Field, validator
 from backend.database import get_db, SessionLocal
 from backend import crud
 from backend.api.auth_routes import get_current_user
-from backend.models import User, Payment, DailyCreditLog, UserPlan, Analysis, PromotionControl, PaymentStatus
+from backend.models import (
+    User, Payment, DailyCreditLog, UserPlan,
+    PromotionControl, PaymentStatus,
+)
 from backend.services.daily_credits_service import DailyCreditsService
 from backend.services.credits_consumer import (
     can_perform_analysis,
     consume_analysis_credit,
     get_credits_display,
-    _is_premium_user,
-    _get_plan_value,
     get_credit_eligibility_status,
-    can_receive_bonus
+    can_receive_bonus,
 )
 from backend.services.payment_service import MercadoPagoService, get_mp_service, QrCodeNormalizer
-from backend.observability.sentinel import alert_payment_approved, alert_payment_pending, alert_payment_failed, get_webhook
+from backend.observability.sentinel import (
+    alert_payment_approved,
+    alert_payment_pending,
+    alert_payment_failed,
+    get_webhook,
+)
 
 from backend.crud import (
     MAX_CREDITS_PREMIUM,
@@ -58,7 +69,7 @@ from backend.crud import (
     _today_brasil,
     get_credit_eligibility,
     receive_daily_credit,
-    manage_credits_after_consumption
+    manage_credits_after_consumption,
 )
 
 import atexit
@@ -77,7 +88,6 @@ CREDITS_PER_DAY = 1
 MAX_PAYMENT_ATTEMPTS_PER_DAY = 5
 PIX_QR_CODE_EXPIRY_MINUTES = 30
 USE_REAL_MERCADO_PAGO = True
-SIMULATION_DELAY_SECONDS = int(os.getenv("SIMULATION_DELAY_SECONDS", "8"))
 
 PROMOTION_CACHE_TTL = 60
 _promotion_cache = {"data": None, "timestamp": 0}
@@ -88,63 +98,91 @@ _payment_metrics = {
     "failed_payments": 0,
     "total_revenue": 0.0,
     "last_payment_at": None,
-    "started_at": _now_brasil().isoformat()
+    "started_at": _now_brasil().isoformat(),
 }
 
 PROMOTIONAL_PRICE = 97.00
 REGULAR_PRICE = 149.90
 TOTAL_PROMOTIONAL_SLOTS = 100
 
+
 # ==============================================
-# 🔥 V4.0: SCHEDULER IDEMPOTENTE (evita duplicação no hot-reload)
+# 🔥 HELPERS DE TIMEZONE
+# ==============================================
+
+def _naive_now_brasil() -> datetime:
+    """
+    🔥 Retorna datetime naive (sem tzinfo) no horário de Brasília.
+    Usado para comparar com colunas naive do banco (timestamp without time zone).
+    """
+    return _now_brasil().replace(tzinfo=None)
+
+
+def _as_naive(dt: Optional[datetime]) -> Optional[datetime]:
+    """Remove tzinfo se existir."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _payment_expires_at(payment: Payment) -> Optional[datetime]:
+    """
+    🔥 Calcula a expiração do PIX.
+    Como Payment não tem coluna expires_at, derivamos de created_at.
+    Retorna datetime naive (mesmo formato do banco).
+    """
+    created = _as_naive(payment.created_at)
+    if not created:
+        return None
+    return created + timedelta(minutes=PIX_QR_CODE_EXPIRY_MINUTES)
+
+
+# ==============================================
+# 🔥 SCHEDULER IDEMPOTENTE
 # ==============================================
 
 _scheduler_instance = None
-_scheduler_lock = None
+
 
 def cleanup_expired_payments():
     """
-    🔥 V4.0: Revalida com o MP antes de cancelar (evita cancelar pagamento já aprovado).
+    🔥 Revalida com o MP antes de cancelar (evita cancelar pagamento aprovado).
     """
     db = None
     try:
         db = SessionLocal()
 
-        cutoff = _now_brasil() - timedelta(minutes=5)
+        cutoff = _naive_now_brasil() - timedelta(minutes=5)
         expired_payments = db.query(Payment).filter(
-            Payment.status == "pending",
-            Payment.created_at < cutoff
+            Payment.status == PaymentStatus.PENDING,
+            Payment.created_at < cutoff,
         ).all()
 
         if not expired_payments:
-            logger.debug("🧹 Nenhum pagamento expirado encontrado")
+            logger.debug("[payments] Nenhum pagamento expirado")
             return
 
         cancelled_count = 0
         kept_count = 0
 
         for payment in expired_payments:
-            # 🔥 V4.0: Revalida com o MP antes de cancelar
             try:
                 if payment.mp_id and mp_service and mp_service.sdk:
-                    mp_status = mp_service.get_payment_status_real(str(payment.mp_id), use_cache=False)
-                    if mp_status.get("success"):
-                        real_status = mp_status.get("status")
-                        if real_status == "approved":
-                            # 🔥 Foi aprovado! Não cancela — deixa o webhook processar
-                            logger.warning(
-                                f"⚠️ Pagamento {payment.id} marcado como expirado "
-                                f"mas MP diz 'approved' — mantendo pending"
-                            )
-                            kept_count += 1
-                            continue
+                    mp_status = mp_service.get_payment_status_real(
+                        str(payment.mp_id), use_cache=False
+                    )
+                    if mp_status.get("success") and mp_status.get("status") == "approved":
+                        logger.warning(
+                            f"[payments] ⚠️ Pagamento {payment.id} expirado mas MP "
+                            f"diz 'approved' — mantendo pending"
+                        )
+                        kept_count += 1
+                        continue
             except Exception as e:
-                logger.warning(f"⚠️ Não foi possível revalidar pagamento {payment.id}: {e}")
-                # Em dúvida, cancela (comportamento anterior)
+                logger.warning(f"[payments] ⚠️ Revalidação falhou para {payment.id}: {e}")
 
-            payment.status = "cancelled"
-            if not payment.payment_metadata:
-                payment.payment_metadata = {}
+            payment.status = PaymentStatus.CANCELLED
+            payment.payment_metadata = payment.payment_metadata or {}
             payment.payment_metadata["auto_cancelled_at"] = _now_brasil().isoformat()
             payment.payment_metadata["auto_cancelled_reason"] = "expirado_5min"
             cancelled_count += 1
@@ -152,22 +190,21 @@ def cleanup_expired_payments():
         db.commit()
 
         if cancelled_count:
-            logger.info(f"🧹 {cancelled_count} pagamentos expirados cancelados")
+            logger.info(f"[payments] 🧹 {cancelled_count} expirados cancelados")
         if kept_count:
-            logger.info(f"🛡️ {kept_count} pagamentos mantidos (MP diz approved)")
+            logger.info(f"[payments] 🛡️ {kept_count} mantidos (MP approved)")
 
         if cancelled_count:
             try:
                 for payment in expired_payments:
-                    if payment.status == "cancelled":
+                    if payment.status == PaymentStatus.CANCELLED:
                         alert_payment_failed(payment.user_id, payment.amount, "pix")
             except Exception as e:
-                logger.warning(f"⚠️ Erro ao disparar alerta: {e}")
-
+                logger.warning(f"[payments] ⚠️ Alerta falhou: {e}")
             invalidate_promotion_cache()
 
     except Exception as e:
-        logger.error(f"❌ Erro ao limpar pagamentos expirados: {e}")
+        logger.error(f"[payments] ❌ Erro na limpeza: {e}")
         if db:
             db.rollback()
     finally:
@@ -176,19 +213,13 @@ def cleanup_expired_payments():
 
 
 def start_payment_cleanup_scheduler():
-    """
-    🔥 V4.0: Scheduler singleton — não duplica em hot-reload.
-    """
+    """🔥 Scheduler singleton — não duplica em hot-reload."""
     global _scheduler_instance
 
-    # 🔥 Se já existe no módulo, não recria
     if _scheduler_instance is not None:
-        logger.debug("🧹 Scheduler já está rodando (module-level)")
         return
 
-    # 🔥 Checa se já existe instância global no processo (proteção hot-reload)
-    if getattr(start_payment_cleanup_scheduler, '_started', False):
-        logger.debug("🧹 Scheduler já foi iniciado neste processo")
+    if getattr(start_payment_cleanup_scheduler, "_started", False):
         return
 
     try:
@@ -197,25 +228,26 @@ def start_payment_cleanup_scheduler():
         _scheduler_instance = BackgroundScheduler()
         _scheduler_instance.add_job(
             cleanup_expired_payments,
-            'interval',
+            "interval",
             minutes=2,
-            id='payment_cleanup',
+            id="payment_cleanup",
             replace_existing=True,
-            max_instances=1,          # 🔥 V4.0: só 1 instância por vez
-            coalesce=True,            # 🔥 V4.0: agrupa execuções atrasadas
-            misfire_grace_time=30     # 🔥 V4.0: tolerância de 30s
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=30,
         )
         _scheduler_instance.start()
         start_payment_cleanup_scheduler._started = True
-        logger.info("🧹 Scheduler de limpeza iniciado (intervalo: 2min)")
+        logger.info("[payments] 🧹 Scheduler iniciado (2min)")
 
         cleanup_expired_payments()
-        atexit.register(lambda: _scheduler_instance.shutdown() if _scheduler_instance else None)
-
+        atexit.register(
+            lambda: _scheduler_instance.shutdown() if _scheduler_instance else None
+        )
     except ImportError:
-        logger.warning("⚠️ apscheduler não instalado. Instale com: pip install apscheduler")
+        logger.warning("[payments] ⚠️ apscheduler não instalado")
     except Exception as e:
-        logger.error(f"❌ Erro ao iniciar scheduler: {e}")
+        logger.error(f"[payments] ❌ Erro ao iniciar scheduler: {e}")
 
 
 start_payment_cleanup_scheduler()
@@ -229,22 +261,22 @@ class CreatePaymentRequest(BaseModel):
     plan_id: str = Field(..., description="ID do plano")
     cpf: Optional[str] = Field(None, description="CPF do usuário")
 
-    @validator('plan_id')
+    @validator("plan_id")
     def validate_plan_id(cls, v):
-        allowed = ['premium_mensal', 'gratuito']
+        allowed = ["premium_mensal", "gratuito"]
         if v not in allowed:
-            raise ValueError(f'Plano inválido. Permitidos: {allowed}')
+            raise ValueError(f"Plano inválido. Permitidos: {allowed}")
         return v
 
-    @validator('cpf')
+    @validator("cpf")
     def validate_cpf(cls, v):
         if v is None:
             return v
-        cpf_clean = re.sub(r'\D', '', v)
+        cpf_clean = re.sub(r"\D", "", v)
         if not cpf_clean:
-            raise ValueError('CPF não pode estar vazio')
+            raise ValueError("CPF não pode estar vazio")
         if len(cpf_clean) != 11:
-            raise ValueError('CPF deve conter exatamente 11 dígitos numéricos')
+            raise ValueError("CPF deve conter exatamente 11 dígitos numéricos")
         return cpf_clean
 
 
@@ -305,11 +337,10 @@ class PromotionStatusResponse(BaseModel):
 
 
 class PixQRCodeResponse(BaseModel):
-    """🔥 V4.0: Adicionado pix_code separado."""
     success: bool
     qr_code_base64: Optional[str] = None
     qr_code: Optional[str] = None
-    pix_code: Optional[str] = None       # 🔥 V4.0
+    pix_code: Optional[str] = None
     status: str
     max_credits_balance: int = MAX_CREDITS_PREMIUM
     expires_in: int = PIX_QR_CODE_EXPIRY_MINUTES * 60
@@ -340,7 +371,7 @@ def get_cached_promotion_data(db: Session, force_refresh: bool = False) -> Dict[
         "current_price": promo.get_current_price(),
         "is_active": promo.is_active,
         "has_available_slots": promo.has_available_slots(),
-        "updated_at": _now_brasil().isoformat()
+        "updated_at": _now_brasil().isoformat(),
     }
 
     _promotion_cache["data"] = promo_data
@@ -352,66 +383,49 @@ def invalidate_promotion_cache():
     global _promotion_cache
     _promotion_cache["data"] = None
     _promotion_cache["timestamp"] = 0
-    logger.info("🔄 Cache da promoção invalidado")
+    logger.info("[payments] 🔄 Cache da promoção invalidado")
 
 
 # ==============================================
-# 🔥 V4.0: SANITIZE QUE NÃO MUTILA BASE64
+# SANITIZE (não mutila base64)
 # ==============================================
 
-# Campos que NUNCA devem passar por sanitize
 PROTECTED_FIELDS = {
     "qr_code_base64",
     "qr_code",
     "pix_code",
     "token",
     "access_token",
-    "mp_id"
 }
 
 
 def sanitize_string(text: str) -> str:
-    """
-    🔥 V4.0: Remove caracteres perigosos mas NÃO trunca em 500 chars
-    (o truncamento era o que mutilava o Base64).
-    """
     if not text:
         return ""
     if not isinstance(text, str):
         text = str(text)
-    text = re.sub(r'<[^>]*>', '', text)
+    text = re.sub(r"<[^>]*>", "", text)
     text = html.escape(text)
-    # 🔥 Não remove '/' e '+' — são base64-safe
-    text = re.sub(r'[<>\"\'\\;`]', '', text)
-    text = re.sub(r'(?i)javascript\s*:', '', text)
-    text = re.sub(r'(?i)on\w+\s*=', '', text)
-    # 🔥 Aumenta limite para não truncar QR Code
+    text = re.sub(r'[<>\"\'\\;`]', "", text)
+    text = re.sub(r"(?i)javascript\s*:", "", text)
+    text = re.sub(r"(?i)on\w+\s*=", "", text)
     return text[:10000]
 
 
 def sanitize_response(data: Any, _depth: int = 0) -> Any:
-    """
-    🔥 V4.0: Sanitiza APENAS strings de campos não-protegidos.
-    Preserva nomes de chaves e valores de QR Code.
-    """
     if _depth > 10:
-        return data  # proteção contra recursão infinita
+        return data
 
     if isinstance(data, dict):
-        result = {}
-        for k, v in data.items():
-            # 🔥 Preserva a chave como está
-            # 🔥 Se o campo é protegido, passa direto sem sanitize
-            if k in PROTECTED_FIELDS:
-                result[k] = v
-            else:
-                result[k] = sanitize_response(v, _depth + 1)
-        return result
-    elif isinstance(data, str):
+        return {
+            k: (v if k in PROTECTED_FIELDS else sanitize_response(v, _depth + 1))
+            for k, v in data.items()
+        }
+    if isinstance(data, str):
         return sanitize_string(data)
-    elif isinstance(data, list):
+    if isinstance(data, list):
         return [sanitize_response(item, _depth + 1) for item in data]
-    elif isinstance(data, float):
+    if isinstance(data, float):
         return round(data, 2)
     return data
 
@@ -432,12 +446,12 @@ def get_or_create_promotion(db: Session) -> PromotionControl:
             used_slots=0,
             promotional_price=PROMOTIONAL_PRICE,
             regular_price=REGULAR_PRICE,
-            is_active=True
+            is_active=True,
         )
         db.add(promo)
         crud.safe_commit(db, "Erro ao criar promoção")
         db.refresh(promo)
-        logger.info(f"✅ Promoção criada: {TOTAL_PROMOTIONAL_SLOTS} vagas")
+        logger.info(f"[payments] ✅ Promoção criada: {TOTAL_PROMOTIONAL_SLOTS} vagas")
     return promo
 
 
@@ -467,10 +481,8 @@ def get_user_price(user: User, db: Session) -> tuple:
 
 
 def check_payment_rate_limit(user_id: int, db: Session) -> bool:
-    """
-    🔥 V4.0: Usa intervalo explícito de datas (evita problema de timezone).
-    """
-    now_brasil = _now_brasil()
+    """🔥 Usa intervalo explícito de datas naive."""
+    now_brasil = _naive_now_brasil()
     start_of_day = now_brasil.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = start_of_day + timedelta(days=1)
 
@@ -478,11 +490,14 @@ def check_payment_rate_limit(user_id: int, db: Session) -> bool:
         Payment.user_id == user_id,
         Payment.created_at >= start_of_day,
         Payment.created_at < end_of_day,
-        Payment.status == "pending"
+        Payment.status == PaymentStatus.PENDING,
     ).count()
 
     if payments_today >= MAX_PAYMENT_ATTEMPTS_PER_DAY:
-        logger.warning(f"⚠️ Rate limit excedido user {user_id}: {payments_today}/{MAX_PAYMENT_ATTEMPTS_PER_DAY}")
+        logger.warning(
+            f"[payments] ⚠️ Rate limit user {user_id}: "
+            f"{payments_today}/{MAX_PAYMENT_ATTEMPTS_PER_DAY}"
+        )
         return False
     return True
 
@@ -507,15 +522,6 @@ mp_service = get_mp_service() or MercadoPagoService()
 webhook = get_webhook()
 
 
-def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
-    logger.warning(f"⚠️ [DESATIVADO] initialize_new_user_credits({user_id})")
-    return {
-        "success": False,
-        "error": "Créditos iniciais são concedidos apenas no cadastro",
-        "message": "Usuário já recebeu créditos iniciais ou não é elegível"
-    }
-
-
 # ==============================================
 # ROTAS ADMIN
 # ==============================================
@@ -523,16 +529,15 @@ def initialize_new_user_credits(user_id: int, db: Session) -> Dict:
 @router.post("/admin/cleanup-expired")
 async def admin_cleanup_expired(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas administradores")
-
     try:
         cleanup_expired_payments()
         return {"success": True, "message": "✅ Limpeza executada"}
     except Exception as e:
-        logger.error(f"❌ Erro na limpeza manual: {e}")
+        logger.error(f"[payments] ❌ Erro limpeza manual: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -540,22 +545,20 @@ async def admin_cleanup_expired(
 async def admin_reset_rate_limit(
     user_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas administradores")
-
     try:
         payments = db.query(Payment).filter(
             Payment.user_id == user_id,
-            Payment.status == "pending"
+            Payment.status == PaymentStatus.PENDING,
         ).all()
 
         count = len(payments)
         for payment in payments:
-            payment.status = "cancelled"
-            if not payment.payment_metadata:
-                payment.payment_metadata = {}
+            payment.status = PaymentStatus.CANCELLED
+            payment.payment_metadata = payment.payment_metadata or {}
             payment.payment_metadata["admin_reset_at"] = _now_brasil().isoformat()
 
         db.commit()
@@ -563,37 +566,32 @@ async def admin_reset_rate_limit(
             "success": True,
             "message": f"✅ {count} pagamentos cancelados",
             "user_id": user_id,
-            "cancelled_count": count
+            "cancelled_count": count,
         }
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ Erro: {e}")
+        logger.error(f"[payments] ❌ Erro: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==============================================
-# 🔥 V4.0: RESET-MY-ATTEMPTS CORRIGIDO
+# RESET-MY-ATTEMPTS
 # ==============================================
 
 @router.post("/reset-my-attempts")
 async def reset_my_attempts(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    🔥 V4.0: Filtro de JSON agora usa sintaxe compatível com SQLAlchemy 2.x.
-    """
     try:
-        # 🔥 V4.0: Busca por reset recente sem usar .astext (que não existe em InstrumentedAttribute)
-        cooldown_cutoff = _now_brasil() - timedelta(hours=24)
+        cooldown_cutoff = _naive_now_brasil() - timedelta(hours=24)
 
         recent_resets = db.query(Payment).filter(
             Payment.user_id == current_user.id,
-            Payment.status == "cancelled",
-            Payment.updated_at >= cooldown_cutoff
+            Payment.status == PaymentStatus.CANCELLED,
+            Payment.updated_at >= cooldown_cutoff,
         ).all()
 
-        # 🔥 Filtra em Python (mais seguro que JSON path)
         has_recent_reset = any(
             (p.payment_metadata or {}).get("reset_by_user") is True
             for p in recent_resets
@@ -602,22 +600,22 @@ async def reset_my_attempts(
         if has_recent_reset:
             raise HTTPException(
                 status_code=429,
-                detail="Você já resetou suas tentativas nas últimas 24h."
+                detail="Você já resetou suas tentativas nas últimas 24h.",
             )
 
         payments = db.query(Payment).filter(
             Payment.user_id == current_user.id,
-            Payment.status == "pending"
+            Payment.status == PaymentStatus.PENDING,
         ).all()
 
         count = len(payments)
+        now = _naive_now_brasil()
         for payment in payments:
-            payment.status = "cancelled"
-            if not payment.payment_metadata:
-                payment.payment_metadata = {}
+            payment.status = PaymentStatus.CANCELLED
+            payment.payment_metadata = payment.payment_metadata or {}
             payment.payment_metadata["reset_by_user"] = True
             payment.payment_metadata["reset_at"] = _now_brasil().isoformat()
-            payment.updated_at = _now_brasil()
+            payment.updated_at = now
 
         db.commit()
 
@@ -625,38 +623,38 @@ async def reset_my_attempts(
             "success": True,
             "message": f"✅ {count} pagamentos cancelados",
             "cancelled_count": count,
-            "next_reset_available": (_now_brasil() + timedelta(hours=24)).isoformat()
+            "next_reset_available": (_now_brasil() + timedelta(hours=24)).isoformat(),
         }
-
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ Erro: {e}", exc_info=True)
+        logger.error(f"[payments] ❌ Erro: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==============================================
-# ELEGIBILIDADE E CRÉDITOS (inalterado)
+# ELEGIBILIDADE E CRÉDITOS
 # ==============================================
 
 @router.get("/credits/eligibility", response_model=CreditEligibilityResponse)
-async def get_credit_eligibility_status(
+async def get_credit_eligibility_endpoint(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
     eligibility = get_credit_eligibility(db, user)
+    is_admin = eligibility.get("is_admin", False)
 
     return CreditEligibilityResponse(
         success=True,
         can_receive_today=eligibility.get("can_receive_today", False),
         is_premium=eligibility.get("is_premium", False),
-        is_admin=eligibility.get("is_admin", False),
-        credits_balance=eligibility.get("credits_balance", 0) if not eligibility.get("is_admin", False) else 999999,
+        is_admin=is_admin,
+        credits_balance=999999 if is_admin else eligibility.get("credits_balance", 0),
         max_credits=eligibility.get("max_credits", MAX_CREDITS_PREMIUM),
         received_today=eligibility.get("received_today", False),
         days_left=eligibility.get("days_left", 0),
@@ -665,14 +663,14 @@ async def get_credit_eligibility_status(
         next_credit_date=eligibility.get("next_credit_date"),
         credits_until_limit=eligibility.get("credits_until_limit", 0),
         timezone="America/Sao_Paulo (UTC-3)",
-        today_date=_today_brasil().isoformat()
+        today_date=_today_brasil().isoformat(),
     )
 
 
 @router.post("/credits/receive-daily")
 async def receive_daily_credit_endpoint(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -680,7 +678,10 @@ async def receive_daily_credit_endpoint(
 
     result = receive_daily_credit(db, user.id)
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Erro ao receber crédito"))
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Erro ao receber crédito"),
+        )
 
     return sanitize_response({
         "success": True,
@@ -688,14 +689,14 @@ async def receive_daily_credit_endpoint(
         "current_credits": result.get("current_credits", user.credits),
         "max_credits": result.get("max_credits", MAX_CREDITS_PREMIUM),
         "message": result.get("message", "🌅 Crédito recebido!"),
-        "remaining_until_limit": result.get("remaining_until_limit", 0)
+        "remaining_until_limit": result.get("remaining_until_limit", 0),
     })
 
 
 @router.get("/bonus/check", response_model=BonusCheckResponse)
 async def check_bonus_status(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -711,56 +712,47 @@ async def check_bonus_status(
         received_today=result.get("received_today", False),
         at_max_limit=result.get("at_max_limit", False),
         message=result.get("message", ""),
-        next_credit_date=result.get("next_credit_date")
+        next_credit_date=result.get("next_credit_date"),
     )
 
 
 @router.post("/bonus/claim")
 async def claim_bonus(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    🔥 v4.1: Usa receive_daily_credit direto (sem gambiarra com amount=0).
+    """
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    if not _is_premium_user(user):
+    if not user.is_premium():
         raise HTTPException(status_code=403, detail="Bônus exclusivo para Premium.")
 
     eligibility = get_credit_eligibility(db, user)
     if not eligibility.get("can_receive_today", False):
-        raise HTTPException(status_code=400, detail=eligibility.get("reason", "Sem elegibilidade"))
-
-    result = manage_credits_after_consumption(
-        db=db, user=user, amount=0,
-        description="Bônus premium por zerar créditos"
-    )
-
-    if not result.get("success"):
-        user.credits = (user.credits or 0) + 1
-        log = DailyCreditLog(
-            user_id=user.id, credits_added=1,
-            date=_today_brasil(), total_after=user.credits,
-            source="premium_bonus_claimed"
+        raise HTTPException(
+            status_code=400,
+            detail=eligibility.get("reason", "Sem elegibilidade"),
         )
-        db.add(log)
-        crud.safe_commit(db, "Erro ao conceder bônus")
-        db.refresh(user)
-        return sanitize_response({
-            "success": True, "credits_added": 1,
-            "current_credits": user.credits,
-            "message": "⭐ Bônus concedido!",
-            "is_premium": True, "max_credits": MAX_CREDITS_PREMIUM,
-            "credits_display": crud.get_credits_display(user)
-        })
+
+    result = receive_daily_credit(db, user.id)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Erro ao conceder bônus"),
+        )
 
     return sanitize_response({
         "success": True,
-        "credits_added": result.get("bonus_amount", 1),
-        "current_credits": result.get("remaining", user.credits),
-        "message": result.get("message", "⭐ Bônus concedido!"),
-        "is_premium": True, "max_credits": MAX_CREDITS_PREMIUM,
-        "credits_display": crud.get_credits_display(user)
+        "credits_added": result.get("credits_added", 1),
+        "current_credits": result.get("current_credits", user.credits),
+        "message": "⭐ Bônus concedido!",
+        "is_premium": True,
+        "max_credits": MAX_CREDITS_PREMIUM,
+        "credits_display": crud.get_credits_display(user),
     })
 
 
@@ -770,7 +762,7 @@ async def manage_credits(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     amount: int = 1,
-    description: str = "Consumo de crédito"
+    description: str = "Consumo de crédito",
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -792,7 +784,7 @@ async def manage_credits(
         needs_attention=result.get("needs_attention", False),
         is_premium=result.get("is_premium", False),
         max_credits=result.get("max_credits", MAX_CREDITS_PREMIUM),
-        credits_display=result.get("credits_display", "0")
+        credits_display=result.get("credits_display", "0"),
     )
 
 
@@ -804,7 +796,7 @@ async def manage_credits(
 async def get_promotion_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    force_refresh: bool = False
+    force_refresh: bool = False,
 ):
     promo_data = get_cached_promotion_data(db, force_refresh)
 
@@ -828,14 +820,14 @@ async def get_promotion_status(
             f"{promo_data['remaining_slots']} vagas!"
             if promo_data["has_available_slots"]
             else f"⛔ Esgotada! Preço: R$ {promo_data['regular_price']}"
-        )
+        ),
     )
 
 
 @router.get("/balance")
 async def get_user_balance(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -852,21 +844,21 @@ async def get_user_balance(
         "max_credits_balance": MAX_CREDITS_PREMIUM,
         "can_receive_today": eligibility.get("can_receive_today", False),
         "plan": {
-            "type": _get_plan_value(user),
+            "type": crud._get_plan_value(user),
             "is_premium": premium_status.get("is_premium", False),
-            "days_left": premium_status.get("days_left", 0)
+            "days_left": premium_status.get("days_left", 0),
         },
         "promotional": {
             "has_locked_price": user.promotional_price_locked,
             "locked_price": user.promotional_price,
-            "is_vitalicio": user.promotional_price_locked
+            "is_vitalicio": user.promotional_price_locked,
         },
-        "received_initial_credits": user.received_initial_credits
+        "received_initial_credits": user.received_initial_credits,
     })
 
 
 # ==============================================
-# 🔥 V4.0: ROTA PRINCIPAL CREATE-PIX
+# CREATE-PIX
 # ==============================================
 
 @router.post("/create-pix")
@@ -874,13 +866,10 @@ async def create_pix_payment(
     background_tasks: BackgroundTasks,
     request_data: CreatePaymentRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    🔥 V4.0: Retorna JSONResponse direto (sem sanitize) para o QR Code.
-    """
     start_time = time_module.time()
-    price = 0.0  # 🔥 V4.0: default para evitar NameError no except
+    price = 0.0
 
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -892,7 +881,7 @@ async def create_pix_payment(
     if not check_payment_rate_limit(user.id, db):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Muitas tentativas. Aguarde até amanhã."
+            detail="Muitas tentativas. Aguarde até amanhã.",
         )
 
     premium_status = crud.check_premium_status(db, user.id)
@@ -903,10 +892,13 @@ async def create_pix_payment(
     promo_data = get_cached_promotion_data(db)
     remaining_slots = promo_data["remaining_slots"]
 
-    logger.info(f"💰 PREÇO: {user.email} - R$ {price:.2f} ({price_type}) - {remaining_slots} vagas")
+    logger.info(
+        f"[payments] 💰 PREÇO: {user.email} - R$ {price:.2f} "
+        f"({price_type}) - {remaining_slots} vagas"
+    )
 
     if not mp_service or not mp_service.sdk:
-        logger.error("❌ MP SDK não disponível")
+        logger.error("[payments] ❌ MP SDK indisponível")
         raise HTTPException(status_code=503, detail="Serviço indisponível")
 
     try:
@@ -917,35 +909,33 @@ async def create_pix_payment(
             user_name=user.name or "Cliente",
             price=price,
             user_cpf=request_data.cpf,
-            db=db
+            db=db,
         )
 
         if result.get("requires_cpf"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
         if not result.get("success"):
-            logger.error(f"❌ Erro MP: {result.get('error')}")
+            logger.error(f"[payments] ❌ Erro MP: {result.get('error')}")
             update_payment_metrics(False, price)
             raise HTTPException(status_code=400, detail=result.get("error", "Erro"))
 
-        # 🔥 V4.0: Extrai com segurança
         qr_code_base64 = result.get("qr_code_base64") or ""
         qr_code_text = result.get("qr_code") or ""
-        pix_code = result.get("pix_code") or qr_code_text  # 🔥 V4.0
+        pix_code = result.get("pix_code") or qr_code_text
 
-        # 🔥 V4.0: Validação do QR Code
         logger.info("=" * 70)
-        logger.info("📱 [QR CODE PRONTO PARA ENVIAR]")
-        logger.info(f"   imagem: {'✅ ' + str(len(qr_code_base64)) + ' chars' if qr_code_base64 else '❌ vazio'}")
-        logger.info(f"   copia-e-cola: {'✅ ' + str(len(pix_code)) + ' chars' if pix_code else '❌ vazio'}")
+        logger.info("[payments] 📱 QR CODE PRONTO")
+        logger.info(f"   imagem: {'✅ ' + str(len(qr_code_base64)) + ' chars' if qr_code_base64 else '❌'}")
+        logger.info(f"   copia-e-cola: {'✅ ' + str(len(pix_code)) + ' chars' if pix_code else '❌'}")
         logger.info("=" * 70)
 
         if not qr_code_base64 and not pix_code:
-            logger.error("❌ Nem imagem nem copia-e-cola disponíveis")
+            logger.error("[payments] ❌ Sem imagem nem copia-e-cola")
             update_payment_metrics(False, price)
             raise HTTPException(
                 status_code=502,
-                detail="Mercado Pago não retornou QR Code. Tente novamente."
+                detail="Mercado Pago não retornou QR Code. Tente novamente.",
             )
 
         payment = crud.create_payment(
@@ -966,20 +956,19 @@ async def create_pix_payment(
                 "cpf_provided": bool(request_data.cpf),
                 "plan_id": request_data.plan_id,
                 "remaining_slots_at_purchase": remaining_slots,
-                "environment": getattr(mp_service, 'environment', 'production'),
+                "environment": getattr(mp_service, "environment", "production"),
                 "qr_code_generated": bool(qr_code_base64 or pix_code),
                 "qr_code_base64_size": len(qr_code_base64),
-                "qr_code_text_size": len(pix_code)
-            }
+                "qr_code_text_size": len(pix_code),
+            },
         )
 
         alert_payment_pending(user.email, price, "pix")
         update_payment_metrics(True, price)
 
         elapsed = (time_module.time() - start_time) * 1000
-        logger.info(f"✅ PIX criado em {elapsed:.0f}ms - ID: {payment.id}")
+        logger.info(f"[payments] ✅ PIX criado em {elapsed:.0f}ms - ID: {payment.id}")
 
-        # 🔥 V4.0: JSONResponse DIRETO — sem sanitize_response
         return JSONResponse(content={
             "success": True,
             "payment_id": payment.id,
@@ -988,17 +977,19 @@ async def create_pix_payment(
             "price_type": price_type,
             "was_promotional": was_promotional,
             "remaining_slots": remaining_slots,
-            "qr_code_base64": qr_code_base64,   # 🔥 IMAGEM (intocada)
-            "qr_code": pix_code,                 # 🔥 copia-e-cola
-            "pix_code": pix_code,                # 🔥 ALIAS explícito
+            "qr_code_base64": qr_code_base64,
+            "qr_code": pix_code,
+            "pix_code": pix_code,
             "expires_in": PIX_QR_CODE_EXPIRY_MINUTES * 60,
-            "message": f"💰 PIX gerado! R$ {price:.2f} - {'🔥 Fundador!' if was_promotional else 'Regular'}"
+            "message": (
+                f"💰 PIX gerado! R$ {price:.2f} - "
+                f"{'🔥 Fundador!' if was_promotional else 'Regular'}"
+            ),
         })
-
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Exceção: {e}", exc_info=True)
+        logger.error(f"[payments] ❌ Exceção: {e}", exc_info=True)
         update_payment_metrics(False, price)
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1011,8 +1002,12 @@ async def create_pix_payment(
 async def get_pix_qrcode(
     payment_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    🔥 v4.1: NÃO usa mais payment.expires_at (coluna inexistente).
+    Calcula expiração via created_at + PIX_QR_CODE_EXPIRY_MINUTES.
+    """
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID inválido")
 
@@ -1023,17 +1018,29 @@ async def get_pix_qrcode(
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    if payment.expires_at and payment.expires_at < _now_brasil():
-        return PixQRCodeResponse(success=False, status="expired", message="Expirado", expires_in=0)
+    # 🔥 Expiração calculada (naive)
+    expires_at = _payment_expires_at(payment)
+    now_naive = _naive_now_brasil()
+
+    if expires_at and expires_at < now_naive:
+        return PixQRCodeResponse(
+            success=False, status="expired", message="Expirado", expires_in=0
+        )
+
+    expires_in = (
+        max(0, int((expires_at - now_naive).total_seconds()))
+        if expires_at
+        else PIX_QR_CODE_EXPIRY_MINUTES * 60
+    )
 
     return PixQRCodeResponse(
         success=True,
         qr_code_base64=payment.qr_code_base64,
         qr_code=payment.qr_code or payment.mp_id,
-        pix_code=payment.qr_code,  # 🔥 V4.0
-        status=payment.status,
-        expires_in=max(0, int((payment.expires_at - _now_brasil()).total_seconds())) if payment.expires_at else PIX_QR_CODE_EXPIRY_MINUTES * 60,
-        message="QR Code disponível"
+        pix_code=payment.qr_code,
+        status=payment.status.value if hasattr(payment.status, "value") else str(payment.status),
+        expires_in=expires_in,
+        message="QR Code disponível",
     )
 
 
@@ -1041,7 +1048,7 @@ async def get_pix_qrcode(
 async def check_payment_status(
     payment_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID inválido")
@@ -1057,7 +1064,7 @@ async def check_payment_status(
         "success": True,
         "payment": {
             "id": payment.id,
-            "status": payment.status,
+            "status": payment.status.value if hasattr(payment.status, "value") else str(payment.status),
             "amount": float(payment.amount),
             "credits": payment.credits,
             "created_at": payment.created_at.isoformat() if payment.created_at else None,
@@ -1065,8 +1072,8 @@ async def check_payment_status(
             "was_promotional": (payment.payment_metadata or {}).get("was_promotional", False),
             "price_type": (payment.payment_metadata or {}).get("price_type", "regular"),
             "is_real": (payment.payment_metadata or {}).get("real_payment", True),
-            "qr_code_generated": (payment.payment_metadata or {}).get("qr_code_generated", False)
-        }
+            "qr_code_generated": (payment.payment_metadata or {}).get("qr_code_generated", False),
+        },
     })
 
 
@@ -1074,7 +1081,7 @@ async def check_payment_status(
 async def cancel_payment(
     payment_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not validate_payment_id(payment_id):
         raise HTTPException(status_code=400, detail="ID inválido")
@@ -1086,7 +1093,7 @@ async def cancel_payment(
     if payment.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    if payment.status != "pending":
+    if payment.status != PaymentStatus.PENDING:
         raise HTTPException(status_code=400, detail="Apenas pendentes podem ser cancelados")
 
     crud.update_payment_status(db, payment.id, PaymentStatus.CANCELLED)
@@ -1100,13 +1107,16 @@ async def get_plans(db: Session = Depends(get_db)):
         "success": True,
         "plans": {
             "gratuito": {
-                "id": "gratuito", "name": "Plano Gratuito", "price": 0,
+                "id": "gratuito",
+                "name": "Plano Gratuito",
+                "price": 0,
                 "credits": INITIAL_FREE_CREDITS,
                 "description": f"{INITIAL_FREE_CREDITS} créditos iniciais",
-                "max_credits_balance": MAX_CREDITS_PREMIUM
+                "max_credits_balance": MAX_CREDITS_PREMIUM,
             },
             "premium_mensal": {
-                "id": "premium_mensal", "name": "Plano Bronze",
+                "id": "premium_mensal",
+                "name": "Plano Bronze",
                 "price": float(promo.get_current_price()),
                 "regular_price": float(promo.regular_price),
                 "promotional_price": float(promo.promotional_price),
@@ -1121,11 +1131,11 @@ async def get_plans(db: Session = Depends(get_db)):
                     f"🔥 R$ {promo.promotional_price} - {promo.get_remaining_slots()} vagas"
                     if promo.has_available_slots()
                     else f"💰 R$ {promo.regular_price} (esgotada)"
-                )
-            }
+                ),
+            },
         },
         "real_payment_enabled": True,
-        "mp_sdk_available": mp_service and mp_service.sdk is not None
+        "mp_sdk_available": mp_service and mp_service.sdk is not None,
     })
 
 
@@ -1136,10 +1146,20 @@ async def get_plans(db: Session = Depends(get_db)):
 @router.get("/metrics")
 async def get_payment_metrics(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas admins")
+
+    # 🔥 v4.1: uptime com sinal correto
+    try:
+        started = datetime.fromisoformat(_payment_metrics["started_at"])
+        now = _now_brasil()
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=now.tzinfo)
+        uptime = (now - started).total_seconds()
+    except Exception:
+        uptime = 0
 
     return sanitize_response({
         "success": True,
@@ -1149,8 +1169,8 @@ async def get_payment_metrics(
             "cache_ttl": PROMOTION_CACHE_TTL,
             "rate_limit": MAX_PAYMENT_ATTEMPTS_PER_DAY,
             "mp_sdk_available": mp_service and mp_service.sdk is not None,
-            "uptime_seconds": (datetime.fromisoformat(_payment_metrics["started_at"]) - _now_brasil()).total_seconds() * -1
-        }
+            "uptime_seconds": uptime,
+        },
     })
 
 
@@ -1167,9 +1187,9 @@ async def payment_health_check():
             "total_attempts": _payment_metrics["total_attempts"],
             "successful": _payment_metrics["successful_payments"],
             "failed": _payment_metrics["failed_payments"],
-            "total_revenue": round(_payment_metrics["total_revenue"], 2)
+            "total_revenue": round(_payment_metrics["total_revenue"], 2),
         },
-        "timestamp": _now_brasil().isoformat()
+        "timestamp": _now_brasil().isoformat(),
     }
 
 
@@ -1181,7 +1201,7 @@ async def payment_health_check():
 async def fix_initial_credits(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    confirm: bool = False
+    confirm: bool = False,
 ):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas admins")
@@ -1200,58 +1220,60 @@ async def fix_initial_credits(
         return sanitize_response({
             "success": True,
             "message": f"✅ {fixed_count} usuários corrigidos!",
-            "fixed_count": fixed_count
+            "fixed_count": fixed_count,
         })
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ Erro: {e}")
+        logger.error(f"[payments] ❌ Erro: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/admin/check-initial-credits")
 async def check_initial_credits_status(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Apenas admins")
 
     try:
         total_users = db.query(User).count()
-        users_without_flag = db.query(User).filter(User.received_initial_credits == False).count()
+        users_without_flag = db.query(User).filter(
+            User.received_initial_credits == False
+        ).count()
         return sanitize_response({
             "success": True,
             "total_users": total_users,
             "users_without_flag": users_without_flag,
             "needs_fix": users_without_flag > 0,
-            "fix_endpoint": "/api/payments/admin/fix-initial-credits?confirm=true"
+            "fix_endpoint": "/api/payments/admin/fix-initial-credits?confirm=true",
         })
     except Exception as e:
-        logger.error(f"❌ Erro: {e}")
+        logger.error(f"[payments] ❌ Erro: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==============================================
-# WEBHOOK (inalterado)
+# WEBHOOK
 # ==============================================
 
 @router.post("/webhook", response_model=None)
 async def mercadopago_webhook(
     request: Request,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
 ):
     try:
         body = await request.body()
         if not body:
-            logger.warning("⚠️ Webhook sem corpo")
+            logger.warning("[payments] ⚠️ Webhook sem corpo")
             return {"status": "ignored"}
 
         try:
             data = json.loads(body)
-            logger.info(f"🔔 Webhook JSON recebido")
+            logger.info("[payments] 🔔 Webhook JSON recebido")
         except json.JSONDecodeError:
-            text_body = body.decode('utf-8')
-            match = re.search(r'id=(\d+)', text_body)
+            text_body = body.decode("utf-8")
+            match = re.search(r"id=(\d+)", text_body)
             if match:
                 background_tasks.add_task(process_payment_webhook, match.group(1))
             return {"status": "received"}
@@ -1261,9 +1283,8 @@ async def mercadopago_webhook(
             background_tasks.add_task(process_payment_webhook, str(payment_id))
 
         return {"status": "received"}
-
     except Exception as e:
-        logger.error(f"❌ Erro webhook: {e}", exc_info=True)
+        logger.error(f"[payments] ❌ Erro webhook: {e}", exc_info=True)
         return {"status": "error"}
 
 
@@ -1281,7 +1302,6 @@ async def process_payment_webhook(payment_id: str):
 
         if not payment:
             return
-
         if payment.status == PaymentStatus.APPROVED:
             return
         if payment.status != PaymentStatus.PENDING:
@@ -1291,9 +1311,9 @@ async def process_payment_webhook(payment_id: str):
         if not payment_info.get("success"):
             return
 
-        status = payment_info.get("status")
+        status_str = payment_info.get("status")
 
-        if status == "approved":
+        if status_str == "approved":
             crud.update_payment_status(db, payment.id, PaymentStatus.APPROVED, payment_info)
             user = crud.get_user_by_id(db, payment.user_id)
 
@@ -1310,20 +1330,20 @@ async def process_payment_webhook(payment_id: str):
                         user.promotional_price = payment.amount
                         user.purchased_at_promotion = _now_brasil()
                         db.commit()
-                        logger.info(f"🎟️🔥 PREÇO VITALÍCIO: {user.email}")
+                        logger.info(f"[payments] 🎟️🔥 PREÇO VITALÍCIO: {user.email}")
 
                 db.commit()
                 alert_payment_approved(user.email, payment.amount, payment.payment_method)
 
-        elif status == "rejected":
+        elif status_str == "rejected":
             crud.update_payment_status(db, payment.id, PaymentStatus.REJECTED, payment_info)
             alert_payment_failed(payment.user_id, payment.amount, payment.payment_method)
 
-        elif status == "cancelled":
+        elif status_str == "cancelled":
             crud.update_payment_status(db, payment.id, PaymentStatus.CANCELLED, payment_info)
 
     except Exception as e:
-        logger.error(f"❌ Erro webhook: {e}", exc_info=True)
+        logger.error(f"[payments] ❌ Erro webhook: {e}", exc_info=True)
         db.rollback()
     finally:
         db.close()
@@ -1336,7 +1356,7 @@ async def process_payment_webhook(payment_id: str):
 @router.get("/check-analysis")
 async def check_analysis_credits(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -1357,14 +1377,14 @@ async def check_analysis_credits(
         "can_receive_today": eligibility.get("can_receive_today", False),
         "is_premium": eligibility.get("is_premium", False),
         "at_max_limit": eligibility.get("at_max_limit", False),
-        "reason": eligibility.get("reason", "")
+        "reason": eligibility.get("reason", ""),
     })
 
 
 @router.post("/consume")
 async def consume_credit(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -1386,19 +1406,19 @@ async def consume_credit(
             "bonus_granted": result.get("bonus_granted", False),
             "bonus_amount": result.get("bonus_amount", 0),
             "needs_attention": result.get("needs_attention", False),
-            "message": result.get("message", "")
+            "message": result.get("message", ""),
         })
 
     return sanitize_response({
         "success": False,
-        "error": result.get("error", "Créditos insuficientes")
+        "error": result.get("error", "Créditos insuficientes"),
     })
 
 
 @router.post("/premium/check-daily")
 async def check_daily_credit(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -1410,7 +1430,7 @@ async def check_daily_credit(
         return sanitize_response({
             "success": False,
             "message": "Recurso exclusivo para premium",
-            "is_premium": False
+            "is_premium": False,
         })
 
     if eligibility.get("can_receive_today", False):
@@ -1422,7 +1442,7 @@ async def check_daily_credit(
                 "current_credits": result.get("current_credits", user.credits),
                 "max_credits": MAX_CREDITS_PREMIUM,
                 "message": result.get("message", "🎉 Crédito do dia!"),
-                "remaining_until_limit": result.get("remaining_until_limit", 0)
+                "remaining_until_limit": result.get("remaining_until_limit", 0),
             })
 
     return sanitize_response({
@@ -1431,14 +1451,14 @@ async def check_daily_credit(
         "current_credits": user.credits,
         "max_credits": MAX_CREDITS_PREMIUM,
         "at_max_limit": eligibility.get("at_max_limit", False),
-        "received_today": eligibility.get("received_today", False)
+        "received_today": eligibility.get("received_today", False),
     })
 
 
 @router.get("/subscription-status")
 async def get_subscription_status(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = crud.get_user_by_id(db, current_user.id)
     if not user:
@@ -1451,7 +1471,7 @@ async def get_subscription_status(
             "is_admin": True,
             "days_left": 999,
             "is_active": True,
-            "message": "👑 Administrador"
+            "message": "👑 Administrador",
         })
 
     premium_status = crud.check_premium_status(db, user.id)
@@ -1481,7 +1501,7 @@ async def get_subscription_status(
         "received_today": eligibility.get("received_today", False),
         "at_max_limit": eligibility.get("at_max_limit", False),
         "credits_balance": user.credits or 0,
-        "message": "✅ Plano ativo" if is_active else "❌ Plano expirado"
+        "message": "✅ Plano ativo" if is_active else "❌ Plano expirado",
     })
 
 
@@ -1490,15 +1510,14 @@ async def get_subscription_status(
 # ==============================================
 
 print("=" * 70)
-print("✅ payment_routes.py v4.0 carregado - BLINDADO!")
-print("   🔥 NOVIDADES v4.0:")
-print("      - ✅ sanitize NÃO corrompe mais o QR Code Base64")
-print("      - ✅ pix_code enviado separado de qr_code_base64")
-print("      - ✅ /reset-my-attempts corrigido (SQLAlchemy 2.x)")
-print("      - ✅ Scheduler idempotente (não duplica hot-reload)")
-print("      - ✅ Revalidação MP antes de cancelar pagamento")
-print("      - ✅ Rate limit com intervalo explícito")
-print(f"   📊 Rate limit: {MAX_PAYMENT_ATTEMPTS_PER_DAY}/dia")
-print(f"   ⏰ Expiração: 5 min | Limpeza: 2 min")
-print(f"   💰 Preços: R$ {PROMOTIONAL_PRICE} / R$ {REGULAR_PRICE}")
+print("✅ payment_routes.py v4.1 carregado - CORRIGIDO + MELHORADO!")
+print("   🔥 FIX v4.1:")
+print("      - Imports mortos removidos (_is_premium_user, _get_plan_value)")
+print("      - get_pix_qrcode: expiração calculada (não usa coluna inexistente)")
+print("      - claim_bonus: usa receive_daily_credit direto")
+print("      - Filtros SQL com .value explícito")
+print("      - Comparações naive vs aware normalizadas")
+print("      - uptime_seconds com sinal correto")
+print("   📊 Rate limit: 5/dia")
+print("   ⏰ Expiração PIX: 30 min | Limpeza: 2 min")
 print("=" * 70)
